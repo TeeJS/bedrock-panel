@@ -38,9 +38,10 @@ Panel, the Dock, menu-bar extras, or system UI); with no other display a window 
 un-minimized onto a display when one returns. Two macOS differences: there is no maximized state
 to preserve, and a window in its own full-screen Space cannot be moved.
 
-Independently of the helper, the kiosk panel window never takes key focus on macOS: the display
-owning the key window is where macOS opens other apps' new windows, so a focused panel would
-collect Safari and Finder windows behind itself even with protection off.
+Independently of the helper, the kiosk panel window never takes key focus on macOS (the display
+owning the key window is where macOS prefers to open other apps' new windows) and sits at the
+screen-saver window level, above the menu bar and the Dock that macOS draws on every display. macOS
+still decides where an app opens its windows — the helper is what keeps the panel clear.
 
 ## Build and automated checks
 

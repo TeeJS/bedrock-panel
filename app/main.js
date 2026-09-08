@@ -2625,8 +2625,22 @@ function showPanelWindow(focus) {
 function applyPanelDisplayMode(d) {
   panelWin.setBounds(d.bounds);
   panelWin.setMenuBarVisibility(false);
-  if (process.platform === 'darwin') panelWin.setSimpleFullScreen(true);
-  else panelWin.setFullScreen(true);
+  if (process.platform === 'darwin') {
+    panelWin.setSimpleFullScreen(true);
+    // The panel never becomes the active app (showPanelWindow), so the presentation options that hide
+    // the menu bar and the Dock only apply while nothing else is active. Sit above both permanently
+    // instead: the screen-saver level is higher than the menu bar (24) and the Dock (20), and the
+    // window covers exactly the panel display, so other displays are untouched.
+    panelWin.setAlwaysOnTop(true, 'screen-saver');
+  } else panelWin.setFullScreen(true);
+}
+// Windows: a brief always-on-top nudge lifts the panel over whatever the desktop left on that display
+// (Reserved Display keeps it clear afterwards). macOS pins the panel permanently in applyPanelDisplayMode,
+// and lowering it again here would bring the menu bar back.
+function nudgePanelOnTop() {
+  if (process.platform === 'darwin' || !panelWin || panelWin.isDestroyed()) return;
+  panelWin.setAlwaysOnTop(true);
+  setTimeout(() => { try { if (panelWin && !panelWin.isDestroyed()) panelWin.setAlwaysOnTop(false); } catch (e) {} }, 1500);
 }
 function placePanel() {
   if (monitorMode) return;                                          // in monitor mode the panel stays hidden — don't re-show it over the desktop
@@ -2652,8 +2666,7 @@ function placePanel() {
     panelWin.once('ready-to-show', () => {
       if (monitorMode) { pushToPanel(); return; }   // monitor mode was set before first show -> stay hidden (desktop shows)
       const dd = deviceDisplay() || d;
-      applyPanelDisplayMode(dd); panelWin.setAlwaysOnTop(true); showPanelWindow(true);
-      setTimeout(() => panelWin.setAlwaysOnTop(false), 1500);
+      applyPanelDisplayMode(dd); nudgePanelOnTop(); showPanelWindow(true);
       pushToPanel();
       console.log('panel display bounds', JSON.stringify(dd.bounds), 'workArea', JSON.stringify(dd.workArea));
       console.log('panel placed at', JSON.stringify(panelWin.getBounds()), 'fullscreen', panelWin.isFullScreen(), 'simpleFullscreen', panelWin.isSimpleFullScreen && panelWin.isSimpleFullScreen());
@@ -2848,8 +2861,7 @@ function exitMonitorMode(reason) {
   if (panelWin && !panelWin.isDestroyed()) {
     const d = deviceDisplay();
     if (d) applyPanelDisplayMode(d);
-    panelWin.setAlwaysOnTop(true); showPanelWindow(true);
-    setTimeout(() => { try { panelWin.setAlwaysOnTop(false); } catch (e) {} }, 1500);
+    nudgePanelOnTop(); showPanelWindow(true);
   }
   syncPollers(activeGrid());                                        // resume the active page's poller
   refreshTray();
