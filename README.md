@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-**[Website](https://bedrockpanel.com)** · **[Discord](https://discord.gg/NAvWXZZBZ)** · **[Download](https://github.com/TeeJS/bedrock-panel/releases/)** · **[Docs](docs/README.md)**
+**[Website](https://bedrockpanel.com)** · **[Discord](https://discord.gg/7F8DFMVQMv)** · **[Download](https://github.com/TeeJS/bedrock-panel/releases/)** · **[Docs](docs/README.md)**
 
 *A multi-use control platform for your computer.*
 
@@ -195,7 +195,7 @@ demand.
 
 ## Community
 
-Join the conversation on **[Discord](https://discord.gg/NAvWXZZBZ)**, star the project, or
+Join the conversation on **[Discord](https://discord.gg/7F8DFMVQMv)**, star the project, or
 contribute — apps, themes, and dashboards are all community-built. Reproducible software issues go
 in the **[issue tracker](https://github.com/TeeJS/bedrock-panel/issues)**.
 
