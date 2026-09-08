@@ -64,7 +64,7 @@ class MultiKnob extends EventEmitter {
   activate() { return this._call('activate'); }
 
   // Route command to the active connector; if nothing has connected yet, default to the first
-  // in the list so the call is just a benign no-op (open-quake makes lots of dev.* calls during
+  // in the list so the call is just a benign no-op (Bedrock Panel makes lots of dev.* calls during
   // startup before the device is necessarily plugged in).
   _call(name, ...args) {
     const target = (this.active && this.active.impl) || this.connectors[0].impl;

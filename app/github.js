@@ -45,7 +45,7 @@
       const next = response.headers.get('X-Open-Quake-Capability');
       if (next) capability = next;
       if (response.status === 403) throw new Error('GitHub panel session expired; leave and reopen the page');
-      try { return await response.json(); } catch (error) { throw new Error('Invalid response from open-quake'); }
+      try { return await response.json(); } catch (error) { throw new Error('Invalid response from Bedrock Panel'); }
     };
     const result = requestQueue.then(execute, execute);
     requestQueue = result.catch(() => {});

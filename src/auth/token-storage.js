@@ -40,7 +40,7 @@ class TokenStorage {
   setProviderSettings(provider, patch) {
     provider = canonicalProviderId(provider);
     const fixed = providerFor(provider);
-    if (fixed && fixed.clientId) throw new Error(fixed.name + ' client settings are built into Open-Quake');
+    if (fixed && fixed.clientId) throw new Error(fixed.name + ' client settings are built into Bedrock Panel');
     const root = this.oauthRoot();
     const previous = root.providers[provider];
     root.providers[provider] = Object.assign({}, previous || {}, patch || {});

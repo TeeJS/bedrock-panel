@@ -1,6 +1,6 @@
 # Bedrock Panel — installer return codes
 
-`open-quake-<version>-setup.exe` is an NSIS installer (produced by electron-builder). It reports
+`bedrock-panel-setup.exe` is an NSIS installer (produced by electron-builder). It reports
 the outcome of an install or uninstall through its **process exit code**:
 
 | Return code | Meaning |
@@ -17,7 +17,7 @@ successfully.**
 The installer supports unattended/silent installation with the standard NSIS `/S` flag:
 
 ```
-open-quake-<version>-setup.exe /S
+bedrock-panel-setup.exe /S
 ```
 
 It installs per-user (no elevation required) and returns `0` on success.

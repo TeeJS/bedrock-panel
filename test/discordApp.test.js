@@ -701,7 +701,7 @@ test('Activity Rich Presence toggle uses the supported service action and persis
   host.start(); await new Promise(resolve => setImmediate(resolve)); await host.action('rich-presence', true);
   assert.equal(saved.richPresence, true);
   assert.equal(host.getSnapshot().settings.richPresence, true);
-  assert.deepEqual(service.calls.at(-1), ['activity', { details: 'Using open-quake' }]);
+  assert.deepEqual(service.calls.at(-1), ['activity', { details: 'Using Bedrock Panel' }]);
   host.stop();
 });
 
@@ -710,7 +710,7 @@ test('saved Rich Presence is applied automatically after Discord connects', asyn
   const host = new DiscordAppHost(service, { getSettings: () => ({ richPresence: true }) });
   host.start();
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(service.calls.find(call => call[0] === 'activity'), ['activity', { details: 'Using open-quake' }]);
+  assert.deepEqual(service.calls.find(call => call[0] === 'activity'), ['activity', { details: 'Using Bedrock Panel' }]);
   host.stop();
 });
 

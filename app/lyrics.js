@@ -37,7 +37,7 @@ function fetchLyrics(track) {
     let req, to, done = false; const chunks = [];
     const finish = v => { if (done) return; done = true; if (to) clearTimeout(to); resolve(v); };
     try { req = net.request('https://lrclib.net/api/get?' + p.toString()); } catch (e) { return resolve(null); }
-    req.setHeader('User-Agent', 'open-quake (https://github.com/TeeJS/open-quake)');
+    req.setHeader('User-Agent', 'bedrock-panel (https://github.com/TeeJS/bedrock-panel)');
     to = setTimeout(() => { try { req.abort(); } catch (e) {} finish(null); }, 6000);
     req.on('error', () => finish(null));
     req.on('response', resp => {

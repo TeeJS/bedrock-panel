@@ -121,7 +121,7 @@ function createApprovalManager(opts) {
     if (!entry || (decision !== 'allow' && decision !== 'deny')) return false;
     clearTimeout(entry.timer);
     pending.delete(requestId);
-    respond(entry.res, decision, decision === 'allow' ? 'Approved on the open-quake panel.' : 'Denied on the open-quake panel.');
+    respond(entry.res, decision, decision === 'allow' ? 'Approved on the Bedrock Panel panel.' : 'Denied on the Bedrock Panel panel.');
     onChange({ type: 'approval-decision', requestId, decision });
     return true;
   }

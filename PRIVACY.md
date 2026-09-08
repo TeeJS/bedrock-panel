@@ -15,7 +15,7 @@ connections to the developer. Everything it stores stays on your own PC.
 ## What is stored, and where
 
 Bedrock Panel saves its configuration locally on your computer under
-`%APPDATA%\open-quake` (for example `C:\Users\<you>\AppData\Roaming\open-quake`). This
+`%APPDATA%\bedrock-panel` (for example `C:\Users\<you>\AppData\Roaming\bedrock-panel`). This
 includes your page layouts, tiles, app settings, and any URLs or credentials you choose
 to enter for your own web-dashboard pages. **This data never leaves your device** through
 any action of Bedrock Panel, and the developer never receives it.

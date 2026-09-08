@@ -42,7 +42,7 @@
   }
   const appIconCache = {};   // app value -> dataURL | false (failed) | null (in-flight)
   const urlIconPreview = {}; // iconCache path -> dataURL of a just-fetched URL icon (editor preview only; dodges file:// browser-cache staleness on Refresh)
-  const TYPES = [['', 'Empty'], ['app', 'App / Program'], ['url', 'Website (URL)'], ['page', 'Go to open-quake page'], ['cmd', 'Shell command'], ['open', 'Open file/folder'], ['system', 'System (lock/config)'], ['counter', 'Counter'], ['paste_text', 'Paste Text'], ['key', 'Send keystroke'], ['macro', 'Macro / Steps'], ['ha', 'HA entity'], ['routine', 'AI Routine'], ['obs', 'OBS Studio']];
+  const TYPES = [['', 'Empty'], ['app', 'App / Program'], ['url', 'Website (URL)'], ['page', 'Go to Bedrock Panel page'], ['cmd', 'Shell command'], ['open', 'Open file/folder'], ['system', 'System (lock/config)'], ['counter', 'Counter'], ['paste_text', 'Paste Text'], ['key', 'Send keystroke'], ['macro', 'Macro / Steps'], ['ha', 'HA entity'], ['routine', 'AI Routine'], ['obs', 'OBS Studio']];
   // Curated per-domain service catalog for HA entity tiles. Lookup falls back to HA_SERVICES_DEFAULT
   // for any domain we don't have a more specific list for. First entry is the default service when
   // the user picks an entity of that domain.
@@ -2088,8 +2088,8 @@
     // Custom shortcuts cheat-sheet: edited right here, but the list itself is global/shared — see
     // shortcutRowsHtml's comment and docs/charter-keyshortcuts.md.
     const keyShortcutsBox = `<div style="margin-top:10px">
-        <details class="hint" style="margin:0 0 8px"><summary>A cheat-sheet the panel displays — these rows are informational only; open-quake does not bind them.</summary> Shown as
-        <b>Custom</b> on the panel, alongside open-quake's own rotation hotkey and every page's jump shortcut.
+        <details class="hint" style="margin:0 0 8px"><summary>A cheat-sheet the panel displays — these rows are informational only; Bedrock Panel does not bind them.</summary> Shown as
+        <b>Custom</b> on the panel, alongside Bedrock Panel's own rotation hotkey and every page's jump shortcut.
         This list is shared — editing it here updates every page that has the Keyboard Shortcuts app.</details>
         <div id="sShortcutRows">${shortcutRowsHtml((config.settings || {}).customShortcuts)}</div>
         <button id="sShortcutAdd" type="button" style="margin-top:8px">+ Add shortcut</button>
@@ -3124,7 +3124,7 @@
     box.className = 'advsec';
     box.style.cssText = 'margin-top:12px;padding:10px;border:1px solid #213145;border-radius:8px';
     el.appendChild(box);
-    const guideUrl = 'https://github.com/TeeJS/open-quake/blob/main/docs/discord.md';
+    const guideUrl = 'https://github.com/TeeJS/bedrock-panel/blob/main/docs/discord.md';
     const draw = async () => {
       let provider = null;
       try { provider = (await configApi.listOAuthProviders()).find(value => value.provider === 'discord'); } catch (e) {}
@@ -3145,7 +3145,7 @@
           <span class="hint" style="margin:0">${esc(status)}</span>
           <span id="dcMsg" class="hint" style="margin:0 0 0 auto"></span>
         </div>
-        <div class="row"><label>Application</label><span class="hint" style="margin:0">${provider && provider.customApplication ? 'Custom Discord application' : 'Built into open-quake'}</span></div>
+        <div class="row"><label>Application</label><span class="hint" style="margin:0">${provider && provider.customApplication ? 'Custom Discord application' : 'Built into Bedrock Panel'}</span></div>
         ${account ? `<div class="row"><label>Account</label><span class="hint" style="margin:0">${esc(account)}${identity.username && identity.global_name ? ' (' + esc(identity.username) + ')' : ''}</span></div>` : ''}
         <div class="row"><label>Permissions</label><span class="hint" style="margin:0">${permissions}</span></div>
         <p class="hint" style="margin:4px 0 8px"><a href="#" id="dcGuide">Discord connection guide ↗</a>${provider && provider.customApplication ? ' · Save changes before connecting or reconnecting so the selected application and permission groups are used.' : ''}</p>
@@ -3202,7 +3202,7 @@
     box.className = 'advsec';
     box.style.cssText = 'margin-top:12px;padding:10px;border:1px solid #213145;border-radius:8px';
     el.appendChild(box);
-    const guideUrl = 'https://github.com/TeeJS/open-quake/blob/main/docs/github.md';
+    const guideUrl = 'https://github.com/TeeJS/bedrock-panel/blob/main/docs/github.md';
     const createUrl = 'https://github.com/settings/applications/new';
 
     const draw = async notice => {
@@ -3226,7 +3226,7 @@
         <details${connected ? '' : ' open'} style="margin-top:10px">
           <summary style="cursor:pointer;color:#9fb3c8;font-size:13px;user-select:none">Connection settings</summary>
           <div class="row" style="margin-top:8px"><label>OAuth Client ID</label><input id="ghClientId" value="${esc(localProvider.clientId || '')}" placeholder="Iv1…" autocomplete="off" style="flex:1"></div>
-          <details class="hint"><summary>Create a GitHub OAuth App, enable <b>Device Flow</b>, and paste its public Client ID.</summary> For GitHub's required callback field, use <code>http://127.0.0.1:53682/callback</code>; Device Flow never contacts it and open-quake does not listen on that port. No client secret is used or stored.</details>
+          <details class="hint"><summary>Create a GitHub OAuth App, enable <b>Device Flow</b>, and paste its public Client ID.</summary> For GitHub's required callback field, use <code>http://127.0.0.1:53682/callback</code>; Device Flow never contacts it and Bedrock Panel does not listen on that port. No client secret is used or stored.</details>
           <div class="row"><label>Permissions</label><span class="hint" style="margin:0">repo · offline_access</span></div>
           <p class="hint" style="margin:4px 0 8px"><a href="#" id="ghGuide">GitHub connection guide ↗</a> · <a href="#" id="ghCreate">Create OAuth App ↗</a> · Save changes before connecting or reconnecting.</p>
         </details>
@@ -3417,7 +3417,7 @@
     };
     row.querySelector(`[data-ss-open="${key}"]`).onclick = () => configApi.openScreensaverMedia(optVal(g, key, ''), kind);
     const cb = row.querySelector('[data-ss-community="1"]');
-    if (cb) cb.onclick = () => configApi.openExternal('https://github.com/TeeJS/open-quake/tree/main/community-wallpapers');
+    if (cb) cb.onclick = () => configApi.openExternal('https://github.com/TeeJS/bedrock-panel/tree/main/community-wallpapers');
   }
 
   // Focus a saved page on the device from the editor. The device only knows SAVED pages, so if the
@@ -3751,7 +3751,8 @@
   }
 
   // ---- settings page ----
-  const DEFAULT_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';
+  const DEFAULT_APP_REPO = 'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps';
+  const LEGACY_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';   // saved by pre-rename installs
   const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: false, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
   function appSettings() { return Object.assign({}, DEFAULT_SETTINGS, config.settings || {}); }
   function renderSettings() {
@@ -3830,7 +3831,7 @@
       <div class="row"><label>Hotkey</label>
         <span class="hkwrap"><input id="sRotKey" readonly placeholder="click, then press keys" value="${esc(rot.hotkey || '')}"><button id="sRotKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span><span id="sRotKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
       <details class="hint"><summary>A page rotates only if its category is ticked here <i>and</i> that page's own “Include in rotation” box is checked — the box appears on each page once its category is enabled.</summary> Start/stop any time from the knob menu (double-click) or the tray.</details>
-      <details class="hint"><summary>The <b>hotkey</b> starts and pauses rotation from anywhere, even when open-quake isn't focused.</summary> Click the box and press a combo that includes a modifier (e.g. Ctrl+Alt+R). If another app — or one of your page hotkeys — already owns the combo, it just won't fire.</details>
+      <details class="hint"><summary>The <b>hotkey</b> starts and pauses rotation from anywhere, even when Bedrock Panel isn't focused.</summary> Click the box and press a combo that includes a modifier (e.g. Ctrl+Alt+R). If another app — or one of your page hotkeys — already owns the combo, it just won't fire.</details>
       </div>
 
       <p class="sectitle">Global shortcuts</p>
@@ -3841,7 +3842,7 @@
       <details class="hint"><summary>Global hotkeys that step the panel <b>forward</b> / <b>back</b> through your visible pages — in the order they're listed here, wrapping around the ends.</summary> Hidden pages are skipped. These work anytime, independent of rotation.</details>
       <div class="row"><label>Reload dashboard</label>
         <span class="hkwrap"><input id="sDashReloadKey" readonly placeholder="click, then press keys" value="${esc(dashReload.hotkey || '')}"><button id="sDashReloadKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span><span id="sDashReloadKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
-      <details class="hint"><summary>A global combo that force-reloads the current dashboard page from anywhere, even when open-quake isn't focused.</summary> Switching away to another page and back does <b>not</b> reload a dashboard (that's what keeps its session/scroll state) — this hotkey is the way to force one. Only acts while a dashboard page is showing; does nothing on a grid or app page.</details>
+      <details class="hint"><summary>A global combo that force-reloads the current dashboard page from anywhere, even when Bedrock Panel isn't focused.</summary> Switching away to another page and back does <b>not</b> reload a dashboard (that's what keeps its session/scroll state) — this hotkey is the way to force one. Only acts while a dashboard page is showing; does nothing on a grid or app page.</details>
 
       <p class="sectitle">Network and icons</p>
       <div class="row"><label>Work offline</label>
@@ -3903,7 +3904,7 @@
 
       <p class="sectitle">Microphone</p>
       <div class="row"><label>At launch</label>
-        <input type="checkbox" id="sMic" style="width:auto;flex:none"><span class="hint" style="margin:0 0 0 8px">enable the device mic when open-quake starts</span></div>
+        <input type="checkbox" id="sMic" style="width:auto;flex:none"><span class="hint" style="margin:0 0 0 8px">enable the device mic when Bedrock Panel starts</span></div>
       <details class="hint"><summary>The mic LED and the mic audio are one hardware switch — the light is on whenever the mic is enabled, off when it isn't.</summary> Toggle it any time from the tray menu or a “System → mic” tile.</details>
 
       <p class="sectitle">Display</p>
@@ -3911,7 +3912,7 @@
       <details class="hint"><summary>Panel mode only. Keeps the screen from sleeping and stops the Windows screensaver so the QUAKE panel stays lit.</summary> <b>Off by default</b> (and always off in Software/Monitor mode) so your normal screensaver works. Windows has no per-display option, so when on it suppresses the screensaver on all displays.</details>
 
       <p class="sectitle">Touchscreen</p>
-      <details class="hint"><summary>If touches land on the wrong monitor, click <b>Set up touchscreen</b>.</summary> open-quake launches Windows' built-in touch-identify wizard (the one Microsoft buried behind the broken-in-24H2 Tablet PC Settings UI) — accept the UAC prompt, then <b>press Enter on your keyboard</b> to skip past your other monitors as the prompt cycles through them, and <b>tap the panel with your finger</b> only when the prompt appears on the panel. That writes a persistent binding under <code>HKLM\\…\\Wisp\\Pen\\Digimon</code> that survives reboot, sleep, and primary-display swaps.</details>
+      <details class="hint"><summary>If touches land on the wrong monitor, click <b>Set up touchscreen</b>.</summary> Bedrock Panel launches Windows' built-in touch-identify wizard (the one Microsoft buried behind the broken-in-24H2 Tablet PC Settings UI) — accept the UAC prompt, then <b>press Enter on your keyboard</b> to skip past your other monitors as the prompt cycles through them, and <b>tap the panel with your finger</b> only when the prompt appears on the panel. That writes a persistent binding under <code>HKLM\\…\\Wisp\\Pen\\Digimon</code> that survives reboot, sleep, and primary-display swaps.</details>
       <details class="hint"><summary><b>Clear all calibrations</b> wipes any old <code>tabcal</code> coordinate calibration.</summary> You don't normally need it — only run it if your taps land on the right display but are visibly off-target.</details>
       <div class="row" style="gap:8px"><button id="sTouchSetup">Set up touchscreen</button><button id="sTouchClear">Clear all calibrations</button><span id="sTouchMsg" class="hint" style="margin:0 0 0 10px"></span></div>`;
 
@@ -3919,7 +3920,7 @@
     const monHtml = `
       <p class="sectitle">Reserved Display</p>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}> Keep application windows off the panel display</label></div>
-      <details class="hint"><summary>Windows only. Windows dragged or relocated onto the Quake are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits.</summary> If your other displays disconnect, their positions are held and restored when a display returns. Open Quake, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
+      <details class="hint"><summary>Windows only. Windows dragged or relocated onto the panel display are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits.</summary> If your other displays disconnect, their positions are held and restored when a display returns. Open Quake, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
 
       <p class="sectitle">Monitor mode <span id="sMonPill" class="stpill off">checking…</span></p>
       <details class="hint"><summary>Use the device as a normal monitor: it shows your Windows desktop and touch acts as the mouse.</summary> Enter it below, from the tray menu, or with a “System → monitor” tile; exit from the tray. These set what the knob does while in Monitor mode.</details>
@@ -3993,7 +3994,7 @@
         <div class="row"><label>Call apps</label>
           <input id="meBusyApps" value="${esc(me.busyApps)}" style="flex:1"></div>
         <p class="hint">Comma-separated Windows process names that count as being on a call. This list is separate from the auto-record list above — you may want the light for calls you do not record.</p>
-        <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meBusyRec" ${me.busyOnRecording ? 'checked' : ''}> Also show busy while open-quake is recording</label></div>
+        <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meBusyRec" ${me.busyOnRecording ? 'checked' : ''}> Also show busy while Bedrock Panel is recording</label></div>
         <div class="row" style="margin-top:12px"><label>Return to free after</label>
           <input type="number" id="meBusyDelay" min="0" max="120" step="1" value="${Number(me.busyOffDelaySec) || 0}" style="width:90px"> <span class="hint" style="margin:0 0 0 8px">seconds</span></div>
         <p class="hint">A short delay stops the light flickering when a call app briefly releases the microphone mid-meeting, which Teams does when the meeting window changes.</p>
@@ -4001,7 +4002,7 @@
         <p class="sectitle" style="margin-top:20px">Busy light (USB)</p>
         <div class="row"><label>Kuando Busylight</label><span id="meBusyLightStatus" class="hint" style="margin:0">Checking…</span></div>
         <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meBusyLight" ${me.busyLightEnabled ? 'checked' : ''}> Drive a Kuando Busylight over USB</label></div>
-        <details class="hint"><summary>Talks to the light directly — Kuando's own Busylight for UC software must not be running.</summary> Windows lets only one program hold the device, so if theirs is running the light will appear to flicker or ignore open-quake. Uninstalling or quitting it is the fix.</details>
+        <details class="hint"><summary>Talks to the light directly — Kuando's own Busylight for UC software must not be running.</summary> Windows lets only one program hold the device, so if theirs is running the light will appear to flicker or ignore Bedrock Panel. Uninstalling or quitting it is the fix.</details>
         <div class="row"><label>Busy colour</label>
           <input type="color" id="meBusyColor" value="${esc(me.busyLightBusyColor)}" style="width:64px;padding:2px">
           <label style="width:auto;margin-left:16px">Free colour</label>
@@ -4049,7 +4050,7 @@
         <p class="sectitle" style="margin-top:20px">Home Assistant (MQTT)</p>
         <div class="row"><label>Broker</label><span id="meMqttStatus" class="hint" style="margin:0">Not configured</span></div>
         <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meMqtt" ${me.busyMqttEnabled ? 'checked' : ''}> Publish your busy status to Home Assistant</label></div>
-        <details class="hint"><summary>Creates a <b>binary_sensor.open_quake_busy</b> entity in Home Assistant automatically — no configuration needed on the Home Assistant side.</summary> Automations can trigger on it like any other sensor. If open-quake stops or the PC loses power, the entity goes <i>unavailable</i> on its own, so a light driven from it cannot get stuck showing busy. This is separate from the Home Assistant connection on the Auth tab, which is read-only.</details>
+        <details class="hint"><summary>Creates a <b>binary_sensor.open_quake_busy</b> entity in Home Assistant automatically — no configuration needed on the Home Assistant side.</summary> Automations can trigger on it like any other sensor. If Bedrock Panel stops or the PC loses power, the entity goes <i>unavailable</i> on its own, so a light driven from it cannot get stuck showing busy. This is separate from the Home Assistant connection on the Auth tab, which is read-only.</details>
         <div class="row"><label>Broker URL</label>
           <input id="meMqttUrl" value="${esc(me.busyMqttUrl)}" placeholder="mqtt://192.168.1.25:1883" style="flex:1"></div>
         <div class="row"><label>Username</label>
@@ -4142,7 +4143,7 @@
         <input id="meMyName" value="${esc(me.myName)}" placeholder="e.g. T.J. Schmitz" style="flex:1"></div>
       <details class="hint"><summary>Your enrolled speaker name.</summary> When set, it's sent as <b>me_name</b> and the transcription server labels your isolated-mic channel's voice with certainty (channel-guided ID) — no threshold wobble for you. Blank = off. Note: in hybrid meetings, people in the room with you also land on your mic channel and still go through normal identification.</details>
       <div class="row" style="margin-top:12px"><label class="iconopt" style="width:auto"><input type="checkbox" id="meHooks" ${me.transcribeHooksEnabled ? 'checked' : ''}> Run commands before/after transcription</label></div>
-      <details class="hint"><summary>Start and stop the transcription server around each batch — e.g. a diarizer container that holds GPU memory while loaded.</summary> <b>Before</b> runs once when the queue starts; open-quake then waits (up to 5 min) for the server's /health before uploading. <b>After</b> runs once when the queue finishes. Full cmd.exe syntax, multi-line OK — or just call a .bat.</details>
+      <details class="hint"><summary>Start and stop the transcription server around each batch — e.g. a diarizer container that holds GPU memory while loaded.</summary> <b>Before</b> runs once when the queue starts; Bedrock Panel then waits (up to 5 min) for the server's /health before uploading. <b>After</b> runs once when the queue finishes. Full cmd.exe syntax, multi-line OK — or just call a .bat.</details>
       <div class="row"><label>Before</label>
         <textarea id="meHookPre" rows="2" style="flex:1; font-family:inherit" placeholder='e.g. ssh root@192.168.1.25 "docker start meeting-diarizer"'>${esc(me.preTranscribeCmd)}</textarea></div>
       <div class="row" style="margin-top:8px"><label>After</label>
@@ -4208,7 +4209,7 @@
         <button id="sHaRefresh" type="button" style="margin-left:12px" ${ha.useHa ? '' : 'disabled'}>Refresh Configuration</button>
         <span id="sHaStatus" class="hint" style="margin:0 0 0 10px"></span></div>
       <div id="sHaFields"${ha.useHa ? '' : ' style="display:none"'}>
-      <details class="hint"><summary>When on, open-quake caches your HA dashboards, areas, devices, entities, floors, and labels at startup.</summary> The Home Assistant Dashboard app and (later) entity-aware features depend on this cache.</details>
+      <details class="hint"><summary>When on, Bedrock Panel caches your HA dashboards, areas, devices, entities, floors, and labels at startup.</summary> The Home Assistant Dashboard app and (later) entity-aware features depend on this cache.</details>
       <div class="row"><label>URL</label>
         <input type="text" id="sHaUrl" value="${esc(ha.url || '')}" placeholder="http://homeassistant.local:8123" style="flex:1"></div>
       <div class="row"><label>Long-Lived Access Token</label>
@@ -4401,7 +4402,7 @@
       // Human-readable repository names (editor-only, stored parallel to appRepos). References stay keyed by
       // URL, so renaming never changes what an installed app points at; R0/R1 is muted technical metadata.
       const isPriv = i => /apps-private/i.test(repos[i] || '');
-      const defaultRepoName = (url, i) => { const u = String(url || ''); if (/apps-private/i.test(u)) return 'Private Apps'; if (u === DEFAULT_APP_REPO) return 'Community Apps'; return 'Source ' + (i + 1); };
+      const defaultRepoName = (url, i) => { const u = String(url || ''); if (/apps-private/i.test(u)) return 'Private Apps'; if (u === DEFAULT_APP_REPO || u === LEGACY_APP_REPO) return 'Community Apps'; return 'Source ' + (i + 1); };
       const savedNames = (config.settings && Array.isArray(config.settings.appRepoNames)) ? config.settings.appRepoNames.slice() : [];
       const repoNames = repos.map((u, i) => (savedNames[i] && String(savedNames[i]).trim()) || defaultRepoName(u, i));
       const persistNames = () => setS('appRepoNames', repoNames.slice());
@@ -4783,7 +4784,7 @@
       };
       const renderSourcesPane = pane => {
         pane.innerHTML = `
-          <p class="hint" style="margin:0 0 12px;color:#c98">Drop-in apps can access your filesystem and saved open-quake credentials. Only add repositories you trust.</p>
+          <p class="hint" style="margin:0 0 12px;color:#c98">Drop-in apps can access your filesystem and saved Bedrock Panel credentials. Only add repositories you trust.</p>
           <table class="diSrcTable"><thead><tr><th style="width:200px">Name</th><th>Repository URL</th><th style="width:130px">Actions</th></tr></thead><tbody id="diSrcBody"></tbody></table>
           ${multi ? '<button id="diRepoAdd" style="margin-top:8px">+ Add source</button>' : ''}
           <p class="hint" style="margin-top:10px">A GitHub folder serving an <code>index.json</code> + app <code>.zip</code>s. Point it at your own fork to install from there.</p>
@@ -4793,8 +4794,8 @@
             <label class="row" style="gap:8px;align-items:center;width:auto;margin-top:8px"><input type="checkbox" id="diMulti" style="width:auto"> Allow multiple drop-in app repositories</label>
             <div class="row" style="margin-top:12px"><label style="width:auto">Storage location</label>
               <select id="diLoc" style="width:auto">
-                <option value="appdata">%APPDATA%\\open-quake</option>
-                <option value="localappdata">%LOCALAPPDATA%\\open-quake</option>
+                <option value="appdata">%APPDATA%\\bedrock-panel</option>
+                <option value="localappdata">%LOCALAPPDATA%\\bedrock-panel</option>
               </select></div>
             <p class="hint" id="diLocPath" style="margin:2px 0 0"></p>
             <p class="hint">Where imported drop-in apps are stored — this folder survives app updates (the install folder doesn't).</p>
@@ -4965,7 +4966,7 @@
               <span class="hint" style="margin:0">${esc(authState(p))}</span>
               <span id="oauthMsg_${esc(p.provider)}" class="hint" style="margin:0 0 0 auto"></span>
             </div>
-            ${p.managedClient ? '<div class="row"><label>Application</label><span class="hint" style="margin:0">Built into Open-Quake</span></div>' : ''}
+            ${p.managedClient ? '<div class="row"><label>Application</label><span class="hint" style="margin:0">Built into Bedrock Panel</span></div>' : ''}
             ${identity(p)}
             <div class="row"><label>Scopes</label><span class="hint" style="margin:0">${esc((p.scopes || []).join(' '))}</span></div>
             <div class="row" style="gap:8px">

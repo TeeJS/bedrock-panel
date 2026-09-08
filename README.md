@@ -156,15 +156,15 @@ you want; switch anytime from **Settings** or the tray's **Run mode** menu. → 
 ## Download
 
 Grab a build from the **[Releases](https://github.com/TeeJS/bedrock-panel/releases)** page (Windows x64):
-- **`open-quake-<version>-portable.exe`** — run directly, no install.
-- **`open-quake-<version>-setup.exe`** — installer (Start-menu shortcut + uninstaller).
+- **`bedrock-panel-portable.exe`** — run directly, no install.
+- **`bedrock-panel-setup.exe`** — installer (Start-menu shortcut + uninstaller).
 
 The exe is **code-signed** (Azure Trusted Signing, publisher *Thomas Schmitz*) — so you see a
 verified publisher, not "Unknown publisher." Windows SmartScreen may still show a **"Windows
 protected your PC"** prompt on first download; that's reputation-based (it eases as a release
 gains downloads), not a problem with the file. Confirm the publisher reads **Thomas Schmitz**,
-then click **More info → Run anyway**. Config is stored in `%APPDATA%\open-quake` — the folder
-and the release filenames keep the project's former name until the application itself is renamed.
+then click **More info → Run anyway**. Config is stored in `%APPDATA%\bedrock-panel`; upgrading from an
+open-quake install moves the old `%APPDATA%\open-quake` folder there automatically.
 Windows today; macOS and Linux ports are in progress.
 
 ## 📖 Documentation
@@ -216,7 +216,8 @@ in the **[issue tracker](https://github.com/TeeJS/bedrock-panel/issues)**.
 
 Bedrock Panel grew out of the **open-quake** community project for the QUAKE panel — today it is a
 standalone platform for any compatible setup. Old `TeeJS/open-quake` links redirect to this
-repository.
+repository, and installing over an open-quake install carries your config, logins, and drop-in
+apps across.
 
 ### Supported controllers
 

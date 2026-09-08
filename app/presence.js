@@ -5,7 +5,7 @@
 //
 // Inputs, in order of precedence:
 //   override    'busy' | 'free' pins the state and wins over everything; 'auto' hands control back
-//   recording   open-quake is capturing a meeting
+//   recording   Bedrock Panel is capturing a meeting
 //   call        an allowlisted call app holds the microphone
 //
 // The off-delay exists because a call app's capture session is not continuous. Teams in particular

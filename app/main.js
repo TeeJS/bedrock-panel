@@ -1,5 +1,5 @@
 'use strict';
-// open-quake launcher: multi-grid panel + PC config editor. Talks to either the DK-QUAKE /
+// Bedrock Panel launcher: multi-grid panel + PC config editor. Talks to either the DK-QUAKE /
 // ARIS-68 panel (via Aris68Connector) or the open Bedrock RP2040 knob (via BedrockConnector),
 // routed through MultiKnob which picks whichever device is plugged in.
 
@@ -25,6 +25,11 @@ if (process.platform === 'win32') {
 }
 
 const { app, BrowserWindow, WebContentsView, Tray, Menu, nativeImage, screen, powerSaveBlocker, powerMonitor, ipcMain, shell, dialog, session, net, safeStorage, clipboard, globalShortcut, nativeTheme, Notification } = require('electron');
+
+// Bedrock Panel was open-quake through v0.9.x: move %APPDATA%\open-quake → bedrock-panel (config, session
+// data, drop-in apps) before anything reads userData. See app/userData.js. Must stay above every
+// app.getPath('userData') call and above the single-instance lock.
+require('./userData').applyToApp(app, m => console.log(m));
 
 // Last-resort process backstops. Installed here, before any module below can open a connection or
 // schedule async work, so a stray rejection/throw during boot (fire-and-forget chains like the HA
@@ -65,7 +70,7 @@ function reportProcessFault(kind, err, fatal) {
   if (!shownFaultKinds.has(kind)) {
     shownFaultKinds.add(kind);
     const tail = fatal ? '\n\nThe app will now close.' : '\n\nThe app is still running; some features may be degraded.';
-    try { dialog.showErrorBox('open-quake', 'An unexpected background error occurred (' + kind + '). Details are in the log.' + tail); } catch (e) {}
+    try { dialog.showErrorBox('Bedrock Panel', 'An unexpected background error occurred (' + kind + '). Details are in the log.' + tail); } catch (e) {}
   }
   if (fatal) faultShutdown();
 }
@@ -95,7 +100,7 @@ function onSysserverDiagnostic(ev) {
     console.log('[sysserver] preferred port ' + ev.preferredPort + ' unavailable (' + ev.reason + '); using an ephemeral port');
     if (!sawPortFallbackNotice) {
       sawPortFallbackNotice = true;
-      try { if (Notification.isSupported()) new Notification({ title: 'open-quake', body: 'The panel server changed ports; saved app data (drop-in saves, high scores, settings) may appear missing because the local app origin changed. The data was not deleted.', silent: true }).show(); } catch (e) {}
+      try { if (Notification.isSupported()) new Notification({ title: 'Bedrock Panel', body: 'The panel server changed ports; saved app data (drop-in saves, high scores, settings) may appear missing because the local app origin changed. The data was not deleted.', silent: true }).show(); } catch (e) {}
     }
     return;
   }
@@ -723,11 +728,11 @@ function readFolderAppManifest(appDir) {
   return null;
 }
 // User-data drop-in apps folder (survives app updates, unlike the install dir). Location is a setting:
-// %APPDATA%\open-quake\apps (default) or %LOCALAPPDATA%\open-quake\apps. This is where the manager imports to.
+// %APPDATA%\bedrock-panel\apps (default) or %LOCALAPPDATA%\bedrock-panel\apps. This is where the manager imports to.
 function dropInDir() {
   const useLocal = (config.settings && config.settings.dropInLocation) === 'localappdata';
   const base = (useLocal ? process.env.LOCALAPPDATA : process.env.APPDATA) || process.env.APPDATA || process.env.LOCALAPPDATA || USER_DIR;
-  return path.join(base, 'open-quake', 'apps');
+  return path.join(base, require('./userData').NEW_NAME, 'apps');
 }
 function ensureDropInDir() { const d = dropInDir(); try { fs.mkdirSync(d, { recursive: true }); } catch (e) {} return d; }
 // Scan one base dir for drop-in app folders, adding valid ones to apps/ids/servedApps (dedup by id, first wins).
@@ -908,7 +913,8 @@ function deleteDropInApp(id) {
 // inside each app folder, so it survives an in-place update and never ships in an exported zip). An
 // entry marks an app as repo-installed and records the installed version, which the update check
 // compares against the repo's index.json.
-const DEFAULT_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';
+const DEFAULT_APP_REPO = 'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps';
+const LEGACY_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';   // saved by pre-rename installs; GitHub redirects it, but treat it as the default
 const APP_ZIP_MAX = 25 * 1024 * 1024;
 function appSourcesPath() { return path.join(dropInDir(), '.oqsources.json'); }
 function readAppSources() { try { return JSON.parse(fs.readFileSync(appSourcesPath(), 'utf8')) || {}; } catch (e) { return {}; } }
@@ -917,11 +923,11 @@ function setAppSource(id, entry) {
   if (entry) s[id] = entry; else delete s[id];
   try { ensureDropInDir(); fs.writeFileSync(appSourcesPath(), JSON.stringify(s, null, 2)); return true; } catch (e) { return false; }
 }
-function appRepoSetting() { return (config.settings && typeof config.settings.appRepo === 'string' && config.settings.appRepo.trim()) || DEFAULT_APP_REPO; }
+function appRepoSetting() { const u = (config.settings && typeof config.settings.appRepo === 'string' && config.settings.appRepo.trim()) || DEFAULT_APP_REPO; return u === LEGACY_APP_REPO ? DEFAULT_APP_REPO : u; }
 
 // GET a URL as JSON via Electron's net stack (inherits system proxy/CA). Mirrors app/haClient.js.
 async function fetchJson(url) {
-  const r = await net.fetch(url, { method: 'GET', headers: { 'User-Agent': 'open-quake/' + app.getVersion(), Accept: 'application/json' } });
+  const r = await net.fetch(url, { method: 'GET', headers: { 'User-Agent': 'bedrock-panel/' + app.getVersion(), Accept: 'application/json' } });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return JSON.parse(await r.text());
 }
@@ -931,7 +937,7 @@ function downloadToFile(url, dest, maxBytes, headers) {
   return new Promise(resolve => {
     if (!/^https?:\/\//i.test(url)) return resolve({ ok: false, error: 'Only http(s) URLs are allowed.' });
     let req; try { req = net.request({ url, redirect: 'follow' }); } catch (e) { return resolve({ ok: false, error: 'That URL is not valid.' }); }
-    req.setHeader('User-Agent', 'open-quake/' + app.getVersion() + ' (+https://github.com/TeeJS/open-quake)');
+    req.setHeader('User-Agent', 'bedrock-panel/' + app.getVersion() + ' (+https://github.com/TeeJS/bedrock-panel)');
     if (headers) Object.keys(headers).forEach(k => req.setHeader(k, headers[k]));
     let done = false;
     const fail = msg => { if (done) return; done = true; try { req.abort(); } catch (e) {} resolve({ ok: false, error: msg }); };
@@ -965,7 +971,7 @@ function githubApiHeaders(token) {
   return { Accept: 'application/vnd.github.raw', Authorization: 'Bearer ' + token, 'X-GitHub-Api-Version': '2022-11-28' };
 }
 async function fetchGithubRawJson(url, token) {
-  const r = await net.fetch(url, { method: 'GET', headers: Object.assign({ 'User-Agent': 'open-quake/' + app.getVersion() }, githubApiHeaders(token)) });
+  const r = await net.fetch(url, { method: 'GET', headers: Object.assign({ 'User-Agent': 'bedrock-panel/' + app.getVersion() }, githubApiHeaders(token)) });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return JSON.parse(await r.text());
 }
@@ -1467,7 +1473,7 @@ function fetchIconToCache(url) {
     let req;
     try { req = net.request({ url, redirect: 'follow' }); }
     catch (e) { return resolve({ ok: false, error: 'That URL is not valid.' }); }
-    req.setHeader('User-Agent', 'open-quake/' + app.getVersion() + ' (+https://github.com/TeeJS/open-quake)');
+    req.setHeader('User-Agent', 'bedrock-panel/' + app.getVersion() + ' (+https://github.com/TeeJS/bedrock-panel)');
     req.setHeader('Accept', 'image/*');
     let done = false;
     const fail = msg => { if (done) return; done = true; try { req.abort(); } catch (e) {} resolve({ ok: false, error: msg }); };
@@ -1584,7 +1590,7 @@ function fetchMdiToCache(name) {
     let req;
     try { req = net.request({ url, redirect: 'follow' }); }
     catch (e) { delete mdiInFlight[bare]; return resolve({ ok: false, error: 'invalid url' }); }
-    req.setHeader('User-Agent', 'open-quake/' + app.getVersion());
+    req.setHeader('User-Agent', 'bedrock-panel/' + app.getVersion());
     req.setHeader('Accept', 'image/svg+xml');
     let done = false;
     const finish = result => { if (done) return; done = true; delete mdiInFlight[bare]; resolve(result); };
@@ -2133,7 +2139,7 @@ function setLucidTrayRecording(on) {
   if (!lucidtypeSettings().notifyColorChange || !tray) return;   // only when the user enabled the indicator
   try {
     tray.setImage(on ? (trayImgRecording || trayImgNormal) : (trayImgNormal || nativeImage.createEmpty()));
-    tray.setToolTip(on ? 'open-quake — dictating…' : 'open-quake');
+    tray.setToolTip(on ? 'Bedrock Panel — dictating…' : 'Bedrock Panel');
   } catch (e) {}
 }
 function defaultMeetingFolder() { return path.join(app.getPath('documents'), 'OpenQuake Meetings', 'unprocessed'); }
@@ -2651,7 +2657,7 @@ function createSoftwareWindow() {
   panelWin = new BrowserWindow({
     width, height, x, y,
     minWidth: 760, minHeight: Math.round(760 * (480 * shape.rows) / (1920 * shape.cols)),
-    title: 'open-quake', frame: true, show: false, resizable: true, movable: true,
+    title: 'Bedrock Panel', frame: true, show: false, resizable: true, movable: true,
     minimizable: true, maximizable: true, fullscreenable: false, autoHideMenuBar: true,
     backgroundColor: '#000000',
     webPreferences: {
@@ -2822,7 +2828,7 @@ function createWelcomeWindow() {
     width, height,
     x: wa.x + Math.round((wa.width - width) / 2),
     y: wa.y + Math.round((wa.height - height) / 2),
-    title: 'Welcome to open-quake', backgroundColor: '#05080d',
+    title: 'Welcome to Bedrock Panel', backgroundColor: '#05080d',
     resizable: false, minimizable: false, maximizable: false, fullscreenable: false, autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
@@ -2838,7 +2844,7 @@ function openConfigWindow() {
   if (configWin && !configWin.isDestroyed()) { configWin.show(); configWin.focus(); return; }
   const wa = screen.getPrimaryDisplay().workArea;   // full usable screen height (minus taskbar)
   configWin = new BrowserWindow({
-    width: 1180, height: wa.height, x: wa.x + 80, y: wa.y, title: 'open-quake Editor',
+    width: 1180, height: wa.height, x: wa.x + 80, y: wa.y, title: 'Bedrock Panel Editor',
     backgroundColor: '#11151c',
     webPreferences: {
       nodeIntegration: false,
@@ -3354,7 +3360,7 @@ function applyFocusFollowSettings() {
 function trayMenu() {
   const ringOn = lighting().effect !== 0;
   const items = [
-    { label: 'open-quake v' + app.getVersion(), enabled: false },
+    { label: 'Bedrock Panel v' + app.getVersion(), enabled: false },
     { type: 'separator' },
     { label: 'Open editor', click: () => openConfigWindow() },
     { label: micState ? 'Mic: on — click to disable' : 'Mic: off — click to enable', click: () => toggleMic() },
@@ -3416,7 +3422,7 @@ function createTray() {
   trayImgNormal = img;
   trayImgRecording = process.platform === 'darwin' ? img : tintIconRed(img);
   tray = new Tray(img);
-  tray.setToolTip('open-quake');
+  tray.setToolTip('Bedrock Panel');
   refreshTray();
   tray.on('click', () => openConfigWindow());
 }
@@ -3748,7 +3754,7 @@ app.whenReady().then(async () => {
     console.log('[boot] ' + bootStage + ' failed to start: ' + faultDetail(e));   // sanitized — no raw message/secret
     try {
       if (Notification.isSupported()) new Notification({
-        title: 'open-quake',
+        title: 'Bedrock Panel',
         body: 'Startup problem: ' + bootStage + ' did not start, so features that depend on it are unavailable this session. Details are in the log.',
         silent: true,
       }).show();
@@ -3759,7 +3765,7 @@ app.whenReady().then(async () => {
   if (bootFailures.length) {
     try {
       if (Notification.isSupported()) new Notification({
-        title: 'open-quake',
+        title: 'Bedrock Panel',
         body: 'Some panel features did not start (' + bootFailures.join(', ') + '); the rest are running normally. Details are in the log.',
         silent: true,
       }).show();
@@ -4149,7 +4155,7 @@ app.whenReady().then(async () => {
     discordService.configure(discordApplicationId(discordSettings));
     if (discordSettings.enabled && discordTokens && discordTokens.accessToken) {
       if (discordService.getState().state === 'disconnected') discordService.start();
-      if (discordAppHost.getSnapshot().capabilities.activity) discordService.setActivity(discordSettings.richPresence ? { details: 'Using open-quake' } : null).catch(() => {});
+      if (discordAppHost.getSnapshot().capabilities.activity) discordService.setActivity(discordSettings.richPresence ? { details: 'Using Bedrock Panel' } : null).catch(() => {});
     }
     const obsCfg = obsSettings();
     obsService.setAutoReconnect(obsCfg.autoReconnect);

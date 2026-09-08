@@ -82,7 +82,7 @@ protection and what the knob does in monitor mode):
   resumes when it exits; the USB panel keepalive continues in either mode.
 
 The ring is driven over the device's QMK VIA lighting channel; settings are stored in
-`%APPDATA%\open-quake` and re-applied on connect.
+`%APPDATA%\bedrock-panel` and re-applied on connect.
 
 ## Meeting
 

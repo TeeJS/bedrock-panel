@@ -128,7 +128,7 @@ class DiscordOAuth {
         const oauthError = url.searchParams.get('error');
         if (oauthError === 'invalid_scope') {
           if (state && !secureEqual(state, expectedState)) { res.writeHead(400); res.end('Authorization state did not match.'); finish(Object.assign(new Error('Discord OAuth state validation failed'), { code: 'DISCORD_AUTH_STATE' })); return; }
-          res.writeHead(400); res.end('The configured Discord application rejected one or more requested permissions. Return to open-quake to review the application permissions.');
+          res.writeHead(400); res.end('The configured Discord application rejected one or more requested permissions. Return to Bedrock Panel to review the application permissions.');
           finish(Object.assign(new Error('The configured Discord application rejected one or more requested permissions'), { code: 'DISCORD_AUTH_INVALID_SCOPE' })); return;
         }
         if (!secureEqual(state, expectedState)) { res.writeHead(400); res.end('Authorization state did not match.'); finish(Object.assign(new Error('Discord OAuth state validation failed'), { code: 'DISCORD_AUTH_STATE' })); return; }

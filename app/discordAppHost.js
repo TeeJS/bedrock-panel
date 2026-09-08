@@ -205,7 +205,7 @@ class DiscordAppHost extends EventEmitter {
     await this.refresh();
     if (!this.started || this.snapshot.connection.state !== 'connected' || !canAttemptCapability(this.snapshot, 'activity')) return;
     try {
-      await this.service.setActivity(this.settings.richPresence ? { details: 'Using open-quake' } : null);
+      await this.service.setActivity(this.settings.richPresence ? { details: 'Using Bedrock Panel' } : null);
     } catch (error) {
       // DiscordService records the capability failure; the remaining Discord controls stay usable.
     }
@@ -251,7 +251,7 @@ class DiscordAppHost extends EventEmitter {
         if (!canAttemptCapability(this.snapshot, 'activity')) throw Object.assign(new Error('Discord activity is unavailable'), { code: 'DISCORD_UNSUPPORTED_CAPABILITY' });
         const next = normalizeDiscordSettings(Object.assign({}, this.settings, { richPresence: !!value }));
         if (!this.saveSettings(next)) throw new Error('Discord settings could not be saved');
-        await this.service.setActivity(next.richPresence ? { details: 'Using open-quake' } : null);
+        await this.service.setActivity(next.richPresence ? { details: 'Using Bedrock Panel' } : null);
         this.settings = next; this.snapshot.settings = next;
         this._recordEvent('activity', next.richPresence ? 'Rich Presence enabled' : 'Rich Presence disabled');
         break;

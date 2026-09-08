@@ -356,11 +356,11 @@ class OAuthHandler {
         }
         this.handleCallback(url).then(result => {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<!doctype html><meta charset="utf-8"><title>open-quake OAuth</title><body style="font:16px Segoe UI,sans-serif;background:#101820;color:#e8f1fb">Connected. You can close this window.</body>');
+          res.end('<!doctype html><meta charset="utf-8"><title>Bedrock Panel OAuth</title><body style="font:16px Segoe UI,sans-serif;background:#101820;color:#e8f1fb">Connected. You can close this window.</body>');
           this.log('[oauth] connected ' + result.provider);
         }).catch(e => {
           res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<!doctype html><meta charset="utf-8"><title>open-quake OAuth</title><body style="font:16px Segoe UI,sans-serif;background:#101820;color:#f3b4a5">OAuth failed: ' + String(e.message || e).replace(/[<>&"]/g, '') + '</body>');
+          res.end('<!doctype html><meta charset="utf-8"><title>Bedrock Panel OAuth</title><body style="font:16px Segoe UI,sans-serif;background:#101820;color:#f3b4a5">OAuth failed: ' + String(e.message || e).replace(/[<>&"]/g, '') + '</body>');
           this.log('[oauth] callback failed: ' + (e.message || e));
         });
       });

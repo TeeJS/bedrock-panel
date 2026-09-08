@@ -138,14 +138,14 @@ they are delivered only through the same-origin config route (§5.3).
 Drop-in apps MUST be discovered **only** from a per-user data folder, never the install dir:
 
 ```
-%APPDATA%\open-quake\apps\        (default)
-%LOCALAPPDATA%\open-quake\apps\   (when the user selects the "localappdata" location)
+%APPDATA%\bedrock-panel\apps\        (default)
+%LOCALAPPDATA%\bedrock-panel\apps\   (when the user selects the "localappdata" location)
 ```
 
 The location is a host setting (`settings.dropInLocation`: unset/`appdata` → `%APPDATA%`,
 `localappdata` → `%LOCALAPPDATA%`). The host MUST create this folder on startup and import into
 it. Non-Windows hosts SHOULD use the platform-equivalent per-user data dir (e.g.
-`~/.config/open-quake/apps`).
+`~/.config/bedrock-panel/apps`).
 
 > Rationale: the install directory is overwritten on update. Bundled first-party apps may ship
 > in the install tree, but **user** drop-ins must survive updates, so they live in user data.

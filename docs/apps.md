@@ -2,7 +2,7 @@
 
 Bundled apps are listed in `apps/apps.json`. Additional **drop-in apps** are
 self-contained folders (a manifest plus their files) that live in your user-data
-folder — **`%APPDATA%\open-quake\apps`** by default (see *Storage location* below) — so
+folder — **`%APPDATA%\bedrock-panel\apps`** by default (see *Storage location* below) — so
 they survive app updates. The easiest way to add one is **Settings → Drop-In Apps → Browse…**
 and install from the app repository.
 In the editor, **+ App** adds an app page: pick the app and set its options, and
@@ -74,11 +74,11 @@ Included apps:
 
 A drop-in app is a self-contained folder. Install one from a GitHub app repository with
 **Settings → Drop-In Apps → Browse…**, or place the folder by hand in your
-drop-in apps folder (**`%APPDATA%\open-quake\apps`** by default — see *Storage location*
+drop-in apps folder (**`%APPDATA%\bedrock-panel\apps`** by default — see *Storage location*
 below):
 
 ```text
-%APPDATA%\open-quake\apps\
+%APPDATA%\bedrock-panel\apps\
   my-app\
     app.json
     index.html
@@ -132,8 +132,8 @@ The editor's **Settings → Drop-In Apps** tab manages app folders for you:
   [community-apps](https://github.com/TeeJS/bedrock-panel/tree/main/community-apps) repository.
   See [Community apps](community-apps.md) for installing and submitting.
 
-**Storage location** (Advanced) — drop-in apps live in **`%APPDATA%\open-quake\apps`** by default
-(switchable to `%LOCALAPPDATA%\open-quake\apps`). This is the **only** place Bedrock Panel looks for
+**Storage location** (Advanced) — drop-in apps live in **`%APPDATA%\bedrock-panel\apps`** by default
+(switchable to `%LOCALAPPDATA%\bedrock-panel\apps`). This is the **only** place Bedrock Panel looks for
 drop-in apps, and it **survives app updates** — unlike the install folder, which an update
 overwrites. Switching the location moves where new imports land; move any existing app folders
 across yourself if you change it.

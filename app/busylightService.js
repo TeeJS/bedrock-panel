@@ -3,7 +3,7 @@
 //
 // IMPORTANT for anyone debugging this: Windows gives one process at a time a usable handle on the
 // device. If Kuando's own software is running it will fight us for it, and the symptom is a light
-// that flickers or ignores us — which reads as an open-quake bug. Their software must be closed.
+// that flickers or ignores us — which reads as a Bedrock Panel bug. Their software must be closed.
 //
 // PROTOCOL PROVENANCE — the byte layout below started from a community reference implementation
 // rather than Kuando documentation, and was then VERIFIED against real hardware: a BUSYLIGHT OMEGA
@@ -22,7 +22,7 @@
 //   [63]     checksum high byte, [64] checksum low byte — plain sum of bytes [0..62]
 //
 // KEEPALIVE: the device extinguishes itself roughly 30s after the last write. That is a feature, not
-// a nuisance — it means a crashed or killed open-quake cannot leave you showing busy forever. We
+// a nuisance — it means a crashed or killed Bedrock Panel cannot leave you showing busy forever. We
 // re-send every 20s to stay comfortably inside it and deliberately do not try to defeat it.
 
 // Match on VENDOR only. This is load-bearing, not tidiness: every reference documents the Omega as

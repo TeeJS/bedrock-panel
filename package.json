@@ -1,8 +1,8 @@
 {
-  "name": "open-quake",
+  "name": "bedrock-panel",
   "version": "0.9.1",
   "private": true,
-  "description": "Open driver + multi-grid touchscreen launcher for the DK-QUAKE / ARIS-68 touchscreen-and-knob macro device.",
+  "description": "A multi-use launcher and control platform for Windows — your apps, media, dashboards, and smart home on your PC or a touchscreen.",
   "main": "app/main.js",
   "author": "TeeJS",
   "engines": {
@@ -43,7 +43,7 @@
   },
   "build": {
     "appId": "com.teejs.openquake",
-    "productName": "open-quake",
+    "productName": "Bedrock Panel",
     "directories": {
       "output": "dist"
     },
@@ -82,13 +82,13 @@
       }
     },
     "portable": {
-      "artifactName": "open-quake-portable.${ext}"
+      "artifactName": "bedrock-panel-portable.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "artifactName": "open-quake-setup.${ext}"
+      "artifactName": "bedrock-panel-setup.${ext}"
     }
   }
 }

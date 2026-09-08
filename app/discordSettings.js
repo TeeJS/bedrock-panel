@@ -36,7 +36,7 @@ function normalizeDiscordSettings(value) {
   };
 }
 
-// Public application identifier for the open-quake Discord Developer Portal app.
+// Public application identifier for the Bedrock Panel Discord Developer Portal app.
 // This is deliberately not a secret; OAuth tokens remain in the encrypted store.
 const DEFAULT_DISCORD_APPLICATION_ID = '1539959318974169088';
 

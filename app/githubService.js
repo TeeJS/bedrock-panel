@@ -330,7 +330,7 @@ class GitHubService {
     try {
       response = await this.fetchImpl(API_BASE + path, {
         method: options.method || 'GET', signal: controller.signal,
-        headers: Object.assign({ Accept: options.accept || 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'open-quake', 'X-GitHub-Api-Version': API_VERSION }, options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        headers: Object.assign({ Accept: options.accept || 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'bedrock-panel', 'X-GitHub-Api-Version': API_VERSION }, options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         redirect: options.redirect || 'follow',
       });
@@ -647,7 +647,7 @@ class GitHubService {
       const token = await this.accessToken();
       const response = await this.fetchImpl(API_BASE + this.repoPath('/actions/artifacts/' + id + '/zip', repositoryValue), {
         method: 'GET', signal: controller.signal, redirect: 'manual',
-        headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'open-quake', 'X-GitHub-Api-Version': API_VERSION },
+        headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'bedrock-panel', 'X-GitHub-Api-Version': API_VERSION },
       });
       if (response.status === 410) return { ok: false, error: 'This artifact has expired', code: 'artifact_expired' };
       if (![301, 302, 303, 307, 308].includes(response.status)) return { ok: false, error: 'GitHub did not provide an artifact download', code: 'artifact_download_failed' };

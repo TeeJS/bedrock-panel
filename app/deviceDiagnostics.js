@@ -1,7 +1,7 @@
 'use strict';
 // deviceDiagnostics.js — the panel's connection check (MAIN PROCESS; pure, no electron)
 //
-// Reports the three physical channels every open-quake console presents, independent of which
+// Reports the three physical channels every Bedrock Panel console presents, independent of which
 // console it is (DK-QUAKE / ARIS-68, or the open-source bedrock-console) and whether a knob is
 // attached:
 //   - Display : the 1920x480 panel over HDMI / DP-alt   (from screen.getAllDisplays())

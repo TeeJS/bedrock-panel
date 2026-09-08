@@ -290,7 +290,7 @@ function createCodexVoiceAdapter({ log }) {
     const preset = CODEX_MODE_PRESETS[mode] || CODEX_MODE_PRESETS[CODEX_DEFAULT_MODE];
     // experimentalApi unlocks the granular approval policy the Auto preset needs (0.147 gates it
     // behind this capability; verified live: without it turn/start rejects granular outright).
-    send('initialize', { clientInfo: { name: 'open-quake', version: '0' }, capabilities: { experimentalApi: true } })
+    send('initialize', { clientInfo: { name: 'bedrock-panel', version: '0' }, capabilities: { experimentalApi: true } })
       .then(() => {
         // Required by the protocol contract (MCP-style two-step): acknowledge before anything else.
         try { thisProc.stdin.write(JSON.stringify({ method: 'initialized', params: {} }) + '\n'); } catch (e) {}

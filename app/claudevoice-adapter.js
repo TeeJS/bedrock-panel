@@ -38,17 +38,17 @@ const CLAUDE_VOICE_MODEL_PICKS = ['', 'fable', 'opus', 'sonnet', 'haiku'];
 // conflict in practice. The seeded template is entirely HTML comments, so it adds nothing until
 // actually edited; comments are stripped before the prompt is sent.
 const CLAUDE_VOICE_USER_PROMPT_TEMPLATE = `<!--
-open-quake Claude voice panel: your custom instructions.
+Bedrock Panel Claude voice panel: your custom instructions.
 
 Anything OUTSIDE comment markers like these is appended to the panel session's
-system prompt, after open-quake's built-in voice-behavior prompt. Typical uses:
+system prompt, after Bedrock Panel's built-in voice-behavior prompt. Typical uses:
 tone, language, brevity rules ("answer in one sentence unless asked"), context
 about you or your setup.
 
 Changes apply the next time a panel session STARTS -- a folder switch or an
 app restart. (Mode/model switches keep the running session's prompt.) This
 file never affects terminal or desktop Claude Code sessions -- only the
-open-quake panel.
+Bedrock Panel panel.
 -->
 `;
 

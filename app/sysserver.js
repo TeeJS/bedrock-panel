@@ -404,7 +404,7 @@ function proxyFetch(targetUrl, verifySsl, redirects, cb) {
   const lib = target.protocol === 'https:' ? https : http;
   const req = lib.get(target, {
     timeout: 12000,
-    headers: { 'User-Agent': 'open-quake/NewsSpotlight', 'Accept': 'application/rss+xml, application/xml, text/xml, text/html, */*' },
+    headers: { 'User-Agent': 'bedrock-panel/NewsSpotlight', 'Accept': 'application/rss+xml, application/xml, text/xml, text/html, */*' },
     agent: target.protocol === 'https:' && !verifySsl ? new https.Agent({ rejectUnauthorized: false }) : undefined,
   }, upstream => {
     const location = upstream.headers.location;

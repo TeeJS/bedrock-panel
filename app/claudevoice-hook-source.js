@@ -68,7 +68,7 @@ function readStdin() {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: 'open-quake panel did not respond to the approval request in time.',
+      permissionDecisionReason: 'Bedrock Panel did not respond to the approval request in time.',
     },
   }));
   process.exit(0);

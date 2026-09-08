@@ -14,7 +14,7 @@ folder is the catalog.
 
 To install from your own fork instead, change the repository URL to your
 `github.com/<owner>/<repo>/tree/<branch>/<path>` folder (only GitHub repositories are
-supported). Installed apps land in your user-data folder (`%APPDATA%\open-quake\apps` by
+supported). Installed apps land in your user-data folder (`%APPDATA%\bedrock-panel\apps` by
 default), so they survive app updates, and **Check for updates** compares each against its
 repository. See [Apps & drop-ins](apps.md) for the full manager.
 

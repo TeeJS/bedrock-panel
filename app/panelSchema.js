@@ -1,7 +1,7 @@
 'use strict';
 // panelSchema.js
 //
-// Validates and normalizes an AI-authored panel into a real open-quake grid page.
+// Validates and normalizes an AI-authored panel into a real Bedrock Panel grid page.
 //
 // Pure and electron-free on purpose (same reason as runMode.js: main.js pulls in electron and
 // node-hid and can't be required in isolation), so every rule here is unit-testable.

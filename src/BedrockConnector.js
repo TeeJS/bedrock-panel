@@ -2,7 +2,7 @@
 /*
  * BedrockConnector — host driver for the Bedrock open desk console's RP2040 knob.
  *
- * Bedrock is the OSS hardware companion to open-quake; its USB HID protocol is documented at
+ * Bedrock is the OSS hardware companion to Bedrock Panel; its USB HID protocol is documented at
  * https://github.com/TeeJS/bedrock-console/blob/main/firmware/PROTOCOL.md. Single 8-byte
  * bidirectional report, tag byte at offset 0. Pure node-hid — no Electron dependency.
  *
