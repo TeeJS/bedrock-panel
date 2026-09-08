@@ -9,7 +9,7 @@ folders, mic, transcription — see below), and a **Monitor** tab (Reserved Disp
 protection and what the knob does in monitor mode):
 
 - **On launch** — open the editor window, start **minimized** to the taskbar, or run
-  **tray-only** (panel + system tray, no window). open-quake always sits in the system
+  **tray-only** (panel + system tray, no window). Bedrock Panel always sits in the system
   tray with quick toggles (mic, knob ring, re-place panel on the device).
 - **Screen rotation** — auto-cycle the panel through chosen pages on a timer. Turn it on,
   set the interval (5–3600 s), and pick which **categories** to include (grids, dashboards,
@@ -17,10 +17,10 @@ protection and what the knob does in monitor mode):
   only when both its category and its own box are checked). Start or pause it any time from
   the knob's page selector (double-click), the tray menu, or a **hotkey** — click the Hotkey
   box and press a combo with a modifier (e.g. Ctrl+Alt+R) to get a global start/stop that
-  works even when open-quake isn't focused. The hotkey is only live while Auto-rotate is on,
+  works even when Bedrock Panel isn't focused. The hotkey is only live while Auto-rotate is on,
   and a combo another app (or one of your page hotkeys) already owns simply won't fire.
 - **Hotkey shortcut** (per page, in that page's settings) — a global combo that jumps the
-  panel to the page from anywhere, even when open-quake isn't focused. Tick **Disables
+  panel to the page from anywhere, even when Bedrock Panel isn't focused. Tick **Disables
   rotation** next to it and firing the hotkey also turns auto-rotation off, so the panel
   stays put on that page until you start rotation again (knob, tray, or panel) — handy for
   a page you jump to when you need it to stay on screen.
@@ -33,7 +33,7 @@ protection and what the knob does in monitor mode):
   re-triggers on the next focus change. Tick **Pause auto-rotation** to hold rotation off
   for as long as a mapped app stays focused, picking back up the moment it loses focus.
 - **Dashboards → Reload hotkey** — a global combo that force-reloads whatever dashboard
-  page is currently showing, from anywhere, even when open-quake isn't focused. Switching
+  page is currently showing, from anywhere, even when Bedrock Panel isn't focused. Switching
   away to another page and back does **not** reload a dashboard on its own (that's what
   keeps its session/scroll state across page switches) — this hotkey is the way to force
   one. Only acts while a dashboard page is on screen; does nothing on a grid or app page.
@@ -75,7 +75,7 @@ protection and what the knob does in monitor mode):
   windows from remaining on the Quake while the panel is active. A window dropped there
   is returned to a non-Quake display. If every other display disconnects, eligible
   windows are recoverably minimized with their last placement cached, then restored when a
-  display returns. Open Quake windows, shell/taskbar surfaces, tool windows, cloaked
+  display returns. Bedrock Panel windows, shell/taskbar surfaces, tool windows, cloaked
   windows, and secure-desktop UI are excluded. This setting is off by default.
 - **Monitor Mode** — intentionally exposes the Quake as a normal Windows desktop
   monitor. Reserved Display protection is suspended for the duration of Monitor Mode and
@@ -117,14 +117,14 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   - **Call apps** is a *separate* list from the auto-record one above, because the calls
     worth showing a light for are usually more than the calls worth recording (Discord,
     Slack and Webex are in the default list; the recorder's is not).
-  - **Also show busy while open-quake is recording** keeps the light on for a recording
+  - **Also show busy while Bedrock Panel is recording** keeps the light on for a recording
     you started by hand, after the call app has let go of the microphone.
   - **Return to free after** is a short delay before going free. Teams releases and
     retakes the microphone when its meeting window changes; without the delay the light
     visibly blinks mid-meeting. Going *busy* is always immediate.
   - **Busy light (USB)** drives a Kuando Busylight directly. **Kuando's own "Busylight
     for UC" software must be closed or uninstalled** — Windows lets only one program hold
-    the device, so with both running the light appears to flicker or ignore open-quake.
+    the device, so with both running the light appears to flicker or ignore Bedrock Panel.
     That is the first thing to check if the light misbehaves. **Test light** confirms the
     connection; the status line beside the checkbox reports the model it found.
   - **Busylight schedule** — off by default. Restricts the Busylight to chosen days and
@@ -146,7 +146,7 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
     you are busy, which app, and since when. This is independent of the Home Assistant
     connection on the **Auth** tab, which stays read-only. The broker password is
     encrypted at rest.
-  - If open-quake stops, crashes, or the PC loses power, the light goes dark on its own
+  - If Bedrock Panel stops, crashes, or the PC loses power, the light goes dark on its own
     (the device requires a keep-alive) and the Home Assistant entity goes *unavailable*
     (an MQTT last-will). Neither can get stuck showing you as busy.
   - **Custom colour** is the colour the panel's **Custom** mode shows. Pick it here or on
@@ -225,7 +225,7 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
 - **Advanced → Run commands before/after transcription** — start and stop the
   transcription server around each batch (e.g. `ssh root@host "docker start
   meeting-diarizer"` — a loaded diarizer holds ~3.4 GB of GPU memory). **Before** runs
-  once when the queue goes active; open-quake then waits up to 5 minutes for the
+  once when the queue goes active; Bedrock Panel then waits up to 5 minutes for the
   server's `/health` before uploading. **After** runs once when the queue drains; jobs
   arriving mid-shutdown wait, then trigger a fresh start — the commands never overlap.
   If the start command or health wait fails, every queued file gets a clear error and
@@ -249,10 +249,10 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
 
 ## Auth (Home Assistant, Open WebUI)
 
-The **Auth** tab holds credentials shared across open-quake features that talk to a
+The **Auth** tab holds credentials shared across Bedrock Panel features that talk to a
 single server — today Home Assistant and Open WebUI.
 
-- **Use Home Assistant** — off by default. When on, open-quake caches your HA
+- **Use Home Assistant** — off by default. When on, Bedrock Panel caches your HA
   configuration (dashboards, areas, devices, entities, floors, labels) at launch and
   exposes the **Home Assistant Dashboard** app and **HA entity** tile type.
 - **URL** — your HA base URL (e.g. `https://ha.example.com` or `http://homeassistant.local:8123`).

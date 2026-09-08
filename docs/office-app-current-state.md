@@ -9,7 +9,7 @@
 
 ## Scope
 
-This review covers the Microsoft 365 panel experience, its Microsoft Graph data adapter, its programmable buttons, and its integration with the open-quake panel host.
+This review covers the Microsoft 365 panel experience, its Microsoft Graph data adapter, its programmable buttons, and its integration with the Bedrock Panel panel host.
 
 OAuth authorization, token storage, provider configuration, scopes, and the Office session capability are explicitly out of scope. They are treated as an existing boundary that should be preserved. None of the improvements below requires changing the currently granted Microsoft Graph scopes.
 
@@ -250,7 +250,7 @@ The Office app should remain a narrow, read-oriented Microsoft 365 integration w
 - What comes after it?
 - Which configured launcher action do I want?
 
-The launcher grid should be the same native component used elsewhere in open-quake, not an Office-specific copy.
+The launcher grid should be the same native component used elsewhere in Bedrock Panel, not an Office-specific copy.
 
 ## Suggested delivery sequence
 

@@ -19,7 +19,7 @@ question instead of guessing.
 
 ## What it can put on a button
 
-Keystrokes, typed text, websites, program launches, files and folders, other open-quake pages, the
+Keystrokes, typed text, websites, program launches, files and folders, other Bedrock Panel pages, the
 system actions (lock / mic / monitor / config), counters, and multi-step macros. It writes real
 shortcuts for the application you name.
 

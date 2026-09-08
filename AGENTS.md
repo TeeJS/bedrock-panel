@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-open-quake is a Windows-first Electron launcher and editor for the DK-QUAKE / ARIS-68
+Bedrock Panel is a Windows-first Electron launcher and editor for the DK-QUAKE / ARIS-68
 touchscreen-and-knob device and the open Bedrock RP2040 knob. It renders grids, dashboards,
 and bundled or user-installed apps on a 1920x480 display, then maps touch, knob, desktop,
 media, meeting, and Home Assistant events to actions.

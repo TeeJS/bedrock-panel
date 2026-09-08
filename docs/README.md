@@ -1,6 +1,6 @@
-# open-quake documentation
+# Bedrock Panel documentation
 
-Detailed guides for open-quake. Back to the [project README](../README.md).
+Detailed guides for Bedrock Panel. Back to the [project README](../README.md).
 
 ## Using it
 

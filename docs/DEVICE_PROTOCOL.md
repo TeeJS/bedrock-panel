@@ -81,13 +81,13 @@ Other senders: buzzer `l(163,[2,tone],1)`; knob-LED `l(163,[6,0/1],1)`; **DFU `l
 
 **Buzzer SUSTAINS** — `l(163,[2,tone],1)` turns the buzzer on and it keeps ringing until silenced with tone 0 (`l(163,[2,0],1)`); it is NOT a one-shot beep.
 
-**Mic LED is firmware-coupled to the mic mute — no independent control (probed 2026-06-18, all negative).** Held the mic ON and watched the indicator LED while sending: `0x03` with extra/alt params (`[03,01,00]`, `[03,01,02]`, `[03,02]`), plus every unmapped opCode-1 SET cmdID `0x07`–`0x0D` at both value 0 and 1 — nothing turned the LED off while the audio stayed live. The LED simply tracks the `0x03` mute state in firmware; there is no separate LED on/off or brightness command (DK-Suite exposes none either). **To kill the bright mic LED you must mute the mic.** The LED also only lights once the panel is fully awake — at connect a `0x03` set toggles the audio but the LED is dropped until a later `screenOn` re-syncs it (open-quake re-asserts mic ~2 s after connect for this reason). DFU `0x2F` was never sent during probing.
+**Mic LED is firmware-coupled to the mic mute — no independent control (probed 2026-06-18, all negative).** Held the mic ON and watched the indicator LED while sending: `0x03` with extra/alt params (`[03,01,00]`, `[03,01,02]`, `[03,02]`), plus every unmapped opCode-1 SET cmdID `0x07`–`0x0D` at both value 0 and 1 — nothing turned the LED off while the audio stayed live. The LED simply tracks the `0x03` mute state in firmware; there is no separate LED on/off or brightness command (DK-Suite exposes none either). **To kill the bright mic LED you must mute the mic.** The LED also only lights once the panel is fully awake — at connect a `0x03` set toggles the audio but the LED is dropped until a later `screenOn` re-syncs it (Bedrock Panel re-asserts mic ~2 s after connect for this reason). DFU `0x2F` was never sent during probing.
 
-## 9. Display output — reverse-engineered wire op, NOT how open-quake actually drives the panel
+## 9. Display output — reverse-engineered wire op, NOT how Bedrock Panel actually drives the panel
 
 **This section documents what the DK-Suite blob's protocol supports, for completeness — it is
-not the mechanism open-quake uses.** In practice the panel's screen is a standard external
-monitor over its display cable (HDMI / USB-C DisplayPort alt-mode); open-quake just renders an
+not the mechanism Bedrock Panel uses.** In practice the panel's screen is a standard external
+monitor over its display cable (HDMI / USB-C DisplayPort alt-mode); Bedrock Panel just renders an
 Electron window onto that display like any other monitor. See
 [building.md](building.md#how-the-hardware-works) for the actual mechanism.
 
@@ -108,7 +108,7 @@ hardware (VIA protocol 12). Implementation: `Aris68Connector.js`'s `_via`/`setLe
 
 ## 11. Bedrock connector — a separate, open (not reverse-engineered) protocol
 
-open-quake also drives **Bedrock**, an open-hardware RP2040 knob from the companion
+Bedrock Panel also drives **Bedrock**, an open-hardware RP2040 knob from the companion
 [bedrock-console](https://github.com/TeeJS/bedrock-console) project — a from-scratch "homebrew
 device" HID protocol, not related to ARIS-68's. `multiKnob.js` picks whichever device is
 actually plugged in (Bedrock first, ARIS-68 fallback); both emit the same internal knob-event

@@ -1,9 +1,9 @@
 # Drop-in apps — integration specification
 
-**Audience:** maintainers of open-quake forks (or compatible launchers) who want to support
+**Audience:** maintainers of Bedrock Panel forks (or compatible launchers) who want to support
 **drop-in apps** — self-contained app folders a user installs at runtime without rebuilding.
 
-**Spec version:** 1 · **Reference implementation:** open-quake ≥ 0.3.0.
+**Spec version:** 1 · **Reference implementation:** Bedrock Panel (formerly open-quake) ≥ 0.3.0.
 
 This document is normative for the **package format** and the **runtime/security contract**: an
 app authored against this spec MUST run unmodified on any conforming host, and a host MUST NOT
@@ -485,7 +485,7 @@ host-specific and SHOULD degrade gracefully where the extension is absent.
 
 ---
 
-## 9. Reference file/function map (open-quake)
+## 9. Reference file/function map (Bedrock Panel)
 
 | Concern | Where |
 | --- | --- |

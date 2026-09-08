@@ -7,7 +7,7 @@ collection can grow.
 ## Using one
 
 1. Download the `.mp4` you want from this folder (open the file → **Download raw file**).
-2. In the open-quake editor, open your Screensaver page's options and click
+2. In the Bedrock Panel editor, open your Screensaver page's options and click
    **Open videos folder**.
 3. Drop the file into the Explorer window that opens. It joins the rotation immediately —
    make sure **My videos** is ticked under **Show**.

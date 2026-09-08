@@ -1,6 +1,6 @@
 # Macros & keystrokes
 
-Two tile types turn open-quake into a keyboard macro pad. Both run on your PC via the
+Two tile types turn Bedrock Panel into a keyboard macro pad. Both run on your PC via the
 bundled keystroke backend (`@jitsi/robotjs`) — no extra software required for the basics.
 
 ## Send keystroke
@@ -45,10 +45,10 @@ Example — open Notepad and write a note: `App: notepad` → `Delay: 2000` →
 ## AutoHotkey steps (optional, Windows)
 
 For automation beyond keystrokes (window targeting, remapping, logic), an **AutoHotkey**
-step runs an [AutoHotkey v2](https://www.autohotkey.com/) script. open-quake only *runs* an
+step runs an [AutoHotkey v2](https://www.autohotkey.com/) script. Bedrock Panel only *runs* an
 installed `AutoHotkey.exe` (it doesn't bundle it), so install AutoHotkey v2 first.
 
 - **Value** = a path to a `.ahk` file (Browse to pick), **or** a short inline v2 snippet
   (e.g. `MsgBox "hi"`) that's written to a temp script and run.
-- open-quake auto-detects `AutoHotkey.exe` from the standard install locations and your PATH.
+- Bedrock Panel auto-detects `AutoHotkey.exe` from the standard install locations and your PATH.
 - An AutoHotkey (or Shell command) step runs arbitrary code — only use scripts you trust.

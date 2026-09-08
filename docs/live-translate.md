@@ -20,7 +20,7 @@ Two providers sit behind the page:
 3. Optionally set a **source hint** (the language you expect) — it removes the couple-second warm-up
    Soniox otherwise spends auto-detecting the language.
 
-Your real key never reaches the panel page: open-quake mints a short-lived **temporary key** and the
+Your real key never reaches the panel page: Bedrock Panel mints a short-lived **temporary key** and the
 page authenticates with that. The key is stored encrypted at rest.
 
 ## AI translate — bring your own key

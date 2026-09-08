@@ -1,4 +1,4 @@
-# open-quake — installer return codes
+# Bedrock Panel — installer return codes
 
 `open-quake-<version>-setup.exe` is an NSIS installer (produced by electron-builder). It reports
 the outcome of an install or uninstall through its **process exit code**:

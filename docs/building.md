@@ -2,7 +2,7 @@
 
 ## How the hardware works
 
-open-quake drives two different knob devices through the same code path, routed by
+Bedrock Panel drives two different knob devices through the same code path, routed by
 `app/multiKnob.js`: whichever one is actually plugged in wins, checked in this order —
 **Bedrock** (`app/BedrockConnector.js`, the open RP2040 knob — see the companion
 [bedrock-console](https://github.com/TeeJS/bedrock-console) project) first, falling back
@@ -13,7 +13,7 @@ found. Both connectors emit the same internal knob-event shape, so the rest of t
 The DK-QUAKE's screen is a standard external monitor (HDMI or USB-C DisplayPort
 alt-mode) recognized by Windows as a 480×1920 portrait display. A separate USB
 link handles touch and control/knob/mic interfaces. Video travels over the
-display cable; open-quake renders an Electron window onto that monitor, exactly
+display cable; Bedrock Panel renders an Electron window onto that monitor, exactly
 as DK-Suite did. Unplug the display cable and the panel goes dark, but the USB
 side keeps working.
 
@@ -21,7 +21,7 @@ The USB side is two HID interfaces: a control interface (knob, mic/state,
 firmware, keep-alive) and a multi-touch interface. The panel ships dark and
 idle-blanks; the driver wakes it and sends a periodic keep-alive so it stays on.
 The on-board mic enumerates as a standard **"5- USB PnP Audio Device"** — any app
-can read it directly; `open-quake` doesn't wrap it.
+can read it directly; Bedrock Panel doesn't wrap it.
 
 Full reverse-engineered ARIS-68 protocol: [DEVICE_PROTOCOL.md](DEVICE_PROTOCOL.md).
 The Bedrock knob's own (non-reverse-engineered, open) HID protocol is documented in
@@ -76,7 +76,7 @@ touch and knob input.
 
 Set the DK-QUAKE's **display orientation to Landscape** in Windows (Settings →
 System → Display) so Windows treats it as a 1920×480 landscape display — that
-keeps the mouse and touch aligned with what you see. open-quake auto-rotates its
+keeps the mouse and touch aligned with what you see. Bedrock Panel auto-rotates its
 render if you leave it portrait, but then a desktop mouse moved onto the panel
 reads 90° off.
 

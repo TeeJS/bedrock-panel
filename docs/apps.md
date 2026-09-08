@@ -6,7 +6,7 @@ folder — **`%APPDATA%\open-quake\apps`** by default (see *Storage location* be
 they survive app updates. The easiest way to add one is **Settings → Drop-In Apps → Browse…**
 and install from the app repository.
 In the editor, **+ App** adds an app page: pick the app and set its options, and
-open-quake loads it full-screen on the panel with no hand-typed URLs.
+Bedrock Panel loads it full-screen on the panel with no hand-typed URLs.
 
 Included apps:
 - **[GitHub](github.md)** — a first-party repository, read-only Issues, and GitHub Actions panel with
@@ -86,7 +86,7 @@ below):
     app.js
 ```
 
-open-quake only discovers drop-in apps from that user-data folder — **not** from the
+Bedrock Panel only discovers drop-in apps from that user-data folder — **not** from the
 bundled install directory — so an update never wipes them out.
 
 The manifest can be named `app.json` or `manifest.json`:
@@ -129,21 +129,21 @@ The editor's **Settings → Drop-In Apps** tab manages app folders for you:
 - **Delete** — remove an app's folder.
 - **Refresh** — re-scan for changes.
 - **Community apps ↗** — the default source: the
-  [community-apps](https://github.com/TeeJS/open-quake/tree/main/community-apps) repository.
+  [community-apps](https://github.com/TeeJS/bedrock-panel/tree/main/community-apps) repository.
   See [Community apps](community-apps.md) for installing and submitting.
 
 **Storage location** (Advanced) — drop-in apps live in **`%APPDATA%\open-quake\apps`** by default
-(switchable to `%LOCALAPPDATA%\open-quake\apps`). This is the **only** place open-quake looks for
+(switchable to `%LOCALAPPDATA%\open-quake\apps`). This is the **only** place Bedrock Panel looks for
 drop-in apps, and it **survives app updates** — unlike the install folder, which an update
 overwrites. Switching the location moves where new imports land; move any existing app folders
 across yourself if you change it.
 
 ## Static and served modes
 
-- **Static (`"served": false`)** — open-quake loads `entry` directly via
+- **Static (`"served": false`)** — Bedrock Panel loads `entry` directly via
   `file://` from the app folder. Options are passed in the URL hash:
   `index.html#color=red`. Static apps are best for self-contained HTML/CSS/JS.
-- **Served (`"served": true`)** — open-quake serves the app folder on the local
+- **Served (`"served": true`)** — Bedrock Panel serves the app folder on the local
   loopback server at `http://127.0.0.1:<port>/apps/<id>/<entry>`. Options are
   passed as normal query parameters: `index.html?color=red`. Use this for apps
   that need same-origin `fetch`, browser APIs that require HTTP, or multiple
@@ -198,7 +198,7 @@ Two kinds of bundled app:
   **hash** (e.g. `…/myapp.html#color=red`) — a `?query` doesn't survive a `file://`
   load — and add an entry to `apps/apps.json` describing its options. The Flip Clock is one.
 - **Served (`"served": true`)** — for apps that need live host data, a same-origin `fetch`,
-  or an embedded launcher grid. open-quake serves these over a loopback HTTP server at
+  or an embedded launcher grid. Bedrock Panel serves these over a loopback HTTP server at
   `http://127.0.0.1:<port>/<id>`, so they get real `?query` params and a secure context
   (needed for things like the microphone). The Music controller and Open WebUI app use this.
   A served app can also carry its own **editable tile grid** (`"grid"` in its manifest entry) —

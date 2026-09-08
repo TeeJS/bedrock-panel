@@ -2,12 +2,12 @@
 
 How to **install** a community drop-in app, and how to **submit** your own. The apps are
 served from a GitHub **app repository** — the [`community-apps/`](../community-apps) folder —
-that open-quake browses and installs from directly. This page is the documentation; that
+that Bedrock Panel browses and installs from directly. This page is the documentation; that
 folder is the catalog.
 
 ## Installing one
 
-1. In open-quake: **Settings → Drop-In Apps**. The default app repository points at this
+1. In Bedrock Panel: **Settings → Drop-In Apps**. The default app repository points at this
    `community-apps/` folder; **Browse…** lists every app in it.
 2. Click **Install** on the app you want. If it bundles executable code you'll be asked to
    confirm you trust the repository first.
@@ -40,5 +40,5 @@ Rules:
 
 Community apps are **submitted by others and not vetted by the maintainers**. A drop-in app
 can ship a **server module** or bundled programs that run on your PC with full access —
-open-quake warns you on import when it does. **Only install apps from sources you trust, and
+Bedrock Panel warns you on import when it does. **Only install apps from sources you trust, and
 review the source folder before importing.**

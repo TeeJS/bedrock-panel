@@ -35,7 +35,7 @@ to it unless its window already has focus.
 Teams' combos are fixed and not configurable — they're Microsoft Teams' own built-in
 global shortcuts (`Ctrl+Shift+M` mute, `+A` accept with video, `+S` accept audio-only,
 `+D` decline, `+H` hang up, `+O` toggle video). Unlike Zoom, Teams needs its window
-force-focused immediately before each keystroke to respond reliably — open-quake does
+force-focused immediately before each keystroke to respond reliably — Bedrock Panel does
 this automatically, so it works even when Teams isn't the visible foreground app.
 
 ## Recording & transcription
@@ -143,7 +143,7 @@ and Highlight only appear when their feature is enabled in Settings.
 
 ## Honest limits
 
-open-quake has no way to know whether a call is actually active — a tap just sends the
+Bedrock Panel has no way to know whether a call is actually active — a tap just sends the
 configured keystroke. If nothing's on the call, nothing visibly happens. There's no
 on-panel call timer or participant list; this is a remote control, not a client.
 Transcription progress is elapsed time only — the diarizer reports no percentage, so

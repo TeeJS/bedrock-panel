@@ -1,6 +1,6 @@
 # Home Assistant integration
 
-Once you point open-quake at a Home Assistant server, three new things become possible:
+Once you point Bedrock Panel at a Home Assistant server, three new things become possible:
 
 1. **A Home Assistant Dashboard app** — pick any Lovelace dashboard from a dropdown and put it on a page, no hand-typed URLs.
 2. **HA entity tiles** — tap a tile to call a service on an entity (toggle a light, play/pause a media player, trigger an automation, etc.) with a picker that filters by device type, room, label, and favorites.
@@ -26,7 +26,7 @@ requests to your HA URL.
 
 ## What gets cached
 
-On Refresh, open-quake pulls — in one WebSocket session over HA's `/api/websocket` — these registries:
+On Refresh, Bedrock Panel pulls — in one WebSocket session over HA's `/api/websocket` — these registries:
 
 - **Dashboards** (`lovelace/dashboards/list`)
 - **Areas** (`config/area_registry/list`)
@@ -45,7 +45,7 @@ Cache lives in memory only — no disk persistence. It rebuilds at app launch (w
 
 Add a page → **+ App** → pick **Home Assistant Dashboard**. The Dashboard dropdown is populated from your cached dashboards plus "Overview (default)" prepended (HA's WS API doesn't include the default dashboard).
 
-At runtime, open-quake translates the app to a synthetic web-dashboard page pointed at `<haUrl>/<dashboard_path>` with the HA token injected into `localStorage` (same trick the existing `auth: ha` web grid uses). Login persists across reloads. The page renders inside the panel webview just like any other dashboard — knob scrolls, tap clicks, HA's own tab bar at the top of the dashboard lets you switch between views.
+At runtime, Bedrock Panel translates the app to a synthetic web-dashboard page pointed at `<haUrl>/<dashboard_path>` with the HA token injected into `localStorage` (same trick the existing `auth: ha` web grid uses). Login persists across reloads. The page renders inside the panel webview just like any other dashboard — knob scrolls, tap clicks, HA's own tab bar at the top of the dashboard lets you switch between views.
 
 Picking a different view (e.g. `/lovelace-second/2`) isn't supported yet; you land on the dashboard's first view and tap HA's tabs to move.
 
@@ -86,7 +86,7 @@ Tapping the tile fires `POST /api/services/<domain>/<action>` with `{ entity_id 
 
 ## Icons
 
-When the tile's **Icon** is set to **HA icon** (the default for new HA entity tiles), open-quake resolves in this order:
+When the tile's **Icon** is set to **HA icon** (the default for new HA entity tiles), Bedrock Panel resolves in this order:
 
 1. **`entity_picture`** — for media players with album art, cameras with snapshots, anything you've uploaded a photo for. Fetched once per entity through the existing URL-icon-cache pipeline. Stays cached across launches.
 2. **The entity's MDI icon** — from state attributes if known, otherwise the registry override, otherwise HA's per-domain default (e.g. `light` → `mdi:lightbulb`). The SVG is downloaded from `https://cdn.jsdelivr.net/npm/@mdi/svg@7/svg/<name>.svg`, recolored white, cached in the icon-cache directory. Shared by all tiles that use the same icon name.
@@ -109,7 +109,7 @@ The in-memory cache from a previous Use-HA-on session sticks around until app re
 ## Publishing your busy status to HA (MQTT)
 
 The HA connection above is **read-only** — it pulls dashboards, registries and entity states, and
-calls services for entity tiles. Publishing *out* of open-quake goes over MQTT instead, configured
+calls services for entity tiles. Publishing *out* of Bedrock Panel goes over MQTT instead, configured
 separately under **Settings → Meeting → Busy status → Home Assistant (MQTT)**.
 
 MQTT rather than the REST API for one concrete reason: HA's WebSocket API has no equivalent of
@@ -117,7 +117,7 @@ MQTT rather than the REST API for one concrete reason: HA's WebSocket API has no
 indefinite heartbeat to keep a phantom entity alive. MQTT discovery creates a real, persistent entity
 with nothing to configure on the HA side.
 
-What open-quake publishes (topics use `<prefix>/<hostname>/…`, prefix configurable, default
+What Bedrock Panel publishes (topics use `<prefix>/<hostname>/…`, prefix configurable, default
 `open-quake`):
 
 | Topic | Retained | Payload |
@@ -131,18 +131,18 @@ What open-quake publishes (topics use `<prefix>/<hostname>/…`, prefix configur
 "marked busy by hand".
 
 The availability topic is registered as the MQTT **last will**, which is the part worth understanding:
-if open-quake is killed, crashes, or the PC loses power, the *broker* publishes `offline` on its
+if Bedrock Panel is killed, crashes, or the PC loses power, the *broker* publishes `offline` on its
 behalf and the entity goes unavailable. A light driven from this entity therefore cannot get stuck
-showing you as busy — and neither can the USB Busylight, which extinguishes itself when open-quake
+showing you as busy — and neither can the USB Busylight, which extinguishes itself when Bedrock Panel
 stops sending its keep-alive. Both ends fail safe without anything having to run cleanup code.
 
 The connection is held open for as long as the feature is enabled, not opened per update: the will is
 registered at connect time, so a connect-publish-disconnect cycle would leave no will in force between
-updates and defeat the whole arrangement. On reconnect, open-quake re-publishes the discovery document
+updates and defeat the whole arrangement. On reconnect, Bedrock Panel re-publishes the discovery document
 and current state, because a broker restart drops retained messages.
 
 The broker password is encrypted at rest with the same DPAPI mechanism as the HA token.
 
 ## Privacy
 
-All HA traffic goes directly from open-quake's main process to your HA URL. No third party touches your tokens, dashboards, entity names, or registry data. The only external request the HA integration makes is to jsDelivr (`cdn.jsdelivr.net`) for individual MDI icon SVGs — those are public assets and the request carries no HA data.
+All HA traffic goes directly from Bedrock Panel's main process to your HA URL. No third party touches your tokens, dashboards, entity names, or registry data. The only external request the HA integration makes is to jsDelivr (`cdn.jsdelivr.net`) for individual MDI icon SVGs — those are public assets and the request carries no HA data.

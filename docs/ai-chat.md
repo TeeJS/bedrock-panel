@@ -44,13 +44,13 @@ model id your server actually serves (whatever appears in OWUI's model dropdown)
 
 ## Voice — hold the knob to talk
 
-**Press and hold the knob, speak, then release.** open-quake records the on-board mic while
+**Press and hold the knob, speak, then release.** Bedrock Panel records the on-board mic while
 held, sends the clip to your Open WebUI server's transcription endpoint (its **local Whisper**),
 and drops the resulting text into the chat input and sends it. A **🎤 listening…** chip shows
 while you hold; **… transcribing** on release.
 
 Requirements:
-- **OWUI's Speech-to-Text — tested with local Whisper; other STT engines should work.** open-quake
+- **OWUI's Speech-to-Text — tested with local Whisper; other STT engines should work.** Bedrock Panel
   just posts the audio to OWUI's transcription endpoint and OWUI picks the engine, so whatever STT
   you've configured handles it — only local Whisper is verified, though. Local Whisper is OWUI's
   default: **Admin Panel → Settings → Audio → Speech-to-Text** (engine = Local / Whisper, pick a
@@ -64,7 +64,7 @@ selector. Only a **hold** triggers voice, so it never clashes.
 
 ## How it works
 
-The chat app is a **served** app: open-quake serves its page over a loopback HTTP server at
+The chat app is a **served** app: Bedrock Panel serves its page over a loopback HTTP server at
 `http://127.0.0.1:<port>/chat?endpoint=…&api_key=…&model=…`. Serving it this way (rather than
 `file://`) means two things matter:
 

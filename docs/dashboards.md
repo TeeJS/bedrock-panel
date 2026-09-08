@@ -3,14 +3,14 @@
 A page can be a web view instead of a tile grid (**+ Dashboard** in the editor —
 give it a name + URL). It renders full-screen on the panel; the knob scrolls it
 (inner scroll panels included), a tap is a click, and double-clicking the knob
-returns to the page selector. Sessions persist across restarts. open-quake ships
+returns to the page selector. Sessions persist across restarts. Bedrock Panel ships
 with a public **[Windy](https://www.windy.com) weather map** as a ready-made
 dashboard example.
 
 **Reloading** — switching away to another page and back does **not** reload a
 dashboard; the panel keeps one shared webview and only re-navigates when a page's
 URL actually changes, so your session/scroll position survives page switches.
-Quitting and restarting open-quake does give a fresh load. To force a reload without
+Quitting and restarting Bedrock Panel does give a fresh load. To force a reload without
 restarting, set a global **Reload hotkey** in **Settings → Software → Dashboards** —
 it reloads whatever dashboard is currently on screen, from anywhere.
 
@@ -51,7 +51,7 @@ Prime Video, Hulu, Spotify desktop, etc. — won't play in a dashboard page. The
 classic symptom is Netflix's `M7701-1003` error, or the equivalent from another
 service, often suggesting you enable "Allow protected content" in Chrome.
 
-The reason: open-quake's panel webview runs on **Electron's Chromium**, which
+The reason: Bedrock Panel's panel webview runs on **Electron's Chromium**, which
 doesn't ship with the Widevine Content Decryption Module (CDM) that Google bundles
 into their official Chrome. Your PC Chrome has Widevine; the panel webview is a
 separate browser binary that doesn't. Toggling "Allow protected content" doesn't
@@ -72,5 +72,5 @@ reaches the point of caring about HDCP.
   a separate player page on play; doesn't work for sites that play in-place via
   JavaScript (which is most of them, unfortunately).
 
-Adding Widevine to open-quake itself would require switching to a forked Electron
+Adding Widevine to Bedrock Panel itself would require switching to a forked Electron
 build (Castlabs maintains one) plus VMP signing — not currently planned.

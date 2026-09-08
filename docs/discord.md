@@ -1,11 +1,11 @@
-# Connecting Discord to open-quake
+# Connecting Discord to Bedrock Panel
 
 Connect the Discord account from the **Discord app settings**: select the page that uses the
 Discord app in the editor, then use the **Discord account** card beneath its settings. By default,
-open-quake uses its built-in Discord Application ID and requests the complete permission set that
+Bedrock Panel uses its built-in Discord Application ID and requests the complete permission set that
 the official application is configured to use.
 
-open-quake uses OAuth 2.0 Authorization Code with PKCE as a public client. The callback is the
+Bedrock Panel uses OAuth 2.0 Authorization Code with PKCE as a public client. The callback is the
 loopback URI `http://127.0.0.1:51120/callback`; there is no Client Secret. Access and refresh tokens
 are kept in the main process and encrypted at rest.
 
@@ -33,7 +33,7 @@ unavailable enhanced permission cannot prevent otherwise usable Core authorizati
 
 The same Authorization Code + PKCE implementation is used for personal and team-owned custom
 applications. Discord's documentation only describes a team-specific restriction for the separate
-Client Credentials grant; open-quake does not use that grant.
+Client Credentials grant; Bedrock Panel does not use that grant.
 
 ## Discord scope availability
 
@@ -46,16 +46,16 @@ currently says:
 - `messages.read` allows local RPC to read messages from client channels. The scope table does not
   clearly state whether this scope itself needs separate approval. Discord's
   [RPC documentation](https://docs.discord.com/developers/topics/rpc#authorize) says its optional RPC
-  token flow disallows `messages.read`; open-quake does not use that Client Secret-based flow.
+  token flow disallows `messages.read`; Bedrock Panel does not use that Client Secret-based flow.
 
 Discord's RPC documentation also says unapproved applications are restricted to users on the
 application's tester list (up to 50) until approval. This is less precise than the scope table about
 which approval controls each scope. Application ownership alone is not documented as granting every
-enhanced scope, so open-quake does not infer entitlements from ownership or the Developer Portal UI.
+enhanced scope, so Bedrock Panel does not infer entitlements from ownership or the Developer Portal UI.
 
 Discord documents no supported API that reports an application's permitted OAuth scopes before the
 user authorizes it. The `/oauth2/@me` endpoint and RPC `AUTHENTICATE` response report scopes only after
-an access token exists. Custom scope choices therefore remain explicit; open-quake does not repeatedly
+an access token exists. Custom scope choices therefore remain explicit; Bedrock Panel does not repeatedly
 launch authorization to guess combinations.
 
 ## Scope changes and capability status

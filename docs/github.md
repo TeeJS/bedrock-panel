@@ -5,16 +5,16 @@ GitHub OAuth Device Flow; personal access tokens are not accepted or required.
 
 ## One-time OAuth App setup
 
-open-quake is a native, locally installed application and does not ship a shared client secret. To
+Bedrock Panel is a native, locally installed application and does not ship a shared client secret. To
 connect it, create a GitHub OAuth App owned by you or your organization:
 
 1. Open **GitHub → Settings → Developer settings → OAuth Apps → New OAuth App**.
-2. Give it a recognizable name such as `open-quake` and use the open-quake repository as its
+2. Give it a recognizable name such as `bedrock-panel` and use the Bedrock Panel repository as its
    homepage. GitHub requires a callback field even though Device Flow does not use redirect URIs;
-   use `http://127.0.0.1:53682/callback` so the placeholder does not imply port 80. open-quake does
+   use `http://127.0.0.1:53682/callback` so the placeholder does not imply port 80. Bedrock Panel does
    not listen on or contact this port, so another unused high port is equally valid.
 3. Open the new OAuth App's settings and enable **Device Flow**.
-4. Add the built-in **GitHub** app as an open-quake page. In that page's **App** section in the
+4. Add the built-in **GitHub** app as an Bedrock Panel page. In that page's **App** section in the
    desktop editor, paste the public Client ID and save the editor configuration. A starting
    repository and branch are optional.
 5. Select **Connect** in the same editor section. GitHub opens in the system browser; enter the
@@ -26,8 +26,8 @@ grant repository access. GitHub OAuth App scopes are coarser than GitHub App per
 the authorization before approving it.
 
 Access and refresh tokens are stored only in the Electron main process and encrypted at rest with
-open-quake's existing secret store: current-user DPAPI on Windows and Electron `safeStorage`
-elsewhere. The panel receives only a rotating, memory-only open-quake capability; it never receives
+Bedrock Panel's existing secret store: current-user DPAPI on Windows and Electron `safeStorage`
+elsewhere. The panel receives only a rotating, memory-only Bedrock Panel capability; it never receives
 GitHub credentials. The editor receives only connection state and the temporary device code.
 Long-lived OAuth tokens and GitHub's rotating eight-hour token form are both
 supported. Disconnecting removes the locally stored tokens; the authorization can also be reviewed
@@ -40,11 +40,11 @@ and confirmation dialogs as an alternative to touch.
 
 After connecting, use the repository button in the touchscreen panel header to browse and search
 repositories the authenticated account owns, collaborates on, or can access through an organization.
-For each listed fork, open-quake also discovers its accessible parent and original source repositories,
+For each listed fork, Bedrock Panel also discovers its accessible parent and original source repositories,
 so a public upstream can be selected even when GitHub does not include it in the authenticated-user
 repository list. These entries are labelled as upstreams and may be read-only. The list follows GitHub
 pagination, includes private repositories covered by the authorization, and is cached for one minute
-to avoid needless API usage. The last panel selection is remembered locally on that open-quake device.
+to avoid needless API usage. The last panel selection is remembered locally on that Bedrock Panel device.
 It does not rewrite the editor configuration; the optional editor value is only the starting fallback.
 Repositories other than that fallback use their own default branch.
 
@@ -109,7 +109,7 @@ private-repository Issues, pull-request, contents, Checks, Actions, workflow-dis
 comparison endpoints for OAuth App tokens. The Assigned filter reads the authenticated account's
 public login from `/user` and caches it; it does not require an added `user` scope. Inline comments
 are deferred, so this pass adds neither a comments endpoint nor a related permission. Public
-repository reads can be less permissive at the API level, but open-quake keeps one consistent grant
+repository reads can be less permissive at the API level, but Bedrock Panel keeps one consistent grant
 because its deliberate workflow dispatch/rerun/cancel operations require `repo`.
 `offline_access` remains a token-lifetime option and does not grant repository access.
 
