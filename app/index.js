@@ -444,7 +444,7 @@
         .then(function (v) { return v === true; }, function () { return false; });
     } catch (e) { return Promise.resolve(false); }
   }
-  function pttInject(k) {   // press-and-hold -> push-to-talk; the served chat page defines window.pttStart/Stop
+  function pttInject(k) {   // press-and-hold -> push-to-talk; a served page (drop-in) may define window.pttStart/Stop
     if (webMode && webReady) web.executeJavaScript(k.phase === 'start' ? 'window.pttStart&&window.pttStart()' : 'window.pttStop&&window.pttStop()').catch(function () {});
   }
   panelApi.onKnob(k => {

@@ -69,9 +69,14 @@ you'd rather read the reply than hear it. A typed message never triggers an unso
 reply; only a voice-started turn gets spoken back.
 
 The transcript is real, selectable text — click-drag and Ctrl+C work like any normal page. Replies
-render as markdown (headings, lists, tables, links, images, inline code), with the same parser and
-sanitizer the Open WebUI chat app uses. Fenced code blocks get a one-tap **Copy** button that hands
-back the exact text.
+render as markdown (headings, lists, tables, links, images, inline code); your own turns stay raw
+text, since they are mostly speech-to-text. Fenced code blocks get a one-tap **Copy** button that
+hands back the exact text.
+
+> **Coming from the old Open WebUI chat app?** It was removed. Its pages are now AI Voice pages on
+> the **Open WebUI** backend, and the first one's URL / key / model seeded **Settings → Auth** if
+> that was still blank. Voice now runs through the Wyoming STT/TTS servers below instead of Open
+> WebUI's own Whisper, and the knob gesture is tap-to-toggle rather than hold-to-talk.
 
 ### Ring feedback
 

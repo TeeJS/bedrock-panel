@@ -34,15 +34,12 @@ test('vendored parser renders the Open WebUI widget feature set with the same op
   assert.ok(html.includes('echo &quot;hi&quot; &amp;&amp; ls -la'));
 });
 
-test('the parser is byte-identical to the chat widget bundle it was lifted from', () => {
-  const widget = read('ChatWidget.js');
+test('the sanitizer allow-list is the widget\'s original, unchanged', () => {
   const vendored = read('claudevoice-markdown.js');
-  for (const landmark of ['function $t() {', 'function sanitizeRenderedMarkdown(e) {', 'const OQ_MARKDOWN_ALLOWED_TAGS = new Set([']) {
-    assert.ok(widget.includes(landmark) && vendored.includes(landmark), landmark);
-  }
-  // The sanitizer allow-list must be the widget's, unchanged.
-  const allow = /const OQ_MARKDOWN_ALLOWED_TAGS[\s\S]*?OQ_MARKDOWN_URL_PROTOCOLS = new Set\(\[[^\]]*\]\);/;
-  assert.equal(vendored.match(allow)[0], widget.match(allow)[0]);
+  assert.match(vendored, /const OQ_MARKDOWN_ALLOWED_TAGS = new Set\(\[\s*"a", "blockquote", "br", "code", "del", "em", "h1", "h2", "h3", "h4", "h5", "h6",\s*"hr", "img", "li", "ol", "p", "pre", "s", "span", "strong", "table", "tbody", "td",\s*"th", "thead", "tr", "ul"\s*\]\)/);
+  assert.match(vendored, /OQ_MARKDOWN_URL_PROTOCOLS = new Set\(\["http:", "https:", "mailto:"\]\)/);
+  const allowList = vendored.match(/const OQ_MARKDOWN_ALLOWED_TAGS = new Set\(\[[\s\S]*?\]\)/)[0];
+  assert.doesNotMatch(allowList, /"script"|"iframe"|"style"|"object"|"embed"|"form"|"input"/);
 });
 
 test('the AI Voice page loads the parser and keeps the copyable code-block contract', () => {

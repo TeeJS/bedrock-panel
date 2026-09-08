@@ -9,7 +9,7 @@
 // past 5 minutes before the first byte, so postJson/streamChat ride raw http/https.request
 // where `timeout` is socket INACTIVITY only. listModels is short and cheap, so it may fetch.
 //
-// Endpoint shape (docs/ai-chat.md): Open WebUI's own API lives under /api — /api/chat/completions
+// Endpoint shape (docs/settings.md, Auth tab): Open WebUI's own API lives under /api — /api/chat/completions
 // (OpenAI-compatible, accepts Bearer key) and /api/models. The /v1/... paths reject POST, so any
 // pasted path (incl. a /v1 base) is discarded and both URLs are derived from the origin.
 

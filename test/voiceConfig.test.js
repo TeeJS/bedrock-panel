@@ -85,6 +85,36 @@ test('old voice app ids migrate to ai-voice with the matching backend', () => {
   assert.equal(cfg.grids[3].options.modelPick, 'llama3');
 });
 
+test('old Open WebUI chat pages become AI Voice (owui) and seed the shared connection once', () => {
+  const { migrateVoiceConfig } = require('../app/voiceConfig');
+  const cfg = { grids: [
+    { kind: 'app', app: 'chat', hotkey: 'F5', options: { endpoint: 'https://owui.example/api/chat/completions', api_key: 'enc:v2:abc', model: 'llama3.2' } },
+    { kind: 'app', app: 'chat', options: { endpoint: 'https://other.example/api/chat/completions', api_key: 'enc:v2:def', model: 'mistral' } },
+    { kind: 'app', app: 'chat' },
+    { kind: 'app', app: 'music', options: {} },
+  ] };
+  migrateVoiceConfig(cfg);
+  assert.deepEqual(cfg.grids.map(g => g.app), ['ai-voice', 'ai-voice', 'ai-voice', 'music']);
+  assert.deepEqual(cfg.grids.slice(0, 3).map(g => g.options.backend), ['owui', 'owui', 'owui']);
+  // First page's connection seeds Settings -> Auth verbatim (api_key stays whatever form it was on disk).
+  assert.deepEqual(cfg.settings.owui, { url: 'https://owui.example/api/chat/completions', apiKey: 'enc:v2:abc', model: 'llama3.2' });
+  // Second page keeps only its model as a page pick; its key/endpoint are dropped, never a second server.
+  assert.equal(cfg.grids[1].options.modelPick, 'mistral');
+  for (const g of cfg.grids.slice(0, 3)) for (const k of ['endpoint', 'api_key', 'model']) assert.equal(k in g.options, false, k);
+  assert.equal(cfg.grids[0].hotkey, 'F5');   // everything else carries over
+  // Idempotent, and an existing shared connection is never overwritten.
+  const again = JSON.parse(JSON.stringify(cfg));
+  migrateVoiceConfig(again);
+  assert.deepEqual(again, cfg);
+  const preset = { settings: { owui: { url: 'https://kept.example', apiKey: 'k', model: 'llama3.2' } }, grids: [
+    { kind: 'app', app: 'chat', options: { endpoint: 'https://owui.example/api/chat/completions', api_key: 'x', model: 'llama3.2' } },
+  ] };
+  migrateVoiceConfig(preset);
+  assert.equal(preset.settings.owui.url, 'https://kept.example');
+  assert.equal(preset.settings.owui.apiKey, 'k');
+  assert.equal('modelPick' in preset.grids[0].options, false);   // same model as the shared default -> no pick
+});
+
 test('ensureAiProfiles seeds once and never touches user edits', () => {
   const { ensureAiProfiles, DEFAULT_AI_PROFILES } = require('../app/voiceConfig');
   const cfg = {};

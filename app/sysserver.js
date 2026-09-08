@@ -63,15 +63,10 @@ const LOCAL_APP_CSP = [
 // strict script-src 'self' (no 'unsafe-inline'); each extracted file is served here, keyed by request
 // path (the on-disk name is the path minus its leading slash). Content-type per entry.
 const STATIC_FILES = {
-  '/ChatWidget.js': 'application/javascript; charset=utf-8',
-  '/owui-widget.css': 'text/css; charset=utf-8',
   '/musicview.js': 'application/javascript; charset=utf-8',
   '/meetingview.js': 'application/javascript; charset=utf-8',
   '/lucidtypeview.js': 'application/javascript; charset=utf-8',
   '/lucidtype-dictate.js': 'application/javascript; charset=utf-8',
-  '/chatview-config.js': 'application/javascript; charset=utf-8',
-  '/chatview-main.js': 'application/javascript; charset=utf-8',
-  '/chatview-ptt.js': 'application/javascript; charset=utf-8',
   '/touchDragScroll.js': 'application/javascript; charset=utf-8',
   '/githubPanelState.js': 'application/javascript; charset=utf-8',
   '/github.js': 'application/javascript; charset=utf-8',
@@ -105,7 +100,7 @@ let onLucidCleanup = null, onLucidRewrite = null, onLucidReview = null, onLucidS
 const lucidSubscribers = new Set();   // open SSE responses for the LucidType page (pushed by main via lucidBroadcast)
 let diagnosticsHtml = FALLBACK;
 let obsviewHtml = FALLBACK;
-let musicHtml = FALLBACK, chatHtml = FALLBACK, githubHtml = FALLBACK, meetingHtml = FALLBACK, keyshortcutsHtml = FALLBACK, recorderHtml = FALLBACK, slideHtml = FALLBACK, lucidtypeHtml = FALLBACK, lucidtypeDictateHtml = FALLBACK;
+let musicHtml = FALLBACK, githubHtml = FALLBACK, meetingHtml = FALLBACK, keyshortcutsHtml = FALLBACK, recorderHtml = FALLBACK, slideHtml = FALLBACK, lucidtypeHtml = FALLBACK, lucidtypeDictateHtml = FALLBACK;
 // Claude Code voice app wiring (all optional, supplied via start(opts) -- see main.js).
 // Voice-panel app registry: appId (also the URL path prefix) -> { handlers, voiceToken, htmlFile,
 // htmlContent }. `handlers` is a voicepanel-host.js handlers object; every voice app shares the
@@ -752,7 +747,6 @@ async function handler(req, res) {
   if (url === '/lucidtype-dictate') return html(res, lucidtypeDictateHtml);   // hidden LucidType capture page
   if (url === '/recorder') return html(res, recorderHtml);   // hidden meeting-recorder capture page
   if (url === '/slidecapture') return html(res, slideHtml);  // hidden slide-capture window
-  if (url === '/chat') return html(res, chatHtml);
   if (url === '/github') return html(res, githubHtml);
   if (url === '/keyshortcuts') return html(res, keyshortcutsHtml);
   if (url === '/discord') {
@@ -1267,7 +1261,6 @@ function start(opts) {
     try { lucidtypeDictateHtml = fs.readFileSync(path.join(__dirname, 'lucidtype-dictate.html'), 'utf8'); } catch (e) {}
     try { recorderHtml = fs.readFileSync(path.join(__dirname, 'recorderview.html'), 'utf8'); } catch (e) {}
     try { slideHtml = fs.readFileSync(path.join(__dirname, 'slidecapture.html'), 'utf8'); } catch (e) {}
-    try { chatHtml = fs.readFileSync(path.join(__dirname, 'chatview.html'), 'utf8'); } catch (e) {}
     try { githubHtml = fs.readFileSync(path.join(__dirname, 'github.html'), 'utf8'); } catch (e) {}
     try { keyshortcutsHtml = fs.readFileSync(path.join(__dirname, 'keyshortcutsview.html'), 'utf8'); } catch (e) {}
     Object.values(voiceApps).forEach(v => {

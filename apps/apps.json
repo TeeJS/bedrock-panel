@@ -320,34 +320,6 @@
     ]
   },
   {
-    "id": "chat",
-    "name": "Open WebUI",
-    "description": "AI chat via Open WebUI",
-    "file": "chatview.html",
-    "served": true,
-    "options": [
-      {
-        "key": "endpoint",
-        "label": "Open WebUI chat URL (…/api/chat/completions)",
-        "type": "text",
-        "default": ""
-      },
-      {
-        "key": "api_key",
-        "label": "API key",
-        "type": "secret",
-        "default": "",
-        "help": "In Open WebUI: avatar (bottom-left) → Settings → Account → API Keys → Create new secret key (an admin may need to enable API keys first in Admin Panel → Settings → General → turn Enable API Keys on)."
-      },
-      {
-        "key": "model",
-        "label": "Model (required, e.g. llama3.2)",
-        "type": "text",
-        "default": ""
-      }
-    ]
-  },
-  {
     "id": "github",
     "name": "GitHub",
     "description": "Repositories and Actions",

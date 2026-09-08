@@ -286,8 +286,9 @@ One connection shared by the meeting **Analysis AI** (Meeting tab) and the
 - **Test connection** — saves any pending edits, then hits `/api/models` and reports the live
   model count or a clear error (server down vs. bad key).
 
-The existing per-page [Open WebUI chat widget](ai-chat.md) keeps its own endpoint options and is
-unaffected.
+This is the only Open WebUI connection. The older per-page **Open WebUI** chat app was removed;
+its pages became [AI Voice](ai-voice.md) pages on the Open WebUI backend, and the first one's
+URL / key / model seeded these fields if they were still blank.
 
 ## AI Profiles
 

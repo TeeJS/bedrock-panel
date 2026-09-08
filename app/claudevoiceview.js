@@ -1,8 +1,7 @@
 function $(id) { return document.getElementById(id); }
 
-// Theme — read directly from the served query (musicview.js's pattern, not chatview.html's broken
-// hardcoded-dark approach — see docs/claude-voice.md). No options here are secret (confirmed in
-// apps.json), so unlike the OWUI chat app there's no /app-config fetch needed at all for config.
+// Theme — read directly from the served query (musicview.js's pattern). No options here are secret
+// (confirmed in apps.json), so there's no /app-config fetch needed at all for config.
 var Q = new URLSearchParams(location.search);
 // This one page serves EVERY AI Voice backend: the page itself is served at /ai-voice, and every
 // server route carries the page's backend as a sub-prefix (/ai-voice/<backend>/turn, ...), so

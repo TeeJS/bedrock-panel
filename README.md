@@ -71,8 +71,7 @@ Productivity and media from one surface.
   cities, digital or analog), a **[Music controller](docs/music.md)** (now-playing +
   transport + app grid), a **[Meeting](docs/meeting.md)** app (one-tap mute/video/accept
   /decline/leave for Zoom and Teams, plus recording — see below), a **[System Monitor](docs/system-monitor.md)** (live
-  CPU/GPU/RAM/disk/network/battery), an **[Open WebUI chat](docs/ai-chat.md)** you can
-  **talk to by holding the knob**, a **[Microsoft 365](docs/apps.md)** panel (sign in with
+  CPU/GPU/RAM/disk/network/battery), a **[Microsoft 365](docs/apps.md)** panel (sign in with
   your Microsoft account for live profile, presence, and upcoming-calendar view, plus up to
   eight configurable app shortcuts and one-tap **Join meeting**), and **[AI Voice](docs/ai-voice.md)**
   — one app, five backends: a real **Claude Code**, **Codex**, or **Copilot** agent session on the
@@ -172,7 +171,7 @@ Windows today; macOS and Linux ports are in progress.
 Detailed guides live in **[docs/](docs/README.md)**:
 
 - [The editor](docs/editor.md) · [Web dashboards](docs/dashboards.md) · [Bundled apps](docs/apps.md)
-- [Music controller](docs/music.md) · [System monitor](docs/system-monitor.md) · [Open WebUI chat + voice](docs/ai-chat.md) · [AI Voice](docs/ai-voice.md) · [Live Translate](docs/live-translate.md) · [Screensaver](docs/screensaver.md)
+- [Music controller](docs/music.md) · [System monitor](docs/system-monitor.md) · [AI Voice](docs/ai-voice.md) · [Live Translate](docs/live-translate.md) · [Screensaver](docs/screensaver.md)
 - [Home Assistant integration](docs/home-assistant.md) · [Settings & knob lighting](docs/settings.md) · [Reserved Display](docs/reserved-display.md) · [Building & how it works](docs/building.md) · [Device protocol](docs/DEVICE_PROTOCOL.md)
 
 ## Companion projects

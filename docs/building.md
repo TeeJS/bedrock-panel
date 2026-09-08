@@ -118,11 +118,9 @@ app/                      the Electron launcher + PC grid editor     [MIT]
   config.html             the PC editor (pages, tiles, icons)
   config.default.json     seed config (copied to config.json on first run)
   nowplaying.js           Music: now-playing from Windows SMTC (via smtc-monitor.exe)
-  sysserver.js            localhost server for the served app pages (Music, chat, meetings)
+  sysserver.js            localhost server for the served app pages (Music, AI Voice, meetings)
   musicview.html          Music: now-playing + transport + the embedded app grid
-  chatview.html           Open WebUI chat wrapper + knob push-to-talk
-  ChatWidget.js           bundled Open WebUI chat widget   [vendored, MIT]
-  owui-widget.css         widget styles                    [vendored, MIT]
+  claudevoice-markdown.js AI Voice reply renderer (marked + sanitizer)  [vendored, MIT]
 apps/                     bundled local web apps + apps.json manifest [MIT]
 ```
 

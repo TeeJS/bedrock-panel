@@ -33,7 +33,6 @@ Included apps:
   to the current time (that's the World Clock's job). 12/24-hour option.
 - **[Music controller](music.md)** — now-playing + transport + a programmable app grid.
 - **[System monitor](system-monitor.md)** — live CPU/GPU/RAM/disk/network/battery gauges.
-- **[Open WebUI chat + voice](ai-chat.md)** — talk to your own LLM, with knob push-to-talk.
 - **[AI Voice](ai-voice.md)** — one voice+text app with a per-page **Backend** picker: a real
   **Claude Code**, **Codex**, or **Copilot** agent session on the panel (type or talk, watch
   replies stream, approve/deny actions from the touchscreen, tap the knob to start/stop), or

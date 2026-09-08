@@ -1,9 +1,9 @@
 'use strict';
-// AI Voice markdown renderer -- the SAME parser and sanitizer the Open WebUI chat app uses, lifted
-// verbatim out of app/ChatWidget.js (marked, MIT, https://github.com/markedjs/marked -- bundled by
-// taylorwilsdon/open-webui-embeddable-widget) so replies render identically on both pages. Classic
-// script, not a module: the page runs under script-src 'self'. Regenerate with the extraction
-// script if ChatWidget.js is ever updated; do not hand-edit the parser section.
+// AI Voice markdown renderer -- the parser and sanitizer of the former Open WebUI chat app, lifted
+// verbatim out of its vendored bundle (app/ChatWidget.js as of commit e7f0903; marked, MIT,
+// https://github.com/markedjs/marked, bundled by taylorwilsdon/open-webui-embeddable-widget). The
+// chat app was removed afterwards; this file is the surviving copy. Classic script, not a module:
+// the page runs under script-src 'self'. Do not hand-edit the parser section.
 //
 // window.aiVoiceMarkdown.render(text) -> sanitized HTML (allowed tags/attrs listed below).
 (function () {

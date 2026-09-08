@@ -16,6 +16,12 @@ const VOICE_APPS = ['ai-voice'];
 // The four pre-consolidation voice app ids, mapped to their AI Voice backend. Pages with these ids
 // are rewritten in migrateVoiceConfig; the ids themselves no longer exist in apps.json.
 const LEGACY_VOICE_APPS = { 'claude-voice': 'claude', 'codex-voice': 'codex', 'copilot-voice': 'copilot', 'owui-voice': 'owui' };
+// The original Open WebUI chat widget app ('chat', removed 2026-09). Its pages become AI Voice
+// pages on the Open WebUI backend; the widget's per-page connection (endpoint / api_key / model)
+// seeds the shared Settings -> Auth connection when that is still blank, and its model becomes the
+// page's model pick otherwise. api_key is moved as-is: migration runs on the config as loaded from
+// disk, BEFORE secretStore.decryptConfig, which knows settings.owui.apiKey and decrypts it in place.
+const LEGACY_CHAT_APP = 'chat';
 // Host blank by default (voice stays off until pointed at a server; the editor placeholder is
 // 127.0.0.1 for the tts-stt-windows helper). Ports are the standard Wyoming faster-whisper / piper.
 const VOICE_DEFAULTS = { sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200' };
@@ -60,6 +66,22 @@ function migrateVoiceConfig(config) {
     if (!g || !(g.app in LEGACY_VOICE_APPS)) continue;
     if (!g.options) g.options = {};
     if (!g.options.backend) g.options.backend = LEGACY_VOICE_APPS[g.app];
+    g.app = 'ai-voice';
+  }
+  for (const g of config.grids) {
+    if (!g || g.app !== LEGACY_CHAT_APP) continue;
+    const o = g.options || {};
+    const url = str(o.endpoint), apiKey = str(o.api_key), model = str(o.model);
+    if (!config.settings) config.settings = {};
+    const owui = (config.settings.owui && typeof config.settings.owui === 'object') ? config.settings.owui : {};
+    if (!str(owui.url) && url) {
+      config.settings.owui = Object.assign({ url: '', apiKey: '', model: '' }, owui, { url, apiKey, model });
+    } else if (model && model !== str(owui.model) && !('modelPick' in o)) {
+      o.modelPick = model;
+    }
+    delete o.endpoint; delete o.api_key; delete o.model;
+    if (!o.backend) o.backend = 'owui';
+    g.options = o;
     g.app = 'ai-voice';
   }
   let seeded = !!(config.settings && config.settings.voice);
