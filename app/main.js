@@ -1382,7 +1382,9 @@ function getDeviceDiagnostics() {
   try { displays = screen.getAllDisplays().map(d => ({ width: d.bounds.width, height: d.bounds.height, id: d.id })); } catch (e) {}
   let activeName = null;
   try { activeName = dev && dev.activeName ? dev.activeName() : null; } catch (e) {}
-  const snap = deviceDiagnostics.classify({ hidDevices, displays, activeName, firmware: lastDeviceState.firmware || null });
+  let openErrors = null;
+  try { openErrors = dev && dev.lastOpenErrors ? dev.lastOpenErrors() : null; } catch (e) {}
+  const snap = deviceDiagnostics.classify({ hidDevices, displays, activeName, firmware: lastDeviceState.firmware || null, openErrors, platform: process.platform });
   snap.runMode = runMode();   // panel / software / monitor — the page notes when you're not on the device
   return snap;
 }

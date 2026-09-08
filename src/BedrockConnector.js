@@ -31,6 +31,7 @@
  *   dev.start();
  */
 const EventEmitter = require('events');
+const hidPlatform = require('./hidPlatform');
 
 // VID 0x1209 (pid.codes) + PID 0xBED0 (proposed; needs claim before any binary release).
 // usagePage 0xFFB0 narrows the match to the vendor HID interface — TinyUSB's default
@@ -84,6 +85,9 @@ class BedrockConnector extends EventEmitter {
   constructor(opts = {}) {
     super();
     this.HID = opts.hid || require('node-hid');
+    this.platform = opts.platform || process.platform;   // injectable for the fake-HID tests
+    this.lastOpenError = { control: null };               // last failed open per interface (Device Diagnostics)
+    this._openGate = new hidPlatform.OpenErrorGate();
     this.keepAliveMs = opts.keepAliveMs || 1500;
     this.rescanMs    = opts.rescanMs    || 3000;
     this.watchdogMs  = opts.watchdogMs  || 3500;     // if no pong/event in this long, treat as gone
@@ -132,15 +136,20 @@ class BedrockConnector extends EventEmitter {
     }
     if (!info) return;
     try {
-      const d = new this.HID.HID(info.path);
+      const d = hidPlatform.openDevice(this.HID, info.path, this.platform);   // non-exclusive on macOS
       this.ctrl = d;
+      this.lastOpenError.control = null; this._openGate.clear('control');
       d.on('data', b => this._onCtrl(b));
       d.on('error', e => { this.emit('error', e); this._close(); });
       this.emit('connect', { iface: 'control', info });
       this._lastRxAt = Date.now();                   // grace period — don't immediately watchdog
       this.activate();
     } catch (e) {
-      this.emit('error', e);
+      // The rescan retries every few seconds: report a given failure once (decorated with the macOS
+      // Input Monitoring hint when it looks like a refusal) and keep it for Device Diagnostics.
+      const err = hidPlatform.openError(e, this.platform);
+      this.lastOpenError.control = err.message;
+      if (this._openGate.shouldReport('control', err)) this.emit('error', err);
     }
   }
 
@@ -170,12 +179,10 @@ class BedrockConnector extends EventEmitter {
   // ---- outgoing: REPORT_ID + 8-byte payload (tag in [0], data in [1..7]) ----
   _send(tag, v1 = 0, v2 = 0, v3 = 0, v4 = 0, v5 = 0, v6 = 0, v7 = 0) {
     if (!this.ctrl) return false;
-    try {
-      this.ctrl.write([REPORT_ID, tag, v1 & 0xFF, v2 & 0xFF, v3 & 0xFF, v4 & 0xFF, v5 & 0xFF, v6 & 0xFF, v7 & 0xFF]);
-      return true;
-    } catch (e) {
-      this.emit('error', e); this._close(); return false;
-    }
+    const frame = [REPORT_ID, tag, v1 & 0xFF, v2 & 0xFF, v3 & 0xFF, v4 & 0xFF, v5 & 0xFF, v6 & 0xFF, v7 & 0xFF];
+    const err = hidPlatform.writeWithRetry(() => this.ctrl.write(frame), this.platform);   // macOS retries transient failures
+    if (!err) return true;
+    this.emit('error', err); this._close(); return false;
   }
 
   ping() { return this._send(TAG_PING); }

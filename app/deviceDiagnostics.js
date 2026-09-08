@@ -44,6 +44,8 @@ function hex(n) { return '0x' + Number(n || 0).toString(16).toUpperCase().padSta
  *   displays:   [{ width, height, id?, label? }]  (main maps screen.getAllDisplays() bounds)
  *   activeName: 'aris68' | 'bedrock' | null (the live connector, an extra corroboration)
  *   firmware:   'X.Y.Z' | null (cached)
+ *   openErrors: { control, touch } last failed-open messages from the connectors (MultiKnob.lastOpenErrors), or null
+ *   platform:   process.platform (wording only)
  * Returns { device, deviceLabel, mode, firmware, channels:{display,touch,knob}, healthy, expand }.
  * Each channel: { key, label, level:'ok'|'fail'|'note', detected, detail }.
  */
@@ -51,6 +53,8 @@ function classify(input) {
   input = input || {};
   const hid = Array.isArray(input.hidDevices) ? input.hidDevices : [];
   const displays = Array.isArray(input.displays) ? input.displays : [];
+  const openErrors = input.openErrors || {};
+  const osName = input.platform === 'darwin' ? 'macOS' : 'Windows';
 
   const controlHit = hid.find(matchControl) || null;
   const controlIdent = controlHit ? matchControl(controlHit) : null;
@@ -72,28 +76,34 @@ function classify(input) {
     detail: displayHit
       ? (displayHit.width + '×' + displayHit.height + ' panel connected')
       : (mode === 'console'
-          ? 'No 1920×480 panel display found over HDMI. Check the HDMI/DP cable and that Windows sees the screen.'
+          ? 'No 1920×480 panel display found over HDMI. Check the HDMI/DP cable and that ' + osName + ' sees the screen.'
           : 'No panel display detected.'),
   };
+  // A digitizer that is present but refused our open (macOS usually owns it) is a note, not a failure:
+  // the OS may still deliver it as pointer input.
+  const touchOpenError = touchHit ? (openErrors.touch || null) : null;
   const touch = {
     key: 'touch', label: 'Touchscreen', detected: !!touchHit,
-    level: touchHit ? 'ok' : (mode === 'console' ? 'fail' : 'note'),
+    level: touchHit ? (touchOpenError ? 'note' : 'ok') : (mode === 'console' ? 'fail' : 'note'),
     detail: touchHit
-      ? ('Touch HID connected' + (touchHit.product ? ' (' + touchHit.product + ')' : ''))
+      ? ('Touch HID connected' + (touchHit.product ? ' (' + touchHit.product + ')' : '') + (touchOpenError ? ', but it could not be opened directly: ' + touchOpenError : ''))
       : (mode === 'console'
           ? 'No touch HID found. Check the touch USB cable — on the console this is a separate cable from the knob.'
           : 'No touch HID detected.'),
   };
+  // A knob that is plugged in but could not be opened is the one knob state that is a hard fail — the
+  // message carries the cause (on macOS typically the Input Monitoring permission).
+  const knobOpenError = controlHit ? (openErrors.control || null) : null;
   const knob = {
     key: 'knob', label: 'Knob', detected: !!controlHit,
-    level: controlHit ? 'ok' : 'note',
+    level: controlHit ? (knobOpenError ? 'fail' : 'ok') : 'note',
     detail: controlHit
-      ? ((deviceLabel ? deviceLabel + ' ' : '') + 'control HID connected (' + hex(controlHit.vendorId) + '/' + hex(controlHit.productId) + ')')
+      ? ((deviceLabel ? deviceLabel + ' ' : '') + 'control HID ' + (knobOpenError ? 'found' : 'connected') + ' (' + hex(controlHit.vendorId) + '/' + hex(controlHit.productId) + ')' + (knobOpenError ? ', but it could not be opened: ' + knobOpenError : ''))
       : 'No knob detected. This is fine if your console has no knob — touch still works. Otherwise check the knob USB cable.',
   };
 
   const channels = { display, touch, knob };
-  const healthy = display.level !== 'fail' && touch.level !== 'fail';
+  const healthy = display.level !== 'fail' && touch.level !== 'fail' && knob.level !== 'fail';
   // Auto-expand the most important thing that isn't OK: a hard fail first, then a note.
   const order = [display, touch, knob];
   const expand = (order.find(c => c.level === 'fail') || order.find(c => c.level === 'note') || null);

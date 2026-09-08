@@ -103,3 +103,31 @@ test('firmware and activeName pass through; activeName corroborates device when 
   assert.equal(r.firmware, '1.2.3');
   assert.equal(r.device, 'aris68');   // knob HID gone but the live connector still names it
 });
+
+test('a knob that is enumerated but could not be opened is a hard fail carrying the open error', () => {
+  const r = classify({ hidDevices: [bedrockKnob, bedrockTouch], displays: [panel], platform: 'darwin',
+    openErrors: { control: 'cannot open device — macOS may be blocking the device', touch: null } });
+  assert.equal(r.channels.knob.level, 'fail');
+  assert.match(r.channels.knob.detail, /could not be opened/);
+  assert.match(r.channels.knob.detail, /macOS may be blocking/);
+  assert.equal(r.healthy, false);
+  assert.equal(r.expand, 'knob');
+});
+
+test('a touch digitizer the OS owns is a note, not a failure', () => {
+  const r = classify({ hidDevices: [arisControl, touch], displays: [panel], platform: 'darwin',
+    openErrors: { control: null, touch: 'cannot open device' } });
+  assert.equal(r.channels.touch.level, 'note');
+  assert.match(r.channels.touch.detail, /could not be opened directly/);
+  assert.equal(r.channels.knob.level, 'ok');
+  assert.equal(r.healthy, true);
+});
+
+test('display advice names the host OS', () => {
+  const mac = classify({ hidDevices: [arisControl, touch], displays: [laptop], platform: 'darwin' });
+  assert.match(mac.channels.display.detail, /macOS sees the screen/);
+  const win = classify({ hidDevices: [arisControl, touch], displays: [laptop], platform: 'win32' });
+  assert.match(win.channels.display.detail, /Windows sees the screen/);
+  const legacy = classify({ hidDevices: [arisControl, touch], displays: [laptop] });   // no platform given
+  assert.match(legacy.channels.display.detail, /Windows sees the screen/);
+});

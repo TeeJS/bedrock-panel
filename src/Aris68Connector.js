@@ -27,6 +27,7 @@
  *   dev.start();                                   // opens, activates panel, keep-alive
  */
 const EventEmitter = require('events');
+const hidPlatform = require('./hidPlatform');
 
 // [vendorId, productId, usagePage] — first match wins.
 const CONTROL_IFACES = [[16728, 20811, 0xff60], [20498, 26647, 0xff60]]; // QUAKE / ARIS-68 control
@@ -45,11 +46,15 @@ const FR = {
   DFU: a3(0x01, [0x2F, 0x03]),         // DANGER: firmware-download mode
 };
 const be = (hi, lo) => ((hi << 8) | lo) >>> 0;
+const CTRL_MARKERS = [0x01, 0xA3];   // first byte of every control frame we parse (key matrix / 0xA3 short frame)
 
 class Aris68Connector extends EventEmitter {
   constructor(opts = {}) {
     super();
     this.HID = opts.hid || require('node-hid');
+    this.platform = opts.platform || process.platform;            // injectable for the fake-HID tests
+    this.lastOpenError = { control: null, touch: null };          // last failed open per interface (Device Diagnostics)
+    this._openGate = new hidPlatform.OpenErrorGate();
     this.keepAliveMs = opts.keepAliveMs || 1500;
     this.rescanMs = opts.rescanMs || 3000;
     this.autoActivate = opts.autoActivate !== false;
@@ -91,29 +96,46 @@ class Aris68Connector extends EventEmitter {
     if (!this.ctrl) {
       const info = this._find(CONTROL_IFACES, devices);
       if (info) try {
-        const d = new this.HID.HID(info.path); this.ctrl = d;
+        const d = hidPlatform.openDevice(this.HID, info.path, this.platform); this.ctrl = d;   // non-exclusive on macOS
+        this.lastOpenError.control = null; this._openGate.clear('control');
         d.on('data', b => this._onCtrl(b));
         d.on('error', () => this._closeCtrl());
         this.emit('connect', { iface: 'control', info });
         if (this.autoActivate) this.activate();
-      } catch (e) { this.emit('error', e); }
+      } catch (e) { this._reportOpenError('control', e); }
     }
     if (!this.touch) {
       const info = this._find(TOUCH_IFACES, devices);
+      // Independent of the control interface: on macOS the OS's own driver usually owns the digitizer,
+      // so this open can fail while the knob keeps working.
       if (info) try {
-        const d = new this.HID.HID(info.path); this.touch = d;
+        const d = hidPlatform.openDevice(this.HID, info.path, this.platform); this.touch = d;
+        this.lastOpenError.touch = null; this._openGate.clear('touch');
         d.on('data', b => this._onTouch(b));
         d.on('error', () => this._closeTouch());
         this.emit('connect', { iface: 'touch', info });
-      } catch (e) { this.emit('error', e); }
+      } catch (e) { this._reportOpenError('touch', e); }
     }
   }
 
   _closeCtrl() { if (this.ctrl) { try { this.ctrl.close(); } catch (e) {} this.ctrl = null; this.emit('disconnect', { iface: 'control' }); } }
   _closeTouch() { if (this.touch) { try { this.touch.close(); } catch (e) {} this.touch = null; this.emit('disconnect', { iface: 'touch' }); } }
 
+  // The rescan retries every few seconds: report a given failure once (decorated with the macOS Input
+  // Monitoring hint when it looks like a refusal) and keep it for Device Diagnostics.
+  _reportOpenError(iface, e) {
+    const err = hidPlatform.openError(e, this.platform);
+    this.lastOpenError[iface] = err.message;
+    if (this._openGate.shouldReport(iface, err)) this.emit('error', err);
+  }
+
   // ---- outgoing commands (all written to the control interface, report-id 0x00 prefixed) ----
-  _send(frame) { if (this.ctrl) { try { this.ctrl.write([0x00, ...frame]); return true; } catch (e) { this.emit('error', e); this._closeCtrl(); } } return false; }
+  _send(frame) {
+    if (!this.ctrl) return false;
+    const err = hidPlatform.writeWithRetry(() => this.ctrl.write([0x00, ...frame]), this.platform);   // macOS retries transient failures
+    if (!err) return true;
+    this.emit('error', err); this._closeCtrl(); return false;
+  }
   screenOn() { return this._send(FR.SCREEN_ON); }
   screenOff() { return this._send(FR.SCREEN_OFF); }
   ping() { return this._send(FR.PING); }
@@ -134,7 +156,9 @@ class Aris68Connector extends EventEmitter {
     if (!this.ctrl) return false;
     const r = new Array(33).fill(0); r[0] = 0x00; r[1] = command & 0xFF;
     data.forEach((b, i) => { r[2 + i] = b & 0xFF; });
-    try { this.ctrl.write(r); return true; } catch (e) { this.emit('error', e); this._closeCtrl(); return false; }
+    const err = hidPlatform.writeWithRetry(() => this.ctrl.write(r), this.platform);
+    if (!err) return true;
+    this.emit('error', err); this._closeCtrl(); return false;
   }
   setLedBrightness(v) { return this._via(0x07, [RGB_MATRIX_CH, 0x01, v & 0xFF]); }      // device quantizes; max ~247
   setLedEffect(i) { return this._via(0x07, [RGB_MATRIX_CH, 0x02, i & 0xFF]); }          // 0=All Off … 43 (RGB-Matrix list)
@@ -149,7 +173,7 @@ class Aris68Connector extends EventEmitter {
       const expect = [0x08, RGB_MATRIX_CH, field];
       let done = false;
       const finish = v => { if (done) return; done = true; clearTimeout(to); try { this.ctrl.removeListener('data', onData); } catch (e) {} resolve(v); };
-      const onData = b => { const a = Array.from(b); if (expect.every((x, i) => a[i] === x)) finish(a.slice(3, 3 + n)); };
+      const onData = b => { const a = Array.from(hidPlatform.stripLeadingReportId(b, [0x08])); if (expect.every((x, i) => a[i] === x)) finish(a.slice(3, 3 + n)); };
       const to = setTimeout(() => finish(null), timeoutMs);
       this.ctrl.on('data', onData);
       this._via(0x08, [RGB_MATRIX_CH, field]);
@@ -174,6 +198,7 @@ class Aris68Connector extends EventEmitter {
   // ---- incoming parse (ports recovered ProtocolUtil.checkDataValid) ----
   _onCtrl(b) {
     try {
+      b = hidPlatform.stripLeadingReportId(b, CTRL_MARKERS);   // tolerate a leading report-id byte (platform-dependent)
       if (b[0] === 0x01) { // key matrix (button-grid units)
         for (let i = 0; i < 15; i++) if (b[4 + i] === 0x01) return this.emit('key', { action: 'down', row: Math.floor(i / 5) + 1, col: (i % 5) + 1 });
         return this.emit('key', { action: 'up' });
@@ -203,6 +228,7 @@ class Aris68Connector extends EventEmitter {
   }
 
   _onTouch(b) {
+    b = hidPlatform.stripLeadingReportId(b, [0xA3]);
     if (b[0] !== 0xA3 || b[3] !== 0x1A) return; // touch report id
     const n = b[4], o = 5, pts = [];
     for (let i = 0; i < n; i++) { const t = 5 * i; pts.push({ action: b[o + t], x: be(b[o + t + 4], b[o + t + 3]), y: be(b[o + t + 2], b[o + t + 1]) }); }

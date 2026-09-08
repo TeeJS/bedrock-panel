@@ -56,3 +56,14 @@ test('MultiKnob starts remaining backends when one backend start throws', () => 
   assert.equal(errors[0].phase, 'start');
   assert.match(errors[0].message, /bedrock start failed.*bedrock start exploded/i);
 });
+
+test('lastOpenErrors merges the connectors, preferring the active one', () => {
+  const hid = { devices: () => [], HID: class {} };
+  const knob = new MultiKnob({ hid, rescanMs: 60000 });
+  knob.connectors[0].impl.lastOpenError = { control: null };
+  knob.connectors[1].impl.lastOpenError = { control: 'aris control refused', touch: 'aris touch refused' };
+  assert.deepEqual(knob.lastOpenErrors(), { control: 'aris control refused', touch: 'aris touch refused' });
+  knob.connectors[0].impl.lastOpenError = { control: 'bedrock refused' };
+  knob.active = knob.connectors[0];
+  assert.deepEqual(knob.lastOpenErrors(), { control: 'bedrock refused', touch: 'aris touch refused' });
+});

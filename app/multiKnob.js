@@ -108,6 +108,22 @@ class MultiKnob extends EventEmitter {
 
   /** Identify which connector is currently active — null until a device connects. */
   activeName() { return this.active ? this.active.name : null; }
+
+  /**
+   * Last failed device opens per interface ({ control, touch }: message or null). Device Diagnostics
+   * shows these when a device is enumerated but could not be opened (macOS Input Monitoring, another
+   * process holding it). The active connector's view wins; otherwise the first connector reporting.
+   */
+  lastOpenErrors() {
+    const out = { control: null, touch: null };
+    const order = this.active ? [this.active, ...this.connectors.filter(c => c !== this.active)] : this.connectors;
+    for (const c of order) {
+      const e = c.impl.lastOpenError || {};
+      if (!out.control && e.control) out.control = e.control;
+      if (!out.touch && e.touch) out.touch = e.touch;
+    }
+    return out;
+  }
 }
 
 module.exports = MultiKnob;

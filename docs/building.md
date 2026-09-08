@@ -107,10 +107,21 @@ normally need it for initial binding — `Set up touchscreen` alone is sufficien
 
 Apple Silicon only for now (the packaged app declares macOS 14.2+; Electron 44 itself needs 13+).
 **Software mode** — the resizable desktop window, the editor, and every platform-neutral app — is
-the supported surface today. Knob/touch hardware and the Windows-only helpers (now-playing, the
-system-volume readout, foreground-app follow, mic-session auto-record, Outlook meeting info,
-reserved display, touchscreen setup) are still to come on macOS; each simply reports itself
-unavailable, and the editor hides or disables the Windows-only controls.
+the supported surface today. The Windows-only helpers (now-playing, the system-volume readout,
+foreground-app follow, mic-session auto-record, Outlook meeting info, reserved display, touchscreen
+setup) are still to come on macOS; each simply reports itself unavailable, and the editor hides or
+disables the Windows-only controls.
+
+**Knob and touchscreen hardware** is wired for macOS but not yet validated on a real console from a
+Mac: both HID connectors open devices non-exclusively (IOKit opens exclusively by default, which
+fails whenever the OS's own driver holds the touch digitizer), retry a failed write three times
+before giving the device up (the original DK-Suite driver did the same), tolerate a leading
+report-id byte on incoming frames, and report a refused open once instead of every rescan. A
+refusal on macOS is usually the **Input Monitoring** permission (System Settings → Privacy &
+Security); the **Device Diagnostics** app shows the refusal on the Knob row with that hint. Panel
+mode places the window on the 1920×480 display with macOS simple fullscreen (no separate Space).
+How macOS delivers the touch digitizer (pointer events versus nothing) is the open question for
+the first real-hardware run.
 
 Prerequisites: the Xcode Command Line Tools (`xcode-select --install` — `clang`, `codesign`,
 `hdiutil`) and Node 26 (`brew install node`). No Xcode, no Python, no native toolchain: both
