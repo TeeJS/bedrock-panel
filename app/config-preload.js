@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   getConfig() { return ipcRenderer.invoke('getConfig'); },
   getAppVersion() { return ipcRenderer.invoke('getAppVersion'); },
   getApps() { return ipcRenderer.invoke('getApps'); },
+  getMacPermissions() { return ipcRenderer.invoke('getMacPermissions'); },
+  requestMacPermission(kind) { return ipcRenderer.invoke('requestMacPermission', kind); },
+  openMacPrivacyPane(kind) { return ipcRenderer.invoke('openMacPrivacyPane', kind); },
   saveConfig(config) { return ipcRenderer.invoke('saveConfigFromEditor', config); },
   // Fired when something outside the editor changed config (an accepted AI panel, a counter tile).
   onConfigChangedExternally(cb) { ipcRenderer.on('configChangedExternally', () => cb()); },

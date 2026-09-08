@@ -9,7 +9,11 @@
 // to immediately drop the video track. `audio: 'loopback'` is what tells
 // Chromium to capture the OS render-endpoint loopback:
 //   - Windows  -> WASAPI loopback of the default render device (no native code)
-//   - macOS    -> ScreenCaptureKit system audio (needs Screen Recording perm)
+//   - macOS    -> CoreAudio tap (Electron >= 39, macOS 14.2+; "System Audio Recording Only"
+//                 permission). Needs NSAudioCaptureUsageDescription in Info.plist or the track is
+//                 silently dead: Electron's own dev binary carries it, the packaged app gets it from
+//                 build.mac.extendInfo. The video source we return also triggers the Screen Recording
+//                 prompt on the first recording; denying that only blanks the discarded video track.
 //   - Linux    -> PulseAudio/PipeWire monitor of the default sink
 //
 // This auto-approves the request with NO user picker. That is exactly what you

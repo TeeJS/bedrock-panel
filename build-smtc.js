@@ -29,6 +29,9 @@ const log = m => console.log('[build:smtc] ' + m);
 // Non-fatal for development: if the native toolchain is absent, JS/Electron still starts and each
 // feature logs that its helper is unavailable. Release builds verify the helpers on-device.
 const bail = m => { console.warn('[build:smtc] ' + m + ' — skipping native helper compilation.'); process.exit(0); };
+// The helpers are Windows-only (WinRT / WASAPI / COM). Elsewhere exit quietly instead of probing for
+// csc.exe — the same contract as build-dpapi.js, so `npm start` on macOS/Linux logs nothing misleading.
+if (process.platform !== 'win32') { log('Windows-only C# helpers — skipped on ' + process.platform); process.exit(0); }
 
 // Only (re)build the targets whose source is newer than its exe (or whose exe is missing).
 const stale = TARGETS.filter(t => {

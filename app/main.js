@@ -30,6 +30,30 @@ const { app, BrowserWindow, WebContentsView, Tray, Menu, nativeImage, screen, po
 // data, drop-in apps) before anything reads userData. See app/userData.js. Must stay above every
 // app.getPath('userData') call and above the single-instance lock.
 require('./userData').applyToApp(app, m => console.log(m));
+// macOS permission wiring: status + System Settings deep links for the editor, and the Accessibility
+// gate robotjs needs (keystrokes are silently dropped without it). No-op on other platforms.
+const { systemPreferences, desktopCapturer } = require('electron');
+const macPermissions = require('./macPermissions').createMacPermissions({ systemPreferences, desktopCapturer, shell, log: m => console.log('[permissions] ' + m) });
+// macOS system audio (meeting recorder): Electron >= 39 captures it through a CoreAudio tap on macOS
+// 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
+// ScreenCaptureKit loopback (Screen Recording permission, purple indicator) for troubleshooting only.
+if (process.platform === 'darwin' && process.env.BEDROCK_MAC_LEGACY_LOOPBACK === '1') app.commandLine.appendSwitch('disable-features', 'MacCatapLoopbackAudioForScreenShare');
+// Desktop notification that tolerates platforms where it can't be delivered: macOS refuses
+// notifications from unsigned/ad-hoc builds (Electron 42 uses UNNotification) and fires 'failed'
+// instead of throwing. Log that and, on macOS, park the text in the tray tooltip so a boot problem
+// stays discoverable until builds are signed. Never throws.
+function notifyUser(title, body) {
+  try {
+    if (!Notification.isSupported()) return false;
+    const n = new Notification({ title, body, silent: true });
+    n.on('failed', (_e, err) => {
+      console.log('[notify] not delivered: ' + err);
+      if (process.platform === 'darwin' && tray) { try { tray.setToolTip('Bedrock Panel — ' + body); } catch (e) {} }
+    });
+    n.show();
+    return true;
+  } catch (e) { return false; }
+}
 
 // Last-resort process backstops. Installed here, before any module below can open a connection or
 // schedule async work, so a stray rejection/throw during boot (fire-and-forget chains like the HA
@@ -100,7 +124,7 @@ function onSysserverDiagnostic(ev) {
     console.log('[sysserver] preferred port ' + ev.preferredPort + ' unavailable (' + ev.reason + '); using an ephemeral port');
     if (!sawPortFallbackNotice) {
       sawPortFallbackNotice = true;
-      try { if (Notification.isSupported()) new Notification({ title: 'Bedrock Panel', body: 'The panel server changed ports; saved app data (drop-in saves, high scores, settings) may appear missing because the local app origin changed. The data was not deleted.', silent: true }).show(); } catch (e) {}
+      notifyUser('Bedrock Panel', 'The panel server changed ports; saved app data (drop-in saves, high scores, settings) may appear missing because the local app origin changed. The data was not deleted.');
     }
     return;
   }
@@ -215,7 +239,7 @@ const LED_DEFAULT = { effect: 1, brightness: 200, speed: 128, hue: 128, sat: 255
 const THEME_DEFAULT = { appearance: 'system', accent: '#7CFFB2', presets: ['#7CFFB2', '#38B6FF', '#FF4040', '#FFB000'] };
 const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: false, lighting: Object.assign({}, LED_DEFAULT), theme: Object.assign({}, THEME_DEFAULT) };
 const actionDeps = { fs, shell, exec, execFile, spawn, platform: process.platform, log: message => console.log(message) };
-const mediaKeys = createMediaKeys({ log: message => console.log(message) });
+const mediaKeys = createMediaKeys({ log: message => console.log(message), ensureTrusted: macPermissions.supported ? macPermissions.ensureTrusted : null });
 let presenceService = null;   // busy-presence fan-out (Busylight / WLED / HA over MQTT); null until boot
 let firstRun = false;     // set by loadConfig when there was no prior config (fresh install)
 let micState = false;     // current device mic state (LED follows it)
@@ -731,7 +755,9 @@ function readFolderAppManifest(appDir) {
 // %APPDATA%\bedrock-panel\apps (default) or %LOCALAPPDATA%\bedrock-panel\apps. This is where the manager imports to.
 function dropInDir() {
   const useLocal = (config.settings && config.settings.dropInLocation) === 'localappdata';
-  const base = (useLocal ? process.env.LOCALAPPDATA : process.env.APPDATA) || process.env.APPDATA || process.env.LOCALAPPDATA || USER_DIR;
+  // Off Windows neither env var exists: use Electron's appData (~/Library/Application Support on macOS)
+  // so the path is <appData>/bedrock-panel/apps — never USER_DIR, which already ends in the app folder.
+  const base = (useLocal ? process.env.LOCALAPPDATA : process.env.APPDATA) || process.env.APPDATA || process.env.LOCALAPPDATA || app.getPath('appData');
   return path.join(base, require('./userData').NEW_NAME, 'apps');
 }
 function ensureDropInDir() { const d = dropInDir(); try { fs.mkdirSync(d, { recursive: true }); } catch (e) {} return d; }
@@ -1136,7 +1162,9 @@ const githubService = new GitHubService({
 });
 async function openAppServerExternal(value) {
   const raw = String(value || '');
-  if (raw === 'ms-teams:' || raw === 'msteams:') {
+  if (process.platform === 'win32' && (raw === 'ms-teams:' || raw === 'msteams:')) {
+    // Bare scheme, no path: on Windows only ShellExecute ('start') resolves it. Elsewhere it falls
+    // through to shell.openExternal below, which hands the scheme to the OS the same way.
     return new Promise(resolve => exec('start ' + raw, { windowsHide: true }, err => resolve(!err)));
   }
   let target;
@@ -3708,7 +3736,7 @@ app.whenReady().then(async () => {
           try { w.loadURL('http://127.0.0.1:' + serverPort + '/slidecapture'); } catch (e) { console.log('[slide] loadURL error: ' + e.message); }
           return w;
         },
-        notify: (title, body) => { try { if (Notification.isSupported()) new Notification({ title, body, silent: true }).show(); } catch (e) {} },
+        notify: (title, body) => { notifyUser(title, body); },
         onState: () => {},   // the meeting panel polls /meeting-state (~1s), so no push is needed
         log: msg => console.log('[slide] ' + msg),
       });
@@ -3754,8 +3782,9 @@ app.whenReady().then(async () => {
     // Lazy-required + individually try/caught like the recorder so a failure here can never take
     // down call control or recording.
     bootStage = 'transcription';
-    migrateLegacyDefaultFolders();
-    migrateLegacyMeetingWavs();
+    // macOS: these touch ~/Documents and would raise the Files & Folders prompt at first launch. The
+    // legacy names are Windows-era, so a Mac has nothing to migrate — let the first recording ask.
+    if (process.platform !== 'darwin') { migrateLegacyDefaultFolders(); migrateLegacyMeetingWavs(); }
     try {
       meetingLibrary = require('./meetingLibrary').createMeetingLibrary({
         resolveFolders: resolveMeetingFolders,
@@ -3798,24 +3827,12 @@ app.whenReady().then(async () => {
     // Name the stage that failed (not a generic 'local panel services') and make it VISIBLE — a
     // silent catch here made a partial boot failure indistinguishable from a working launch.
     console.log('[boot] ' + bootStage + ' failed to start: ' + faultDetail(e));   // sanitized — no raw message/secret
-    try {
-      if (Notification.isSupported()) new Notification({
-        title: 'Bedrock Panel',
-        body: 'Startup problem: ' + bootStage + ' did not start, so features that depend on it are unavailable this session. Details are in the log.',
-        silent: true,
-      }).show();
-    } catch (er) {}
+    notifyUser('Bedrock Panel', 'Startup problem: ' + bootStage + ' did not start, so features that depend on it are unavailable this session. Details are in the log.');
   }
   // One aggregated, non-modal notice for any OPTIONAL subsystem that failed its own guard (#5). The
   // server + its dependents still came up; only the named features are degraded.
   if (bootFailures.length) {
-    try {
-      if (Notification.isSupported()) new Notification({
-        title: 'Bedrock Panel',
-        body: 'Some panel features did not start (' + bootFailures.join(', ') + '); the rest are running normally. Details are in the log.',
-        silent: true,
-      }).show();
-    } catch (er) {}
+    notifyUser('Bedrock Panel', 'Some panel features did not start (' + bootFailures.join(', ') + '); the rest are running normally. Details are in the log.');
   }
   sweepIconCache();   // clean up orphaned URL-icon cache files left by prior sessions
   // Same idea for the approval hook: a crash (or a force-kill) skips before-quit's removal and strands
@@ -4420,6 +4437,11 @@ app.whenReady().then(async () => {
     else if (changed) applyRunModeLive();                  // re-run while UI is up: rebuild the window in-process
     return true;
   });
+  // macOS permissions block (Settings → Hardware): status, OS prompts on request, and System Settings
+  // deep links. Feature code prompts lazily on first use; nothing here runs at startup.
+  ipcMain.handle('getMacPermissions', (e) => { if (!isFrom(e, configWin)) return null; return macPermissions.status(); });
+  ipcMain.handle('requestMacPermission', (e, kind) => { if (!isFrom(e, configWin)) return { ok: false, reason: 'unauthorized' }; return macPermissions.request(String(kind || '')); });
+  ipcMain.handle('openMacPrivacyPane', (e, kind) => { if (!isFrom(e, configWin)) return false; return macPermissions.openSettings(String(kind || '')); });
   ipcMain.handle('openWelcome', (e) => { if (!isFrom(e, configWin)) return false; createWelcomeWindow(); return true; });
 
   nativeTheme.on('updated', () => { if (themeGlobal().appearance === 'system') applyTheme(); });   // follow the OS light/dark in System mode
@@ -4428,6 +4450,15 @@ app.whenReady().then(async () => {
   // launch straight away.
   if (firstRun) createWelcomeWindow();
   else applyRunModeAndLaunch();
+  // macOS: a Dock click with no window open fires 'activate' (the process stays alive in the menu
+  // bar, so the default does nothing). Bring back the software window, or the editor in panel/monitor
+  // mode. Registered after the initial launch so the activate macOS fires at startup can't double-create
+  // anything; the event never fires on other platforms.
+  app.on('activate', () => {
+    if (welcomeWin && !welcomeWin.isDestroyed()) { welcomeWin.show(); welcomeWin.focus(); return; }
+    if (runMode() === 'software') { createSoftwareWindow(); return; }
+    if (configWin && !configWin.isDestroyed()) { configWin.show(); configWin.focus(); } else openConfigWindow();
+  });
 
   // Screensaver idle check: one always-running interval; every tick re-reads live config, so page
   // adds/removes and setting edits apply with no re-arm. All gates live in screensaver-idle.js.

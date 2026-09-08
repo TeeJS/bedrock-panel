@@ -99,6 +99,9 @@ const DEFAULT_SHORTCUTS_BY_APP = Object.freeze({
 });
 
 function officeInstallCandidates(executable, env, fs) {
+  // These are Windows install locations whatever the host is, so build them with Windows path rules
+  // (on a Mac `path.join` would produce mixed separators that can never match an existing file).
+  const path = require('path').win32;
   const candidates = [executable];
   const roots = [env.ProgramFiles, env['ProgramFiles(x86)']].filter(Boolean);
   roots.forEach(root => {

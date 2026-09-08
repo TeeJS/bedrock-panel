@@ -100,6 +100,13 @@ class SystemAudioCapture {
           stream.getTracks().forEach(t => t.stop());
           throw new Error('getDisplayMedia returned no audio track — is the loopback handler registered on this session?');
         }
+        // macOS: without the "System Audio Recording Only" permission (or the Info.plist usage string)
+        // Chromium still hands back an audio track — created already 'ended', never delivering a
+        // sample. Fail loudly instead of recording a silent right channel.
+        if (stream.getAudioTracks()[0].readyState === 'ended') {
+          stream.getTracks().forEach(t => t.stop());
+          throw new Error('SYSTEM_AUDIO_DENIED: system audio is blocked — on macOS allow Bedrock Panel under System Settings → Privacy & Security → Screen & System Audio Recording (System Audio Recording Only), then start the recording again.');
+        }
         return stream;
       })(),
     ]);

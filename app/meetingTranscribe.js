@@ -29,18 +29,23 @@ const HOOK_TIMEOUT_MS = 120000;      // pre/post shell command budget
 const SERVER_WAIT_MS = 300000;       // after the pre hook: how long the server gets to become healthy
 const SERVER_POLL_MS = 5000;
 
-// Run a user-authored pre/post shell command. Written to a temp .cmd and executed through
-// cmd.exe so multi-line commands and full shell syntax work; output is logged, non-zero exit
-// rejects with stderr.
+// Run a user-authored pre/post shell command. Written to a temp script and executed through the
+// platform shell (a .cmd via cmd.exe on Windows, a .sh via /bin/sh elsewhere) so multi-line commands
+// and full shell syntax work; output is logged, non-zero exit rejects with stderr.
 function runShellHook(cmd, log, timeoutMs) {
   return new Promise((resolve, reject) => {
     const os = require('os');
     const fs = require('fs');
     const { execFile } = require('child_process');
-    const file = path.join(os.tmpdir(), 'oqx-meeting-hook-' + Date.now() + '.cmd');
-    try { fs.writeFileSync(file, '@echo off\r\n' + String(cmd).replace(/\r?\n/g, '\r\n') + '\r\n'); }
+    const win = process.platform === 'win32';
+    const file = path.join(os.tmpdir(), 'oqx-meeting-hook-' + Date.now() + (win ? '.cmd' : '.sh'));
+    const body = win
+      ? '@echo off\r\n' + String(cmd).replace(/\r?\n/g, '\r\n') + '\r\n'
+      : '#!/bin/sh\n' + String(cmd).replace(/\r\n/g, '\n') + '\n';
+    try { fs.writeFileSync(file, body); }
     catch (e) { return reject(new Error('could not write hook script: ' + e.message)); }
-    execFile('cmd.exe', ['/d', '/s', '/c', file], { timeout: timeoutMs || HOOK_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    const [bin, args] = win ? ['cmd.exe', ['/d', '/s', '/c', file]] : ['/bin/sh', [file]];
+    execFile(bin, args, { timeout: timeoutMs || HOOK_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       try { fs.unlinkSync(file); } catch (e) {}
       const out = String(stdout || '').trim();
       if (out) log('hook output: ' + out.slice(0, 400));
@@ -335,4 +340,4 @@ function createMeetingTranscriber(deps) {
   return { enqueue, getState };
 }
 
-module.exports = { createMeetingTranscriber };
+module.exports = { createMeetingTranscriber, runShellHook };

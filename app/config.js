@@ -1,4 +1,6 @@
   const configApi = window.bedrockConfig;
+  const IS_MAC = /^Mac/.test(navigator.platform || '');   // editor-only platform switch (no IPC): hides Windows-only controls on macOS
+  let macPermFocusHooked = false;   // one window-focus listener for the macOS permissions block, however often Settings re-renders
   const VOICE_APPS = ['ai-voice'];   // apps with STT/TTS voice (one app, five backends)
   // Mirrors DEFAULT_CLEANUP_PROMPT + REWRITE_PRESETS in lucidtypeAI.js — pre-filled in the editable prompt boxes.
   const LT_DEFAULT_CLEANUP_PROMPT = "Fix the grammar, spelling, and punctuation in the user's text. Preserve the author's original wording, tone, and voice as much as possible. Remove filler words (uh, er, ah, um, mm, like when unnecessary), combine fragmented or run-on sentences into clear ones, and drop false starts and repeated words, while keeping the original meaning and voice. Output only the corrected text, with no preamble, quotes, or explanation.";
@@ -3911,15 +3913,19 @@
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sKeepAwake" ${s.keepDisplayAwake ? 'checked' : ''}> Keep the display awake while running (disables the screensaver) — Panel mode only</label></div>
       <details class="hint"><summary>Panel mode only. Keeps the screen from sleeping and stops the Windows screensaver so the QUAKE panel stays lit.</summary> <b>Off by default</b> (and always off in Software/Monitor mode) so your normal screensaver works. Windows has no per-display option, so when on it suppresses the screensaver on all displays.</details>
 
+${IS_MAC ? `
+      <p class="sectitle">macOS permissions</p>
+      <details class="hint"><summary>macOS asks for each permission the first time a feature needs it; this shows what is granted and opens the matching System Settings pane.</summary> <b>Accessibility</b> lets Bedrock Panel send keystrokes (paste tiles, macros, meeting hotkeys, media keys). <b>Microphone</b> is for recordings, dictation, and the voice apps. <b>Screen &amp; System Audio Recording</b> covers slide capture and the other side of a meeting recording (System Audio Recording Only). Grants attach to the app build, so an update may ask again until builds are notarized.</details>
+      <div id="sMacPerms"></div>` : `
       <p class="sectitle">Touchscreen</p>
       <details class="hint"><summary>If touches land on the wrong monitor, click <b>Set up touchscreen</b>.</summary> Bedrock Panel launches Windows' built-in touch-identify wizard (the one Microsoft buried behind the broken-in-24H2 Tablet PC Settings UI) — accept the UAC prompt, then <b>press Enter on your keyboard</b> to skip past your other monitors as the prompt cycles through them, and <b>tap the panel with your finger</b> only when the prompt appears on the panel. That writes a persistent binding under <code>HKLM\\…\\Wisp\\Pen\\Digimon</code> that survives reboot, sleep, and primary-display swaps.</details>
       <details class="hint"><summary><b>Clear all calibrations</b> wipes any old <code>tabcal</code> coordinate calibration.</summary> You don't normally need it — only run it if your taps land on the right display but are visibly off-target.</details>
-      <div class="row" style="gap:8px"><button id="sTouchSetup">Set up touchscreen</button><button id="sTouchClear">Clear all calibrations</button><span id="sTouchMsg" class="hint" style="margin:0 0 0 10px"></span></div>`;
+      <div class="row" style="gap:8px"><button id="sTouchSetup">Set up touchscreen</button><button id="sTouchClear">Clear all calibrations</button><span id="sTouchMsg" class="hint" style="margin:0 0 0 10px"></span></div>`}`;
 
     // Monitor tab — reserved-display protection and intentional normal-monitor behavior
     const monHtml = `
       <p class="sectitle">Reserved Display</p>
-      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}> Keep application windows off the panel display</label></div>
+      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}${IS_MAC ? ' disabled' : ''}> Keep application windows off the panel display</label></div>
       <details class="hint"><summary>Windows only. Windows dragged or relocated onto the panel display are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits.</summary> If your other displays disconnect, their positions are held and restored when a display returns. Bedrock Panel, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
 
       <p class="sectitle">Monitor mode <span id="sMonPill" class="stpill off">checking…</span></p>
@@ -4143,7 +4149,7 @@
         <input id="meMyName" value="${esc(me.myName)}" placeholder="e.g. T.J. Schmitz" style="flex:1"></div>
       <details class="hint"><summary>Your enrolled speaker name.</summary> When set, it's sent as <b>me_name</b> and the transcription server labels your isolated-mic channel's voice with certainty (channel-guided ID) — no threshold wobble for you. Blank = off. Note: in hybrid meetings, people in the room with you also land on your mic channel and still go through normal identification.</details>
       <div class="row" style="margin-top:12px"><label class="iconopt" style="width:auto"><input type="checkbox" id="meHooks" ${me.transcribeHooksEnabled ? 'checked' : ''}> Run commands before/after transcription</label></div>
-      <details class="hint"><summary>Start and stop the transcription server around each batch — e.g. a diarizer container that holds GPU memory while loaded.</summary> <b>Before</b> runs once when the queue starts; Bedrock Panel then waits (up to 5 min) for the server's /health before uploading. <b>After</b> runs once when the queue finishes. Full cmd.exe syntax, multi-line OK — or just call a .bat.</details>
+      <details class="hint"><summary>Start and stop the transcription server around each batch — e.g. a diarizer container that holds GPU memory while loaded.</summary> <b>Before</b> runs once when the queue starts; Bedrock Panel then waits (up to 5 min) for the server's /health before uploading. <b>After</b> runs once when the queue finishes. Full shell syntax (cmd.exe on Windows, /bin/sh on macOS), multi-line OK — or just call a .bat / .sh script.</details>
       <div class="row"><label>Before</label>
         <textarea id="meHookPre" rows="2" style="flex:1; font-family:inherit" placeholder='e.g. ssh root@192.168.1.25 "docker start meeting-diarizer"'>${esc(me.preTranscribeCmd)}</textarea></div>
       <div class="row" style="margin-top:8px"><label>After</label>
@@ -4792,11 +4798,11 @@
             <summary style="cursor:pointer;color:#9fb3c8;font-size:13px;user-select:none">Advanced settings</summary>
             <label class="row" style="gap:8px;align-items:center;width:auto;margin-top:10px"><input type="checkbox" id="diAutoPage" style="width:auto"> Add a page for newly installed apps</label>
             <label class="row" style="gap:8px;align-items:center;width:auto;margin-top:8px"><input type="checkbox" id="diMulti" style="width:auto"> Allow multiple drop-in app repositories</label>
-            <div class="row" style="margin-top:12px"><label style="width:auto">Storage location</label>
+${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label style="width:auto">Storage location</label>
               <select id="diLoc" style="width:auto">
                 <option value="appdata">%APPDATA%\\bedrock-panel</option>
                 <option value="localappdata">%LOCALAPPDATA%\\bedrock-panel</option>
-              </select></div>
+              </select></div>`}
             <p class="hint" id="diLocPath" style="margin:2px 0 0"></p>
             <p class="hint">Where imported drop-in apps are stored — this folder survives app updates (the install folder doesn't).</p>
           </details>`;
@@ -5102,6 +5108,23 @@
         } catch (e) { tMsg.textContent = 'Clear failed: ' + (e.message || e); tMsg.style.color = '#c98'; }
         finally { tClr.disabled = false; }
       };
+      // macOS permissions block (Settings → Hardware; the element only exists on a Mac). Status comes from
+      // main; buttons trigger the OS prompt or deep-link into System Settings. Re-renders when the editor
+      // window regains focus, i.e. when the user comes back from System Settings.
+      const renderMacPerms = () => {
+        const el = document.getElementById("sMacPerms");
+        if (!el || !configApi.getMacPermissions) return;
+        configApi.getMacPermissions().then(st => {
+          if (!st || !st.supported) { el.innerHTML = ""; return; }
+          const ROWS = [["accessibility", "Accessibility — keystrokes for paste tiles, macros, meeting hotkeys, media keys"], ["microphone", "Microphone — recordings, dictation, voice apps"], ["screen", "Screen &amp; System Audio Recording — slide capture, system audio in recordings"]];
+          const pill = v => v === "granted" ? ["ok", "granted"] : v === "not-determined" ? ["off", "not asked yet"] : ["off", v === "denied" || v === "restricted" ? "not granted" : "unknown"];
+          el.innerHTML = ROWS.map(([k, label]) => { const [cls, txt] = pill(st[k]); return `<div class="row" style="gap:8px;align-items:center"><span style="flex:1">${label}</span><span class="stpill ${cls}">${txt}</span>${st[k] === "granted" ? "" : `<button data-req="${k}">Request</button>`}<button data-pane="${k}">Open System Settings</button></div>`; }).join("");
+          el.querySelectorAll("button[data-req]").forEach(b => b.onclick = () => configApi.requestMacPermission(b.dataset.req).then(renderMacPerms, renderMacPerms));
+          el.querySelectorAll("button[data-pane]").forEach(b => b.onclick = () => configApi.openMacPrivacyPane(b.dataset.pane));
+        }).catch(() => {});
+      };
+      renderMacPerms();
+      if (!macPermFocusHooked) { macPermFocusHooked = true; window.addEventListener("focus", renderMacPerms); }
       document.getElementById('sEffect').onchange = e => live({ effect: parseInt(e.target.value, 10) });
       const cv = document.getElementById('sColorVal');
       document.getElementById('sColor').onchange = e => { const { hue, sat } = hexToHsv(e.target.value); cv.textContent = `H${hue} S${sat}`; live({ hue, sat, accentOverride: true }); sOvr.checked = true; sColEl.disabled = false; };

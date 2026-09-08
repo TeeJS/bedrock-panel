@@ -761,7 +761,12 @@ async function startPlugin(p) {
       : spawn(cp.path, args, { cwd: p.dir, stdio: 'ignore', windowsHide: true });
   } catch (e) { p.status = 'crashed'; p.error = e.message; bump(); return; }
   p.status = 'starting'; p.error = '';
+  // A spawn failure (missing/non-executable CodePath: ENOENT, EACCES) surfaces as an async 'error'
+  // event; unhandled it is an uncaughtException that takes the whole host down. Record it as a crash
+  // with no restart — the process never started, so the backoff loop has nothing to retry.
+  p.proc.on('error', e => { p.proc = null; p.status = 'crashed'; p.error = 'could not start: ' + (e && e.message || e); bump(); });
   p.proc.on('exit', () => {
+    if (!p.proc) return;   // already handled by the spawn 'error' path
     p.proc = null;
     if (p.status === 'stopping') {
       p.status = 'stopped'; bump();
