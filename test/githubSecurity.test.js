@@ -27,6 +27,9 @@ test('integrated GitHub API is same-origin and rotating-capability gated', async
   assert.equal(Object.hasOwn(settings,'accessToken'),false);
   const second = settingsResponse.headers.get('x-bedrock-panel-capability');
   assert.match(second,/^[A-Za-z0-9_-]{43}$/);
+  // Keep one prior token valid so a cancelled/lost response cannot strand the live panel.
+  // It is single-use: accepting it rotates the window and the next replay is rejected.
+  assert.equal((await pageRequest(port,'/api/github/settings',{headers:{Authorization:'Bearer '+first}})).status,200);
   assert.equal((await pageRequest(port,'/api/github/settings',{headers:{Authorization:'Bearer '+first}})).status,403);
 
   const repositoriesResponse = await pageRequest(port,'/api/github/repositories',{headers:{Authorization:'Bearer '+second}});
@@ -57,4 +60,31 @@ test('leaving the integrated GitHub page invalidates its capability', async t =>
   sysserver.setActivePage('github'); const capability=sysserver.issueGitHubCapability(); sysserver.setActivePage(null);
   const response=await pageRequest(port,'/api/github/settings',{headers:{Authorization:'Bearer '+capability}});
   assert.equal(response.status,403);
+});
+
+test('returning to GitHub reloads the guest so it reads the replacement capability', () => {
+  const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'app', 'index.js'), 'utf8');
+  assert.match(source, /const hasStartupCapability = \/\(\?:\^\|\[&#\]\)_cap=/);
+  assert.match(source, /!hasStartupCapability && desktop === webDesktop/);
+});
+
+test('panel and editor preview rotate independent GitHub capability chains', async t => {
+  const githubApp = {
+    publicSettings: () => ({ ok: true }),
+    repositories: async () => ({ ok: true, items: [] })
+  };
+  const port = await sysserver.start({ githubApp });
+  t.after(() => sysserver.stop());
+  sysserver.setActivePage('github');
+  const panel = sysserver.issueGitHubCapability();
+  const preview = sysserver.issueGitHubCapability();
+
+  const panelSettings = await pageRequest(port, '/api/github/settings', { headers: { Authorization: 'Bearer ' + panel } });
+  const panelNext = panelSettings.headers.get('x-bedrock-panel-capability');
+  const panelRepositories = await pageRequest(port, '/api/github/repositories', { headers: { Authorization: 'Bearer ' + panelNext } });
+  assert.equal(panelRepositories.status, 200);
+
+  // The preview's original token remains valid even after the panel advances twice.
+  const previewSettings = await pageRequest(port, '/api/github/settings', { headers: { Authorization: 'Bearer ' + preview } });
+  assert.equal(previewSettings.status, 200);
 });

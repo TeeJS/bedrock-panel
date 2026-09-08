@@ -12,6 +12,7 @@ const els = {
   projectButton: document.getElementById('projectButton'),
   projectLabel: document.getElementById('projectLabel'),
   refreshButton: document.getElementById('refreshButton'),
+  diagnosticButton: document.getElementById('diagnosticButton'),
   openDevOpsButton: document.getElementById('openDevOpsButton'),
   pickerOverlay: document.getElementById('pickerOverlay'),
   pickerTitle: document.getElementById('pickerTitle'),
@@ -23,7 +24,12 @@ const els = {
   branchField: document.getElementById('branchField'),
   branchInput: document.getElementById('branchInput'),
   cancelConfirm: document.getElementById('cancelConfirm'),
-  acceptConfirm: document.getElementById('acceptConfirm')
+  acceptConfirm: document.getElementById('acceptConfirm'),
+  diagnosticOverlay: document.getElementById('diagnosticOverlay'),
+  diagnosticText: document.getElementById('diagnosticText'),
+  closeDiagnostic: document.getElementById('closeDiagnostic'),
+  copyDiagnostic: document.getElementById('copyDiagnostic'),
+  doneDiagnostic: document.getElementById('doneDiagnostic')
 };
 
 const state = {
@@ -38,7 +44,8 @@ const state = {
   refreshTimer: null,
   refreshMinutes: 5,
   cachedViews: new Map(),
-  confirmResolve: null
+  confirmResolve: null,
+  lastDiagnostic: null
 };
 
 const CARD_ICONS = {
@@ -104,6 +111,7 @@ async function api(action, params, options) {
     const failure = new Error(data.error || 'The request failed.');
     failure.code = data.code;
     failure.reauth = data.reauth;
+    failure.diagnostic = data.diagnostic || null;
     throw failure;
   }
   return data;
@@ -120,6 +128,71 @@ function showToast(message, bad) {
 
 function showState(title, detail, button) {
   els.content.innerHTML = `<div class="state"><div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span>${button || ''}</div></div>`;
+}
+
+function cleanDiagnosticValue(value, max) {
+  return String(value == null ? '' : value).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max || 500);
+}
+
+function rememberDiagnostic(value, userMessage) {
+  const values = Array.isArray(value) ? value : [value];
+  const source = values.filter(Boolean).pop();
+  if (!source || typeof source !== 'object') return;
+  state.lastDiagnostic = {
+    source: cleanDiagnosticValue(source.source, 80) || 'Azure DevOps',
+    status: Number(source.status) || 0,
+    providerMessage: cleanDiagnosticValue(source.providerMessage, 500),
+    providerCode: cleanDiagnosticValue(source.providerCode, 120),
+    providerType: cleanDiagnosticValue(source.providerType, 160),
+    requestId: cleanDiagnosticValue(source.requestId, 120),
+    occurredAt: cleanDiagnosticValue(source.occurredAt, 80) || new Date().toISOString(),
+    userMessage: cleanDiagnosticValue(userMessage, 300)
+  };
+  els.diagnosticButton.hidden = false;
+}
+
+function captureDiagnostics(data) {
+  if (!data) return;
+  if (Array.isArray(data.diagnostics) && data.diagnostics.length) rememberDiagnostic(data.diagnostics, data.warning);
+  else if (data.diagnostic) rememberDiagnostic(data.diagnostic, data.warning);
+}
+
+function diagnosticSummary() {
+  const item = state.lastDiagnostic;
+  if (!item) return 'No Azure DevOps error details have been recorded in this session.';
+  const lines = [
+    'Azure DevOps troubleshooting details',
+    `Time: ${item.occurredAt}`,
+    `Organization: ${state.organization ? state.organization.name : 'Not selected'}`,
+    `Project: ${state.project ? state.project.name : 'Not selected'}`,
+    `Area: ${item.source}`,
+    `HTTP status: ${item.status || 'No response'}`,
+    `Diagnostic code: ${item.providerCode || 'Not supplied'}`
+  ];
+  if (item.providerType) lines.push(`Azure DevOps type: ${item.providerType}`);
+  if (item.requestId) lines.push(`Request/activity ID: ${item.requestId}`);
+  if (item.providerMessage) lines.push(`Azure DevOps message: ${item.providerMessage}`);
+  if (item.userMessage) lines.push(`Panel message: ${item.userMessage}`);
+  lines.push('', 'OAuth tokens, authorization headers, and request URLs are omitted.');
+  return lines.join('\n');
+}
+
+function openDiagnostic() {
+  els.diagnosticText.textContent = diagnosticSummary();
+  els.diagnosticOverlay.hidden = false;
+}
+
+function closeDiagnostic() {
+  els.diagnosticOverlay.hidden = true;
+}
+
+async function copyDiagnostic() {
+  try {
+    await navigator.clipboard.writeText(diagnosticSummary());
+    showToast('Troubleshooting details copied.');
+  } catch (error) {
+    showToast('Could not copy automatically. Select the details and copy them manually.', true);
+  }
 }
 
 function showLoading(label) {
@@ -342,6 +415,7 @@ async function loadView(view, force) {
   try {
     const data = await api(view, selectedParams(force ? { force: '1' } : {}));
     if (!requestIsCurrent(ticket)) return;
+    captureDiagnostics(data);
     state.cachedViews.set(cacheKey(view), data);
     if (view === 'overview') renderOverview(data);
     else if (view === 'repositories') renderRepositories(data);
@@ -351,6 +425,7 @@ async function loadView(view, force) {
     setStatus(data.stale ? 'Connected · cached data' : `Connected · updated ${fmtDate(data.fetchedAt)}`);
   } catch (error) {
     if (!requestIsCurrent(ticket)) return;
+    rememberDiagnostic(error.diagnostic, error.message);
     if (error.reauth) state.connected = false;
     const cached = state.cachedViews.get(cacheKey(view));
     if (cached) {
@@ -373,8 +448,12 @@ async function loadDetail(action, params, renderer) {
   if (panel) panel.innerHTML = '<div class="state"><span>Loading details…</span></div>';
   try {
     const data = await api(action, selectedParams(params));
-    if (requestIsCurrent(ticket) && document.getElementById('detailPanel')) renderer(data);
+    if (requestIsCurrent(ticket) && document.getElementById('detailPanel')) {
+      captureDiagnostics(data);
+      renderer(data);
+    }
   } catch (error) {
+    rememberDiagnostic(error.diagnostic, error.message);
     if (requestIsCurrent(ticket) && document.getElementById('detailPanel')) document.getElementById('detailPanel').innerHTML = `<div class="state"><div><strong>Details unavailable</strong><span>${escapeHtml(error.message)}</span></div></div>`;
   }
 }
@@ -422,7 +501,10 @@ async function runPipeline(pipelineId, defaultRef) {
     });
     showToast(data.message || 'Pipeline queued.');
     await loadView('pipelines', true);
-  } catch (error) { showToast(error.message, true); }
+  } catch (error) {
+    rememberDiagnostic(error.diagnostic, error.message);
+    showToast(error.message, true);
+  }
 }
 
 async function cancelRun(runId) {
@@ -434,7 +516,10 @@ async function cancelRun(runId) {
     });
     showToast(data.message || 'Cancellation requested.');
     await loadView('pipelines', true);
-  } catch (error) { showToast(error.message, true); }
+  } catch (error) {
+    rememberDiagnostic(error.diagnostic, error.message);
+    showToast(error.message, true);
+  }
 }
 
 async function selectOrganization(organization) {
@@ -456,6 +541,7 @@ async function selectOrganization(organization) {
     if (state.project) await loadView('overview');
     else showState('No accessible projects', 'This organization has no projects available to the signed-in account.');
   } catch (error) {
+    rememberDiagnostic(error.diagnostic, error.message);
     showState('Could not load projects', error.message, '<button class="primary-button" id="retryButton" type="button">Try again</button>');
   }
 }
@@ -482,6 +568,7 @@ async function connect() {
     await api('connect');
     window.setTimeout(boot, 1000);
   } catch (error) {
+    rememberDiagnostic(error.diagnostic, error.message);
     setStatus('Not connected');
     showToast(error.message, true);
   }
@@ -515,6 +602,7 @@ async function boot() {
     await selectOrganization(organization);
     scheduleRefresh();
   } catch (error) {
+    rememberDiagnostic(error.diagnostic, error.message);
     setStatus('Connection problem');
     showState('Could not connect', error.message, '<button class="primary-button" id="retryButton" type="button">Try again</button>');
   }
@@ -528,6 +616,11 @@ els.cancelConfirm.addEventListener('click', () => closeConfirm(false));
 els.acceptConfirm.addEventListener('click', () => closeConfirm(true));
 els.confirmOverlay.addEventListener('click', event => { if (event.target === els.confirmOverlay) closeConfirm(false); });
 els.refreshButton.addEventListener('click', () => state.project ? loadView(state.view, true) : boot());
+els.diagnosticButton.addEventListener('click', openDiagnostic);
+els.closeDiagnostic.addEventListener('click', closeDiagnostic);
+els.doneDiagnostic.addEventListener('click', closeDiagnostic);
+els.copyDiagnostic.addEventListener('click', copyDiagnostic);
+els.diagnosticOverlay.addEventListener('click', event => { if (event.target === els.diagnosticOverlay) closeDiagnostic(); });
 els.openDevOpsButton.addEventListener('click', () => {
   if (!state.organization || !state.project) return showToast('Choose a project first.', true);
   openExternal(state.project.url);

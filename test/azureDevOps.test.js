@@ -14,12 +14,15 @@ function manifest() {
   return JSON.parse(fs.readFileSync(path.join(appDir, 'app.json'), 'utf8'));
 }
 
-function response(value, status) {
+function response(value, status, responseHeaders) {
   const body = JSON.stringify(value);
   return {
     ok: !status || status < 400,
     status: status || 200,
-    headers: { get(name) { return name.toLowerCase() === 'content-length' ? String(Buffer.byteLength(body)) : null; } },
+    headers: { get(name) {
+      if (name.toLowerCase() === 'content-length') return String(Buffer.byteLength(body));
+      return responseHeaders && responseHeaders[name.toLowerCase()] || null;
+    } },
     async text() { return body; }
   };
 }
@@ -61,7 +64,7 @@ test('community catalog and importable zip contain the Azure DevOps drop-in', ()
     id: 'azure-devops',
     name: 'Azure DevOps',
     description: 'Project-focused Azure DevOps repositories, pipelines, pull requests, and work items.',
-    version: '1.0.2',
+    version: '1.0.4',
     zip: 'azure-devops.zip',
     server: true
   });
@@ -116,6 +119,8 @@ test('renderer persists project context and guards against stale project respons
   assert.match(source, /contextVersion\+\+/);
   assert.match(source, /contextMatches\(/);
   assert.doesNotMatch(source, /accessToken|refreshToken|oauthClientSecret/);
+  assert.match(source, /diagnosticSummary/);
+  assert.match(source, /navigator\.clipboard\.writeText/);
 });
 
 test('external Azure DevOps links are limited to the selected organization', () => {
@@ -202,6 +207,8 @@ test('failed project refresh returns the last successful dataset as stale', asyn
   assert.equal(second.ok, true);
   assert.equal(second.stale, true);
   assert.equal(second.projects[0].name, 'Quake');
+  assert.equal(second.diagnostic.source, 'Projects');
+  assert.equal(second.diagnostic.providerCode, 'network_error');
 });
 
 test('repository discovery and detail map branches, commits, and pull requests', async () => {
@@ -223,6 +230,23 @@ test('repository discovery and detail map branches, commits, and pull requests',
   assert.match(result.commits[0].url, /^https:\/\/dev\.azure\.com\/contoso\//);
 });
 
+test('work item batches request relations without the conflicting fields parameter', async () => {
+  const bodies = [];
+  server._test.setFetch(async (url, options) => {
+    if (url.includes('/_apis/projects')) return response({ value: [{ id: 'project-1', name: 'Quake', state: 'wellFormed' }] });
+    if (url.includes('/wit/wiql?')) return response({ workItems: [{ id: 73 }] });
+    if (url.includes('/wit/workitemsbatch')) {
+      bodies.push(JSON.parse(options.body));
+      return response({ value: [{ id: 73, fields: { 'System.Title': 'Fix issue', 'System.WorkItemType': 'Bug', 'System.State': 'Active' }, relations: [] }] });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  const result = await server.handle('work-items', context({ query: { organization: 'contoso', project: 'project-1' } }));
+  assert.equal(result.ok, true);
+  assert.equal(result.workItems[0].id, 73);
+  assert.deepEqual(bodies, [{ ids: [73], '$expand': 'Relations' }]);
+});
+
 test('pipeline detail maps stage failures and reliable run relationships', async () => {
   server._test.setFetch(async url => {
     if (url.includes('/_apis/projects')) return response({ value: [{ id: 'project-1', name: 'Quake', state: 'wellFormed' }] });
@@ -239,12 +263,14 @@ test('pipeline detail maps stage failures and reliable run relationships', async
 });
 
 test('pull requests and work items stay read-only and retain explicit links', async () => {
+  const workItemBodies = [];
   server._test.setFetch(async (url, options) => {
     if (url.includes('/_apis/projects')) return response({ value: [{ id: 'project-1', name: 'Quake', state: 'wellFormed' }] });
     if (url.includes('/git/pullrequests/9/workitems')) return response({ value: [{ id: 73 }] });
     if (url.includes('/git/pullrequests/9?')) return response({ pullRequestId: 9, title: 'Review', status: 'active', description: 'Read only', repository: { id: 'repo-1', name: 'Bedrock Panel' }, reviewers: [{ displayName: 'Sam', vote: 10 }] });
     if (url.includes('/wit/workitemsbatch')) {
       const body = JSON.parse(options.body);
+      workItemBodies.push(body);
       return response({ value: [{ id: body.ids[0], fields: { 'System.Title': 'Fix issue', 'System.WorkItemType': 'Bug', 'System.State': 'Active' }, relations: [{ rel: 'ArtifactLink', url: 'vstfs:///Git/PullRequestId/x', attributes: { name: 'Pull Request' } }] }] });
     }
     throw new Error(`Unexpected request: ${url}`);
@@ -257,6 +283,7 @@ test('pull requests and work items stay read-only and retain explicit links', as
   const work = await server.handle('work-item', context({ query: Object.assign({ workItem: '73' }, base) }));
   assert.equal(work.ok, true);
   assert.equal(work.workItem.relations[0].name, 'Pull Request');
+  assert.deepEqual(workItemBodies, [{ ids: [73], '$expand': 'Relations' }]);
 });
 
 test('cache entries remain isolated between selected projects', async () => {
@@ -279,7 +306,11 @@ test('cache entries remain isolated between selected projects', async () => {
 test('permission failures are sanitized and legitimate empty states succeed', async () => {
   server._test.setFetch(async url => {
     if (url.includes('/_apis/projects')) return response({ value: [{ id: 'project-1', name: 'Quake', state: 'wellFormed' }] });
-    if (url.includes('/git/repositories?')) return response({ message: 'sensitive upstream detail' }, 403);
+    if (url.includes('/git/repositories?')) return response({
+      message: 'TF401019: Repository access denied. Bearer secret-token-value',
+      typeKey: 'GitRepositoryNotFoundException',
+      errorCode: 'TF401019'
+    }, 403, { 'x-vss-e2eid': '11111111-2222-3333-4444-555555555555' });
     if (url.includes('/wit/wiql?')) return response({ workItems: [] });
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -287,7 +318,14 @@ test('permission failures are sanitized and legitimate empty states succeed', as
   const denied = await server.handle('repositories', context({ query: base }));
   assert.equal(denied.ok, false);
   assert.equal(denied.code, 'forbidden');
-  assert.doesNotMatch(denied.error, /sensitive upstream detail/);
+  assert.equal(denied.diagnostic.source, 'Repositories');
+  assert.equal(denied.diagnostic.status, 403);
+  assert.equal(denied.diagnostic.providerCode, 'TF401019');
+  assert.equal(denied.diagnostic.providerType, 'GitRepositoryNotFoundException');
+  assert.equal(denied.diagnostic.requestId, '11111111-2222-3333-4444-555555555555');
+  assert.match(denied.diagnostic.providerMessage, /Repository access denied/);
+  assert.match(denied.diagnostic.providerMessage, /Bearer \[redacted\]/);
+  assert.doesNotMatch(JSON.stringify(denied), /secret-token-value/);
   const empty = await server.handle('work-items', context({ query: base }));
   assert.equal(empty.ok, true);
   assert.deepEqual(empty.workItems, []);
