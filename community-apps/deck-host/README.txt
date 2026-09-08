@@ -1,7 +1,7 @@
 Stream Deck Host
 ================
 
-Run Elgato Stream Deck plugins AND profiles on the open-quake panel. The app
+Run Elgato Stream Deck plugins AND profiles on the Bedrock Panel panel. The app
 implements Elgato's documented plugin protocol (the same approach as
 OpenDeck), so unmodified *.sdPlugin packages work: the host launches each
 plugin, and the on-screen key grid shows the images and titles the plugin
@@ -12,7 +12,7 @@ implements itself (keystrokes are sent as real keyboard input).
 
 SECURITY: Stream Deck plugins are real programs that run on your PC with
 your user rights. Only add plugins you trust, exactly as you would any
-downloaded software. (open-quake also warns once when importing this app,
+downloaded software. (Bedrock Panel also warns once when importing this app,
 because it contains a host-side server module.)
 
 Setup
@@ -41,7 +41,7 @@ Using the deck
   worked out from the screen automatically, and that computed size is the
   device size reported to plugins.
 - Half quake / half deck: enable the page's "Buttons" strip in the editor
-  to put open-quake launcher tiles beside the deck -- the deck sits on its
+  to put Bedrock Panel launcher tiles beside the deck -- the deck sits on its
   own black bezel plate, so the two are impossible to confuse.
 - Importing profiles: drop *.streamDeckProfile files (or zips containing
   them) anywhere in your plugins folder; they're listed BOTH in the Plugins

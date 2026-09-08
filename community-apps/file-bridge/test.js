@@ -670,7 +670,7 @@ async function run(j) {
     assert.equal(lr.jobs.find(x => x.id === sv3.id).resolvedDest, path.join(ROOT, 'subdest', 'src'), 'list shows the computed destination');
 
     // filter groups resolve LIVE: literal patterns + referenced groups + every global group
-    const fdir = path.join(ROOT, 'appdata', 'open-quake', 'file-bridge');
+    const fdir = path.join(ROOT, 'appdata', 'bedrock-panel', 'file-bridge');
     fs.mkdirSync(fdir, { recursive: true });
     fs.writeFileSync(path.join(fdir, 'filters.json'), JSON.stringify({ groups: [
       { id: 'g1', name: 'logs', wildcards: ['*.log'], global: true },

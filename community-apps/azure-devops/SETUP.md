@@ -1,7 +1,7 @@
 # Azure DevOps drop-in setup
 
 This app uses Microsoft Entra OAuth with PKCE. Azure DevOps access tokens stay in the
-open-quake main process and are never returned to the app page.
+Bedrock Panel main process and are never returned to the app page.
 
 ## 1. Register an application
 
@@ -13,7 +13,7 @@ open-quake main process and are never returned to the app page.
    http://localhost:5173/oauth/callback
    ```
 
-3. Copy the **Application (client) ID** into the Azure DevOps drop-in settings in open-quake.
+3. Copy the **Application (client) ID** into the Azure DevOps drop-in settings in Bedrock Panel.
 4. For a public-client registration, leave the client-secret setting empty. If your tenant
    requires a confidential client, create a secret and store it only in the drop-in's secret
    setting.
@@ -39,7 +39,7 @@ Tenant policy may require an administrator to grant consent.
 
 ## 3. Configure and connect
 
-1. Import or install the `azure-devops` folder as an open-quake drop-in app.
+1. Import or install the `azure-devops` folder as an Bedrock Panel drop-in app.
 2. Set the client ID. Organization and project selection happens directly on the panel and the
    last selection is remembered locally.
 3. Leave **Enable pipeline run and cancel controls** off unless the device should be allowed to

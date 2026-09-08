@@ -17,25 +17,25 @@ Saves that only live in per-origin browser storage — silently lost on a port/o
 reinstall (the failure that started this). Not acceptable.
 
 ## Explicitly off-limits
-- Weakening open-quake's drop-in CSP.
+- Weakening Bedrock Panel's drop-in CSP.
 - Faking "filesystem save" with localStorage-only storage.
 - Bumping the app/release version without T.J.'s say-so (his process).
 
 ## Deployment target / backup
-open-quake `community-apps/if-player`. Fork refactor in `D:\Github\parchment` (git-tracked =
-backup). Shared open-quake working tree `D:\Github\open-quake\repo`, branch
+Bedrock Panel `community-apps/if-player`. Fork refactor in `D:\Github\parchment` (git-tracked =
+backup). Shared Bedrock Panel working tree `D:\Github\open-quake\repo`, branch
 `if-player-autosave-to-file`.
 
 ## Architecture (one refactor point → both goals)
 asyncglk (submodule of the parchment fork) routes ALL file I/O — manual saves AND autosave —
 through a **Dialog storage-provider**. Replace that provider with one that moves save bytes over
-HTTP to open-quake's `/app-api/` byte store. One provider delivers both goals.
+HTTP to Bedrock Panel's `/app-api/` byte store. One provider delivers both goals.
 
 ## Ownership (near-total independence)
 - **This session (fork + integration):** asyncglk storage provider → `/app-api/`; enable it +
   autosave in the parchment build; build the fork; `vendor-parchment.js`; rebuild `index.html`
   + `if-player.zip` + `community-apps/index.json`.
-- **Peer session (open-quake app):** `server.js` byte-store endpoints; `app.js` UI (autosave
+- **Peer session (Bedrock Panel app):** `server.js` byte-store endpoints; `app.js` UI (autosave
   toggle/interval, Resume prompt); `app.json` options.
 - Shared tree rules: stage only our own files by name, no `git add -A`, ping before commit.
 

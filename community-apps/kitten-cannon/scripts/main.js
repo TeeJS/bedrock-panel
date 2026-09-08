@@ -22,10 +22,10 @@ import Camera2D from "./Lib/Camera2D/Camera2D.js";
 import DistanceDisplay from "./Game/Objects/DistanceDisplay.js";
 //-[/Imports]------------------------------------------
 
-// App options arrive from open-quake in the query string (served drop-in app);
+// App options arrive from Bedrock Panel in the query string (served drop-in app);
 // a #hash works too so the page can be opened directly during development.
 const APP_PARAMS = new URLSearchParams(location.search || location.hash.replace(/^#/, "?"));
-const EMBEDDED_IN_HOST = APP_PARAMS.has("_dark"); // open-quake always appends theme params
+const EMBEDDED_IN_HOST = APP_PARAMS.has("_dark"); // Bedrock Panel always appends theme params
 // Shared-score-server conventions (server/HANDOFF.md in kitten-cannon-remake):
 // game slug on every call; arcade initials — the server keeps the first 3
 // letters (A-Z only), so normalize the same way here.
@@ -860,7 +860,7 @@ async function fetchLeaderboard() {
     }
 }
 
-// On the open-quake panel the page already fills the screen; grabbing fullscreen
+// On the Bedrock Panel panel the page already fills the screen; grabbing fullscreen
 // from inside the host's webview would fight the panel window.
 if (!EMBEDDED_IN_HOST) addEventListener("click", goFullScreen);
 

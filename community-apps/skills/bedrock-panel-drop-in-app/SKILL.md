@@ -1,11 +1,11 @@
 ---
-name: open-quake-drop-in-app
-description: Scaffold, build, modify, migrate, or troubleshoot standalone open-quake drop-in apps. Use when working in the open-quake repository on apps/<app-id>/ structure, app.json manifests, index.html/style.css/app.js files, served drop-in apps, app options, server-only options, app-local server.js handlers, or existing generic app capabilities such as /app-proxy and /app-api.
+name: bedrock-panel-drop-in-app
+description: Scaffold, build, modify, migrate, or troubleshoot standalone Bedrock Panel drop-in apps. Use when working in the Bedrock Panel repository on apps/<app-id>/ structure, app.json manifests, index.html/style.css/app.js files, served drop-in apps, app options, server-only options, app-local server.js handlers, or existing generic app capabilities such as /app-proxy and /app-api.
 ---
 
-# Open Quake Drop-In App
+# Bedrock Panel Drop-In App
 
-Use this skill when creating or changing standalone drop-in apps in the open-quake repo.
+Use this skill when creating or changing standalone drop-in apps in the Bedrock Panel repo.
 
 ## Contract
 
@@ -61,7 +61,7 @@ Declare `"knob": true` (served apps) to receive the panel's rotary knob: define 
 
 ## Served Apps
 
-- Use `"served": true` when the app needs same-origin calls to the local open-quake server, shared app tile APIs, or host-provided generic APIs.
+- Use `"served": true` when the app needs same-origin calls to the local Bedrock Panel server, shared app tile APIs, or host-provided generic APIs.
 - Served drop-ins load at `/apps/<id>/<entry>` on the local server.
 - Use relative asset paths such as `style.css` and `app.js`.
 

@@ -131,7 +131,7 @@
   function renderLibraryState(library) {
     const extra = library.messages && library.messages.length ? ' ' + library.messages.join(' ') : '';
     if (library.status === 'unconfigured') {
-      showEmpty('Choose a photo folder', 'Open this page’s App settings in the open-quake editor and use Browse… to select one or more folders.');
+      showEmpty('Choose a photo folder', 'Open this page’s App settings in the Bedrock Panel editor and use Browse… to select one or more folders.');
     } else if (library.status === 'unavailable') {
       showEmpty('Photo folders unavailable', 'The configured folders may have moved, been deleted, or are not currently accessible.' + extra);
     } else {

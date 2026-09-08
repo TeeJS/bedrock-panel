@@ -1,6 +1,6 @@
 ---
 name: filebridge-web-rule
-description: Author a FileBridge web-drop rule file for a subscription download site. Use whenever the user wants FileBridge (the open-quake drop-in, id file-bridge, formerly Folder Sync) to download new releases from a members' site it doesn't yet support — "add a rule for <site>", "make FileBridge download from <url>", "set up <site> in FileBridge", "why is my web-drop job finding nothing". Guides live recon (structure, selectors, download trigger) and produces a validated <site>.json in %APPDATA%\open-quake\file-bridge\rules\. Do NOT ship any site-specific rule in the app itself — rules are per-user data.
+description: Author a FileBridge web-drop rule file for a subscription download site. Use whenever the user wants FileBridge (the Bedrock Panel drop-in, id file-bridge, formerly Folder Sync) to download new releases from a members' site it doesn't yet support — "add a rule for <site>", "make FileBridge download from <url>", "set up <site> in FileBridge", "why is my web-drop job finding nothing". Guides live recon (structure, selectors, download trigger) and produces a validated <site>.json in %APPDATA%\bedrock-panel\file-bridge\rules\. Do NOT ship any site-specific rule in the app itself — rules are per-user data.
 ---
 
 # Author a FileBridge web-drop rule
@@ -13,13 +13,13 @@ to. Your job with this skill is to write one correct rule for a site the user na
 
 **Hard rule (non-negotiable):** never add a site-specific rule, selector, or hostname to
 the app's code (`community-apps/file-bridge/*`). Rules are user data. They live only in
-`%APPDATA%\open-quake\file-bridge\rules\<site>.json`. If you find yourself editing `web.js`
+`%APPDATA%\bedrock-panel\file-bridge\rules\<site>.json`. If you find yourself editing `web.js`
 to make one site work, stop — either the rule schema genuinely lacks a capability (extend
 it generically, for all sites) or the rule is wrong.
 
 ## What you produce
 
-One file: `%APPDATA%\open-quake\file-bridge\rules\<site>.json`. You can write it directly,
+One file: `%APPDATA%\bedrock-panel\file-bridge\rules\<site>.json`. You can write it directly,
 or paste it into the app's **Rules** view (which validates on Save). Either way the runner
 validates it with `web.validateRule` before every run.
 
@@ -135,7 +135,7 @@ selector work.
 
 ## Test it
 
-1. Write the rule to `%APPDATA%\open-quake\file-bridge\rules\<site>.json` (or paste into the
+1. Write the rule to `%APPDATA%\bedrock-panel\file-bridge\rules\<site>.json` (or paste into the
    Rules view and Save — Save runs the same validation the runner uses).
 2. In FileBridge, add a **web-drop** job: paste the site's listing URL as the source, pick a
    scratch destination, set **Per run** to `1`.

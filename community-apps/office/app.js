@@ -123,7 +123,7 @@
     if (!url) return Promise.resolve(false);
     setStatus('Opening…', false);
     return api('open', { url: url }).then(function (result) {
-      if (!result || !result.ok) throw new Error('Open-Quake could not open that destination.');
+      if (!result || !result.ok) throw new Error('Bedrock Panel could not open that destination.');
       setStatus('', false);
       return true;
     }).catch(function (error) {
@@ -346,7 +346,7 @@
   function loadOffice() {
     if (officeLoad) return officeLoad;
     officeLoad = api('data').then(applyState).catch(function (error) {
-      setStatus(error.message || 'Could not reach the Open-Quake Office service.', true);
+      setStatus(error.message || 'Could not reach the Bedrock Panel Office service.', true);
       renderCalendarError();
     }).finally(function () {
       officeLoad = null;

@@ -1,7 +1,7 @@
 {
   "id": "photo-strip",
   "name": "Photo Strip",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Ambient local-folder photo frame with full-width single-photo and panoramic strip layouts.",
   "entry": "index.html",
   "served": true,

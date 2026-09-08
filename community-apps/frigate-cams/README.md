@@ -7,7 +7,7 @@ Live camera wall for a local [Frigate](https://frigate.video) NVR on the 1920×4
 1. Add the app to a page and open its **App options**.
 2. Set **Frigate URL** to Frigate's **internal (unauthenticated) address**, e.g. `http://<your-frigate-ip>:5000`.
    - This is Frigate's internal port **5000**, not the login port **8971**. The authenticated port uses a JWT cookie that image tags can't carry; support for it may come later.
-   - Works on a trusted LAN where port 5000 is reachable from the machine running open-quake.
+   - Works on a trusted LAN where port 5000 is reachable from the machine running Bedrock Panel.
 
 ## View modes
 

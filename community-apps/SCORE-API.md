@@ -2,7 +2,7 @@
 
 A free hosted high-score API used by the **kitten-cannon** and **quake-bird** community
 apps. Community game authors are **welcome and explicitly permitted** to use it in their
-own open-quake drop-in games.
+own Bedrock Panel drop-in games.
 
 - **Server URL:** `https://scores.doofenshmirtzevil.com`
 - CORS is open, responses are JSON, no auth or API key. Plain `fetch` works from any

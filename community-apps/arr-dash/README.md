@@ -45,5 +45,5 @@ Also configurable: refresh interval (5/10/30 s).
 - LidaTube exposes no HTTP status API (socket.io only), so its tile is a
   reachability check — **Down** there means the container really isn't
   answering.
-- After updating the app, restart open-quake: page files reload immediately,
+- After updating the app, restart Bedrock Panel: page files reload immediately,
   but `server.js` changes only load with the host process.

@@ -439,7 +439,7 @@
     <input id="driveClientId" type="text" placeholder="Google OAuth client ID" style="flex:1;min-width:260px">
     <input id="driveClientSecret" type="password" placeholder="Client secret" style="flex:1;min-width:180px">
     <button id="driveConnectBtn" class="primary">Save &amp; connect</button>
-    <span class="fhelp" style="flex-basis:100%;margin:0">From Google Cloud Console: create an OAuth client of type <b>Desktop app</b>, publish the consent screen to <b>Production</b> (or the connection expires weekly), and paste its ID and secret here. Approval opens in your browser; the credentials are stored by the open-quake host, not this app.</span>
+    <span class="fhelp" style="flex-basis:100%;margin:0">From Google Cloud Console: create an OAuth client of type <b>Desktop app</b>, publish the consent screen to <b>Production</b> (or the connection expires weekly), and paste its ID and secret here. Approval opens in your browser; the credentials are stored by the Bedrock Panel host, not this app.</span>
   </div>
 </div>
 
@@ -588,7 +588,7 @@
       </span>
     </div>
     <p class="fhelp" id="cronNext" hidden></p>
-    <p class="fhelp">Cron: <b>minute hour day month weekday</b> — e.g. <b>*/30 8-18 * * mon-fri</b> is every 30 min, 8 AM–6 PM, weekdays. Wildcards are separated by <b>;</b> and match file names or relative paths — <b>*</b> any run of characters, <b>?</b> one character, <b>#</b> one digit, <b>[ab]</b>/<b>[!ab]</b> character sets; <b>*.*</b> matches every file, extensionless included. Schedules run while open-quake is running.</p>
+    <p class="fhelp">Cron: <b>minute hour day month weekday</b> — e.g. <b>*/30 8-18 * * mon-fri</b> is every 30 min, 8 AM–6 PM, weekdays. Wildcards are separated by <b>;</b> and match file names or relative paths — <b>*</b> any run of characters, <b>?</b> one character, <b>#</b> one digit, <b>[ab]</b>/<b>[!ab]</b> character sets; <b>*.*</b> matches every file, extensionless included. Schedules run while Bedrock Panel is running.</p>
     <p class="ferr" id="editErr"></p>
   </div>
   <div class="vfoot">

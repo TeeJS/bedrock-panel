@@ -1188,7 +1188,7 @@
       "default": ""
     }
   ],
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Microsoft 365 calendar, presence, app launcher, and configurable desktop shortcuts.",
   "entry": "index.html",
   "server": "server.js",

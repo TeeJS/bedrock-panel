@@ -78,7 +78,7 @@ API** (not the local mount).
 
 ## Notes
 
-- **Jobs live in** `%APPDATA%\open-quake\file-bridge\jobs.json` — copy that file to
+- **Jobs live in** `%APPDATA%\bedrock-panel\file-bridge\jobs.json` — copy that file to
   move all your jobs (and their stats) to another machine.
 - **Read-only on the source.** FileBridge reads the source and writes only the
   destination; it never modifies or deletes anything on the source side.
@@ -86,5 +86,5 @@ API** (not the local mount).
   download, never change your Drive.
 - **Google-native docs** with no export produce no file — they're reported as
   **skips**, not errors, exactly like the local mount.
-- After updating the app, **restart open-quake**: `server.js` changes only load with
+- After updating the app, **restart Bedrock Panel**: `server.js` changes only load with
   the host process.

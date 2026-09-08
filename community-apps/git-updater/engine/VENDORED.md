@@ -10,7 +10,7 @@ cp D:/Github/git-updater/src/*.js community-apps/git-updater/engine/
 ```
 
 …and update the commit hash above. The engine's runtime deps (`adm-zip`, `7z-wasm`) are
-shipped in this app's `node_modules/` (a drop-in installed under `%APPDATA%\open-quake\apps\`
+shipped in this app's `node_modules/` (a drop-in installed under `%APPDATA%\bedrock-panel\apps\`
 is outside every node_modules tree, so bare requires must resolve inside the app folder).
 
 Shared data (read/written by BOTH the standalone app and this drop-in, safe via the

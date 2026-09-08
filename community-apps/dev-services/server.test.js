@@ -39,7 +39,7 @@ function inspector(ownersRef) {
 test.afterEach(() => server._test.reset());
 
 test('shared settings migrate once, persist editor changes, and drive panel status', async t => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'open-quake-dev-services-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bedrock-panel-dev-services-'));
   const settingsFile = path.join(directory, 'settings.json');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   server._test.setDependencies({
@@ -76,7 +76,7 @@ test('shared settings migrate once, persist editor changes, and drive panel stat
 });
 
 test('shared settings reject unsafe values without replacing the last valid file', async t => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'open-quake-dev-services-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bedrock-panel-dev-services-'));
   const settingsFile = path.join(directory, 'settings.json');
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   server._test.setDependencies({ settingsFile: () => settingsFile });

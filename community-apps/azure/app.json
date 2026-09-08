@@ -1,7 +1,7 @@
 {
   "id": "azure",
   "name": "Azure Operations",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Touch-first Azure operations dashboard with subscription health, resources, deployments, alerts, costs, and contextual controls.",
   "entry": "index.html",
   "served": true,

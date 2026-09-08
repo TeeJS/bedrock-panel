@@ -1,6 +1,6 @@
 # Microsoft 365
 
-An installable open-quake drop-in for Microsoft 365 calendar, presence, app launching, Teams
+An installable Bedrock Panel drop-in for Microsoft 365 calendar, presence, app launching, Teams
 meeting links, and configurable desktop shortcuts.
 
 Install it from **Settings → Drop-In Apps → Browse**, then add or select a Microsoft 365 app page.

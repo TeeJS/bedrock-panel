@@ -10,7 +10,7 @@ const server = require('./server');
 const tempRoots = [];
 
 function tempDir() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'open-quake-photo-strip-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bedrock-panel-photo-strip-'));
   tempRoots.push(root);
   return root;
 }
@@ -239,7 +239,7 @@ test('manifest keeps every picked folder out of the renderer URL', () => {
   assert.equal(manifest.served, true);
   assert.equal(manifest.server, 'server.js');
   assert.equal(manifest.knob, true);
-  assert.equal(manifest.version, '1.0.3');
+  assert.equal(manifest.version, '1.0.4');
   const folders = manifest.options.filter(option => /^folder[1-4]$/.test(option.key));
   assert.equal(folders.length, 4);
   folders.forEach(option => {

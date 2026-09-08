@@ -1,7 +1,7 @@
 {
   "id": "ai-usage",
   "name": "AI Usage",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "At-a-glance usage monitor for Claude (Claude Code & Cowork), ChatGPT/Codex, and GitHub Copilot. Reads local Claude/Codex session logs and the GitHub billing API.",
   "entry": "index.html",
   "served": true,

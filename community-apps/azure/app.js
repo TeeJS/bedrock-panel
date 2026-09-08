@@ -379,7 +379,7 @@ function renderConfigurationRequired() {
 
 function renderConnect(reason) {
   updateHeader('Not connected');
-  renderMessage('Connect Microsoft Azure', reason || 'Sign in with a work or school account. Tokens stay in open-quake’s encrypted app-scoped OAuth store.', '<button id="connectButton" class="primary-button" type="button">Connect Azure</button>');
+  renderMessage('Connect Microsoft Azure', reason || 'Sign in with a work or school account. Tokens stay in Bedrock Panel’s encrypted app-scoped OAuth store.', '<button id="connectButton" class="primary-button" type="button">Connect Azure</button>');
   document.getElementById('connectButton').addEventListener('click', connect);
 }
 

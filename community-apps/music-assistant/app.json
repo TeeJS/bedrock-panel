@@ -1,7 +1,7 @@
 {
   "id": "music-assistant",
   "name": "Music Assistant",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Full Music Assistant controller: now playing, queue, players and grouping, library browse and search.",
   "entry": "index.html",
   "served": true,

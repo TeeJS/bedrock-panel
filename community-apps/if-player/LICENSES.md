@@ -1,7 +1,7 @@
 # Licenses
 
 The app itself (`app.js`, `boot.js`, `server.js`, `style.css`, `chrome.html`, `app.json`,
-`vendor-parchment.js`) is MIT, same as open-quake.
+`vendor-parchment.js`) is MIT, same as Bedrock Panel.
 
 ## Bundled third-party code
 
@@ -30,13 +30,13 @@ Two interpreters in the upstream single-file build — **Scare** (Adrift) and **
 entirely MIT/BSD/OFL. They are also ~2MB, and this app targets Inform/Z-machine and Glulx, so
 nothing is lost for its purpose. If you re-add them, this table and the app's licensing change.
 
-`wyoming.js` and `vad.js` are vendored copies of open-quake's own
+`wyoming.js` and `vad.js` are vendored copies of Bedrock Panel's own
 `app/claudevoice-wyoming.js` and `app/claudevoice-vad.js` (MIT). Drop-in apps live in the
 user-data folder and cannot require platform modules, so the app carries its own copies.
 
 ## Why there is a build step, and how to upgrade
 
-open-quake serves drop-in app files under a strict CSP, and Parchment's single-file build is blocked
+Bedrock Panel serves drop-in app files under a strict CSP, and Parchment's single-file build is blocked
 by it three ways over. `vendor-parchment.js` resolves each **without** editing Parchment's code:
 
 1. ~4MB of the build is inline `<script>`, which `script-src 'self'` blocks. Each executable block is
@@ -50,7 +50,7 @@ by it three ways over. `vendor-parchment.js` resolves each **without** editing P
    our chrome injected, rather than being wrapped in an iframe.
 
 Running WebAssembly additionally needs `'wasm-unsafe-eval'` in the host's CSP — that keyword permits
-`WebAssembly.instantiate` only, not `eval()` — which open-quake's local app CSP now includes.
+`WebAssembly.instantiate` only, not `eval()` — which Bedrock Panel's local app CSP now includes.
 
 To upgrade, download `parchment-single-file-*.zip` from
 [Parchment's releases](https://github.com/curiousdannii/parchment/releases), unzip it, and run:

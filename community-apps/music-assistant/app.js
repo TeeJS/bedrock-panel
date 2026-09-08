@@ -159,7 +159,7 @@
     let title = '', body = '';
     if (S.status === 'unconfigured') {
       title = 'Connect Music Assistant';
-      body = '<ol><li>Open this page’s options in the open-quake editor</li>' +
+      body = '<ol><li>Open this page’s options in the Bedrock Panel editor</li>' +
         '<li>Set the Music Assistant URL</li>' +
         '<li>Paste a long-lived token from Music Assistant → Settings → Profile</li></ol>';
     } else if (S.status === 'auth-failed' && S.statusDetail === 'token-missing') {
@@ -955,7 +955,7 @@
       url: WS_URL,
       mockState: MOCK_STATE,
       tokenPromise: loadToken(),
-      deviceName: 'open-quake panel',
+      deviceName: 'Bedrock Panel',
       onStatus,
     });
     wireClientEvents();
@@ -965,7 +965,7 @@
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && S.status === 'auth-failed' && S.statusDetail === 'token-missing' && !MOCK) {
         S.client.close();
-        S.client = MAClient.create({ url: WS_URL, tokenPromise: loadToken(), deviceName: 'open-quake panel', onStatus });
+        S.client = MAClient.create({ url: WS_URL, tokenPromise: loadToken(), deviceName: 'Bedrock Panel', onStatus });
         wireClientEvents();
         S.client.connect();
       }

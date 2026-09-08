@@ -182,7 +182,7 @@
       };
       entry.timer = setTimeout(() => { pending.delete(id); entry.reject(new Error('auth timeout')); }, 15000);
       pending.set(id, entry);
-      ws.send(JSON.stringify({ message_id: id, command: 'auth', args: { token, device_name: opts.deviceName || 'open-quake panel' } }));
+      ws.send(JSON.stringify({ message_id: id, command: 'auth', args: { token, device_name: opts.deviceName || 'Bedrock Panel' } }));
     }
 
     function authReady() {

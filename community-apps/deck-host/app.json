@@ -1,7 +1,7 @@
 {
   "id": "deck-host",
   "name": "Stream Deck Host",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Run Elgato Stream Deck plugins and profiles on the panel — real *.sdPlugin packages, plus .streamDeckProfile imports with working Hotkey/Text/Open keys.",
   "entry": "index.html",
   "served": true,
@@ -21,7 +21,7 @@
       "type": "select",
       "default": "3",
       "choices": [["3", "3 keys high — more keys"], ["2", "2 keys high — jumbo keys"]],
-      "help": "Keys are square; how many columns fit is worked out from the screen automatically. Tip: enable the Buttons strip below to split the panel — open-quake tiles on one side, the deck on the other."
+      "help": "Keys are square; how many columns fit is worked out from the screen automatically. Tip: enable the Buttons strip below to split the panel — Bedrock Panel tiles on one side, the deck on the other."
     }
   ]
 }

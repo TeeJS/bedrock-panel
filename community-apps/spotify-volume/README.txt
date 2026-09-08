@@ -1,6 +1,6 @@
 # Spotify Volume
 
-A community app for Open Quake that controls the Windows volume level of a target process (Spotify by default) using the hardware knob.
+A community app for Bedrock Panel that controls the Windows volume level of a target process (Spotify by default) using the hardware knob.
 
 ## Features
 

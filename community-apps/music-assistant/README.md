@@ -11,7 +11,7 @@ every change instantly.
 
 1. In Music Assistant (2.7 or newer), open **Settings → Profile** and create a
    **long-lived token**.
-2. In the page's options in the open-quake editor:
+2. In the page's options in the Bedrock Panel editor:
    - **Music Assistant URL** — e.g. `http://192.168.1.25:8095` or your reverse-proxy
      address (`https://…` works too).
    - **API token** — paste the long-lived token (stored encrypted).

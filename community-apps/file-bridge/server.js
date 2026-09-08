@@ -1,9 +1,9 @@
 'use strict';
 // FileBridge drop-in backend — job store, scheduler, and run queue around sync.js.
-// Runs in the open-quake host main process. Bridge contract: the page calls
+// Runs in the Bedrock Panel host main process. Bridge contract: the page calls
 // /app-api/<action> -> handle(action, {query, body}); runs are async, the page polls `status`.
 //
-// Jobs live in %APPDATA%\open-quake\file-bridge\jobs.json — plain JSON, copy the file to
+// Jobs live in %APPDATA%\bedrock-panel\file-bridge\jobs.json — plain JSON, copy the file to
 // another machine to move your jobs. Structural edits back the file up first; the
 // per-run lastRun bookkeeping writes without backups so scheduled runs don't pile up .baks.
 //
@@ -47,7 +47,13 @@ async function diskInfo(p) {
   return null;
 }
 
-const DATA_DIR = path.join(process.env.APPDATA || os.homedir(), 'open-quake', 'file-bridge');
+// Bedrock Panel 0.9.2 renamed the host's %APPDATA% folder from Bedrock Panel to bedrock-panel and moved it (this
+// folder rode along). Use the new location; fall back to the old one only while the host is still pre-rename.
+const DATA_DIR = (() => {
+  const base = process.env.APPDATA || os.homedir();
+  const next = path.join(base, 'bedrock-panel', 'file-bridge'), legacy = path.join(base, 'Bedrock Panel', 'file-bridge');
+  return (!fs.existsSync(next) && fs.existsSync(legacy)) ? legacy : next;
+})();
 const JOBS_PATH = path.join(DATA_DIR, 'jobs.json');
 const FILTERS_PATH = path.join(DATA_DIR, 'filters.json');
 const RULES_DIR = path.join(DATA_DIR, 'rules');

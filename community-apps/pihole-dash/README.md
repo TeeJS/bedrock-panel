@@ -40,5 +40,5 @@ Also configurable: refresh interval (5/10/30 s).
 - Stats are FTL's rolling 24-hour window (not "today since midnight").
 - HTTPS with Pi-hole's self-signed certificate isn't supported yet — use the
   plain http:// LAN address.
-- After updating the app, restart open-quake: `server.js` changes only load
+- After updating the app, restart Bedrock Panel: `server.js` changes only load
   with the host process.

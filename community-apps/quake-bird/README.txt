@@ -1,7 +1,7 @@
 Quake Bird
 ==========
 
-A flappy-style arcade game for the open-quake panel. Tap anywhere to flap
+A flappy-style arcade game for the Bedrock Panel panel. Tap anywhere to flap
 (Space / Up-arrow on a desktop window), thread the bird through the pipe
 gaps, and chase your best score. Pipes speed up and the gap tightens as
 you score. The speaker button in the top-right corner (or the M key)

@@ -2,7 +2,7 @@
 // Interactive Fiction player: panel chrome + voice, running inside Parchment's own page.
 //
 // vendor-parchment.js builds index.html from an upstream Parchment single-file release, externalises
-// its inline scripts (open-quake serves drop-in apps under `script-src 'self'`), extracts its cores to
+// its inline scripts (Bedrock Panel serves drop-in apps under `script-src 'self'`), extracts its cores to
 // real files, and injects chrome.html + this file. Same document as the interpreter -- no iframe,
 // which also sidesteps `frame-ancestors 'none'`.
 //
@@ -375,7 +375,7 @@
   });
 
   // ---- autosave to file (Tier 2: drive the game's own SAVE to a reserved slot, invisibly) ----
-  // window.oqSaves comes from the interpreter's OpenQuake storage provider: begin(slot) is a one-shot
+  // window.oqSaves comes from the interpreter's Bedrock Panel storage provider: begin(slot) is a one-shot
   // that makes the NEXT save/restore fileref resolve to a fixed on-disk slot with no file dialog; .game
   // is the exact key server.js stores under; .autoSlot is the reserved autosave filename. We arm it and
   // submit "save" as an ordinary command -- server.js then writes saves/<game>/<autoSlot>. SAVE is a

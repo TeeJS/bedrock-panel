@@ -99,7 +99,7 @@ Building your own drop-in app? The [`skills/`](skills) folder holds
 Claude Code skills you can drop into your `.claude/skills/` to get
 AI-assisted scaffolding and authoring help. Today:
 
-- [`open-quake-drop-in-app`](skills/open-quake-drop-in-app) — guides
+- [`bedrock-panel-drop-in-app`](skills/bedrock-panel-drop-in-app) — guides
   Claude through the manifest schema, served vs. file modes, options,
   `/app-proxy`, `/app-api`, and the host/runtime boundary so it stays
   inside `apps/<app-id>/` and doesn't touch platform code.

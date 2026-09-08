@@ -1,6 +1,6 @@
 # Dev Services
 
-A compact open-quake drop-in panel for configured local development services.
+A compact Bedrock Panel drop-in panel for configured local development services.
 
 ## What it does
 
@@ -16,7 +16,7 @@ is selected. Services can be added, removed, reordered, and edited there, includ
 expected process and project folder. The same editor remains available on the panel for quick
 changes.
 
-Settings are stored once in open-quake's per-user app-data directory and shared by the desktop
+Settings are stored once in Bedrock Panel's per-user app-data directory and shared by the desktop
 editor and panel. Existing panel-local settings are migrated into that store on first use. The
 single polling controller pauses while the page is hidden or while panel settings are open.
 

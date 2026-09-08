@@ -1,5 +1,5 @@
 # Keystroke helper for the Stream Deck Host drop-in app. Runs as a persistent hidden child of the
-# open-quake main process and sends REAL keyboard input via user32 SendInput -- the only reliable
+# Bedrock Panel main process and sends REAL keyboard input via user32 SendInput -- the only reliable
 # zero-dependency way to fire hotkeys like Win+Shift+C from Node on Windows.
 #
 # Protocol: one JSON object per stdin line ->

@@ -38,5 +38,5 @@ without scrolling.
   rule — not just "has an error ever happened".
 - Read-only: the dashboard never starts, stops, or deletes anything, and never
   dismisses notifications.
-- After updating the app, restart open-quake: `server.js` changes only load
+- After updating the app, restart Bedrock Panel: `server.js` changes only load
   with the host process.

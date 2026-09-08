@@ -182,7 +182,7 @@ See `docs/app-template/` for a minimal starting point.
 
 ### Authoring with Claude Code
 
-The [`open-quake-drop-in-app`](../community-apps/skills/open-quake-drop-in-app/SKILL.md)
+The [`bedrock-panel-drop-in-app`](../community-apps/skills/bedrock-panel-drop-in-app/SKILL.md)
 skill in `community-apps/skills/` guides Claude through scaffolding,
 modifying, or migrating a drop-in app. Drop it into your
 `.claude/skills/` folder (or invoke it with `/skill`) and Claude will

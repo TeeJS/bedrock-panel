@@ -1,6 +1,6 @@
 # Photo Strip
 
-Photo Strip is an ambient local-photo slideshow designed specifically for the open-quake
+Photo Strip is an ambient local-photo slideshow designed specifically for the Bedrock Panel
 1920×480 panel. Add it as a drop-in app page, then choose one or more folders in that page's
 App settings.
 

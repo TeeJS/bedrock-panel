@@ -167,7 +167,7 @@ function scan(dirs, cache, parse) {
 // ── Cache persistence ──────────────────────────────────────────────────────────
 // The first scan of a large ~/.claude history is slow (reads every session log);
 // the per-file cache makes later polls cheap, and persisting it to a tmp sidecar
-// keeps an open-quake restart from re-paying the cold scan. All best-effort.
+// keeps an Bedrock Panel restart from re-paying the cold scan. All best-effort.
 const CACHE_FILE = path.join(os.tmpdir(), 'oq-ai-usage-cache.json');
 function saveCaches() {
   // Cheap (~155 KB write); called once per scan. Persist both maps every time so a
@@ -277,7 +277,7 @@ async function githubGet(url, token) {
       Authorization: 'Bearer ' + token,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'open-quake-ai-usage',
+      'User-Agent': 'bedrock-panel-ai-usage',
     },
     signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
   });

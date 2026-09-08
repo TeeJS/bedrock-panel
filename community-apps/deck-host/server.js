@@ -1,6 +1,6 @@
 'use strict';
 // Stream Deck plugin host. Implements Elgato's documented plugin WebSocket protocol so unmodified
-// *.sdPlugin packages run against the panel: this module (running in open-quake's main Node process)
+// *.sdPlugin packages run against the panel: this module (running in Bedrock Panel's main Node process)
 // spawns each plugin's CodePath with the standard registration args (-port -pluginUUID -registerEvent
 // -info), accepts its WebSocket, and speaks the SDK events. The app's page renders the key grid and
 // talks to this module over /app-api/<action>.
@@ -655,7 +655,7 @@ function ensureWss() {
           ws.ping();
         }, 15000);
         // Announce the device, then surface every visible key owned by this plugin.
-        sendTo(p, { event: 'deviceDidConnect', device: deviceId(), deviceInfo: { name: 'open-quake', type: 0, size: lastLayout } });
+        sendTo(p, { event: 'deviceDidConnect', device: deviceId(), deviceInfo: { name: 'Bedrock Panel', type: 0, size: lastLayout } });
         visibleContextsOf(p).forEach(ctx => sendTo(p, appearEvent('willAppear', ctx)));
         bump();
       });
@@ -664,7 +664,7 @@ function ensureWss() {
   return wssPromise;
 }
 let lastLayout = { columns: 8, rows: 3 };
-function deviceId() { return 'openquake-deck-0'; }
+function deviceId() { return 'openquake-deck-0'; }   // stable id plugins may have persisted settings under — not renamed
 function sendTo(p, obj) { if (p && p.ws && p.ws.readyState === 1) { try { p.ws.send(JSON.stringify(obj)); } catch (e) {} } }
 function ctxInfo(ctx) { return deck.contexts[ctx] || null; }
 // Resolve the plugin that owns a context's action. Imported profile keys carry a GUESSED plugin id
@@ -751,7 +751,7 @@ async function startPlugin(p) {
     application: { font: 'Segoe UI', language: 'en', platform: 'windows', platformVersion: '10', version: '6.5.0' },
     colors: { buttonMouseOverBackgroundColor: '#464646FF', buttonPressedBackgroundColor: '#303030FF', buttonPressedBorderColor: '#646464FF', buttonPressedTextColor: '#969696FF', highlightColor: '#7CFFB2FF' },
     devicePixelRatio: 1,
-    devices: [{ id: deviceId(), name: 'open-quake', size: lastLayout, type: 0 }],
+    devices: [{ id: deviceId(), name: 'Bedrock Panel', size: lastLayout, type: 0 }],
     plugin: { uuid: p.id, version: String(p.manifest.Version || '1.0') },
   };
   const args = ['-port', String(port), '-pluginUUID', p.uuid, '-registerEvent', 'registerPlugin', '-info', JSON.stringify(info)];

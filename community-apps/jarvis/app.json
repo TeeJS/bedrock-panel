@@ -1,7 +1,7 @@
 {
   "id": "jarvis",
   "name": "JARVIS",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "JARVIS voice-assistant client — pairs over a PIN, talks to Gemini Live, Ollama, or an OpenAI-compatible endpoint.",
   "entry": "jarvisview.html",
   "served": true,

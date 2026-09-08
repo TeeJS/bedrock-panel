@@ -6,7 +6,9 @@ const params = new URLSearchParams(location.search);
 document.documentElement.dataset.theme = params.get('_dark') === '0' ? 'light' : 'dark';
 if (params.get('_accent')) document.documentElement.style.setProperty('--accent', params.get('_accent'));
 
-const STORAGE_KEY = 'open-quake.dev-services.settings.v1';
+const STORAGE_KEY = 'bedrock-panel.dev-services.settings.v1';
+// Carry settings saved under the pre-rename key over once.
+try { const legacy = localStorage.getItem('Bedrock Panel.dev-services.settings.v1'); if (legacy !== null) { if (localStorage.getItem(STORAGE_KEY) === null) localStorage.setItem(STORAGE_KEY, legacy); localStorage.removeItem('Bedrock Panel.dev-services.settings.v1'); } } catch (e) {}
 const PAGE_SIZE = 4;
 const $ = selector => document.querySelector(selector);
 const track = $('#track');

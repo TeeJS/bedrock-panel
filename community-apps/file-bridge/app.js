@@ -511,7 +511,7 @@ document.querySelectorAll('.pickFolder').forEach(button => button.addEventListen
     if (result.ok && typeof result.path === 'string') input.value = result.path;
     else if (!result.canceled) $('#editErr').textContent = result.error || 'The folder picker could not be opened.';
   } catch (error) {
-    $('#editErr').textContent = 'Folder picker unavailable — update open-quake to a version that supports served-app folder selection.';
+    $('#editErr').textContent = 'Folder picker unavailable — update Bedrock Panel to a version that supports served-app folder selection.';
   } finally {
     button.disabled = false;
   }

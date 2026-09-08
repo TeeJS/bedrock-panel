@@ -1,7 +1,7 @@
 'use strict';
 
 // git-updater drop-in backend — a thin adapter over the vendored engine (engine/,
-// see engine/VENDORED.md). Runs in the open-quake host's main process.
+// see engine/VENDORED.md). Runs in the Bedrock Panel host's main process.
 //
 // Shares config/state/logs with the STANDALONE git-updater at %APPDATA%\git-updater\:
 // the tracked-app list is managed there; this app checks and applies updates from the

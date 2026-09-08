@@ -1,6 +1,6 @@
 'use strict';
 // App-local server for the Interactive Fiction player. Reached from the page as GET/POST
-// /app-api/<action>. Runs inside open-quake's main process, so it can read the host's own config.json
+// /app-api/<action>. Runs inside Bedrock Panel's main process, so it can read the host's own config.json
 // (for the system Wyoming TTS/STT servers) and read story files from any folder on the PC the user
 // pointed the app at -- the local static server only serves files under the app root, so stories that
 // live elsewhere are read here and handed to the page as bytes.

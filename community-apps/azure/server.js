@@ -199,7 +199,7 @@ function invalidateSubscription(subscriptionId) {
 }
 
 async function accessToken(context) {
-  if (!context.oauth) throw new AzureError('This open-quake host does not provide app OAuth.', 'oauth_unavailable', 500);
+  if (!context.oauth) throw new AzureError('This Bedrock Panel host does not provide app OAuth.', 'oauth_unavailable', 500);
   const token = await context.oauth.getAccessToken(OAUTH_SCOPES);
   if (!token || !token.accessToken) throw new AzureError('Connect Azure before loading operations data.', 'not_connected', 401);
   return token.accessToken;
@@ -731,7 +731,7 @@ async function handleAction(action, context) {
     };
   }
   if (action === 'connect') {
-    if (!context.oauth) throw new AzureError('This open-quake host does not provide app OAuth.', 'oauth_unavailable', 500);
+    if (!context.oauth) throw new AzureError('This Bedrock Panel host does not provide app OAuth.', 'oauth_unavailable', 500);
     const clientId = cleanText(context.options && context.options.oauthClientId, '');
     if (!clientId) throw new AzureError('Set the Microsoft Entra application client ID in app settings first.', 'not_configured', 400);
     const result = await context.oauth.connect(OAUTH_SCOPES, {
@@ -741,7 +741,7 @@ async function handleAction(action, context) {
     return { ok: Boolean(result && result.ok), pending: true };
   }
   if (action === 'disconnect') {
-    if (!context.oauth) throw new AzureError('This open-quake host does not provide app OAuth.', 'oauth_unavailable', 500);
+    if (!context.oauth) throw new AzureError('This Bedrock Panel host does not provide app OAuth.', 'oauth_unavailable', 500);
     cache.clear();
     await context.oauth.disconnect();
     return { ok: true };

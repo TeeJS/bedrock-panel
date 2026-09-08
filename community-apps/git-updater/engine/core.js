@@ -3,7 +3,7 @@
 // Pure logic, no IO. Every unit test lives against this file.
 
 // ---------------------------------------------------------------------------
-// Version compare — ported from open-quake app/appRepo.js cmpVersion(), plus
+// Version compare — ported from Bedrock Panel app/appRepo.js cmpVersion(), plus
 // leading-"v" strip and prerelease handling.
 // ---------------------------------------------------------------------------
 

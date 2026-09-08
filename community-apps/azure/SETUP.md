@@ -1,6 +1,6 @@
 # Azure Operations setup
 
-Azure Operations uses open-quake's app-scoped OAuth 2.0 authorization-code flow with PKCE. The
+Azure Operations uses Bedrock Panel's app-scoped OAuth 2.0 authorization-code flow with PKCE. The
 app-local server receives the token, calls supported Azure Resource Manager APIs, and returns only
 renderer-safe operational data.
 
@@ -16,9 +16,9 @@ renderer-safe operational data.
 4. Assign the signing-in user only the Azure RBAC roles needed at the subscriptions/resources the
    panel should operate. Reader is sufficient for dashboards; App Service or VM operations require
    the corresponding resource write permissions.
-5. Copy the Application (client) ID into the app's open-quake settings. Leave Client secret blank for
+5. Copy the Application (client) ID into the app's Bedrock Panel settings. Leave Client secret blank for
    the recommended public-client registration. If policy requires a confidential-client registration,
-   store its secret only in the secret option; open-quake encrypts it at rest and never sends it to the
+   store its secret only in the secret option; Bedrock Panel encrypts it at rest and never sends it to the
    renderer.
 
 The app requests `https://management.azure.com/user_impersonation` and `offline_access`. It does not

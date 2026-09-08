@@ -97,7 +97,7 @@
         }
       }
     } catch (e) {
-      logSystemMessage('Failed to read open-quake configuration.');
+      logSystemMessage('Failed to read Bedrock Panel configuration.');
     }
   }
 

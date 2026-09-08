@@ -99,7 +99,7 @@ async function handle(action, ctx) {
         } catch (e) {}
       }
       
-      // Update with values from open-quake options
+      // Update with values from Bedrock Panel options
       if (ctx.options.gemini_api_key !== undefined && !ctx.options.gemini_api_key.startsWith('oqenc:v1:')) {
         configData.gemini_api_key = ctx.options.gemini_api_key;
       }

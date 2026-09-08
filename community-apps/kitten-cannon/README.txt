@@ -1,4 +1,4 @@
-Kitten Cannon — drop-in app for open-quake
+Kitten Cannon — drop-in app for Bedrock Panel
 ==========================================
 
 A remake of the classic Kitten Cannon flash game, ported from

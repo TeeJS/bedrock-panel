@@ -1,6 +1,6 @@
 'use strict';
 
-const RUNNING_VERSION = '1.0.5';
+const RUNNING_VERSION = '1.0.7';
 const params = new URLSearchParams(location.search);
 const refreshSeconds = Math.max(15, Math.min(300, parseInt(params.get('refreshSeconds'), 10) || 30));
 const PERIODS = ['today', '7d', '30d', 'all'];
