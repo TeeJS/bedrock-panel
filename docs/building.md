@@ -30,7 +30,7 @@ the bedrock-console repo's `firmware/PROTOCOL.md`.
 ## Build & run (Windows)
 
 > **Node 20, 22, 24, or 26** (`package.json` declares `"engines": node >=18 <27`; `.nvmrc` pins
-> **26** on this branch for testing). Node 25.7.0 and 26 used to break the build with
+> **26**, verified end-to-end on 26.8.1). Node 25.7.0 and 26 used to break the build with
 > *"ReferenceError: require is not defined in ES module scope"* — that came from `yargs` 17.7.2
 > (pulled in by electron-builder's CLI) and from the old `@electron/rebuild` 3.x. Both are fixed:
 > the lockfile now carries `yargs` 17.7.3 and `@electron/rebuild` 4.x parses its own args. If you
