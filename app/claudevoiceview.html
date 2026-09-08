@@ -101,10 +101,6 @@
   .bubble table { border-collapse: collapse; margin: 6px 0 8px; max-width: 100%; display: block; overflow-x: auto; }
   .bubble th, .bubble td { border: 1px solid var(--tile-bd); padding: 5px 10px; text-align: left; vertical-align: top; }
   .bubble th { background: var(--bg); font-weight: 600; }
-  /* The user bar is accent-filled: keep its links and inline code legible on that fill. */
-  .msg.user .bubble a { color: inherit; }
-  .msg.user .bubble :not(pre) > code, .msg.user .bubble th { background: rgba(0, 0, 0, 0.18); border-color: rgba(0, 0, 0, 0.25); }
-  .msg.user .bubble blockquote { border-left-color: currentColor; color: inherit; opacity: 0.85; }
 
   /* Folder overlay -- the layout the user approved: Recent row up top, then a uniform grid of big
      aligned rows (no ragged pill wall, no quarter-width slabs), 26px names left-aligned, 64px rows.

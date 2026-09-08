@@ -97,7 +97,10 @@ function renderTranscript() {
   // message typed mid-reply destroyed the marker and the old reply's text froze on screen while
   // its generation quietly finished.
   list.innerHTML = transcript.map(function (m) {
-    return '<div class="msg ' + m.role + '"' + (m === liveMsg ? ' data-live="1"' : '') + '><div class="bubble">' + renderContent(m.text) + '</div></div>';
+    // User bars stay raw text (mostly STT output; a stray '*' or '#' must not restyle it) -- only
+    // the assistant's replies go through the markdown renderer.
+    var body = m.role === 'user' ? renderPlain(m.text) : renderContent(m.text);
+    return '<div class="msg ' + m.role + '"' + (m === liveMsg ? ' data-live="1"' : '') + '><div class="bubble">' + body + '</div></div>';
   }).join('');
   wireCopyButtons(list);
   $('card').scrollTop = $('card').scrollHeight;

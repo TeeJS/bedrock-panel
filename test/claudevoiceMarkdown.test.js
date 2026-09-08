@@ -55,4 +55,6 @@ test('the AI Voice page loads the parser and keeps the copyable code-block contr
   assert.match(js, /btn\.className = 'copybtn'/);
   assert.match(js, /code\.textContent\.replace\(\/\\n\$\/, ''\)/);
   assert.match(js, /function renderPlain\(text\)/);
+  // User bars (mostly STT output) stay raw text; only assistant replies are markdown.
+  assert.match(js, /m\.role === 'user' \? renderPlain\(m\.text\) : renderContent\(m\.text\)/);
 });
