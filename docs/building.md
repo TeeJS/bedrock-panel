@@ -29,11 +29,12 @@ the bedrock-console repo's `firmware/PROTOCOL.md`.
 
 ## Build & run (Windows)
 
-> **Use a Node LTS — 20, 22, or 24** (built and verified on **24**). **Don't use Node 25/26.**
-> The native-rebuild toolchain (`@electron/rebuild`) bundles an older `yargs` that won't load
-> under Node 25/26 — `npm run rebuild` dies with *"ReferenceError: require is not defined in ES
-> module scope."* If you hit that, `node --version`, switch to an LTS, delete `node_modules`, and
-> reinstall. (`package.json` declares `"engines": node >=18 <25`; an `.nvmrc` pins 24.)
+> **Node 20, 22, 24, or 26** (`package.json` declares `"engines": node >=18 <27`; `.nvmrc` pins
+> **26** on this branch for testing). Node 25.7.0 and 26 used to break the build with
+> *"ReferenceError: require is not defined in ES module scope"* — that came from `yargs` 17.7.2
+> (pulled in by electron-builder's CLI) and from the old `@electron/rebuild` 3.x. Both are fixed:
+> the lockfile now carries `yargs` 17.7.3 and `@electron/rebuild` 4.x parses its own args. If you
+> still see that error, `node --version`, delete `node_modules`, and reinstall from this lockfile.
 
 The app's one compiled native module, **`node-hid`**, must be built for this app's
 Electron ABI (**Electron 42**), *not* your host Node. (`@jitsi/robotjs` ships

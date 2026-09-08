@@ -6,7 +6,7 @@
   "main": "app/main.js",
   "author": "TeeJS",
   "engines": {
-    "node": ">=18 <25"
+    "node": ">=18 <27"
   },
   "scripts": {
     "start": "node build-dpapi.js && node build-smtc.js && electron .",
