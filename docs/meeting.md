@@ -72,6 +72,15 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   the matching appointment's details are saved as `<recording>.json` beside the WAV and
   move with it through transcription. The attendee names are sent to the diarizer to
   improve speaker identification. See [settings.md](settings.md).
+- **On a Mac** the first recording asks for three permissions: **Microphone**, **Screen Recording**
+  (Chromium needs a screen source to hand over system audio; that video is discarded, so denying it
+  only costs nothing), and **System Audio Recording Only**, which is what captures everyone else —
+  without it the recording stops with a "system audio is blocked" error instead of saving a silent
+  right channel. macOS 14.2 or newer is required for system audio. The Documents folder prompt
+  appears the first time a recording is saved. Auto-record (the app-scoped mic monitor), Outlook
+  meeting info, and the Teams window focus are Windows-only until the macOS helpers ship; the
+  hotkeys, manual recording, transcription, and analysis work as on Windows. Pre/post transcription
+  commands run through `/bin/sh`.
 
 ## Slide capture
 

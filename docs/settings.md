@@ -2,7 +2,7 @@
 
 The editor's **⚙ Settings** page (top-right) holds the app- and device-level options,
 split into a **Software** tab (on launch, screen rotation), a **Hardware** tab (knob
-ring, microphone), a **Theme** tab (light/dark + accent color), an **Apps** tab
+ring, microphone, and on a Mac the permissions block), a **Theme** tab (light/dark + accent color), an **Apps** tab
 (which apps appear in the picker), a **Drop-In Apps** tab (manage installed drop-ins),
 an **Auth** tab (Home Assistant credentials — see below), a **Meeting** tab (recording
 folders, mic, transcription — see below), and a **Monitor** tab (Reserved Display
@@ -43,6 +43,14 @@ protection and what the knob does in monitor mode):
   **Override theme accent** to set its hue/saturation by hand instead. Changes apply to
   the ring **instantly**; **Save to device** writes them to the device's own memory so
   they persist across power-cycles.
+- **macOS permissions** (Hardware tab, Mac only) — one row each for **Accessibility** (keystrokes:
+  paste tiles, macros, meeting hotkeys, media keys), **Microphone**, and **Screen & System Audio
+  Recording** (slide capture, and the other side of a meeting recording), with a status pill,
+  **Request** (fires the system prompt where macOS allows it) and **Open System Settings** (jumps
+  to the matching Privacy & Security pane). Nothing is requested at startup — each feature asks
+  the first time it needs a permission; this block is where to check and repair. Grants attach to
+  the app build, so an update may ask again until builds are notarized. See
+  [building.md](building.md#build--run-macos) for the full list.
 - **Knob behavior** (under the ring controls) — what **turning** and **clicking** the knob
   does, set per page **kind** (grid / dashboard / app):
   - **Turn** — *Scroll pages* (default: previous/next page), *System volume*, *Scroll in

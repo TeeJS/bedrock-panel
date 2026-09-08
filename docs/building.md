@@ -103,6 +103,87 @@ reconnect, and primary-display swaps.
 calibration (taps land on the right display but slightly off). You don't
 normally need it for initial binding — `Set up touchscreen` alone is sufficient.
 
+## Build & run (macOS)
+
+Apple Silicon only for now (the packaged app declares macOS 14.2+; Electron 44 itself needs 13+).
+**Software mode** — the resizable desktop window, the editor, and every platform-neutral app — is
+the supported surface today. Knob/touch hardware and the Windows-only helpers (now-playing, the
+system-volume readout, foreground-app follow, mic-session auto-record, Outlook meeting info,
+reserved display, touchscreen setup) are still to come on macOS; each simply reports itself
+unavailable, and the editor hides or disables the Windows-only controls.
+
+Prerequisites: the Xcode Command Line Tools (`xcode-select --install` — `clang`, `codesign`,
+`hdiutil`) and Node 26 (`brew install node`). No Xcode, no Python, no native toolchain: both
+compiled modules ship macOS prebuilds (`node-hid` N-API arm64, `@jitsi/robotjs` universal), so
+nothing is rebuilt.
+
+```bash
+npm install --ignore-scripts            # packages on disk, no native build
+node node_modules/electron/install.js   # fetch the Electron 44 binary
+npm test                                 # node:test suite (the DPAPI test skips off Windows)
+npm start
+```
+
+Optional check that the prebuilds load under Electron's ABI:
+`ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron -e "console.log(require('node-hid').devices().length, !!require('@jitsi/robotjs'))"`.
+Only if that fails: `npm run rebuild` (uses the Command Line Tools' clang and Python 3).
+
+`npm start` still runs `build-dpapi.js` and `build-smtc.js` first; both exit immediately off
+Windows. User data lives in `~/Library/Application Support/bedrock-panel` (config, session data,
+drop-in apps under `apps/`), shared by `npm start` and the packaged app — which also share the
+single-instance lock, so quit one before starting the other.
+
+What to expect on a Mac:
+
+- **Secrets** are encrypted with Electron `safeStorage` (Keychain). Every rebuild of an ad-hoc-signed
+  app changes its code signature, so macOS asks *"bedrock-panel wants to access key … in your
+  keychain"* — click **Always Allow**. Deny leaves secrets unavailable for that session (saving a
+  config with secrets fails until relaunch). A `config.json` copied from Windows keeps its DPAPI
+  (`oqenc:v2:`) secrets, which a Mac cannot read: re-enter them in the editor.
+- **Permissions** are requested lazily, the first time a feature needs them: Accessibility
+  (keystrokes: paste tiles, macros, meeting hotkeys, media keys), Microphone, Screen & System Audio
+  Recording (the first meeting recording asks for Screen Recording — that video is discarded — and
+  for *System Audio Recording Only*, which captures the other side of the call), Files & Folders
+  (Documents, at the first recording), Local Network (packaged app only, macOS 15+).
+  **Settings → Hardware → macOS permissions** shows what is granted and opens the matching System
+  Settings pane. In dev the grants belong to *Electron* (`com.github.Electron`) and are shared with
+  every other Electron project on the machine; after an Electron upgrade reset them with
+  `tccutil reset ScreenCapture|Microphone|Accessibility com.github.Electron`.
+- **Notifications** are not delivered by unsigned/ad-hoc builds (Electron 44 uses UNNotification);
+  the app logs them and parks the text in the menu-bar icon's tooltip instead.
+- Global hotkeys written as `Ctrl+Alt+…` register as Control+Option on a Mac.
+- Transcription pre/post hooks run through `/bin/sh` (`cmd.exe` on Windows).
+
+### Packaging (macOS)
+
+```bash
+npm run dist:mac      # dist/bedrock-panel-arm64.dmg + .zip — ad-hoc signed, hardened runtime
+```
+
+The build is signed **ad-hoc** (`mac.identity: "-"`) with the entitlements in `packaging/mac/`
+(`build/` is gitignored, so they live there) until an Apple Developer ID is available, and the DMG
+is not notarized. On a downloaded copy macOS therefore says it *could not verify* the app: click
+**Done**, open **System Settings → Privacy & Security**, scroll to *Security*, click **Open Anyway**,
+then **Open** — once per new build. Or clear the quarantine flag:
+`xattr -dr com.apple.quarantine "/Applications/Bedrock Panel.app"`. (A *"damaged"* dialog instead
+means the bundle was packaged without any signature — only `xattr` helps; check that `identity` is
+still `"-"`.) Permission grants are tied to the signature too, so a new build may ask again; remove
+stale rows in System Settings before re-granting.
+
+Verify a build: `codesign --verify --deep --strict --verbose=2 "dist/mac-arm64/Bedrock Panel.app"`
+passes, `codesign -dvv` shows `Signature=adhoc` with `flags=…(runtime)`, and
+`codesign -d --entitlements :-` lists the entitlements; `spctl -a -t exec -vv` says *rejected*
+until notarization. `mac.minimumSystemVersion` is 14.2 because Chromium captures system audio
+through a CoreAudio tap from there (`NSAudioCaptureUsageDescription` in `mac.extendInfo`; the dev
+Electron.app already carries it). `BEDROCK_MAC_LEGACY_LOOPBACK=1` forces the older ScreenCaptureKit
+loopback for troubleshooting. Never add a top-level `productName` to `package.json`: `app.name` is
+`bedrock-panel` in dev and packaged alike, and the Keychain item ("bedrock-panel Safe Storage") is
+named after it.
+
+When the Developer ID arrives: delete `"identity": "-"`, add `"notarize": true`, and export
+`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (or an App Store Connect API key via
+`APPLE_API_KEY`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER`). Nothing else changes.
+
 ## Code layout
 
 ```
@@ -118,7 +199,7 @@ app/                      the Electron launcher + PC grid editor     [MIT]
   index.html              the on-panel UI (grids + web dashboards)
   config.html             the PC editor (pages, tiles, icons)
   config.default.json     seed config (copied to config.json on first run)
-  nowplaying.js           Music: now-playing from Windows SMTC (via smtc-monitor.exe)
+  nowplaying.js           Music: now-playing from Windows SMTC (via smtc-monitor.exe); inactive on macOS until the native-helper port
   sysserver.js            localhost server for the served app pages (Music, AI Voice, meetings)
   musicview.html          Music: now-playing + transport + the embedded app grid
   claudevoice-markdown.js AI Voice reply renderer (marked + sanitizer)  [vendored, MIT]
@@ -135,4 +216,4 @@ binding (`dpapi.js`, per-value, current-user scope, no key file) on Windows, and
 
 `build.nsis.guid` is pinned to `6b73d4a7-2e13-5aef-9474-9432dfa413dd` — the GUID electron-builder derived from the
 pre-rename `appId` (`com.teejs.openquake`). The installer finds and replaces an existing install by that GUID, so it
-must never change; the `appId` itself is now `com.teejs.bedrockpanel`.
+must never change; the `appId` itself is now `com.teejs.bedrockpanel` (also the macOS bundle id).

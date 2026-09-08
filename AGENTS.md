@@ -3,7 +3,8 @@
 ## Project Overview
 
 Bedrock Panel is a Windows-first Electron launcher and editor for the DK-QUAKE / ARIS-68
-touchscreen-and-knob device and the open Bedrock RP2040 knob. It renders grids, dashboards,
+touchscreen-and-knob device and the open Bedrock RP2040 knob, with a macOS port in progress
+(Software mode ships; hardware and the native helpers are pending — see `docs/building.md`). It renders grids, dashboards,
 and bundled or user-installed apps on a 1920x480 display, then maps touch, knob, desktop,
 media, meeting, and Home Assistant events to actions.
 
@@ -15,11 +16,14 @@ related components, but verify conclusions against current source. The implement
 
 - CommonJS JavaScript on Node.js and Electron 44; Node 26 is pinned by `.nvmrc`.
 - Plain HTML, CSS, and renderer JavaScript; there is no frontend framework or transpilation.
-- `node-hid` for hardware, `@jitsi/robotjs` for desktop input, `ws` for Home Assistant,
-  and `systeminformation` for telemetry.
-- C#/.NET Framework helpers provide Windows SMTC and reserved-display integration.
-- `electron-builder` produces Windows portable and NSIS artifacts and invokes Azure
-  Trusted Signing when the local signing setup is available.
+- `node-hid` for hardware, `@jitsi/robotjs` for desktop input, and `ws` for Home Assistant.
+  Both native modules ship macOS prebuilds, so nothing is rebuilt on a Mac.
+- C#/.NET Framework helpers provide Windows SMTC and reserved-display integration. They are
+  Windows-only; on macOS their features report themselves unavailable, and `app/macPermissions.js`
+  owns the macOS permission status/prompts.
+- `electron-builder` produces Windows portable and NSIS artifacts (Azure Trusted Signing when the
+  local signing setup is available) and, via `npm run dist:mac`, an ad-hoc-signed macOS dmg/zip
+  with the entitlements in `packaging/mac/`.
 - Tests use the built-in `node:test` runner. There is no configured lint or typecheck command.
 
 ## Repository Structure
@@ -107,8 +111,7 @@ are managed by `src/auth/token-storage.js`, and the authorization flow is in
 
 ## Development Commands
 
-Use Windows and an LTS Node release supported by `package.json`; Node 24 is the verified and
-pinned version. Node 25+ is unsupported by the native rebuild toolchain.
+Use Windows or macOS with the Node release pinned by `.nvmrc` (26).
 
 ```powershell
 npm install --ignore-scripts
@@ -117,10 +120,20 @@ npm run rebuild
 npm start
 ```
 
+On macOS skip the rebuild (`node-hid` and `@jitsi/robotjs` ship prebuilds):
+
+```bash
+npm install --ignore-scripts
+node node_modules/electron/install.js
+npm start
+```
+
 - `npm run rebuild`: rebuild `node-hid` for Electron 44.3.0 rather than the host Node ABI.
 - `npm run build:smtc`: compile stale C# helpers when the Windows SDK/.NET toolchain exists.
 - `npm test`: run `node --test test/*.test.js`.
 - `npm run dist`: build Windows portable and NSIS packages under `dist/`.
+- `npm run dist:mac`: build the macOS dmg/zip under `dist/` (macOS host; ad-hoc signed until a
+  Developer ID exists).
 
 `npm start` and `npm run dist` run `build-smtc.js` first. A native rebuild also requires the
 Visual Studio 2022 C++ build tools and a working Python/node-gyp setup. See
@@ -204,6 +217,8 @@ Visual Studio 2022 C++ build tools and a working Python/node-gyp setup. See
 - For integration or security changes, verify failure behavior, secret redaction, origin/path
   restrictions, and persistence across restart.
 - For packaging/native changes, run the relevant helper build and `npm run dist` on a properly
-  provisioned Windows machine, then verify the expected helpers and signatures in the artifact.
+  provisioned Windows machine, then verify the expected helpers and signatures in the artifact. For
+  macOS packaging changes, run `npm run dist:mac` on a Mac and verify the signature
+  (`codesign --verify --deep --strict`) and entitlements.
 - Update affected documentation and confirm no secrets, generated files, or runtime config were
   introduced into the diff.
