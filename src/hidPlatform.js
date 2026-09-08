@@ -19,7 +19,7 @@
  */
 
 const INPUT_MONITORING_HINT =
-  'macOS may be blocking the device — allow Bedrock Panel under System Settings → Privacy & Security → Input Monitoring, then reconnect it';
+  'macOS may be blocking the device — allow Bedrock Panel (or, for npm start, the terminal app it was launched from) under System Settings → Privacy & Security → Input Monitoring; it reconnects on the next rescan';
 
 /** node-hid open options for this platform, or null when the default open is right. */
 function openOptions(platform = process.platform) {

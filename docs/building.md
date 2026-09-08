@@ -124,8 +124,12 @@ Mac: both HID connectors open devices non-exclusively (IOKit opens exclusively b
 fails whenever the OS's own driver holds the touch digitizer), retry a failed write three times
 before giving the device up (the original DK-Suite driver did the same), tolerate a leading
 report-id byte on incoming frames, and report a refused open once instead of every rescan. A
-refusal on macOS is usually the **Input Monitoring** permission (System Settings → Privacy &
-Security); the **Device Diagnostics** app shows the refusal on the Knob row with that hint. Panel
+refusal on macOS is the **Input Monitoring** permission (System Settings → Privacy & Security),
+which macOS demands for the DK-QUAKE touch controller because it also exposes mouse and digitizer
+collections (the knob interface is vendor-only and opens without it). Grant it to **Bedrock Panel**,
+or to the terminal app when running `npm start` — macOS does not always prompt for a command-line
+launch — and the connector picks the device up on its next rescan. The **Device Diagnostics** app
+shows a refusal on the Knob or Touchscreen row with that hint. Panel
 mode places the window on the 1920×480 display with macOS simple fullscreen (no separate Space).
 How macOS delivers the touch digitizer (pointer events versus nothing) is the open question for
 the first real-hardware run.
