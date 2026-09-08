@@ -1,0 +1,187 @@
+[
+  {
+    "file": "brand-preview.png",
+    "width": 1400,
+    "height": 1060
+  },
+  {
+    "file": "discord/discord-server-banner.png",
+    "width": 960,
+    "height": 540
+  },
+  {
+    "file": "discord/discord-server-icon.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "file": "favicon/android-chrome-192.png",
+    "width": 192,
+    "height": 192
+  },
+  {
+    "file": "favicon/android-chrome-512.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "file": "favicon/apple-touch-icon-180.png",
+    "width": 180,
+    "height": 180
+  },
+  {
+    "file": "favicon/apple-touch-icon.png",
+    "width": 180,
+    "height": 180
+  },
+  {
+    "file": "favicon/favicon-16.png",
+    "width": 16,
+    "height": 16
+  },
+  {
+    "file": "favicon/favicon-32.png",
+    "width": 32,
+    "height": 32
+  },
+  {
+    "file": "favicon/favicon-48.png",
+    "width": 48,
+    "height": 48
+  },
+  {
+    "file": "favicon-size-review.png",
+    "width": 1000,
+    "height": 420
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-16-dark.png",
+    "width": 16,
+    "height": 16
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-16.png",
+    "width": 16,
+    "height": 16
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-256-dark.png",
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-256.png",
+    "width": 256,
+    "height": 256
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-32-dark.png",
+    "width": 32,
+    "height": 32
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-32.png",
+    "width": 32,
+    "height": 32
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-512-dark.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-512.png",
+    "width": 512,
+    "height": 512
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-black.png",
+    "width": 1000,
+    "height": 1000
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-dark.png",
+    "width": 1000,
+    "height": 1000
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-reversed.png",
+    "width": 1000,
+    "height": 1000
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark-white.png",
+    "width": 1000,
+    "height": 1000
+  },
+  {
+    "file": "logo/mark/bedrock-panel-mark.png",
+    "width": 1000,
+    "height": 1000
+  },
+  {
+    "file": "logo/monochrome/bedrock-panel-logo-horizontal-black.png",
+    "width": 1000,
+    "height": 220
+  },
+  {
+    "file": "logo/monochrome/bedrock-panel-logo-horizontal-white.png",
+    "width": 1000,
+    "height": 220
+  },
+  {
+    "file": "logo/monochrome/bedrock-panel-logo-stacked-black.png",
+    "width": 1000,
+    "height": 680
+  },
+  {
+    "file": "logo/monochrome/bedrock-panel-logo-stacked-white.png",
+    "width": 1000,
+    "height": 680
+  },
+  {
+    "file": "logo/primary/bedrock-panel-logo-horizontal-dark.png",
+    "width": 1000,
+    "height": 220
+  },
+  {
+    "file": "logo/primary/bedrock-panel-logo-horizontal-reversed.png",
+    "width": 1000,
+    "height": 220
+  },
+  {
+    "file": "logo/primary/bedrock-panel-logo-horizontal.png",
+    "width": 1000,
+    "height": 220
+  },
+  {
+    "file": "logo/primary/bedrock-panel-logo-stacked-dark.png",
+    "width": 1000,
+    "height": 680
+  },
+  {
+    "file": "logo/primary/bedrock-panel-logo-stacked-reversed.png",
+    "width": 1000,
+    "height": 680
+  },
+  {
+    "file": "logo/primary/bedrock-panel-logo-stacked.png",
+    "width": 1000,
+    "height": 680
+  },
+  {
+    "file": "mark-size-review.png",
+    "width": 640,
+    "height": 400
+  },
+  {
+    "file": "social/github-social-preview.png",
+    "width": 1200,
+    "height": 630
+  },
+  {
+    "file": "stacked-preview.png",
+    "width": 1000,
+    "height": 680
+  }
+]

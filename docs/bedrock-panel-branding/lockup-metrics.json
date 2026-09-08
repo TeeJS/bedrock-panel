@@ -1,0 +1,26 @@
+{
+    "canvas":  [
+                   1000,
+                   220
+               ],
+    "weight":  700,
+    "markViewport":  [
+                         0,
+                         10,
+                         200,
+                         200
+                     ],
+    "font":  "Segoe UI",
+    "textInkBounds":  [
+                          228.488281,
+                          87.91992,
+                          692.623047,
+                          79.75879
+                      ],
+    "emSize":  106,
+    "letterSpacing":  0,
+    "textDrawingOrigin":  [
+                              220,
+                              52
+                          ]
+}
