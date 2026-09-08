@@ -88,3 +88,19 @@ test('panel and editor preview rotate independent GitHub capability chains', asy
   const previewSettings = await pageRequest(port, '/api/github/settings', { headers: { Authorization: 'Bearer ' + preview } });
   assert.equal(previewSettings.status, 200);
 });
+
+test('the panel GitHub URL is only re-minted after its capability is cleared', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const before = sysserver.githubCapabilityEpoch();
+  sysserver.issueGitHubCapability();
+  assert.equal(sysserver.githubCapabilityEpoch(), before, 'issuing must not bump the generation');
+  sysserver.clearGitHubCapability();
+  assert.equal(sysserver.githubCapabilityEpoch(), before + 1);
+  sysserver.setActivePage(null);
+  assert.equal(sysserver.githubCapabilityEpoch(), before + 2, 'leaving the page clears and bumps');
+  // main.js reuses the issued panel URL while the generation is unchanged; previews bypass the memo.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  assert.match(main, /sysserver\.githubCapabilityEpoch\(\)/);
+  assert.match(main, /if \(!preview && githubPanelUrl && githubPanelUrl\.key === key\) return githubPanelUrl\.url;/);
+  assert.match(main, /accent: page\.accent \}, true\); \}/);
+});

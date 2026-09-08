@@ -204,10 +204,15 @@ function issueGitHubCapability() {
   githubCapabilityChains.set(chain.id, chain);
   return rotateGitHubCapability(chain);
 }
+// Bumped on every clear so main.js knows the panel's issued URL is dead and must be re-minted;
+// between clears the panel URL stays byte-identical, which keeps a settings save from reloading it.
+let githubCapabilityGeneration = 0;
 function clearGitHubCapability() {
   githubCapabilityChains.clear();
   githubCapabilityTokens.clear();
+  githubCapabilityGeneration++;
 }
+function githubCapabilityEpoch() { return githubCapabilityGeneration; }
 function consumeGitHubCapability(req) {
   const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(String(req.headers.authorization || ''));
   if (!match) return null;
@@ -1393,4 +1398,4 @@ function lucidBroadcast(payload) {
   for (const res of lucidSubscribers) { try { res.write(line); } catch (e) { lucidSubscribers.delete(res); } }
 }
 
-module.exports = { start, stop, setActivePage, setAppFolders, invalidateAppServer, callAppServer, issueGitHubCapability, clearGitHubCapability, lucidBroadcast };
+module.exports = { start, stop, setActivePage, setAppFolders, invalidateAppServer, callAppServer, issueGitHubCapability, clearGitHubCapability, githubCapabilityEpoch, lucidBroadcast };

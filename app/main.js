@@ -1175,15 +1175,27 @@ function themeParams(page) {
   const t = effectiveTheme(page);
   return '_dark=' + (t.dark ? '1' : '0') + '&_accent=' + encodeURIComponent(t.accent);
 }
-function appPageUrl(page) {
+// The panel's GitHub page URL carries a startup capability in its fragment, and the panel renderer
+// reloads the guest whenever a `_cap=` URL changes (a cleared capability must be re-read). Every
+// pushToPanel() rebuilds the URL, so minting a fresh capability each time would reload the page on
+// any settings save. Reuse the issued URL while its options, UA profile, and capability generation
+// are unchanged; a clear (leave page / screensaver / reconnect) bumps the generation and re-mints.
+// Editor previews always mint their own chain so they never fight the panel over one token.
+let githubPanelUrl = null;   // { key, url }
+function appPageUrl(page, preview) {
   const def = loadApps().find(a => a.id === page.app);
   if (!def) return 'about:blank';
   if (def.served) {                                                          // served by the local server (live data, same-origin fetch, grid launch)
     const opts = page.options || {};                                         // non-secret options only; secrets are served by /app-config
     const qs = [appOptionQuery(def, opts, o => o.type !== 'secret' && !o.serverOnly), themeParams(page)].filter(Boolean).join('&');
     if (def._folder) return 'http://127.0.0.1:' + serverPort + '/apps/' + encodeURIComponent(def.id) + '/' + appEntryUrlPath(def.entry || def.file) + (qs ? '?' + qs : '');
-    const capability = !sysserver ? '' : def.id === 'github' ? sysserver.issueGitHubCapability() : '';
-    return 'http://127.0.0.1:' + serverPort + '/' + def.id + (qs ? '?' + qs : '') + (capability ? '#_cap=' + encodeURIComponent(capability) : '');
+    const base = 'http://127.0.0.1:' + serverPort + '/' + def.id + (qs ? '?' + qs : '');
+    if (!sysserver || def.id !== 'github') return base;
+    const key = base + '|' + (page.desktopUA ? 1 : 0) + '|' + sysserver.githubCapabilityEpoch();
+    if (!preview && githubPanelUrl && githubPanelUrl.key === key) return githubPanelUrl.url;
+    const url = base + '#_cap=' + encodeURIComponent(sysserver.issueGitHubCapability());
+    if (!preview) githubPanelUrl = { key, url };
+    return url;
   }
   const file = def._folder ? path.join(def._dir, def.entry || def.file) : path.join(APPS_DIR, def.file);
   const opts = page.options || {};
@@ -4310,7 +4322,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('appPreviewUrl', (e, page) => {
     if (!isFrom(e, configWin)) return 'about:blank';
     if (!page || typeof page !== 'object' || typeof page.app !== 'string') return 'about:blank';
-    try { return appPageUrl({ app: page.app, options: page.options || {}, gridOn: !!page.gridOn, appearance: page.appearance, accent: page.accent }); }
+    try { return appPageUrl({ app: page.app, options: page.options || {}, gridOn: !!page.gridOn, appearance: page.appearance, accent: page.accent }, true); }
     catch (err) { return 'about:blank'; }
   });
   // Interactive drop-in management surface. Unlike the inert scaled preview, this only exists
