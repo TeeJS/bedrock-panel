@@ -9,13 +9,14 @@
     "node": ">=18 <27"
   },
   "scripts": {
-    "start": "node build-dpapi.js && node build-smtc.js && electron .",
+    "start": "node build-dpapi.js && node build-smtc.js && node build-mac-helpers.js && electron .",
     "rebuild": "electron-rebuild -v 44.3.0 -f --only node-hid && node build-dpapi.js",
     "build:dpapi": "node build-dpapi.js",
     "build:smtc": "node build-smtc.js",
+    "build:mac-helpers": "node build-mac-helpers.js",
     "test": "node --test test/*.test.js",
     "dist": "node build-dpapi.js && node build-smtc.js && electron-builder --win",
-    "dist:mac": "electron-builder --mac"
+    "dist:mac": "node build-mac-helpers.js && electron-builder --mac"
   },
   "license": "SEE LICENSE IN LICENSE",
   "keywords": [
@@ -56,6 +57,7 @@
       "!native/**",
       "!build-dpapi.js",
       "!build-smtc.js",
+      "!build-mac-helpers.js",
       "!sign.js",
       "!afterpack.js",
       "!.signing/**",
@@ -114,7 +116,8 @@
         "NSMicrophoneUsageDescription": "Bedrock Panel records your microphone for meeting recordings, dictation, and the voice apps.",
         "NSAudioCaptureUsageDescription": "Bedrock Panel records what your Mac is playing (the other side of a meeting) for meeting recordings.",
         "NSLocalNetworkUsageDescription": "Bedrock Panel talks to Home Assistant, OBS, WLED lights, and MQTT brokers on your local network.",
-        "NSDocumentsFolderUsageDescription": "Bedrock Panel saves meeting recordings and transcripts under Documents by default."
+        "NSDocumentsFolderUsageDescription": "Bedrock Panel saves meeting recordings and transcripts under Documents by default.",
+        "NSAppleEventsUsageDescription": "Bedrock Panel controls Music and Spotify playback from the panel."
       }
     },
     "dmg": {

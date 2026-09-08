@@ -14,13 +14,18 @@
  *
  * Album art: the SMTC thumbnail is read by a second one-shot helper (native/smtc-art.cs ->
  * app/native/smtc-art.exe), run once per track and cached. Transport control is in main.js.
+ *
+ * macOS: the same stream comes from native/mac/nowplaying-monitor.swift (Spotify + Music.app via their
+ * distributed notifications; lines add bundleId/trackId), and art comes from Spotify's oEmbed endpoint
+ * (by track id) or the iTunes lookup — there is no thumbnail helper.
  */
 const { execFile, spawn } = require('child_process');
 const { net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const MONITOR_EXE = path.join(__dirname, 'native', 'smtc-monitor.exe').replace('app.asar', 'app.asar.unpacked');
+const { helperPath } = require('./nativeHelpers');
+const MONITOR_EXE = helperPath('nowplayingMonitor');   // smtc-monitor.exe on Windows, nowplaying-monitor on macOS, null elsewhere
 
 const STALE_MS = 12000;   // provider path only: if no provider refresh for this long, report null
 const RESPAWN_MS = 5000;  // helper crash -> retry delay (only while running)
@@ -34,7 +39,7 @@ let provider = null;
 function setProvider(fn) { provider = (typeof fn === 'function') ? fn : null; }
 
 // Album art via the bundled .NET helper. Path resolves dev vs packaged (asar.unpacked) like main.js.
-const ART_EXE = path.join(__dirname, 'native', 'smtc-art.exe').replace('app.asar', 'app.asar.unpacked');
+const ART_EXE = helperPath('nowplayingArt');   // Windows only (SMTC thumbnail); elsewhere art comes from the online lookups
 const artCache = {};      // trackKey -> dataURL | null  (fetched or failed; never re-fetched)
 let artBusy = false;
 function trackKey(s) { return s ? (s.title || '') + '\t' + (s.artist || '') : ''; }
@@ -49,8 +54,8 @@ function artMime(b64) {   // sniff the format from the base64 head so the data: 
 function fetchArt(key, track) {
   if (artBusy || (key in artCache)) return;   // one fetch at a time; never re-fetch a known track
   artBusy = true;
-  if (process.platform !== 'win32') {   // smtc-art.exe is Windows-only — skip it, go straight to the iTunes fallback
-    lookupArtOnline(track, url => { artCache[key] = url || null; artBusy = false; });
+  if (!ART_EXE) {   // no thumbnail helper here: Spotify's oEmbed (by track id) first, then the iTunes lookup
+    lookupArtOnlineAny(track, url => { artCache[key] = url || null; artBusy = false; });
     return;
   }
   execFile(ART_EXE, (track && track.app) ? [track.app] : [], { windowsHide: true, timeout: 4000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
@@ -69,6 +74,22 @@ function lookupArtOnline(track, cb) {
   if (!term) return cb(null);
   const url = 'https://itunes.apple.com/search?limit=1&media=music&entity='
     + ((track && track.album) ? 'album' : 'song') + '&term=' + encodeURIComponent(term);
+  fetchJson(url, j => {
+    const a = j && j.results && j.results[0] && j.results[0].artworkUrl100;
+    cb(a ? a.replace('100x100bb', '600x600bb') : null);   // bump 100px thumb to 600px
+  });
+}
+// Spotify publishes cover art for a track id through its public oEmbed endpoint (no key, no login).
+// Only the track id leaves the machine. Anything else, or a miss, falls through to the iTunes lookup.
+function lookupSpotifyArt(trackId, cb) {
+  if (!/^spotify:track:[A-Za-z0-9]+$/.test(String(trackId || ''))) return cb(null);
+  fetchJson('https://open.spotify.com/oembed?url=' + encodeURIComponent(trackId), j => cb((j && j.thumbnail_url) || null));
+}
+function lookupArtOnlineAny(track, cb) {
+  lookupSpotifyArt(track && track.trackId, url => url ? cb(url) : lookupArtOnline(track, cb));
+}
+// GET a small JSON document with a 4 s budget; cb(null) on any failure.
+function fetchJson(url, cb) {
   let req, to, done = false;
   const finish = v => { if (done) return; done = true; if (to) clearTimeout(to); cb(v); };
   try { req = net.request(url); } catch (e) { return cb(null); }
@@ -79,13 +100,7 @@ function lookupArtOnline(track, cb) {
     if (resp.statusCode !== 200) { resp.resume(); return finish(null); }
     resp.on('data', d => chunks.push(d));
     resp.on('error', () => finish(null));
-    resp.on('end', () => {
-      try {
-        const j = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        const a = j.results && j.results[0] && j.results[0].artworkUrl100;
-        finish(a ? a.replace('100x100bb', '600x600bb') : null);   // bump 100px thumb to 600px
-      } catch (e) { finish(null); }
-    });
+    resp.on('end', () => { try { finish(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch (e) { finish(null); } });
   });
   req.end();
 }
@@ -113,14 +128,17 @@ function onMonitorLine(line) {
   try { o = JSON.parse(line); } catch (e) { return; }
   if (!o || !o.title) { snapshot = null; snapTs = 0; return; }        // "{}" -> no media session
   snapshot = { title: o.title || null, artist: o.artist || null, album: o.album || null, status: o.status || null, app: o.app || null, position: +o.position || 0, duration: +o.duration || 0 };
+  if (o.bundleId) snapshot.bundleId = String(o.bundleId);   // macOS: the player's bundle id (transport targets it)
+  if (o.trackId) snapshot.trackId = String(o.trackId);      // macOS: Spotify track URI (art lookup)
+  if ('art' in o) artCache[trackKey(snapshot)] = o.art || null;   // a helper that supplies art skips the lookups
   snapTs = Date.now();
   fetchArt(trackKey(snapshot), snapshot);
 }
 
 function spawnMonitor() {
   if (!running || proc) return;
-  if (!fs.existsSync(MONITOR_EXE)) {
-    if (!warned) { warned = true; console.log('[nowplaying] smtc-monitor.exe missing (native helpers not built) — now-playing inactive'); }
+  if (!MONITOR_EXE || !fs.existsSync(MONITOR_EXE)) {
+    if (!warned) { warned = true; console.log('[nowplaying] now-playing helper missing (native helpers not built) — now-playing inactive'); }
     return;
   }
   // stdin stays open (piped): the helper exits on stdin EOF, so it can never outlive us.
@@ -148,7 +166,7 @@ function start() {
   if (running) return;
   running = true;
   if (provider) { tick(); timer = setInterval(tick, 2500); }
-  else if (process.platform === 'win32') spawnMonitor();
+  else if (MONITOR_EXE) spawnMonitor();
 }
 function stop() {
   running = false;

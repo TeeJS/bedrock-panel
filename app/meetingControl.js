@@ -20,7 +20,8 @@ const fs = require('fs');
 // Window find/focus via the bundled foreground-watch.exe helper (native/foreground-watch.cs) —
 // one signed exe instead of a powershell.exe spawn per panel tap, which endpoint-security tools
 // flag as malware-like churn. Same AttachThreadInput focus technique, now compiled.
-const FGWATCH_EXE = path.join(__dirname, 'native', 'foreground-watch.exe').replace('app.asar', 'app.asar.unpacked');
+const { helperPath } = require('./nativeHelpers');
+const FGWATCH_EXE = helperPath('foregroundWatch');   // null on platforms without a window helper
 
 // Fixed Teams shortcuts (Ctrl+Shift+...), confirmed against Microsoft's own support docs.
 // Unlike Zoom these aren't user-configurable, so there's nothing to expose in the editor.
@@ -54,10 +55,10 @@ function normalizeProcessNames(processNames) {
 
 // mode 'focus' | 'find'; both print OK / NOTFOUND, mirroring the retired PowerShell scripts.
 function runWindowHelper(mode, processNames, missingWord) {
-  if (process.platform !== 'win32') return Promise.resolve({ ok: false, error: 'Windows only' });
+  if (!FGWATCH_EXE) return Promise.resolve({ ok: false, error: 'No window helper on this platform' });
   const names = normalizeProcessNames(processNames);
   if (!names.length) return Promise.resolve({ ok: false, error: 'No process names supplied' });
-  if (!fs.existsSync(FGWATCH_EXE)) return Promise.resolve({ ok: false, error: 'foreground-watch.exe missing (native helpers not built)' });
+  if (!fs.existsSync(FGWATCH_EXE)) return Promise.resolve({ ok: false, error: 'foreground-watch helper missing (native helpers not built)' });
   return new Promise(resolve => {
     execFile(FGWATCH_EXE, [mode, ...names], { windowsHide: true, timeout: 5000 }, (err, stdout, stderr) => {
       const trimmed = String(stdout || '').trim();

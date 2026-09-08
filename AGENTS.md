@@ -18,9 +18,11 @@ related components, but verify conclusions against current source. The implement
 - Plain HTML, CSS, and renderer JavaScript; there is no frontend framework or transpilation.
 - `node-hid` for hardware, `@jitsi/robotjs` for desktop input, and `ws` for Home Assistant.
   Both native modules ship macOS prebuilds, so nothing is rebuilt on a Mac.
-- C#/.NET Framework helpers provide Windows SMTC and reserved-display integration. They are
-  Windows-only; on macOS their features report themselves unavailable, and `app/macPermissions.js`
-  owns the macOS permission status/prompts.
+- C#/.NET Framework helpers provide Windows SMTC and reserved-display integration. Their macOS
+  counterparts are the Swift helpers in `native/mac/` (system volume, foreground app and window
+  focus, mic-session auto-record, now-playing and transport); Outlook meeting info and reserved
+  display stay Windows-only. `app/nativeHelpers.js` maps each feature to its per-platform binary,
+  and `app/macPermissions.js` owns the macOS permission status/prompts.
 - `electron-builder` produces Windows portable and NSIS artifacts (Azure Trusted Signing when the
   local signing setup is available) and, via `npm run dist:mac`, an ad-hoc-signed macOS dmg/zip
   with the entitlements in `packaging/mac/`.
@@ -96,6 +98,10 @@ the rest of the app should depend on `MultiKnob`, not instantiate a connector di
 `native/reserved-display.cs` into ignored `app/native/*.exe` files. Compilation is
 best-effort during development, so missing helpers disable features without blocking startup.
 `afterpack.js` signs bundled helpers after packaging; `sign.js` handles builder artifacts.
+On macOS, `build-mac-helpers.js` compiles `native/mac/*.swift` (plus the shared `native/mac/lib/`)
+into ignored `app/native/mac/*` binaries under the same best-effort contract, and electron-builder
+signs them like any nested Mach-O. Every helper keeps the stdout contract of its Windows twin so
+the wrappers switch on path only (`helperPath()` returns `null` where a platform has no helper).
 
 ### Secrets and external integrations
 
@@ -130,6 +136,7 @@ npm start
 
 - `npm run rebuild`: rebuild `node-hid` for Electron 44.3.0 rather than the host Node ABI.
 - `npm run build:smtc`: compile stale C# helpers when the Windows SDK/.NET toolchain exists.
+- `npm run build:mac-helpers`: compile stale Swift helpers on macOS (Xcode Command Line Tools).
 - `npm test`: run `node --test test/*.test.js`.
 - `npm run dist`: build Windows portable and NSIS packages under `dist/`.
 - `npm run dist:mac`: build the macOS dmg/zip under `dist/` (macOS host; ad-hoc signed until a
@@ -172,7 +179,9 @@ Visual Studio 2022 C++ build tools and a working Python/node-gyp setup. See
   and executable-import consent from `docs/drop-in-spec.md`.
 - When changing a C# helper or adding one, update `build-smtc.js`, the JavaScript wrapper,
   packaging/unpack behavior, signing coverage, and focused tests where the JS process boundary
-  can be exercised without hardware.
+  can be exercised without hardware. Its macOS twin lives in `native/mac/` (`build-mac-helpers.js`,
+  `app/nativeHelpers.js`): keep both on the same stdout contract and update
+  `test/macHelperContracts.test.js` when that contract moves.
 - When changing reserved-display behavior, update both `app/reservedDisplay.js` and
   `native/reserved-display.cs` as applicable, then extend `test/reservedDisplay.test.js`.
 - When changing OAuth providers, inspect provider aliases, token migration/storage, OAuth flow,

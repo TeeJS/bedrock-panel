@@ -30,6 +30,8 @@ Thumbs.db
 
 # compiled SMTC album-art helper (built from native/smtc-art.cs by build-smtc.js; not a source artifact)
 app/native/*.exe
+# compiled macOS helpers (built from native/mac/*.swift by build-mac-helpers.js)
+app/native/mac/
 
 # dev-app secrets
 .env

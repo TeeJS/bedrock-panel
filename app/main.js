@@ -231,9 +231,10 @@ const CONFIG_PATH = path.join(USER_DIR, 'config.json');                  // writ
 const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config.default.json'); // bundled (read-only)
 const LEGACY_CONFIG_PATH = path.join(__dirname, 'config.json');          // pre-userData dev location, migrated once
 const APPS_DIR = path.join(__dirname, '..', 'apps').replace('app.asar', 'app.asar.unpacked'); // unpacked when packaged
-const SMTC_CTL_EXE = path.join(__dirname, 'native', 'smtc-control.exe').replace('app.asar', 'app.asar.unpacked'); // SMTC transport helper (Windows)
-const MIC_MONITOR_EXE = path.join(__dirname, 'native', 'mic-session-monitor.exe').replace('app.asar', 'app.asar.unpacked'); // app-scoped mic-in-use monitor (Windows)
-const SYSVOL_EXE = path.join(__dirname, 'native', 'sysvolume.exe').replace('app.asar', 'app.asar.unpacked'); // reads the real system volume for the meeting rail
+const { helperPath } = require('./nativeHelpers');       // per-platform bundled helper binaries (null = none on this platform)
+const SMTC_CTL_EXE = helperPath('nowplayingControl');      // media transport helper (SMTC on Windows, AppleScript on macOS)
+const MIC_MONITOR_EXE = helperPath('micSessionMonitor');   // app-scoped mic-in-use monitor (WASAPI sessions / Core Audio process objects)
+const SYSVOL_EXE = helperPath('sysvolume');                // reads the real system volume for the meeting rail
 const OUTLOOK_MEETING_EXE = path.join(__dirname, 'native', 'outlook-meeting.exe').replace('app.asar', 'app.asar.unpacked'); // pulls current-meeting info from classic Outlook over COM
 const LED_DEFAULT = { effect: 1, brightness: 200, speed: 128, hue: 128, sat: 255 }; // ring lighting fallback (effect 1 = Solid Color)
 const THEME_DEFAULT = { appearance: 'system', accent: '#7CFFB2', presets: ['#7CFFB2', '#38B6FF', '#FF4040', '#FFB000'] };
@@ -1977,9 +1978,10 @@ function pasteText(value) {
 // back to the media-key tap if the helper can't act (no session, helper missing) or off-Windows.
 const SMTC_CTL_CMDS = { playpause: 1, next: 1, prev: 1 };
 function mediaKey(cmd) {
-  if (process.platform === 'win32' && SMTC_CTL_CMDS[cmd] && fs.existsSync(SMTC_CTL_EXE)) {
+  if (SMTC_CTL_EXE && SMTC_CTL_CMDS[cmd] && fs.existsSync(SMTC_CTL_EXE)) {
     const snap = nowplaying.getSnapshot();
-    const args = (snap && snap.app) ? [cmd, snap.app] : [cmd];   // target the displayed session by app id
+    const target = snap && (snap.bundleId || snap.app);
+    const args = target ? [cmd, target] : [cmd];   // target the displayed session (SMTC app id on Windows, bundle id on macOS)
     try {
       execFile(SMTC_CTL_EXE, args, { windowsHide: true, timeout: 4000 }, (err, stdout) => {
         if (err || String(stdout || '').trim() !== 'ok') mediaKeys.transport(cmd);   // helper miss -> media key
@@ -2276,7 +2278,7 @@ function stopVolumeWatcher() {
   sysVolCache = null;
 }
 function ensureVolumeWatcher() {
-  if (process.platform !== 'win32') return;
+  if (!SYSVOL_EXE) return;
   if (sysVolIdleTimer) clearTimeout(sysVolIdleTimer);
   sysVolIdleTimer = setTimeout(stopVolumeWatcher, 10000);
   if (sysVolProc || !fs.existsSync(SYSVOL_EXE)) return;
@@ -2513,9 +2515,9 @@ function resolveMeetingAudioPath(kind, name) {
 // stops holding an ACTIVE capture session. That, not raw mic sound, is what auto-starts recording —
 // so a Claude-voice session (or any other mic use) never triggers it.
 function startMicMonitor() {
-  if (process.platform !== 'win32') return;
+  if (!MIC_MONITOR_EXE) return;
   stopMicMonitor();
-  if (!fs.existsSync(MIC_MONITOR_EXE)) { console.log('[meeting] mic-session-monitor.exe missing — auto-record disabled (manual still works)'); return; }
+  if (!fs.existsSync(MIC_MONITOR_EXE)) { console.log('[meeting] mic-session-monitor helper missing — auto-record disabled (manual still works)'); return; }
   // One monitor serves two consumers with different app lists. Windows shared-mode capture lets
   // several apps hold the mic at once, so the monitor reports EVERY match and each consumer filters
   // apps[] against its own list — see app/micMonitorRouting.js for why reading msg.app instead
@@ -2556,7 +2558,7 @@ function startMicMonitor() {
       }
     }
   });
-  micMonitorProc.on('exit', () => { micMonitorProc = null; });
+  micMonitorProc.on('exit', code => { micMonitorProc = null; if (code) console.log('[meeting] mic monitor exited with code ' + code + ' — auto-record unavailable (macOS needs 14.2+)'); });
   console.log('[meeting] mic monitor watching: ' + allow);
 }
 function stopMicMonitor() {

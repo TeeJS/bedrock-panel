@@ -27,7 +27,8 @@ protection and what the knob does in monitor mode):
 - **Desktop focus** — auto-switch the panel to a page when a chosen desktop app becomes
   the focused window on the PC. Turn on **Auto-follow**, then add one or more **Focus
   trigger app(s)** to any page's **Advanced settings** (type a process name, or pick one
-  from the **browse running apps** list). Detection polls in the background and only
+  from the **browse running apps** list; on a Mac these are app names such as "Google Chrome").
+  Detection polls in the background and only
   switches after the new app holds focus for a couple seconds, so quick alt-tabbing won't
   cause flicker — and manually navigating away is never overridden, since it only
   re-triggers on the next focus change. Tick **Pause auto-rotation** to hold rotation off

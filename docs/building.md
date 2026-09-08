@@ -107,10 +107,17 @@ normally need it for initial binding — `Set up touchscreen` alone is sufficien
 
 Apple Silicon only for now (the packaged app declares macOS 14.2+; Electron 44 itself needs 13+).
 **Software mode** — the resizable desktop window, the editor, and every platform-neutral app — is
-the supported surface today. The Windows-only helpers (now-playing, the system-volume readout,
-foreground-app follow, mic-session auto-record, Outlook meeting info, reserved display, touchscreen
-setup) are still to come on macOS; each simply reports itself unavailable, and the editor hides or
-disables the Windows-only controls.
+the supported surface today. The Windows C# helpers have macOS counterparts in `native/mac/`
+(Swift, compiled by `build-mac-helpers.js` into `app/native/mac/`): the **system-volume readout**
+(Core Audio), **foreground-app follow and window find/focus** (NSWorkspace, CGWindowList),
+**mic-session auto-record** (Core Audio process objects, macOS 14.2+; the Windows names in the
+call-app list — Zoom.exe, Teams.exe, ms-teams.exe — are mapped to the Mac apps), **now-playing**
+(Spotify and Music.app through their playback notifications; browser players are not covered), and
+**transport** aimed at the displayed player (AppleScript — the first press asks for the Automation
+permission; a refusal falls back to media keys). Still Windows-only, each reporting itself
+unavailable: Outlook meeting info (use the Microsoft 365 calendar source), reserved display,
+touchscreen setup, and album-art thumbnails (art comes from Spotify's oEmbed or the iTunes lookup).
+`app/nativeHelpers.js` is the one table that maps a feature to its per-platform binary.
 
 **Knob and touchscreen hardware** is wired for macOS but not yet validated on a real console from a
 Mac: both HID connectors open devices non-exclusively (IOKit opens exclusively by default, which
@@ -124,9 +131,11 @@ How macOS delivers the touch digitizer (pointer events versus nothing) is the op
 the first real-hardware run.
 
 Prerequisites: the Xcode Command Line Tools (`xcode-select --install` — `clang`, `codesign`,
-`hdiutil`) and Node 26 (`brew install node`). No Xcode, no Python, no native toolchain: both
-compiled modules ship macOS prebuilds (`node-hid` N-API arm64, `@jitsi/robotjs` universal), so
-nothing is rebuilt.
+`hdiutil`, and the `swiftc` that builds the helpers) and Node 26 (`brew install node`). No Xcode,
+no Python: both compiled node modules ship macOS prebuilds (`node-hid` N-API arm64,
+`@jitsi/robotjs` universal), so nothing is rebuilt. `npm start` and `npm run dist:mac` run
+`build-mac-helpers.js` first (idempotent, best-effort like `build-smtc.js`; `npm run build:mac-helpers`
+runs it alone; `--dist` builds fat arm64 + x86_64 binaries for a universal package).
 
 ```bash
 npm install --ignore-scripts            # packages on disk, no native build

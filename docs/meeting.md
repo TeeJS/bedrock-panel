@@ -77,10 +77,12 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   only costs nothing), and **System Audio Recording Only**, which is what captures everyone else —
   without it the recording stops with a "system audio is blocked" error instead of saving a silent
   right channel. macOS 14.2 or newer is required for system audio. The Documents folder prompt
-  appears the first time a recording is saved. Auto-record (the app-scoped mic monitor), Outlook
-  meeting info, and the Teams window focus are Windows-only until the macOS helpers ship; the
-  hotkeys, manual recording, transcription, and analysis work as on Windows. Pre/post transcription
-  commands run through `/bin/sh`.
+  appears the first time a recording is saved. **Auto-record** works on macOS 14.2+: the monitor
+  watches which app is capturing the microphone, and the Windows names in the call-app list
+  (Zoom.exe, Teams.exe, ms-teams.exe, Discord.exe, …) are recognised for the Mac apps too. Teams
+  window focus works. Outlook meeting info is Windows-only — pick the **Microsoft 365** calendar
+  source instead. The hotkeys, manual recording, transcription, and analysis work as on Windows;
+  pre/post transcription commands run through `/bin/sh`.
 
 ## Slide capture
 

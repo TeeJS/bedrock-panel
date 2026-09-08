@@ -3,7 +3,8 @@
  * desktopFocus.js — track the PC's foreground (focused) application and let the panel
  * auto-switch to a page mapped to it. [MIT]
  *
- * Windows-only, via the bundled foreground-watch.exe helper (native/foreground-watch.cs):
+ * Via the bundled foreground-watch helper (native/foreground-watch.cs on Windows,
+ * native/mac/foreground-watch.swift on macOS; none elsewhere, so the tracker stays off):
  *   - watch mode: ONE persistent helper process holding a SetWinEventHook, streaming the
  *     foreground process name (bare, no ".exe") over stdout on every change — event-driven,
  *     zero polling. This replaced a powershell.exe spawn every 1.5s (~40 processes/min),
@@ -19,7 +20,8 @@ const { spawn, execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const WATCH_EXE = path.join(__dirname, 'native', 'foreground-watch.exe').replace('app.asar', 'app.asar.unpacked');
+const { helperPath } = require('./nativeHelpers');
+const WATCH_EXE = helperPath('foregroundWatch');   // null on platforms without a helper
 
 const COMMIT_MS = 3000;     // a new app must hold focus this long before it's reported (matches the old 2×1.5s polls)
 const RESPAWN_MS = 5000;    // helper crash -> retry delay (only while running)
@@ -48,8 +50,8 @@ function onLine(name) {
 
 function spawnWatcher() {
   if (!running || proc) return;
-  if (!fs.existsSync(WATCH_EXE)) {
-    if (!warned) { warned = true; console.log('[desktopFocus] foreground-watch.exe missing (native helpers not built) — auto-follow inactive'); }
+  if (!WATCH_EXE || !fs.existsSync(WATCH_EXE)) {
+    if (!warned) { warned = true; console.log('[desktopFocus] foreground-watch helper missing (native helpers not built) — auto-follow inactive'); }
     return;
   }
   // stdin stays open (piped): the helper exits on stdin EOF, so it can never outlive us.
@@ -77,7 +79,7 @@ function spawnWatcher() {
 // Chrome windows — and each appears here; the hwnd is what slide capture builds its source id from.
 function listAllWindows() {
   return new Promise(resolve => {
-    if (process.platform !== 'win32' || !fs.existsSync(WATCH_EXE)) return resolve([]);
+    if (!WATCH_EXE || !fs.existsSync(WATCH_EXE)) return resolve([]);
     execFile(WATCH_EXE, ['list'], { windowsHide: true, timeout: 5000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
       if (err || !stdout) return resolve([]);
       let rows;
@@ -113,7 +115,7 @@ function listRunningApps() {
 function start(cb) {
   onChange = cb;
   if (running) return;
-  if (process.platform !== 'win32') return;
+  if (!WATCH_EXE) return;
   running = true;
   spawnWatcher();
 }

@@ -29,10 +29,12 @@ Music Assistant, Amazon Music, Tidal, Apple Music (web), SoundCloud, Bandcamp, a
 players generally "just work" via the browser's media-session integration. A few desktop apps don't
 register with the flyout and so won't show now-playing or respond to the buttons (e.g. **VLC**, **Plexamp**).
 
-**macOS:** the Music page has nothing to show yet — now-playing comes from Windows' media flyout, and
-the macOS source (Music.app and Spotify) is part of the native-helper port that follows the Software-mode
-release. The transport buttons still send media keys once Accessibility is granted (Settings → Hardware →
-macOS permissions).
+**macOS:** now-playing comes from **Spotify** and **Music.app** through their playback notifications (no
+permission needed); browser players and other apps don't show, because macOS offers no public
+equivalent of the Windows media flyout. The transport buttons drive the displayed player through
+AppleScript — the first press asks for the **Automation** permission — and fall back to media keys
+(Accessibility) otherwise. Music.app doesn't report a playback position, so its progress sits at 0 for
+now. Album art comes from Spotify's public oEmbed lookup or the iTunes search.
 
 **Volume note:** the knob's *System volume* controls the OS master volume. Windows exposes no per-tab
 volume for browser-based players, and the media API carries no volume control, so there's no way to set

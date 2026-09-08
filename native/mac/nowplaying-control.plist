@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Embedded into the nowplaying-control binary as its __info_plist section (build-mac-helpers.js), so
+     TCC has a usage string for the Automation prompt even when the helper is attributed on its own. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.teejs.bedrockpanel.nowplaying-control</string>
+  <key>CFBundleName</key>
+  <string>Bedrock Panel now-playing control</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Bedrock Panel controls Music and Spotify playback from the panel.</string>
+</dict>
+</plist>
