@@ -22,6 +22,7 @@
         <svg class="selector-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
       </button>
       <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg></button>
+      <button class="icon-button diagnostic-button" id="diagnosticButton" type="button" aria-label="Open error details" title="Error details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v5m0 3h.01"/></svg></button>
     </header>
 
     <section class="content" id="content" aria-live="polite"></section>
@@ -50,6 +51,17 @@
       <div class="dialog-actions">
         <button class="secondary-button" id="cancelConfirm" type="button">Cancel</button>
         <button class="primary-button" id="acceptConfirm" type="button">Continue</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="overlay" id="diagnosticOverlay" hidden>
+    <section class="dialog diagnostic-dialog" role="dialog" aria-modal="true" aria-labelledby="diagnosticTitle">
+      <header><div><h2 id="diagnosticTitle">Azure DevOps error details</h2><small>Safe to copy — credentials and request URLs are omitted.</small></div><button class="icon-button" id="closeDiagnostic" type="button" aria-label="Close">×</button></header>
+      <pre id="diagnosticText"></pre>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="copyDiagnostic" type="button">Copy details</button>
+        <button class="primary-button" id="doneDiagnostic" type="button">Done</button>
       </div>
     </section>
   </div>

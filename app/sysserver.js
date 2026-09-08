@@ -130,7 +130,9 @@ let appOAuth = null;        // drop-in OAuth capability (main.js) -> scoped per 
 let appHost = null;         // trusted host operations available only to installed server.js modules
 const appServers = {};      // app id -> required server module
 const DEFAULT_GITHUB_CAPABILITY_TTL_MS = 24 * 60 * 60 * 1000;
-let githubCapability = null;
+const MAX_GITHUB_CAPABILITY_CHAINS = 256;
+const githubCapabilityChains = new Map();
+const githubCapabilityTokens = new Map();
 let githubCapabilityTtlMs = DEFAULT_GITHUB_CAPABILITY_TTL_MS;
 let currentTime = Date.now;
 
@@ -169,22 +171,57 @@ function safeErrorType(error) {
   return /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(name) ? name : 'Error';
 }
 
-function newGitHubCapability() {
-  githubCapability = { token: crypto.randomBytes(32).toString('base64url'), expiresAt: currentTime() + githubCapabilityTtlMs };
-  return githubCapability.token;
+function forgetGitHubCapabilityChain(id) {
+  const chain = githubCapabilityChains.get(id);
+  if (!chain) return;
+  if (chain.token) githubCapabilityTokens.delete(chain.token);
+  if (chain.previousToken) githubCapabilityTokens.delete(chain.previousToken);
+  githubCapabilityChains.delete(id);
+}
+function pruneGitHubCapabilities() {
+  const now = currentTime();
+  for (const [id, chain] of githubCapabilityChains) {
+    if (chain.expiresAt <= now) forgetGitHubCapabilityChain(id);
+  }
+  while (githubCapabilityChains.size >= MAX_GITHUB_CAPABILITY_CHAINS) {
+    forgetGitHubCapabilityChain(githubCapabilityChains.keys().next().value);
+  }
+}
+function rotateGitHubCapability(chain) {
+  if (chain.previousToken) githubCapabilityTokens.delete(chain.previousToken);
+  chain.previousToken = chain.token || '';
+  chain.token = crypto.randomBytes(32).toString('base64url');
+  chain.expiresAt = currentTime() + githubCapabilityTtlMs;
+  githubCapabilityTokens.set(chain.token, chain.id);
+  // Refresh insertion order so active panel/preview chains outlive abandoned preview URLs.
+  githubCapabilityChains.delete(chain.id);
+  githubCapabilityChains.set(chain.id, chain);
+  return chain.token;
 }
 function issueGitHubCapability() {
-  if (githubCapability && githubCapability.expiresAt > currentTime()) return githubCapability.token;
-  return newGitHubCapability();
+  pruneGitHubCapabilities();
+  const chain = { id: crypto.randomBytes(16).toString('hex'), token: '', previousToken: '', expiresAt: 0 };
+  githubCapabilityChains.set(chain.id, chain);
+  return rotateGitHubCapability(chain);
 }
-function clearGitHubCapability() { githubCapability = null; }
+function clearGitHubCapability() {
+  githubCapabilityChains.clear();
+  githubCapabilityTokens.clear();
+}
 function consumeGitHubCapability(req) {
   const match = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(String(req.headers.authorization || ''));
-  if (!match || !githubCapability || githubCapability.expiresAt <= currentTime()) { if (githubCapability && githubCapability.expiresAt <= currentTime()) clearGitHubCapability(); return null; }
+  if (!match) return null;
+  pruneGitHubCapabilities();
+  const chain = githubCapabilityChains.get(githubCapabilityTokens.get(match[1]));
+  if (!chain || chain.expiresAt <= currentTime()) return null;
   const supplied = Buffer.from(match[1]);
-  const expected = Buffer.from(githubCapability.token);
-  if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null;
-  return newGitHubCapability();
+  const candidates = [chain.token, chain.previousToken].filter(Boolean);
+  const accepted = candidates.some(value => {
+    const expected = Buffer.from(value);
+    return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+  });
+  if (!accepted) return null;
+  return rotateGitHubCapability(chain);
 }
 function setAppFolders(folders) {
   appFolders = {};

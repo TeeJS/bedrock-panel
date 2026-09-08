@@ -55,7 +55,12 @@ organization on `https://dev.azure.com` and use the panel's normal external-link
 - **No organizations found:** confirm the user is a member of the expected Azure DevOps
   organization and that the app registration has `vso.profile` permission.
 - **Permission denied:** check the delegated permissions and the user's Azure DevOps project
-  security. The app cannot elevate beyond the signed-in user.
+  security. The app cannot elevate beyond the signed-in user. Open the warning-triangle button
+  in the app header to see which data source failed, the HTTP status, Azure DevOps error type,
+  and request/activity ID. The copyable summary omits credentials and request URLs.
+- **Only some projects fail:** confirm the signed-in user can view the project, then check
+  repository Read, build/pipeline View, and work-item/area permissions. An explicit Deny on the
+  user or one of their groups takes precedence over an Allow.
 - **Run validation failed:** the pipeline may require runtime parameters that this compact panel
   cannot safely infer. Nothing is queued when preflight validation fails; run it in Azure DevOps.
 - **Cached data banner:** the last successful response is shown when a refresh temporarily fails.

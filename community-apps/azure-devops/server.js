@@ -14,11 +14,12 @@ const inFlight = new Map();
 let fetchImpl = (...args) => fetch(...args);
 
 class AzureDevOpsError extends Error {
-  constructor(message, code, status) {
+  constructor(message, code, status, diagnostic) {
     super(message);
     this.name = 'AzureDevOpsError';
     this.code = code || 'request_failed';
     this.status = status || 0;
+    this.diagnostic = diagnostic || null;
   }
 }
 
@@ -94,6 +95,65 @@ function publicMessage(error) {
   return 'Azure DevOps could not complete the request.';
 }
 
+function sanitizeDiagnosticText(value, max) {
+  return text(value, max || 500)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [redacted]')
+    .replace(/((?:access_token|refresh_token|client_secret|authorization|code)\s*[=:]\s*["']?)[^\s,"'&}]+/gi, '$1[redacted]')
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[redacted token]')
+    .replace(/\b[A-Za-z0-9_-]{48,}\b/g, '[redacted value]')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function diagnosticSource(target) {
+  const path = target.pathname.toLowerCase();
+  if (target.hostname.toLowerCase() === 'app.vssps.visualstudio.com') return 'Organizations';
+  if (path.includes('/_apis/projects')) return 'Projects';
+  if (path.includes('/pullrequests')) return 'Pull requests';
+  if (path.includes('/_apis/git/')) return 'Repositories';
+  if (path.includes('/_apis/pipelines') || path.includes('/_apis/build/')) return 'Pipelines';
+  if (path.includes('/_apis/wit/')) return 'Work items';
+  return 'Azure DevOps';
+}
+
+function responseHeader(response, names) {
+  if (!response || !response.headers || typeof response.headers.get !== 'function') return '';
+  for (const name of names) {
+    const value = sanitizeDiagnosticText(response.headers.get(name), 120);
+    if (value && /^[A-Za-z0-9._:-]{1,120}$/.test(value)) return value;
+  }
+  return '';
+}
+
+function responseDiagnostic(target, response, data) {
+  const providerCode = data && (data.errorCode || data.code || data.eventId);
+  return {
+    source: diagnosticSource(target),
+    status: Number(response && response.status) || 0,
+    providerMessage: sanitizeDiagnosticText(data && data.message, 500),
+    providerCode: sanitizeDiagnosticText(providerCode, 120),
+    providerType: sanitizeDiagnosticText(data && (data.typeKey || data.typeName), 160),
+    requestId: responseHeader(response, ['x-vss-e2eid', 'activityid', 'x-ms-request-id', 'request-id']),
+    occurredAt: new Date().toISOString()
+  };
+}
+
+function publicDiagnostic(error) {
+  if (!error) return null;
+  if (error.diagnostic) return error.diagnostic;
+  if (!(error instanceof AzureDevOpsError)) return null;
+  return {
+    source: 'Azure DevOps app',
+    status: Number(error.status) || 0,
+    providerMessage: '',
+    providerCode: sanitizeDiagnosticText(error.code, 120),
+    providerType: '',
+    requestId: '',
+    occurredAt: new Date().toISOString()
+  };
+}
+
 async function requestJson(url, token, options) {
   const target = new URL(url);
   const host = target.hostname.toLowerCase();
@@ -127,13 +187,23 @@ async function requestJson(url, token, options) {
       catch (error) { throw new AzureDevOpsError('Azure DevOps returned an unreadable response.', 'invalid_response', response.status); }
     }
     if (!response.ok) {
-      if (response.status === 401) throw new AzureDevOpsError('Your Azure DevOps sign-in has expired. Connect again.', 'unauthorized', 401);
-      if (response.status === 403) throw new AzureDevOpsError('Your account does not have permission for this Azure DevOps operation.', 'forbidden', 403);
-      if (response.status === 404) throw new AzureDevOpsError('The requested Azure DevOps item no longer exists or is unavailable.', 'not_found', 404);
-      if (response.status === 429) throw new AzureDevOpsError('Azure DevOps is rate limiting requests. Try again shortly.', 'rate_limited', 429);
-      throw new AzureDevOpsError('Azure DevOps returned an error. Try again shortly.', 'upstream_error', response.status);
+      const diagnostic = responseDiagnostic(target, response, data);
+      if (response.status === 401) throw new AzureDevOpsError('Your Azure DevOps sign-in has expired. Connect again.', 'unauthorized', 401, diagnostic);
+      if (response.status === 403) throw new AzureDevOpsError('Your account does not have permission for this Azure DevOps operation.', 'forbidden', 403, diagnostic);
+      if (response.status === 404) throw new AzureDevOpsError('The requested Azure DevOps item no longer exists or is unavailable.', 'not_found', 404, diagnostic);
+      if (response.status === 429) throw new AzureDevOpsError('Azure DevOps is rate limiting requests. Try again shortly.', 'rate_limited', 429, diagnostic);
+      throw new AzureDevOpsError('Azure DevOps returned an error. Try again shortly.', 'upstream_error', response.status, diagnostic);
     }
     return data;
+  } catch (error) {
+    if (error instanceof AzureDevOpsError) throw error;
+    const diagnostic = responseDiagnostic(target, response, {});
+    if (error && error.name === 'AbortError') {
+      diagnostic.providerCode = 'timeout';
+      throw new AzureDevOpsError('Azure DevOps did not respond in time.', 'timeout', 0, diagnostic);
+    }
+    diagnostic.providerCode = 'network_error';
+    throw new AzureDevOpsError('Azure DevOps could not complete the request.', 'network_error', 0, diagnostic);
   } finally {
     clearTimeout(timer);
   }
@@ -160,7 +230,15 @@ async function cached(key, maxAge, loader, force) {
       cache.set(key, result);
       return result;
     } catch (error) {
-      if (previous) return { data: previous.data, fetchedAt: previous.fetchedAt, stale: true, warning: publicMessage(error) };
+      if (previous) {
+        return {
+          data: previous.data,
+          fetchedAt: previous.fetchedAt,
+          stale: true,
+          warning: publicMessage(error),
+          diagnostic: publicDiagnostic(error)
+        };
+      }
       throw error;
     } finally {
       inFlight.delete(key);
@@ -323,11 +401,6 @@ async function pipelineList(token, organization, project, force) {
   }, force);
 }
 
-const WORK_FIELDS = [
-  'System.Id', 'System.Title', 'System.WorkItemType', 'System.State', 'System.AssignedTo',
-  'System.ChangedDate', 'System.IterationPath', 'System.Tags'
-];
-
 function normalizeWorkItem(item, organization, project) {
   const fields = item.fields || {};
   const assigned = fields['System.AssignedTo'];
@@ -362,7 +435,9 @@ async function workItemList(token, organization, project, force) {
     if (!ids.length) return { workItems: [] };
     const batch = await requestJson(projectApiUrl(organization, project.id, 'wit/workitemsbatch'), token, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids, fields: WORK_FIELDS, '$expand': 'Relations' })
+      // Azure DevOps rejects `fields` and `$expand` together. Omitting `fields` returns the
+      // standard field set while allowing the explicit relations required by the detail view.
+      body: JSON.stringify({ ids, '$expand': 'Relations' })
     });
     return { workItems: valueArray(batch).map(item => normalizeWorkItem(item, organization, project)).filter(item => item.id) };
   }, force);
@@ -372,7 +447,8 @@ function cacheEnvelope(result) {
   return {
     fetchedAt: new Date(result.fetchedAt).toISOString(),
     stale: !!result.stale,
-    warning: text(result.warning, 300)
+    warning: text(result.warning, 300),
+    diagnostic: result.diagnostic || null
   };
 }
 
@@ -543,7 +619,7 @@ async function workItemDetail(token, organization, project, workItemId, force) {
   return cached(`workitem:${organization.toLowerCase()}:${project.id}:${id}`, DETAIL_CACHE_MS, async () => {
     const batch = await requestJson(projectApiUrl(organization, project.id, 'wit/workitemsbatch'), token, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [id], fields: WORK_FIELDS, '$expand': 'Relations' })
+      body: JSON.stringify({ ids: [id], '$expand': 'Relations' })
     });
     const item = valueArray(batch)[0];
     if (!item) throw new AzureDevOpsError('The work item is unavailable.', 'not_found', 404);
@@ -605,7 +681,8 @@ async function handleAction(action, context) {
     return {
       ok: true, project, cards: configuredCards().map(type => metricFor(type, datasets)),
       actionsEnabled: actionsEnabled(context), fetchedAt: new Date(oldest).toISOString(),
-      stale: results.some(item => item.stale), warning: results.map(item => item.warning).filter(Boolean)[0] || ''
+      stale: results.some(item => item.stale), warning: results.map(item => item.warning).filter(Boolean)[0] || '',
+      diagnostics: results.map(item => item.diagnostic).filter(Boolean)
     };
   }
   if (action === 'repositories') {
@@ -658,7 +735,10 @@ async function handleAction(action, context) {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewBody)
       });
     } catch (error) {
-      throw new AzureDevOpsError('Azure DevOps could not validate this run. Required parameters or permissions may be missing; nothing was started.', 'preview_failed', error.status);
+      throw new AzureDevOpsError(
+        'Azure DevOps could not validate this run. Required parameters or permissions may be missing; nothing was started.',
+        'preview_failed', error.status, error.diagnostic
+      );
     }
     const runBody = {};
     if (resources) runBody.resources = resources;
@@ -696,7 +776,8 @@ async function handle(action, context) {
       ok: false,
       error: publicMessage(error),
       code: error && error.code || 'request_failed',
-      reauth: !!(error && error.status === 401)
+      reauth: !!(error && error.status === 401),
+      diagnostic: publicDiagnostic(error)
     };
   }
 }
@@ -708,6 +789,7 @@ module.exports = {
     cache,
     configuredCards,
     metricFor,
+    sanitizeDiagnosticText,
     safeExternalUrl,
     setFetch(value) { fetchImpl = value; },
     reset() { cache.clear(); inFlight.clear(); fetchImpl = (...args) => fetch(...args); }

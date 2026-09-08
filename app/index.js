@@ -191,7 +191,11 @@
         // reloads, so the page never re-read its options — the change only showed after leaving and
         // returning. When only the fragment changed on one of our own app pages, drive the guest's
         // location.hash directly: that always fires `hashchange`, and the page re-renders from it live.
-        const hashOnly = !!curUrl && desktop === webDesktop && url.split('#')[0] === curUrl.split('#')[0];
+        // Security capabilities are delivered in the fragment and read only during page startup.
+        // A screensaver/page switch invalidates the old capability; returning must reload the guest
+        // so it consumes the newly issued value instead of treating it like a live option change.
+        const hasStartupCapability = /(?:^|[&#])_cap=/.test(url);
+        const hashOnly = !!curUrl && !hasStartupCapability && desktop === webDesktop && url.split('#')[0] === curUrl.split('#')[0];
         if (hashOnly && webThemed && webAttached) {
           curUrl = url;
           web.executeJavaScript('location.hash=' + JSON.stringify('#' + (url.split('#')[1] || ''))).catch(() => {});

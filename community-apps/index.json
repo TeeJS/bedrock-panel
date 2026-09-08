@@ -28,7 +28,7 @@
       "id": "azure-devops",
       "name": "Azure DevOps",
       "description": "Project-focused Azure DevOps repositories, pipelines, pull requests, and work items.",
-      "version": "1.0.2",
+      "version": "1.0.4",
       "zip": "azure-devops.zip",
       "server": true
     },
