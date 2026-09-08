@@ -81,6 +81,31 @@
   .copybtn:active { background: var(--accent); color: var(--accent-fg, #04120b); }
   .copybtn.copied { color: var(--accent); border-color: var(--accent); }
 
+  /* Markdown (claudevoice-markdown.js, same parser as the Open WebUI chat app). Sized for the
+     panel: tight vertical rhythm, big enough to read at arm's length, nothing escapes the bubble. */
+  .bubble > :first-child { margin-top: 0; }
+  .bubble > :last-child { margin-bottom: 0; }
+  .bubble p { margin: 0 0 8px; }
+  .bubble h1, .bubble h2, .bubble h3, .bubble h4, .bubble h5, .bubble h6 { margin: 12px 0 6px; line-height: 1.25; }
+  .bubble h1 { font-size: 1.35em; } .bubble h2 { font-size: 1.22em; } .bubble h3 { font-size: 1.1em; }
+  .bubble h4, .bubble h5, .bubble h6 { font-size: 1em; }
+  .bubble ul, .bubble ol { margin: 4px 0 8px; padding-left: 26px; }
+  .bubble li { margin: 2px 0; }
+  .bubble li > p { margin: 0; }
+  .bubble blockquote { margin: 6px 0 8px; padding: 4px 12px; border-left: 3px solid var(--accent); color: var(--muted); }
+  .bubble hr { border: 0; border-top: 1px solid var(--tile-bd); margin: 10px 0; }
+  .bubble a { color: var(--accent); text-decoration: underline; }
+  .bubble code { font: 0.92em/1.4 "Cascadia Code", Consolas, monospace; }
+  .bubble :not(pre) > code { background: var(--bg); border: 1px solid var(--tile-bd); border-radius: 4px; padding: 1px 5px; }
+  .bubble img { max-width: 100%; height: auto; border-radius: 8px; display: block; margin: 6px 0; }
+  .bubble table { border-collapse: collapse; margin: 6px 0 8px; max-width: 100%; display: block; overflow-x: auto; }
+  .bubble th, .bubble td { border: 1px solid var(--tile-bd); padding: 5px 10px; text-align: left; vertical-align: top; }
+  .bubble th { background: var(--bg); font-weight: 600; }
+  /* The user bar is accent-filled: keep its links and inline code legible on that fill. */
+  .msg.user .bubble a { color: inherit; }
+  .msg.user .bubble :not(pre) > code, .msg.user .bubble th { background: rgba(0, 0, 0, 0.18); border-color: rgba(0, 0, 0, 0.25); }
+  .msg.user .bubble blockquote { border-left-color: currentColor; color: inherit; opacity: 0.85; }
+
   /* Folder overlay -- the layout the user approved: Recent row up top, then a uniform grid of big
      aligned rows (no ragged pill wall, no quarter-width slabs), 26px names left-aligned, 64px rows.
      Each row: tap the NAME to start a session there (one tap for the common case), tap the › zone
@@ -457,6 +482,7 @@
     </div>
   </div>
   <script src="claudevoice-vad.js"></script>
+  <script src="claudevoice-markdown.js"></script>
   <script src="claudevoiceview.js"></script>
 </body>
 </html>

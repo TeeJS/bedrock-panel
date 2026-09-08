@@ -81,6 +81,7 @@ const STATIC_FILES = {
   '/livetranslateview.js': 'application/javascript; charset=utf-8',
   '/screensaverview.js': 'application/javascript; charset=utf-8',
   '/claudevoice-vad.js': 'application/javascript; charset=utf-8',
+  '/claudevoice-markdown.js': 'application/javascript; charset=utf-8',
   '/recorderview.js': 'application/javascript; charset=utf-8',
   '/system-audio-capture.js': 'application/javascript; charset=utf-8',
   '/slidecapture-view.js': 'application/javascript; charset=utf-8',

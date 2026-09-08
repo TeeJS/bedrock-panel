@@ -34,12 +34,33 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// Minimal, deliberately small renderer: escape everything, then recognize ```fenced code blocks```
-// as copyable <pre><code> and everything else as plain paragraphs. Not a full markdown parser (see
-// Phase 8 note in the plan for why: a real one means vendoring a library under this app's strict
-// CSP, same as the VAD assets) -- but code/commands, the thing that actually needs to be selectable
-// and copyable per the hard requirement, already render correctly with this.
+// Markdown rendering: claudevoice-markdown.js carries the same parser + sanitizer the Open WebUI
+// chat app uses, so headings, lists, tables, links, and images render instead of showing raw. The
+// hard requirement survives -- fenced code is exact text in <pre><code> with a Copy button -- by
+// wrapping every <pre> the parser emits in the same .codeblock markup renderPlain() produced (the
+// copy handler reads the <code> next to its button). renderPlain() is the fallback if the vendored
+// script failed to load, so a reply is never lost to a missing renderer.
 function renderContent(text) {
+  var md = window.aiVoiceMarkdown;
+  if (!md) return renderPlain(text);
+  var tpl = document.createElement('template');
+  try { tpl.innerHTML = md.render(text); } catch (e) { return renderPlain(text); }
+  tpl.content.querySelectorAll('pre').forEach(function (pre) {
+    var code = pre.querySelector('code');
+    if (code) code.textContent = code.textContent.replace(/\n$/, '');   // parser keeps the fence's closing newline; Copy must not
+    var wrap = document.createElement('div');
+    wrap.className = 'codeblock';
+    pre.parentNode.insertBefore(wrap, pre);
+    wrap.appendChild(pre);
+    var btn = document.createElement('button');
+    btn.className = 'copybtn'; btn.type = 'button'; btn.textContent = 'Copy';
+    wrap.appendChild(btn);
+  });
+  return tpl.innerHTML || esc(text);
+}
+// Plain fallback: escape everything, recognize ```fenced code blocks``` as copyable <pre><code>,
+// everything else as paragraphs.
+function renderPlain(text) {
   var parts = String(text || '').split(/```([\s\S]*?)```/);
   var html = '';
   for (var i = 0; i < parts.length; i++) {

@@ -163,6 +163,9 @@ test('page and static assets are served with correct types', async () => {
   const vad = await pageFetch('/claudevoice-vad.js');
   assert.equal(vad.status, 200);
   assert.match(vad.headers.get('content-type'), /application\/javascript/);
+  const markdown = await pageFetch('/claudevoice-markdown.js');
+  assert.equal(markdown.status, 200);
+  assert.match(markdown.headers.get('content-type'), /application\/javascript/);
 });
 
 test('state returns the callback snapshot', async () => {

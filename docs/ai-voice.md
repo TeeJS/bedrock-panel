@@ -68,8 +68,10 @@ mid-conversation whenever a command or variable name is easier to get right by t
 you'd rather read the reply than hear it. A typed message never triggers an unsolicited spoken
 reply; only a voice-started turn gets spoken back.
 
-The transcript is real, selectable text — click-drag and Ctrl+C work like any normal page. Fenced
-code blocks get a one-tap **Copy** button.
+The transcript is real, selectable text — click-drag and Ctrl+C work like any normal page. Replies
+render as markdown (headings, lists, tables, links, images, inline code), with the same parser and
+sanitizer the Open WebUI chat app uses. Fenced code blocks get a one-tap **Copy** button that hands
+back the exact text.
 
 ### Ring feedback
 
