@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node build-dpapi.js && node build-smtc.js && electron .",
-    "rebuild": "electron-rebuild -v 42.4.1 -f --only node-hid && node build-dpapi.js",
+    "rebuild": "electron-rebuild -v 44.3.0 -f --only node-hid && node build-dpapi.js",
     "build:dpapi": "node build-dpapi.js",
     "build:smtc": "node build-smtc.js",
     "test": "node --test test/*.test.js",
@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
-    "electron": "^42.4.1",
+    "electron": "^44.3.0",
     "electron-builder": "^26.0.12"
   },
   "build": {

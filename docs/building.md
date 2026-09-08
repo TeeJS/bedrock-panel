@@ -37,15 +37,15 @@ the bedrock-console repo's `firmware/PROTOCOL.md`.
 > still see that error, `node --version`, delete `node_modules`, and reinstall from this lockfile.
 
 The app's one compiled native module, **`node-hid`**, must be built for this app's
-Electron ABI (**Electron 42**), *not* your host Node. (`@jitsi/robotjs` ships
+Electron ABI (**Electron 44**), *not* your host Node. (`@jitsi/robotjs` ships
 ABI-stable **N-API** prebuilds, so it needs no rebuild.) A plain `npm install` tries
 to build natives against your host Node and can fail, so install without scripts,
-fetch the Electron binary, then rebuild `node-hid` against Electron 42:
+fetch the Electron binary, then rebuild `node-hid` against Electron 44:
 
 ```powershell
 npm install --ignore-scripts            # packages on disk, no native build
-node node_modules/electron/install.js   # fetch the Electron 42 binary
-npm run rebuild                          # electron-rebuild -v 42.4.1 -f --only node-hid
+node node_modules/electron/install.js   # fetch the Electron 44 binary
+npm run rebuild                          # electron-rebuild -v 44.3.0 -f --only node-hid
 npm start
 ```
 

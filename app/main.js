@@ -1927,11 +1927,18 @@ async function runStep(step) {
 // Paste-text tile: write the configured text to the Windows clipboard, then synthesize Ctrl+V into the
 // active foreground window. Clipboard.writeText is built into Electron; the Ctrl+V keystroke uses the
 // existing media-keys backend (robotjs via @jitsi/robotjs). Note: this overwrites the user's clipboard.
+// clipboard.writeText is synchronous through Electron 43 and returns a Promise from 44 on; this wraps
+// both so callers can chain .then/.catch and a rejected write never becomes an unhandled rejection.
+function clipboardWrite(text) {
+  try { return Promise.resolve(clipboard.writeText(text)); } catch (e) { return Promise.reject(e); }
+}
 function pasteText(value) {
   if (typeof value !== 'string' || value === '') return;
-  try { clipboard.writeText(value); } catch (e) { console.log('pasteText clipboard error:', e.message); return; }
-  // tiny delay so the clipboard has time to settle before Ctrl+V is sent
-  setTimeout(() => { try { mediaKeys.pasteShortcut(); } catch (e) { console.log('pasteText keystroke error:', e.message); } }, 30);
+  // Electron 44+ clipboard writes return a Promise (sync before); Promise.resolve() covers both, and
+  // the paste keystroke waits for the write plus a tiny settle delay.
+  clipboardWrite(value)
+    .then(() => setTimeout(() => { try { mediaKeys.pasteShortcut(); } catch (e) { console.log('pasteText keystroke error:', e.message); } }, 30))
+    .catch(e => console.log('pasteText clipboard error:', e.message));
 }
 
 // Media transport for the Music page. On Windows, drive the *exact* SMTC session the now-playing display
@@ -2057,8 +2064,7 @@ function onLucidReviewRequest(op, text) {
     const r = lucidDictation.applyReview(text);
     // Applying always drops the result on the clipboard too, so it can be pasted anywhere.
     if (r && r.ok) {
-      try { clipboard.writeText(lucidDictation.currentText() || ''); }
-      catch (e) { console.log('[lucidtype] clipboard copy on apply failed: ' + e.message); }
+      clipboardWrite(lucidDictation.currentText() || '').catch(e => console.log('[lucidtype] clipboard copy on apply failed: ' + e.message));
     }
     return r;
   }
@@ -2116,7 +2122,7 @@ function lucidApply() {
   }
   const text = lucidDictation.currentText();
   if (!text) return { ok: false, error: 'nothing to apply' };
-  try { clipboard.writeText(text); } catch (e) { console.log('[lucidtype] clipboard write failed: ' + e.message); }
+  clipboardWrite(text).catch(e => console.log('[lucidtype] clipboard write failed: ' + e.message));
   return { ok: true };
 }
 function onLucidEditRequest(text) { if (lucidDictation) lucidDictation.setTranscript(text); return { ok: true }; }
@@ -3735,7 +3741,7 @@ app.whenReady().then(async () => {
           return voiceConfig.isSttNoisePhrase(t) ? '' : t;
         },
         transform: lucidRunTransform,                                    // cleanup/rewrite AI (Phase 2)
-        readClipboard: () => { try { return clipboard.readText(); } catch (e) { return ''; } },
+        readClipboard: async () => { try { return String((await clipboard.readText()) || ''); } catch (e) { return ''; } },   // Promise on Electron 44+, string before
         onState: onLucidState,
         log: msg => console.log('[lucidtype] ' + msg),
       });

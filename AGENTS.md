@@ -13,7 +13,7 @@ related components, but verify conclusions against current source. The implement
 
 ## Technology Stack
 
-- CommonJS JavaScript on Node.js and Electron 42; Node 24 is pinned by `.nvmrc`.
+- CommonJS JavaScript on Node.js and Electron 44; Node 26 is pinned by `.nvmrc`.
 - Plain HTML, CSS, and renderer JavaScript; there is no frontend framework or transpilation.
 - `node-hid` for hardware, `@jitsi/robotjs` for desktop input, `ws` for Home Assistant,
   and `systeminformation` for telemetry.
@@ -117,7 +117,7 @@ npm run rebuild
 npm start
 ```
 
-- `npm run rebuild`: rebuild `node-hid` for Electron 42.4.1 rather than the host Node ABI.
+- `npm run rebuild`: rebuild `node-hid` for Electron 44.3.0 rather than the host Node ABI.
 - `npm run build:smtc`: compile stale C# helpers when the Windows SDK/.NET toolchain exists.
 - `npm test`: run `node --test test/*.test.js`.
 - `npm run dist`: build Windows portable and NSIS packages under `dist/`.

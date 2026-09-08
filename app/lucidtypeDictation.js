@@ -95,7 +95,7 @@ function createLucidDictation(deps) {
     if (review.active) return { ok: false, error: 'a review is already open' };
     let src = transcript;
     if (!src.trim() && d.readClipboard) {
-      const clip = String(d.readClipboard() || '');
+      const clip = String((await d.readClipboard()) || '');   // Electron 44+: clipboard reads are Promises; await is harmless on the old sync string
       if (clip.trim()) { transcript = clip; src = clip; bump(); }   // adopt clipboard text into the box
     }
     if (!src.trim()) return { ok: false, error: 'nothing to ' + kind + ' — the box and clipboard are empty' };
