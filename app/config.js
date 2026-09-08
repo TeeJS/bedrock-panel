@@ -3925,8 +3925,8 @@ ${IS_MAC ? `
     // Monitor tab — reserved-display protection and intentional normal-monitor behavior
     const monHtml = `
       <p class="sectitle">Reserved Display</p>
-      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}${IS_MAC ? ' disabled' : ''}> Keep application windows off the panel display</label></div>
-      <details class="hint"><summary>Windows only. Windows dragged or relocated onto the panel display are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits.</summary> If your other displays disconnect, their positions are held and restored when a display returns. Bedrock Panel, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
+      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}> Keep application windows off the panel display</label></div>
+      <details class="hint"><summary>Windows dragged, opened, or relocated onto the panel display are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits. On a Mac this needs the Accessibility permission (Hardware tab → macOS permissions).</summary> If your other displays disconnect, their positions are held and restored when a display returns. Bedrock Panel, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
 
       <p class="sectitle">Monitor mode <span id="sMonPill" class="stpill off">checking…</span></p>
       <details class="hint"><summary>Use the device as a normal monitor: it shows your Windows desktop and touch acts as the mouse.</summary> Enter it below, from the tray menu, or with a “System → monitor” tile; exit from the tray. These set what the knob does while in Monitor mode.</details>

@@ -100,3 +100,19 @@ test('restarts after a helper failure while protection remains enabled', async (
   assert.match(h.logs.join('\n'), /test failure/);
   h.controller.stop();
 });
+
+test('active on macOS through the Swift helper, inactive where no helper exists', () => {
+  for (const [platform, expectSpawn] of [['darwin', 1], ['linux', 0]]) {
+    const processes = [];
+    const controller = createReservedDisplay({
+      platform, ownProcessId: 42, restartDelay: 5,
+      getDisplayState: () => ({ reserved: { x: 0, y: 0, width: 1920, height: 480 }, displays: [] }),
+      log: () => {},
+      spawn: () => { const proc = fakeProcess(); processes.push(proc); return proc; },
+    });
+    controller.setEnabled(true);
+    controller.start();
+    assert.equal(processes.length, expectSpawn, platform);
+    controller.stop();
+  }
+});

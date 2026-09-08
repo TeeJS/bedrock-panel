@@ -114,9 +114,11 @@ the supported surface today. The Windows C# helpers have macOS counterparts in `
 call-app list — Zoom.exe, Teams.exe, ms-teams.exe — are mapped to the Mac apps), **now-playing**
 (Spotify and Music.app through their playback notifications; browser players are not covered), and
 **transport** aimed at the displayed player (AppleScript — the first press asks for the Automation
-permission; a refusal falls back to media keys). Still Windows-only, each reporting itself
-unavailable: Outlook meeting info (use the Microsoft 365 calendar source), reserved display,
-touchscreen setup, and album-art thumbnails (art comes from Spotify's oEmbed or the iTunes lookup).
+permission; a refusal falls back to media keys), and **Reserved Display** (windows that land on the
+panel display are moved back through the Accessibility API — see [reserved-display.md](reserved-display.md)).
+Still Windows-only, each reporting itself unavailable: Outlook meeting info (use the Microsoft 365
+calendar source), touchscreen setup, and album-art thumbnails (art comes from Spotify's oEmbed or
+the iTunes lookup).
 `app/nativeHelpers.js` is the one table that maps a feature to its per-platform binary.
 
 **Knob and touchscreen hardware** is wired for macOS but not yet validated on a real console from a

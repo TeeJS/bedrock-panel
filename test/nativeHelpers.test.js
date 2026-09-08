@@ -13,7 +13,6 @@ test('helperPath resolves the platform binary next to app/native and rewrites th
 
 test('helperPath is null where a platform has no helper for the feature', () => {
   assert.equal(helperPath('outlookMeeting', 'darwin'), null);
-  assert.equal(helperPath('reservedDisplay', 'darwin'), null);
   assert.equal(helperPath('nowplayingArt', 'darwin'), null);
   assert.equal(helperPath('sysvolume', 'linux'), null);
   assert.equal(helperPath('no-such-helper', 'win32'), null);

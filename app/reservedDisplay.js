@@ -1,19 +1,20 @@
 'use strict';
 
-// Windows-only controller for the persistent native reserved-display helper. Electron owns display
-// identification; the helper owns foreign HWND enumeration, filtering, placement caching, and moves.
+// Controller for the persistent native reserved-display helper (native/reserved-display.cs on Windows,
+// native/mac/reserved-display.swift on macOS — same JSON-lines contract). Electron owns display
+// identification; the helper owns foreign window enumeration, filtering, placement caching, and moves.
 // Commands are replaceable snapshots so a late/bursty display event cannot leave stale state behind.
 
-const path = require('path');
 const readline = require('readline');
 const childProcess = require('child_process');
+const nativeHelpers = require('./nativeHelpers');
 
 function createReservedDisplay(options) {
   const opts = options || {};
   const platform = opts.platform || process.platform;
   const log = opts.log || (() => {});
   const spawn = opts.spawn || childProcess.spawn;
-  const helperPath = opts.helperPath || path.join(__dirname, 'native', 'reserved-display.exe').replace('app.asar', 'app.asar.unpacked');
+  const helperPath = opts.helperPath || nativeHelpers.helperPath('reservedDisplay', platform);   // null = no helper on this platform
   const getDisplayState = opts.getDisplayState || (() => null);
   const ownProcessId = opts.ownProcessId || process.pid;
   const restartDelay = opts.restartDelay == null ? 1500 : opts.restartDelay;
@@ -27,7 +28,7 @@ function createReservedDisplay(options) {
   let sequence = 0;
   let lastResolvedKey = '';
 
-  function active() { return platform === 'win32' && started && enabled; }
+  function active() { return !!helperPath && started && enabled; }
 
   function writeSnapshot() {
     if (!child || !child.stdin || child.stdin.destroyed) return;

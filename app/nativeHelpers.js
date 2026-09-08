@@ -19,7 +19,7 @@ const HELPERS = {
   micSessionMonitor: { win32: 'mic-session-monitor.exe', darwin: path.join('mac', 'mic-session-monitor') },
   foregroundWatch:   { win32: 'foreground-watch.exe',    darwin: path.join('mac', 'foreground-watch') },
   outlookMeeting:    { win32: 'outlook-meeting.exe' },
-  reservedDisplay:   { win32: 'reserved-display.exe' },
+  reservedDisplay:   { win32: 'reserved-display.exe',     darwin: path.join('mac', 'reserved-display') },
 };
 
 function helperPath(name, platform = process.platform, dir = path.join(__dirname, 'native')) {

@@ -2612,6 +2612,16 @@ function refreshReservedDisplay(reason, delay) {
   if (!delay) reservedDisplay.refresh(reason);
   reservedRefreshTimer = setTimeout(() => reservedDisplay.refresh(reason + ' (settled)'), delay || 900);
 }
+// Show the kiosk panel window. On macOS it must never become the key window: the display that owns the
+// key window is where macOS opens other apps' new windows, so a focused panel would collect Safari,
+// dialogs, and Finder windows on the 1920x480 display behind itself. Touch and knob input reach the
+// panel over our own HID path, so it needs no keyboard focus. Windows keeps its focus behavior.
+function showPanelWindow(focus) {
+  if (!panelWin || panelWin.isDestroyed()) return;
+  if (process.platform === 'darwin') { panelWin.showInactive(); return; }
+  panelWin.show();
+  if (focus) panelWin.focus();
+}
 function applyPanelDisplayMode(d) {
   panelWin.setBounds(d.bounds);
   panelWin.setMenuBarVisibility(false);
@@ -2627,6 +2637,7 @@ function placePanel() {
       x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height,
       frame: false, show: false, skipTaskbar: true, resizable: false, movable: false,
       minimizable: false, maximizable: false, fullscreenable: true, autoHideMenuBar: true,
+      focusable: process.platform !== 'darwin',   // macOS: never the key window (see showPanelWindow)
       backgroundColor: '#000000',
       webPreferences: {
         nodeIntegration: false,
@@ -2641,14 +2652,14 @@ function placePanel() {
     panelWin.once('ready-to-show', () => {
       if (monitorMode) { pushToPanel(); return; }   // monitor mode was set before first show -> stay hidden (desktop shows)
       const dd = deviceDisplay() || d;
-      applyPanelDisplayMode(dd); panelWin.setAlwaysOnTop(true); panelWin.show(); panelWin.focus();
+      applyPanelDisplayMode(dd); panelWin.setAlwaysOnTop(true); showPanelWindow(true);
       setTimeout(() => panelWin.setAlwaysOnTop(false), 1500);
       pushToPanel();
       console.log('panel display bounds', JSON.stringify(dd.bounds), 'workArea', JSON.stringify(dd.workArea));
       console.log('panel placed at', JSON.stringify(panelWin.getBounds()), 'fullscreen', panelWin.isFullScreen(), 'simpleFullscreen', panelWin.isSimpleFullScreen && panelWin.isSimpleFullScreen());
       refreshReservedDisplay('panel placed', 350);
     });
-  } else { applyPanelDisplayMode(d); panelWin.show(); pushToPanel(); refreshReservedDisplay('panel placed', 350); }
+  } else { applyPanelDisplayMode(d); showPanelWindow(false); pushToPanel(); refreshReservedDisplay('panel placed', 350); }
 }
 
 // ---- software mode: the panel UI in a normal desktop window (no QUAKE hardware) ----
@@ -2837,7 +2848,7 @@ function exitMonitorMode(reason) {
   if (panelWin && !panelWin.isDestroyed()) {
     const d = deviceDisplay();
     if (d) applyPanelDisplayMode(d);
-    panelWin.setAlwaysOnTop(true); panelWin.show(); panelWin.focus();
+    panelWin.setAlwaysOnTop(true); showPanelWindow(true);
     setTimeout(() => { try { panelWin.setAlwaysOnTop(false); } catch (e) {} }, 1500);
   }
   syncPollers(activeGrid());                                        // resume the active page's poller

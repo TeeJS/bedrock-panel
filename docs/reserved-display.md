@@ -1,8 +1,9 @@
-# Reserved Display (Windows)
+# Reserved Display
 
 Reserved Display keeps ordinary application windows off the Quake while Bedrock Panel is
 using it as the panel. Enable it under **Settings → Monitor → Reserved Display**. It is
-off by default and does not change the USB HID screen-on/keepalive behavior.
+off by default and does not change the USB HID screen-on/keepalive behavior. Windows and
+macOS have their own helper; the macOS notes are at the end.
 
 Electron identifies the reserved display from the panel window's current bounds and
 sends replaceable topology snapshots to a persistent, per-user C# helper. The helper
@@ -21,6 +22,25 @@ marked on their HWND for deferred restoration. When a non-Quake display returns,
 by HWND, process id, and window class before being restored. Closed or handle-reused
 windows are discarded. The marker also lets a restarted helper distinguish these from
 windows the user minimized. **Monitor Mode suspends all enforcement** until it exits.
+
+## macOS
+
+On a Mac the same controller drives `native/mac/reserved-display.swift` (built by
+`build-mac-helpers.js`), which takes the same configuration snapshots. It finds windows with
+CGWindowList on a half-second scan and moves them through the **Accessibility** API, so the
+permission must be granted to Bedrock Panel (or to the terminal app when running `npm start`);
+until then the helper logs one `permission` event and moves nothing. The rules match Windows: a
+window occupying the panel (center inside it, or more than half its area) goes back to the
+display it last lived on, else the nearest other display, else the primary, same size and kept
+inside that display's work area; nothing moves while a mouse button is held, so a drag completes
+before the window is returned; only regular apps' normal windows are touched (never Bedrock
+Panel, the Dock, menu-bar extras, or system UI); with no other display a window is minimized and
+un-minimized onto a display when one returns. Two macOS differences: there is no maximized state
+to preserve, and a window in its own full-screen Space cannot be moved.
+
+Independently of the helper, the kiosk panel window never takes key focus on macOS: the display
+owning the key window is where macOS opens other apps' new windows, so a focused panel would
+collect Safari and Finder windows behind itself even with protection off.
 
 ## Build and automated checks
 

@@ -58,3 +58,13 @@ test('the Windows aliases cover the shipped meeting defaults', () => {
     assert.match(s, new RegExp('"' + key.replace(/[-]/g, '\\-') + '": \\['), 'meeting default ' + token + ' has no macOS bundle-id alias');
   }
 });
+
+test('reserved-display takes the Windows helper\'s commands and emits the events the controller logs', () => {
+  const s = src('reserved-display.swift');
+  for (const field of ['command', 'sequence', 'enabled', 'suspended', 'ownProcessId', 'reserved', 'displays']) assert.match(s, new RegExp('var ' + field), 'configure field ' + field);
+  assert.match(s, /c\.command == "stop"/);
+  for (const ev of ['"ready"', '"configured"', '"moved"', '"minimized"', '"restored"', '"permission"']) assert.match(s, new RegExp('emit\\(' + ev.replace(/"/g, '\\"')), 'event ' + ev);
+  assert.match(s, /"fallback": how/, 'moved events name the placement fallback like the Windows helper');
+  assert.match(s, /buttonState\(\.combinedSessionState, button: \.left\)/, 'never moves a window mid-drag');
+  assert.match(s, /AXIsProcessTrusted\(\)/, 'reports the Accessibility permission instead of failing silently');
+});

@@ -80,7 +80,7 @@ protection and what the knob does in monitor mode):
   - Theme changes apply when you **Save**.
 - **Apps** — show or hide each bundled app in the editor's **+ App** picker (it only
   affects the picker, not pages already built on an app).
-- **Reserved Display** (Monitor tab, Windows only) — prevents ordinary application
+- **Reserved Display** (Monitor tab; on a Mac it needs the Accessibility permission) — prevents ordinary application
   windows from remaining on the Quake while the panel is active. A window dropped there
   is returned to a non-Quake display. If every other display disconnects, eligible
   windows are recoverably minimized with their last placement cached, then restored when a
