@@ -69,7 +69,7 @@ test('GitHub touchscreen panel has operations only and cannot mutate authenticat
   assert.match(html, /repositoryButton/);
   assert.match(html, /repositorySearch/);
   assert.match(script, /api\('repositories'/);
-  assert.match(script, /open-quake\.github\.repository/);
+  assert.match(script, /bedrock-panel\.github\.repository/);
   assert.match(script, /repository:state\.settings\.repository/);
   const routes = server.slice(server.indexOf('async function serveGitHubApi'), server.indexOf('async function handler'));
   assert.doesNotMatch(routes, /githubApp\.configure|githubApp\.connect|githubApp\.pollConnect|githubApp\.disconnect/);

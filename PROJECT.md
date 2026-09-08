@@ -30,7 +30,7 @@ Zoom/Teams call begins.
 - No capping capture below the agreed 16 kHz stereo.
 
 **4. Deployment target and backup location?**
-- Target: bundled into **open-quake** (Windows desktop, Electron kiosk).
+- Target: bundled into **Bedrock Panel** (Windows desktop, Electron kiosk).
 - Backup: the git repo, `meeting-dev` branch — commits are the backup.
 
 **5. How will we verify it's done?**

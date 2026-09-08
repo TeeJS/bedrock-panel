@@ -1,7 +1,7 @@
 # OAuth Security Audit
 
 **Audit date:** 2026-08-11  
-**Repository:** open-quake  
+**Repository:** Bedrock Panel  
 **Audit type:** source, local Git history, Electron boundary, and packaging review; no live authentication was performed
 
 ## Executive Summary
@@ -62,7 +62,7 @@ Limitations:
 ## Emerging Guidance
 
 - [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) is an active Standards Track Internet-Draft dated March 2026 and expiring 3 September 2026. It consolidates PKCE, strict redirect matching, and removal of insecure legacy grants. It is work in progress, not an established compliance requirement. The current flow already avoids implicit and password grants and uses PKCE.
-- [draft-ietf-oauth-browser-based-apps-26](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/26/) is in the RFC Editor queue with intended BCP status but remains an Internet-Draft in the source consulted. Its browser token-isolation analysis is relevant because open-quake deliberately delivers tokens to served JavaScript. It supports, but is not required to establish, the recommendation to keep refresh tokens out of page JavaScript.
+- [draft-ietf-oauth-browser-based-apps-26](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/26/) is in the RFC Editor queue with intended BCP status but remains an Internet-Draft in the source consulted. Its browser token-isolation analysis is relevant because Bedrock Panel deliberately delivers tokens to served JavaScript. It supports, but is not required to establish, the recommendation to keep refresh tokens out of page JavaScript.
 
 ## Architecture Observed
 
@@ -103,7 +103,7 @@ The application is a native/public Electron client. The currently enabled provid
 
 **Attack or exposure scenario:** A malicious community app is imported as a served app, or a served app is compromised. Its JavaScript fetches `/api/oauth-tokens.json?provider=microsoft`. Because it is same-origin, it receives the full Microsoft access and refresh tokens. It can exfiltrate them through an allowed network path or a host-side server module. No app identity or per-app provider/scope grant is checked. Asking for fewer scopes does not down-scope the already-issued bearer token.
 
-**Impact:** Immediate access to Microsoft Graph data permitted by the token (currently including profile, presence, and calendar when Office consent has been granted) and potentially durable account access by replaying the refresh token. A copied refresh token remains useful outside open-quake and local disconnect cannot invalidate Microsoft tokens already copied.
+**Impact:** Immediate access to Microsoft Graph data permitted by the token (currently including profile, presence, and calendar when Office consent has been granted) and potentially durable account access by replaying the refresh token. A copied refresh token remains useful outside Bedrock Panel and local disconnect cannot invalidate Microsoft tokens already copied.
 
 **Recommended remediation:** Keep refresh tokens exclusively in the main process. Return a minimal access-token DTO only to an explicitly authorized consumer, or preferably proxy the narrowly required Graph calls in the main process. Bind authorization to an app identity derived by the server, not a query parameter, and maintain an allowlist of provider, resource, and scopes per bundled/app manifest. Remove unused token methods from both preload bridges. Treat third-party served code as untrusted even when it is same-origin.
 

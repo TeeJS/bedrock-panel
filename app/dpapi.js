@@ -16,7 +16,7 @@
  */
 let binding = null;
 if (process.platform === 'win32') {
-  try { binding = require('./native/open_quake_dpapi.node'); } catch (e) {}
+  try { binding = require('./native/bedrock_panel_dpapi.node'); } catch (e) {}
 }
 
 function decodeBlob(blob) {

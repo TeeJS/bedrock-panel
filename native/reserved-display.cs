@@ -1,4 +1,4 @@
-// reserved-display.cs - per-user Win32 window placement helper for Open Quake.
+// reserved-display.cs - per-user Win32 window placement helper for Bedrock Panel.
 // Reads replaceable configuration snapshots as JSON lines on stdin and emits concise JSON events.
 // No elevation, display reconfiguration, injection, global sleep policy, or undocumented APIs.
 
@@ -110,7 +110,7 @@ internal static class ReservedDisplayProgram
         "Windows.UI.Core.CoreWindow", "XamlExplorerHostIslandWindow",
         "SearchPane", "SearchUI", "NotifyIconOverflowWindow", "MultitaskingViewFrame"
     };
-    private const string HeldProperty = "OpenQuake.ReservedDisplay.Held";
+    private const string HeldProperty = "BedrockPanel.ReservedDisplay.Held";
     private static Command Current = new Command { displays = new Display[0] };
     private static int HelperProcessId = Process.GetCurrentProcess().Id;
     private static bool Running = true;

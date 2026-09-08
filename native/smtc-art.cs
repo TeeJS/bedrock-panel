@@ -1,7 +1,7 @@
 // smtc-art.exe — prints the current SMTC session's album-art thumbnail to stdout as base64
 // (empty output if nothing is playing or the track has no art). [MIT]
 //
-// open-quake's now-playing text comes from PowerShell, but the SMTC thumbnail is a WinRT stream that
+// Bedrock Panel's now-playing text comes from PowerShell, but the SMTC thumbnail is a WinRT stream that
 // Windows PowerShell 5.1 can't read (it returns an unprojected COM object). This tiny .NET-Framework
 // helper reads it natively. Build: csc against the Windows union metadata (see package.json build:smtc).
 using System;

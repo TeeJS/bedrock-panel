@@ -1,12 +1,12 @@
 # Security Audit
 
 **Audit date:** 2026-08-11  
-**Repository:** open-quake  
+**Repository:** Bedrock Panel  
 **Audit type:** source, local Git history, dependency, Electron boundary, loopback service, packaging, and existing-artifact review; no live credentials or remote systems were tested
 
 ## Executive Summary
 
-open-quake has a generally thoughtful desktop-security foundation: privileged work remains in the Electron main process; renderer Node integration is disabled; context isolation and CSP are present; IPC handlers normally check the owning window; the local HTTP service binds only to IPv4 loopback and rejects foreign Host and cross-site browser requests; app paths are contained; remote dashboard permissions are denied by default; OAuth uses the system browser, strong state, PKCE S256, and encrypted persistence; and no suspected real credential was found.
+Bedrock Panel has a generally thoughtful desktop-security foundation: privileged work remains in the Electron main process; renderer Node integration is disabled; context isolation and CSP are present; IPC handlers normally check the owning window; the local HTTP service binds only to IPv4 loopback and rejects foreign Host and cross-site browser requests; app paths are contained; remote dashboard permissions are denied by default; OAuth uses the system browser, strong state, PKCE S256, and encrypted persistence; and no suspected real credential was found.
 
 At the time of the original audit, the overall posture was **partially hardened but required remediation before the served-app platform could safely handle durable OAuth credentials**. The highest-priority issue was an authorization failure at the local HTTP boundary: any served app on the shared loopback origin or native local client able to discover the port and forge request headers could call a global endpoint returning access and refresh tokens. **SEC-001 was resolved on 2026-08-11** by removing the global token and connect routes, keeping Microsoft Graph calls and OAuth credentials in the main process, and requiring a rotating, expiring, memory-only Office session capability.
 
@@ -88,7 +88,7 @@ Limitations:
 
 ## Emerging Guidance
 
-- [OAuth 2.1 draft-15](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-15) is an active Standards Track Internet-Draft dated 2026-03-02 and expiring 2026-09-03. It is work in progress, not an established requirement. Its direction reinforces authorization code plus PKCE, strict redirect handling, and removal of legacy grants; open-quake already avoids implicit and password grants.
+- [OAuth 2.1 draft-15](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-15) is an active Standards Track Internet-Draft dated 2026-03-02 and expiring 2026-09-03. It is work in progress, not an established requirement. Its direction reinforces authorization code plus PKCE, strict redirect handling, and removal of legacy grants; Bedrock Panel already avoids implicit and password grants.
 - OWASP WSTG 5.0 remains under development. Stable WSTG 4.2 was used for testing-methodology status.
 - Electron supports the latest three stable major lines. The project should continue applying the newest patched release within its selected supported major rather than treating a major pin as sufficient.
 
@@ -168,7 +168,7 @@ Limitations:
 
 **Prerequisites:** The app must be running and have a connected provider with a refresh token. The served-app path requires its code to execute while loaded; the local-process path requires local code execution and discovery of the ephemeral port.
 
-**Impact:** Immediate access to resources covered by the issued access token and potentially durable ability to mint further access tokens using the refresh token. The current suggested Microsoft scopes can include profile, presence, and calendar data. A copied token is usable outside open-quake; local disconnect cannot recover a token already exfiltrated.
+**Impact:** Immediate access to resources covered by the issued access token and potentially durable ability to mint further access tokens using the refresh token. The current suggested Microsoft scopes can include profile, presence, and calendar data. A copied token is usable outside Bedrock Panel; local disconnect cannot recover a token already exfiltrated.
 
 **Existing mitigations:** Loopback-only bind prevents LAN access. Host and Fetch Metadata checks meaningfully block ordinary hostile web pages and DNS rebinding. OAuth tokens are encrypted on disk when secure storage works. Requested scopes are checked against the stored grant before refresh. These controls do not authorize one served app or native local process.
 
@@ -402,7 +402,7 @@ Limitations:
 
 ## Authentication Assessment
 
-open-quake does not implement local user accounts, passwords, sessions, or roles. It relies on the logged-in operating-system user, explicit editor/tray interaction, third-party dashboard sessions, Home Assistant bearer tokens, and OAuth grants. The loopback service's `sameOrigin()` check is a browser request-origin control, not authentication of a local native process or authorization of one served app; treating it as such causes SEC-001.
+Bedrock Panel does not implement local user accounts, passwords, sessions, or roles. It relies on the logged-in operating-system user, explicit editor/tray interaction, third-party dashboard sessions, Home Assistant bearer tokens, and OAuth grants. The loopback service's `sameOrigin()` check is a browser request-origin control, not authentication of a local native process or authorization of one served app; treating it as such causes SEC-001.
 
 Dashboard HTTP Basic and custom-header credentials are host-scoped before injection: `hostMatches()` compares parsed URL hosts, and headers are applied only to the active configured dashboard host. This is a positive control. Preemptive Basic transmission still means credentials are sent on the first request to the configured host; the editor should strongly prefer HTTPS and make any HTTP choice explicit.
 

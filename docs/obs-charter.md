@@ -22,7 +22,7 @@ the coding handoff at `.codex/.../obs-panel-coding-handoff.md`.
    config); no permanent optimistic tile flips (state comes from OBS events, with a brief pending
    state); no parallel page/state framework — reuse the Discord-stack pattern and the tile/grid
    system; never log the OBS password.
-4. **Deploy target + backup:** open-quake on the DK-QUAKE / bedrock 1920×480 panel and software mode;
+4. **Deploy target + backup:** Bedrock Panel on the DK-QUAKE / bedrock 1920×480 panel and software mode;
    backup = git (this repo).
 5. **Done =** both surfaces render correct live state, survive reconnect with full rehydration, the
    safety gestures + Panic work, automated tests cover layout counts / action routing / state updates
@@ -82,7 +82,7 @@ One shared backend; two thin consumers. Every existing file below is a proven pa
 - **Phase 0 — prove the transport (spike, throwaway).** A tiny script using `obs-websocket-js`:
   connect + Identify against **real OBS**, `GetSceneList`, subscribe to `CurrentProgramSceneChanged`,
   `SetCurrentProgramScene`, confirm via the event. Validate auth + round-trip latency + reconnect. No
-  open-quake integration yet. *(Per "prove the binding constraint before building the pipeline.")*
+  Bedrock Panel integration yet. *(Per "prove the binding constraint before building the pipeline.")*
 - **Phase 1 — shared service + served switcher (MVP).** `obsService` + `obsAppHost` + secret + Auth-tab
   connection UI + the served app with Live Production / Sources / Audio for one panel size, live state
   over SSE, scene select (Studio-aware), mute/visibility toggles, stream/record/replay with

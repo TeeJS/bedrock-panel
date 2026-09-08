@@ -34,8 +34,8 @@ app/native/*.exe
 # dev-app secrets
 .env
 .ua/
-app/native/open_quake_dpapi.node
-open-quake-next/
+app/native/bedrock_panel_dpapi.node
+bedrock-panel-next/
 # personal analysis prompt (bundled meeting-analysis-prompt.md stays stock)
 /my-meeting-analysis-prompt.md
 

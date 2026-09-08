@@ -15,7 +15,7 @@ class MockDiscordService extends EventEmitter {
     this.state = { state: 'connected', error: null };
     this.capabilities = { voiceSettings: true, voiceChannelControl: true, guildDiscovery: true, channelDiscovery: true, textChannelSelection: true, activity: true, participants: true, speakingEvents: true, perUserVoiceControl: true, connectionQuality: true, messageEvents: true, messageHistory: true, notifications: true, currentUserEvents: true };
     this.voice = { mute: false, deaf: false, input: { device_id: 'mic', volume: 80, available_devices: [{ id: 'mic', name: 'Desk microphone' }] }, output: { device_id: 'speakers', volume: 90, available_devices: [{ id: 'speakers', name: 'Speakers' }] } };
-    this.channel = { id: 'voice', name: 'General', guild_id: 'guild', guild_name: 'Open Quake' };
+    this.channel = { id: 'voice', name: 'General', guild_id: 'guild', guild_name: 'Bedrock Panel' };
     this.calls = [];
     this.autoReconnect = true;
   }
@@ -24,7 +24,7 @@ class MockDiscordService extends EventEmitter {
   getCapabilityStates() { return Object.fromEntries(Object.keys(this.capabilities).map(key => [key, this.capabilities[key] ? 'available' : 'unsupported'])); }
   getVoiceSettings() { return Promise.resolve(this.voice); }
   getSelectedVoiceChannel() { return Promise.resolve(this.channel); }
-  getGuilds() { return Promise.resolve({ guilds: [{ id: 'guild', name: 'Open Quake' }, { id: 'other', name: 'Other Server' }] }); }
+  getGuilds() { return Promise.resolve({ guilds: [{ id: 'guild', name: 'Bedrock Panel' }, { id: 'other', name: 'Other Server' }] }); }
   getChannels(id) {
     this.calls.push(['guild', id]);
     if (id === 'other') return Promise.resolve({ channels: [{ id: 'lounge', name: 'Lounge', type: 2, guild_id: 'other' }] });
@@ -45,7 +45,7 @@ class MockDiscordService extends EventEmitter {
 
 const connected = service => ({
   connection: service.state, capabilities: service.capabilities, voice: service.voice, channel: service.channel,
-  guilds: [{ id: 'guild', name: 'Open Quake' }, { id: 'other', name: 'Other Server' }],
+  guilds: [{ id: 'guild', name: 'Bedrock Panel' }, { id: 'other', name: 'Other Server' }],
   voiceSelection: { guildId: 'guild', channelId: 'voice', channels: [{ id: 'voice', name: 'General', type: 2 }], initialized: true, status: null, error: null }, participants: [],
 });
 
@@ -293,7 +293,7 @@ test('navigation renders Voice, Chat, and Activity without panel Settings', () =
 test('Chat renders guild navigation and an honest empty message surface without a composer', () => {
   const service = new MockDiscordService();
   const html = view.chatView(Object.assign(connected(service), { chat: { guildId: null, channels: [], selected: null, lastSelected: null } }));
-  assert.match(html, /Open Quake/);
+  assert.match(html, /Bedrock Panel/);
   assert.match(html, /Choose a server/);
   assert.match(html, /Recent messages/);
   assert.doesNotMatch(html, /composer|data-action="send"|fake|sample/i);
@@ -618,7 +618,7 @@ test('Activity renders connected account, voice, channel, guild, capabilities, a
   const html = view.activityView(state);
   assert.match(html, />Connected</);
   assert.match(html, /Signed in as[\s\S]*Cmdr Woodbark/);
-  assert.match(html, /Open Quake/);
+  assert.match(html, /Bedrock Panel/);
   assert.match(html, /General/);
   assert.match(html, /Mic on · Audio on/);
   assert.match(html, /Active/);

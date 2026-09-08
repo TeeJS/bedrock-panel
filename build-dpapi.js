@@ -14,8 +14,8 @@ const inputs = [
   path.join(root, 'native', 'dpapi', 'binding.gyp'),
   __filename,
 ];
-const built = path.join(root, 'native', 'dpapi', 'build', 'Release', 'open_quake_dpapi.node');
-const output = path.join(root, 'app', 'native', 'open_quake_dpapi.node');
+const built = path.join(root, 'native', 'dpapi', 'build', 'Release', 'bedrock_panel_dpapi.node');
+const output = path.join(root, 'app', 'native', 'bedrock_panel_dpapi.node');
 
 let stale = true;
 try {

@@ -36,7 +36,7 @@ const DEFAULTS = {
   busyMqttUrl: '',
   busyMqttUser: '',
   busyMqttPassword: '',
-  busyMqttBaseTopic: 'open-quake',
+  busyMqttBaseTopic: 'bedrock-panel',
 };
 
 // 'http://1.2.3.4', '1.2.3.4', '1.2.3.4:8080' -> a usable origin. WLED is plain HTTP on the LAN and

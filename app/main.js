@@ -2005,7 +2005,7 @@ async function onMeetingActionRequest(platform, action) {
 // Settings live under config.settings.meeting (global, like config.settings.monitor) so auto-record
 // works regardless of which app the panel is showing — the meeting page's per-grid options only
 // exist while it's the active app, which is useless for background recording.
-const MEETING_DEFAULTS = { folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'open-quake' };
+const MEETING_DEFAULTS = { folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' };
 function meetingSettings() { return Object.assign({}, MEETING_DEFAULTS, (config.settings || {}).meeting || {}); }
 // Open WebUI connection (config.settings.owui, edited on the Auth tab): shared by the meeting
 // Analysis-AI backend and the owui-voice panel app. apiKey is a secret — encrypted at rest by
@@ -2142,8 +2142,13 @@ function setLucidTrayRecording(on) {
     tray.setToolTip(on ? 'Bedrock Panel — dictating…' : 'Bedrock Panel');
   } catch (e) {}
 }
-function defaultMeetingFolder() { return path.join(app.getPath('documents'), 'OpenQuake Meetings', 'unprocessed'); }
-function defaultProcessedFolder() { return path.join(app.getPath('documents'), 'OpenQuake Meetings', 'processed'); }
+// Default folders under Documents. Custom paths in Settings are stored verbatim and never touched; only the
+// blank-means-default resolution uses these names. The pre-rename defaults are moved once at startup
+// (migrateLegacyDefaultFolders) so existing recordings stay visible.
+const MEETINGS_ROOT = 'Bedrock Panel Meetings', LEGACY_MEETINGS_ROOT = 'OpenQuake Meetings';
+const TRANSLATIONS_ROOT = 'Bedrock Panel Translations', LEGACY_TRANSLATIONS_ROOT = 'OpenQuake Translations';
+function defaultMeetingFolder() { return path.join(app.getPath('documents'), MEETINGS_ROOT, 'unprocessed'); }
+function defaultProcessedFolder() { return path.join(app.getPath('documents'), MEETINGS_ROOT, 'processed'); }
 // Blank folder settings mean "use the default", same convention as the recorder.
 function resolveMeetingFolders() {
   const m = meetingSettings();
@@ -2173,10 +2178,32 @@ function resolveTranscribeBaseUrl() {
 // root; it is now the unprocessed\ subfolder. Move stranded root WAVs there so they show up in the
 // panel's Unprocessed list. Only runs when the folder setting is blank (explicit folders are the
 // user's own business) and never throws.
+// One-time: the default folders were named after open-quake. Move each old default to its new name ONLY
+// when the user hasn't pointed the setting somewhere else (a custom path is never touched, and a custom
+// path that literally names the old default keeps it in place). Never throws.
+function migrateLegacyDefaultFolders() {
+  const docs = app.getPath('documents');
+  const { migrateDir } = require('./userData');
+  const say = m => console.log('[folders] ' + m);
+  try {
+    const m = meetingSettings();
+    const usesDefault = !String(m.folder || '').trim() || !String(m.processedFolder || '').trim();
+    const oldRoot = path.join(docs, LEGACY_MEETINGS_ROOT);
+    if (usesDefault && fs.existsSync(oldRoot) && !JSON.stringify(config.settings || {}).includes(LEGACY_MEETINGS_ROOT)) {
+      const r = migrateDir(oldRoot, path.join(docs, MEETINGS_ROOT), { log: say });
+      if (r.status !== 'none') say('meetings default folder: ' + r.status + ' → ' + r.dir);
+    }
+    const oldTr = path.join(docs, LEGACY_TRANSLATIONS_ROOT);
+    if (fs.existsSync(oldTr) && !JSON.stringify(config).includes(LEGACY_TRANSLATIONS_ROOT)) {
+      const r = migrateDir(oldTr, path.join(docs, TRANSLATIONS_ROOT), { log: say });
+      if (r.status !== 'none') say('translations default folder: ' + r.status + ' → ' + r.dir);
+    }
+  } catch (e) { say('default folder migration failed: ' + e.message); }
+}
 function migrateLegacyMeetingWavs() {
   if (String(meetingSettings().folder || '').trim()) return;
   try {
-    const root = path.join(app.getPath('documents'), 'OpenQuake Meetings');
+    const root = path.join(app.getPath('documents'), MEETINGS_ROOT);
     const dest = defaultMeetingFolder();
     if (!fs.existsSync(root)) return;
     const wavs = fs.readdirSync(root).filter(n => /\.wav$/i.test(n) && fs.statSync(path.join(root, n)).isFile());
@@ -3709,6 +3736,7 @@ app.whenReady().then(async () => {
     // Lazy-required + individually try/caught like the recorder so a failure here can never take
     // down call control or recording.
     bootStage = 'transcription';
+    migrateLegacyDefaultFolders();
     migrateLegacyMeetingWavs();
     try {
       meetingLibrary = require('./meetingLibrary').createMeetingLibrary({

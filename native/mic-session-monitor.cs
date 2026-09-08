@@ -3,10 +3,10 @@
 // Polls the Windows Core Audio (WASAPI) capture endpoints for ACTIVE audio sessions and reports,
 // on stdout, whether any process from a caller-supplied allowlist (e.g. Zoom.exe, Teams.exe,
 // ms-teams.exe) currently holds an active capture session — i.e. "a call is in progress". This is
-// what lets open-quake auto-start recording ONLY for real meetings and never for Claude-voice or
+// what lets Bedrock Panel auto-start recording ONLY for real meetings and never for Claude-voice or
 // other mic use, which a sound/VAD trigger can't distinguish.
 //
-// It does NOT open the mic itself; it inspects other apps' sessions. open-quake still records using
+// It does NOT open the mic itself; it inspects other apps' sessions. Bedrock Panel still records using
 // its own selected mic + system loopback once this fires.
 //
 // Protocol: one JSON line per state transition, flushed immediately. Nothing is emitted until a
@@ -16,7 +16,7 @@
 //
 // "apps" carries EVERY allowlisted process currently holding a capture session, because Windows
 // shared-mode capture lets several apps hold the same microphone at once — which is also why
-// open-quake can record your mic while Teams is in a call. One caller may watch a superset of
+// Bedrock Panel can record your mic while Teams is in a call. One caller may watch a superset of
 // another's allowlist (the recorder wants Zoom/Teams; the busy light also wants Discord/Slack), so
 // each consumer filters "apps" against its own list. "app" is kept as the first match only so an
 // older reader does not break; new code must NOT use it, because the first match is whichever

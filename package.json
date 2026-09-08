@@ -42,7 +42,7 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.teejs.openquake",
+    "appId": "com.teejs.bedrockpanel",
     "productName": "Bedrock Panel",
     "directories": {
       "output": "dist"
@@ -88,6 +88,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
+      "guid": "6b73d4a7-2e13-5aef-9474-9432dfa413dd",
       "artifactName": "bedrock-panel-setup.${ext}"
     }
   }

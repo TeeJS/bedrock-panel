@@ -101,7 +101,7 @@ test('OAuth token mutations roll back when secure persistence fails', () => {
 });
 
 windowsTest('OAuth save, restart restore, refresh rotation, and logout stay encrypted at rest', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'open-quake-dpapi-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock Panel-dpapi-'));
   const file = path.join(dir, 'config.json');
   const store = storeFor(dpapi);
   let config = tokenConfig(canary + '-access', canary + '-refresh');

@@ -2,7 +2,7 @@
 
 **1. What is the one thing this must do?**
 A single on-panel app page listing every keyboard shortcut relevant to the user in
-one place: open-quake's own **System** hotkey (rotation toggle), every page's
+one place: Bedrock Panel's own **System** hotkey (rotation toggle), every page's
 **Page** jump-to hotkey, and a **Custom** cheat-sheet of free-text shortcut/
 description pairs for other programs — one shared list, identical no matter which
 page the app is dropped onto.
@@ -47,7 +47,7 @@ page the app is dropped onto.
   remaining two, in order, on next view.
 - Add the app to two different pages → edit the custom list from Settings → both
   instances show the identical updated list.
-- Restart open-quake → custom rows persist.
+- Restart Bedrock Panel → custom rows persist.
 - Zero hotkeys configured and zero custom rows → app shows an empty state, not a
   blank/broken page.
 

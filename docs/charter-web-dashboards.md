@@ -23,8 +23,8 @@ selector, and interactive dashboards accept at least **taps and scrolling**.
   pages must be sandboxed.
 
 ## 4. Deployment target & backup
-`D:\Github\open-quake` (Electron 23, runs on the device). Backup = git
-(github.com/TeeJS/open-quake).
+`D:\Github\bedrock-panel` (Electron 23, runs on the device). Backup = git
+(github.com/TeeJS/bedrock-panel).
 
 ## 5. How we verify it's done
 1. In the editor, create a **dashboard page** (name + URL); it shows up in the

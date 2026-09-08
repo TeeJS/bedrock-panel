@@ -25,13 +25,13 @@ test('integrated GitHub API is same-origin and rotating-capability gated', async
   const settings = await settingsResponse.json();
   assert.equal(settings.clientId,'Iv1.public');
   assert.equal(Object.hasOwn(settings,'accessToken'),false);
-  const second = settingsResponse.headers.get('x-open-quake-capability');
+  const second = settingsResponse.headers.get('x-bedrock-panel-capability');
   assert.match(second,/^[A-Za-z0-9_-]{43}$/);
   assert.equal((await pageRequest(port,'/api/github/settings',{headers:{Authorization:'Bearer '+first}})).status,403);
 
   const repositoriesResponse = await pageRequest(port,'/api/github/repositories',{headers:{Authorization:'Bearer '+second}});
   assert.deepEqual((await repositoriesResponse.json()).items,[{fullName:'acme/repo'}]);
-  const third = repositoriesResponse.headers.get('x-open-quake-capability');
+  const third = repositoriesResponse.headers.get('x-bedrock-panel-capability');
   const rejected = await pageRequest(port,'/api/github/settings',{method:'POST',headers:{Authorization:'Bearer '+third,'Content-Type':'application/json'},body:JSON.stringify({clientId:'Iv1.next',repository:'acme/repo',branch:'main'})});
   assert.equal((await rejected.json()).code,'invalid_operation');
 
@@ -43,10 +43,10 @@ test('integrated GitHub API is same-origin and rotating-capability gated', async
   const issueCapability = sysserver.issueGitHubCapability();
   const issuesResponse = await pageRequest(port,'/api/github/issues?repository=acme%2Frepo&filter=open&page=1',{headers:{Authorization:'Bearer '+issueCapability}});
   assert.deepEqual((await issuesResponse.json()).items,[{number:1}]);
-  const nextIssueCapability = issuesResponse.headers.get('x-open-quake-capability');
+  const nextIssueCapability = issuesResponse.headers.get('x-bedrock-panel-capability');
   const issueResponse = await pageRequest(port,'/api/github/issue?repository=acme%2Frepo&number=1',{headers:{Authorization:'Bearer '+nextIssueCapability}});
   assert.equal((await issueResponse.json()).item.number,1);
-  const rejectedWriteCapability = issueResponse.headers.get('x-open-quake-capability');
+  const rejectedWriteCapability = issueResponse.headers.get('x-bedrock-panel-capability');
   const rejectedIssueWrite = await pageRequest(port,'/api/github/issues',{method:'POST',headers:{Authorization:'Bearer '+rejectedWriteCapability,'Content-Type':'application/json'},body:JSON.stringify({title:'must not exist'})});
   assert.equal((await rejectedIssueWrite.json()).code,'invalid_operation');
 });

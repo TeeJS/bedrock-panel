@@ -59,7 +59,7 @@ function createLiveTranslateHost({ appId = 'livetranslate', log, deps }) {
   function saveFolder() {
     const o = pageOptions();
     const custom = o && String(o.saveFolder || '').trim();
-    return custom || path.join(deps.getDocumentsPath() || '', 'OpenQuake Translations');
+    return custom || path.join(deps.getDocumentsPath() || '', 'Bedrock Panel Translations');
   }
 
   // Append one finalized line to the running file when Save-to-file is on. One file per save session:

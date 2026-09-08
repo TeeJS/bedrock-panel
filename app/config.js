@@ -1,4 +1,4 @@
-  const configApi = window.openQuakeConfig;
+  const configApi = window.bedrockConfig;
   const VOICE_APPS = ['ai-voice'];   // apps with STT/TTS voice (one app, five backends)
   // Mirrors DEFAULT_CLEANUP_PROMPT + REWRITE_PRESETS in lucidtypeAI.js — pre-filled in the editable prompt boxes.
   const LT_DEFAULT_CLEANUP_PROMPT = "Fix the grammar, spelling, and punctuation in the user's text. Preserve the author's original wording, tone, and voice as much as possible. Remove filler words (uh, er, ah, um, mm, like when unnecessary), combine fragmented or run-on sentences into clear ones, and drop false starts and repeated words, while keeping the original meaning and voice. Output only the corrected text, with no preamble, quotes, or explanation.";
@@ -1017,7 +1017,7 @@
       picker.onmousedown = () => {
         if (picker.dataset.loaded) return;
         picker.dataset.loaded = '1';
-        window.openQuakeConfig.listRunningApps().then(apps => {
+        window.bedrockConfig.listRunningApps().then(apps => {
           for (const a of (apps || [])) {
             const opt = document.createElement('option');
             opt.value = a.processName;
@@ -2275,9 +2275,9 @@
         <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="xlSave" ${optVal(g, 'saveToFile', false) ? 'checked' : ''}> Save transcript to a file</label></div>
         <div id="xlSaveDeps"${optVal(g, 'saveToFile', false) ? '' : ' style="display:none"'}>
         <div class="row"><label>Save folder</label>
-          <input id="xlSaveFolder" value="${esc(optVal(g, 'saveFolder', ''))}" placeholder="Documents\\OpenQuake Translations" readonly style="flex:1">
+          <input id="xlSaveFolder" value="${esc(optVal(g, 'saveFolder', ''))}" placeholder="Documents\\Bedrock Panel Translations" readonly style="flex:1">
           <button id="xlSaveFolderBrowse" type="button">Browse…</button></div>
-        <p class="hint">Where saved translations are written. Blank = <b>Documents\\OpenQuake Translations</b> (the default).</p>
+        <p class="hint">Where saved translations are written. Blank = <b>Documents\\Bedrock Panel Translations</b> (the default).</p>
         </div>
       </div>`;
     const optsBlock = isMusic ? musicBox : isHaDash ? haBox : isKeyShortcuts ? keyShortcutsBox : isVoiceApp ? claudeVoiceBox : isLucidType ? lucidTypeBox : isLiveTranslate ? liveTranslateBox : isOffice ? officeOptionsHtml(g, def) : '<div id="appOpts"></div>';
@@ -3772,7 +3772,7 @@
     const th = currentTheme();
     // Meeting recording settings (config.settings.meeting) — global so auto-record works regardless of
     // which app the panel is showing. Same shape as MEETING_DEFAULTS in main.js.
-    const currentMe = () => Object.assign({ folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'open-quake' }, (config.settings || {}).meeting || {});
+    const currentMe = () => Object.assign({ folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' }, (config.settings || {}).meeting || {}, ((config.settings || {}).meeting || {}).busyMqttBaseTopic === 'open-quake' ? { busyMqttBaseTopic: 'bedrock-panel' } : {});
     const me = currentMe();
     // Day set for the busylight schedule. Built here so the markup below stays readable; the empty
     // guard matters because ''.split(',') yields [''] and Number('') is 0, which would silently
@@ -3920,7 +3920,7 @@
     const monHtml = `
       <p class="sectitle">Reserved Display</p>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}> Keep application windows off the panel display</label></div>
-      <details class="hint"><summary>Windows only. Windows dragged or relocated onto the panel display are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits.</summary> If your other displays disconnect, their positions are held and restored when a display returns. Open Quake, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
+      <details class="hint"><summary>Windows only. Windows dragged or relocated onto the panel display are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits.</summary> If your other displays disconnect, their positions are held and restored when a display returns. Bedrock Panel, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
 
       <p class="sectitle">Monitor mode <span id="sMonPill" class="stpill off">checking…</span></p>
       <details class="hint"><summary>Use the device as a normal monitor: it shows your Windows desktop and touch acts as the mouse.</summary> Enter it below, from the tray menu, or with a “System → monitor” tile; exit from the tray. These set what the knob does while in Monitor mode.</details>
@@ -3944,14 +3944,14 @@
     const meHtml = `
       <p class="sectitle">Meeting recording</p>
       <div class="row"><label>Unprocessed Recordings</label>
-        <input id="meFolder" value="${esc(me.folder)}" placeholder="Documents\\OpenQuake Meetings\\unprocessed" style="flex:1">
+        <input id="meFolder" value="${esc(me.folder)}" placeholder="Documents\\Bedrock Panel Meetings\\unprocessed" style="flex:1">
         <button id="meFolderBrowse" type="button">Browse…</button></div>
-      <details class="hint"><summary>Where new recordings land — one stereo WAV per meeting (your mic = left, everyone else = right), named by date and time.</summary> Leave blank to use Documents\\OpenQuake Meetings\\unprocessed.</details>
+      <details class="hint"><summary>Where new recordings land — one stereo WAV per meeting (your mic = left, everyone else = right), named by date and time.</summary> Leave blank to use Documents\\Bedrock Panel Meetings\\unprocessed.</details>
 
       <div class="row" style="margin-top:12px"><label>Processed Recordings</label>
-        <input id="meProcessed" value="${esc(me.processedFolder)}" placeholder="Documents\\OpenQuake Meetings\\processed" style="flex:1">
+        <input id="meProcessed" value="${esc(me.processedFolder)}" placeholder="Documents\\Bedrock Panel Meetings\\processed" style="flex:1">
         <button id="meProcessedBrowse" type="button">Browse…</button></div>
-      <p class="hint">Transcribed recordings and their transcripts are moved here. Leave blank to use Documents\\OpenQuake Meetings\\processed.</p>
+      <p class="hint">Transcribed recordings and their transcripts are moved here. Leave blank to use Documents\\Bedrock Panel Meetings\\processed.</p>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meByDate" ${me.processedByDate ? 'checked' : ''}> Organize by date</label></div>
       <p class="hint">Files each processed recording into year and month subfolders (e.g. 2026\\08\\) under the folder above, by the date it was processed.</p>
 
@@ -4050,7 +4050,7 @@
         <p class="sectitle" style="margin-top:20px">Home Assistant (MQTT)</p>
         <div class="row"><label>Broker</label><span id="meMqttStatus" class="hint" style="margin:0">Not configured</span></div>
         <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meMqtt" ${me.busyMqttEnabled ? 'checked' : ''}> Publish your busy status to Home Assistant</label></div>
-        <details class="hint"><summary>Creates a <b>binary_sensor.open_quake_busy</b> entity in Home Assistant automatically — no configuration needed on the Home Assistant side.</summary> Automations can trigger on it like any other sensor. If Bedrock Panel stops or the PC loses power, the entity goes <i>unavailable</i> on its own, so a light driven from it cannot get stuck showing busy. This is separate from the Home Assistant connection on the Auth tab, which is read-only.</details>
+        <details class="hint"><summary>Creates a <b>binary_sensor.bedrock_panel_busy</b> entity in Home Assistant automatically — no configuration needed on the Home Assistant side.</summary> Automations can trigger on it like any other sensor. If Bedrock Panel stops or the PC loses power, the entity goes <i>unavailable</i> on its own, so a light driven from it cannot get stuck showing busy. This is separate from the Home Assistant connection on the Auth tab, which is read-only.</details>
         <div class="row"><label>Broker URL</label>
           <input id="meMqttUrl" value="${esc(me.busyMqttUrl)}" placeholder="mqtt://192.168.1.25:1883" style="flex:1"></div>
         <div class="row"><label>Username</label>
@@ -4058,7 +4058,7 @@
         <div class="row"><label>Password</label>${secretInput(me.busyMqttPassword, 'id="meMqttPass" style="flex:1"', 'flex:1')}</div>
         <p class="hint">Stored encrypted at rest. Leave both blank if your broker allows anonymous connections.</p>
         <div class="row"><label>Topic prefix</label>
-          <input id="meMqttTopic" value="${esc(me.busyMqttBaseTopic)}" placeholder="open-quake" style="flex:1"></div>
+          <input id="meMqttTopic" value="${esc(me.busyMqttBaseTopic)}" placeholder="bedrock-panel" style="flex:1"></div>
         <div class="row"><button id="meBusyTestMqtt" type="button">Test connection</button> <span id="meBusyTestMqttResult" class="hint" style="margin:0 0 0 10px"></span></div>
       </div>
 
@@ -5231,7 +5231,7 @@
       // "(All apps)" + distinct process NAMES (never window titles; you pick the APP here, the
       // panel picker is where you pick the window). Selection persists visibly in the dropdown.
       const slideFilterPick = document.getElementById('meSlideFilterPick');
-      window.openQuakeConfig.listRunningApps().then(apps => {
+      window.bedrockConfig.listRunningApps().then(apps => {
         const cur = currentMe().slideAppFilter || '';
         const names = (apps || []).map(a => a.processName).filter(Boolean);
         if (cur && !names.some(n => n.toLowerCase() === cur.toLowerCase())) names.push(cur);   // saved app not running — keep it selectable

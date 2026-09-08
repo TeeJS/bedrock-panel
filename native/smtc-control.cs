@@ -2,7 +2,7 @@
 // the now-playing display reads (matched by app id, else the OS "current" session). Prints "ok" on
 // success; exit 1 on any miss so the caller can fall back. [MIT]
 //
-// Why: open-quake's transport used to tap global media keys (audio_play/next/prev), which Windows routes
+// Why: Bedrock Panel's transport used to tap global media keys (audio_play/next/prev), which Windows routes
 // to whatever app holds media-key priority — not necessarily the session shown in the now-playing
 // display. With several players open (e.g. Audiobookshelf + Music Assistant) that splits the controls
 // from what's shown. Driving the specific SMTC session keeps control and display on the same source.

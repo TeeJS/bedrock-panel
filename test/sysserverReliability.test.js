@@ -37,7 +37,7 @@ function responseClosed(res, timeoutMs = 500) {
 test.afterEach(() => sysserver.stop());
 
 test('stop closes every built-in SSE stream and shuts down cached app servers', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'open-quake-sysserver-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock Panel-sysserver-'));
   const serverFile = path.join(root, 'server.js');
   const marker = path.join(root, 'shutdown.txt');
   fs.writeFileSync(serverFile,

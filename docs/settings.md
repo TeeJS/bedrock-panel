@@ -89,11 +89,12 @@ The ring is driven over the device's QMK VIA lighting channel; settings are stor
 Recording and transcription for the Meeting panel (details in [meeting.md](meeting.md)):
 
 - **Unprocessed Recordings** — where new recordings land. Blank =
-  `Documents\OpenQuake Meetings\unprocessed`. (Recordings from before v0.4.8 that sat in
-  the old default `Documents\OpenQuake Meetings` root are moved into `unprocessed\`
+  `Documents\Bedrock Panel Meetings\unprocessed`. (An existing `Documents\OpenQuake Meetings` folder is
+  renamed to that on first launch when the setting is blank; custom paths are never touched. Recordings from before v0.4.8 that sat in
+  the root of that folder are moved into `unprocessed\`
   automatically at launch, only when this setting is blank.)
 - **Processed Recordings** — where transcribed recordings and their transcripts are
-  moved. Blank = `Documents\OpenQuake Meetings\processed`.
+  moved. Blank = `Documents\Bedrock Panel Meetings\processed`.
 - **Organize by date** — files each processed recording into `YYYY\MM\` subfolders under
   the Processed folder, keyed to the date it was processed.
 - **Microphone** — the mic recorded as your channel. This must be the same mic you use
@@ -140,7 +141,7 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
       WLED light keep reporting your real status outside the window.
   - **DIY light (WLED)** drives an ESP32 running WLED over the network — enter its IP
     address. It uses the same busy and free colours.
-  - **Home Assistant (MQTT)** publishes a `binary_sensor.open_quake_busy` entity, created
+  - **Home Assistant (MQTT)** publishes a `binary_sensor.bedrock_panel_busy` entity, created
     automatically through MQTT discovery — nothing to configure on the Home Assistant
     side. Automations trigger on it like any other sensor, and the attributes carry why
     you are busy, which app, and since when. This is independent of the Home Assistant

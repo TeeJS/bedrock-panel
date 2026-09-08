@@ -1,4 +1,4 @@
-// foreground-watch.cs — foreground-window tracking + window find/focus/list for open-quake. [MIT]
+// foreground-watch.cs — foreground-window tracking + window find/focus/list for Bedrock Panel. [MIT]
 //
 // Replaces the per-call powershell.exe spawns that desktopFocus.js and meetingControl.js used:
 // endpoint-security tools flag continuous PowerShell process creation as malware-like behavior,

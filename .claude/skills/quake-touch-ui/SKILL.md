@@ -1,6 +1,6 @@
 ---
 name: quake-touch-ui
-description: Design, critique, implement, and verify UI for the open-quake 1920x480 touchscreen-and-knob panel. Use when creating or restyling any on-panel Electron page, control console, dashboard, picker, overlay, recording flow, theme, touch target, scrollbar, focus state, or screenshot-based UI revision. Complements docs/design-system.md.
+description: Design, critique, implement, and verify UI for the Bedrock Panel 1920x480 touchscreen-and-knob panel. Use when creating or restyling any on-panel Electron page, control console, dashboard, picker, overlay, recording flow, theme, touch target, scrollbar, focus state, or screenshot-based UI revision. Complements docs/design-system.md.
 ---
 
 # Design UI for the Quake panel

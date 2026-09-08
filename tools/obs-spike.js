@@ -1,6 +1,6 @@
 'use strict';
 // Phase 0 spike -- THROWAWAY. Proves the obs-websocket v5 transport against a real OBS before any
-// open-quake integration: connect + Identify -> GetSceneList -> hydrate output state -> subscribe ->
+// Bedrock Panel integration: connect + Identify -> GetSceneList -> hydrate output state -> subscribe ->
 // SetCurrentProgramScene -> confirm via the CurrentProgramSceneChanged event -> restore -> disconnect.
 //
 // Run it yourself from the repo root (so obs-websocket-js resolves from node_modules); the password is
@@ -9,7 +9,7 @@
 //   (optional)   $env:OBS_URL='ws://127.0.0.1:4455'
 // Get the password/port from OBS -> Tools -> WebSocket Server Settings -> Show Connect Info.
 //
-// It touches nothing in open-quake, changes no config, and restores your original program scene.
+// It touches nothing in Bedrock Panel, changes no config, and restores your original program scene.
 
 const { OBSWebSocket, EventSubscription } = require('obs-websocket-js');
 

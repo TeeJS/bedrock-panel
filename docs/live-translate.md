@@ -43,7 +43,7 @@ The key is stored encrypted and used only from the main process — it never rea
 ## Extras
 
 - **Save to file** — toggle it on to write the translation to a text file; choose the folder in the
-  editor (default `Documents\OpenQuake Translations`).
+  editor (default `Documents\Bedrock Panel Translations`; an existing `OpenQuake Translations` folder is renamed on first launch).
 - **Microphone** — pick the capture device in the page's editor or the on-panel Settings.
 - <a id="hotkey"></a>**Toggle hotkey** — set a global key combo in the editor that starts/stops
   translation from any app (it switches to the page and toggles the mic). The **knob** does the same

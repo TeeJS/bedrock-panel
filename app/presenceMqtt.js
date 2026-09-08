@@ -7,7 +7,7 @@
 // discovery gives a real, persistent, auto-provisioned entity with no manual setup in HA at all.
 //
 // THE WILL IS THE POINT. The availability topic is registered as the MQTT last-will at CONNECT time,
-// so if open-quake is killed, crashes, or loses power, the broker publishes 'offline' on our behalf
+// so if Bedrock Panel is killed, crashes, or loses power, the broker publishes 'offline' on our behalf
 // and every HA automation sees the entity go unavailable. That is the exact counterpart to the
 // Busylight's own 30s keepalive timeout: both ends fail safe without anyone remembering to clean up.
 //
@@ -18,17 +18,23 @@
 const os = require('os');
 
 const DISCOVERY_PREFIX = 'homeassistant';
-const OBJECT_ID = 'open_quake_busy';
+const OBJECT_ID = 'bedrock_panel_busy';
+// 0.9.0/0.9.1 shipped this feature under the old name. Its retained discovery document would leave a dead
+// entity in HA, so announce() clears it. The old default base topic is mapped to the new one below.
+const LEGACY_OBJECT_ID = 'open_quake_busy';
+const LEGACY_BASE_TOPIC = 'open-quake';
+const DEFAULT_BASE_TOPIC = 'bedrock-panel';
 
 // A hostname is not guaranteed to be topic-safe (MQTT dislikes '+', '#', '/'), and HA object ids
 // want [a-z0-9_]. Normalise once, here, so topic and unique_id can never disagree.
 function safeNodeId(hostname) {
-  const s = String(hostname || 'open-quake').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
-  return s || 'open-quake';
+  const s = String(hostname || DEFAULT_BASE_TOPIC).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return s || DEFAULT_BASE_TOPIC;
 }
 
 function buildTopics(baseTopic, hostname) {
-  const base = String(baseTopic || 'open-quake').replace(/^\/+|\/+$/g, '') || 'open-quake';
+  let base = String(baseTopic || DEFAULT_BASE_TOPIC).replace(/^\/+|\/+$/g, '') || DEFAULT_BASE_TOPIC;
+  if (base === LEGACY_BASE_TOPIC) base = DEFAULT_BASE_TOPIC;   // saved by a pre-rename install
   const node = safeNodeId(hostname);
   return {
     node,
@@ -36,11 +42,12 @@ function buildTopics(baseTopic, hostname) {
     attributes: base + '/' + node + '/attributes',
     availability: base + '/' + node + '/availability',
     discovery: DISCOVERY_PREFIX + '/binary_sensor/' + node + '_' + OBJECT_ID + '/config',
+    legacyDiscovery: DISCOVERY_PREFIX + '/binary_sensor/' + node + '_' + LEGACY_OBJECT_ID + '/config',
   };
 }
 
 // The retained discovery document HA reads to create the entity. `device` groups it under one
-// "open-quake" device rather than leaving a loose entity, and unique_id is what makes it editable in
+// "Bedrock Panel" device rather than leaving a loose entity, and unique_id is what makes it editable in
 // the HA UI and stable across restarts.
 function buildDiscoveryConfig(topics, opts) {
   const o = opts || {};
@@ -60,9 +67,9 @@ function buildDiscoveryConfig(topics, opts) {
     device_class: 'occupancy',
     icon: 'mdi:video-account',
     device: {
-      identifiers: [topics.node + '_open_quake'],
-      name: 'open-quake (' + topics.node + ')',
-      manufacturer: 'open-quake',
+      identifiers: [topics.node + '_bedrock_panel'],
+      name: 'Bedrock Panel (' + topics.node + ')',
+      manufacturer: 'Bedrock Panel',
       model: 'Presence',
     },
   };
@@ -118,6 +125,7 @@ function createPresenceMqtt(deps) {
   function announce() {
     if (!client || !topics) return;
     publish(topics.discovery, discovery);
+    publish(topics.legacyDiscovery, '');   // empty retained payload = HA removes the old open_quake_busy entity
     publish(topics.availability, 'online');
     // Always publish a state, even before anything has happened. An entity that is available but has
     // never received a state shows as "unknown" in HA, which no automation can sensibly branch on —
@@ -162,7 +170,7 @@ function createPresenceMqtt(deps) {
         c = lib.connect(p.url, {
           username: p.username || undefined,
           password: p.password || undefined,
-          clientId: 'open-quake-test-' + Math.random().toString(16).slice(2, 8),
+          clientId: 'bedrock-panel-test-' + Math.random().toString(16).slice(2, 8),
           reconnectPeriod: 0,
           connectTimeout: 8000,
         });
@@ -188,7 +196,7 @@ function createPresenceMqtt(deps) {
       if (same) return;
       settings = {
         enabled: !!n.enabled, url: n.url || '', username: n.username || '',
-        password: n.password || '', baseTopic: n.baseTopic || 'open-quake',
+        password: n.password || '', baseTopic: n.baseTopic || DEFAULT_BASE_TOPIC,
       };
       stop();
       if (!settings.enabled) return;
@@ -202,7 +210,7 @@ function createPresenceMqtt(deps) {
         client = lib.connect(settings.url, {
           username: settings.username || undefined,
           password: settings.password || undefined,
-          clientId: 'open-quake-' + topics.node,
+          clientId: 'bedrock-panel-' + topics.node,
           reconnectPeriod: 10000,
           connectTimeout: 10000,
           // Registered at CONNECT. This is the crash failsafe — see the header.

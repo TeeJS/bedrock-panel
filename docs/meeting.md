@@ -44,7 +44,7 @@ The panel records meetings (one stereo WAV: your mic = left, everyone else = rig
 can send them to a diarizing transcription server, then to an AI for meeting notes.
 
 - Recordings land in the **Unprocessed Recordings** folder (Settings → Meeting; default
-  `Documents\OpenQuake Meetings\unprocessed`).
+  `Documents\Bedrock Panel Meetings\unprocessed`).
 - The top row reads **Analysis | Unprocessed | Record**; both screens open as their own
   full page with per-row select boxes, **Select all**, and act-on-selected buttons in
   the header.

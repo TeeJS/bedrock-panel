@@ -5,7 +5,7 @@
 // a sensible default) and the current mode; choose() persists the picked mode and resumes launch.
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('openQuakeWelcome', {
+contextBridge.exposeInMainWorld('bedrockWelcome', {
   getInfo() { return ipcRenderer.invoke('getWelcomeInfo'); },
   choose(mode) { return ipcRenderer.invoke('setRunMode', mode); },
 });

@@ -2468,7 +2468,7 @@ function Vs(e, t) {
   }
   Gn(() => {
     try {
-      const x = window.openQuakeChatRuntimeConfig || {}, T = x.apiKey, V = x.model, K = x.endpoint;
+      const x = window.bedrockChatRuntimeConfig || {}, T = x.apiKey, V = x.model, K = x.endpoint;
       T !== void 0 && (u = T), V !== void 0 && E(i, V, !0), K !== void 0 && (a = K);
     } catch (x) {
       console.error("Error processing query parameters in onMount:", x);

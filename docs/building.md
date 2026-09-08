@@ -131,3 +131,9 @@ which dispatches to a platform backend: an in-process, first-party raw Windows D
 binding (`dpapi.js`, per-value, current-user scope, no key file) on Windows, and Electron
 `safeStorage` (Keychain-backed) elsewhere. Run `npm run build:dpapi` to build that binding alone;
 `npm start`, `npm run rebuild`, and `npm run dist` build it automatically when stale.
+
+## Installer identity
+
+`build.nsis.guid` is pinned to `6b73d4a7-2e13-5aef-9474-9432dfa413dd` — the GUID electron-builder derived from the
+pre-rename `appId` (`com.teejs.openquake`). The installer finds and replaces an existing install by that GUID, so it
+must never change; the `appId` itself is now `com.teejs.bedrockpanel`.

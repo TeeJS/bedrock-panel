@@ -3,7 +3,7 @@
 // Run-mode picker logic. Pre-selects a sensible default from whether the QUAKE display is present
 // (present -> Panel, absent -> Software), lets the user override, then persists via choose().
 (function () {
-  const api = window.openQuakeWelcome;
+  const api = window.bedrockWelcome;
   const cards = Array.from(document.querySelectorAll('.card'));
   const go = document.getElementById('go');
   const hint = document.getElementById('hint');

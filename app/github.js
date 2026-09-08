@@ -42,7 +42,7 @@
         headers: Object.assign({ Authorization: 'Bearer ' + capability }, options.body === undefined ? {} : { 'Content-Type':'application/json' }),
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
       });
-      const next = response.headers.get('X-Open-Quake-Capability');
+      const next = response.headers.get('X-Bedrock-Panel-Capability');
       if (next) capability = next;
       if (response.status === 403) throw new Error('GitHub panel session expired; leave and reopen the page');
       try { return await response.json(); } catch (error) { throw new Error('Invalid response from Bedrock Panel'); }
@@ -101,7 +101,7 @@
         const name = button.dataset.pin;
         const index = state.favourites.findIndex(value => value.toLowerCase() === name.toLowerCase());
         if (index >= 0) state.favourites.splice(index, 1); else state.favourites.unshift(name);
-        saveArray('open-quake.github.favourites', state.favourites);
+        saveArray('bedrock-panel.github.favourites', state.favourites);
         renderRepositoryList();
       };
     });
@@ -130,8 +130,8 @@
     if (!item || !state.settings) return;
     window.GitHubPanelState.selectRepository(state, item.fullName, item.defaultBranch || '');
     state.recents = [item.fullName].concat(state.recents.filter(value => value.toLowerCase() !== item.fullName.toLowerCase())).slice(0, 6);
-    saveArray('open-quake.github.recents', state.recents);
-    try { localStorage.setItem('open-quake.github.repository', item.fullName); } catch (error) {}
+    saveArray('bedrock-panel.github.recents', state.recents);
+    try { localStorage.setItem('bedrock-panel.github.repository', item.fullName); } catch (error) {}
     closeRepositoryBrowser(); updateHeader(); loadCurrent();
   }
 
@@ -501,12 +501,21 @@
       const settings = await api('settings');
       if (!settings.ok) throw new Error(settings.error || 'Could not read GitHub settings');
       state.settings = settings; state.configuredRepository = settings.repository || ''; state.view = 'overview';
-      state.favourites = storedArray('open-quake.github.favourites'); state.recents = storedArray('open-quake.github.recents');
+      // 0.9.2 rename: carry favourites/recents/last repository over from the open-quake keys, once.
+      try {
+        for (const k of ['favourites', 'recents', 'repository']) {
+          const legacy = localStorage.getItem('open-quake.github.' + k);
+          if (legacy === null) continue;
+          if (localStorage.getItem('bedrock-panel.github.' + k) === null) localStorage.setItem('bedrock-panel.github.' + k, legacy);
+          localStorage.removeItem('open-quake.github.' + k);
+        }
+      } catch (error) {}
+      state.favourites = storedArray('bedrock-panel.github.favourites'); state.recents = storedArray('bedrock-panel.github.recents');
       updateHeader();
       if (settings.connected) {
         try {
           await loadRepositories(false);
-          let saved = ''; try { saved = localStorage.getItem('open-quake.github.repository') || ''; } catch (error) {}
+          let saved = ''; try { saved = localStorage.getItem('bedrock-panel.github.repository') || ''; } catch (error) {}
           const current = state.repositories.find(item => item.fullName.toLowerCase() === String(settings.repository || '').toLowerCase());
           const remembered = state.repositories.find(item => item.fullName.toLowerCase() === saved.toLowerCase());
           const chosen = remembered || current || state.repositories[0];

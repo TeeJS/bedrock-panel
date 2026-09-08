@@ -59,14 +59,14 @@ test('repository discovery includes accessible parent and original repositories 
     getSettings: () => ({ clientId:'Iv1.x', repository:'', branch:'' }), oauth: oauth(), openExternal: () => true,
     fetchImpl: async url => {
       calls.push(url);
-      if (url.endsWith('/repos/mark/open-quake')) return response(200, {
-        full_name:'mark/open-quake', private:false, fork:true, default_branch:'main',
-        parent:{ full_name:'TeeJS/open-quake', private:false, fork:false, default_branch:'main', updated_at:'2026-08-24T09:00:00Z', permissions:{pull:true} },
-        source:{ full_name:'original/open-quake', private:false, fork:false, default_branch:'trunk', updated_at:'2026-08-23T09:00:00Z' },
+      if (url.endsWith('/repos/mark/bedrock-panel')) return response(200, {
+        full_name:'mark/bedrock-panel', private:false, fork:true, default_branch:'main',
+        parent:{ full_name:'TeeJS/bedrock-panel', private:false, fork:false, default_branch:'main', updated_at:'2026-08-24T09:00:00Z', permissions:{pull:true} },
+        source:{ full_name:'original/bedrock-panel', private:false, fork:false, default_branch:'trunk', updated_at:'2026-08-23T09:00:00Z' },
       });
       if (url.endsWith('/repos/mark/unavailable')) return response(403, {message:'Forbidden'});
       return response(200, [
-        { full_name:'mark/open-quake', private:false, fork:true, default_branch:'main', updated_at:'2026-08-24T10:00:00Z', permissions:{admin:true} },
+        { full_name:'mark/bedrock-panel', private:false, fork:true, default_branch:'main', updated_at:'2026-08-24T10:00:00Z', permissions:{admin:true} },
         { full_name:'mark/unavailable', private:true, fork:true, default_branch:'main', permissions:{admin:true} },
       ]);
     },
@@ -75,15 +75,15 @@ test('repository discovery includes accessible parent and original repositories 
   assert.equal(result.ok, true);
   assert.equal(result.upstreamsIncomplete, true);
   assert.deepEqual(result.items.map(item => item.fullName), [
-    'mark/open-quake', 'mark/unavailable', 'TeeJS/open-quake', 'original/open-quake',
+    'mark/bedrock-panel', 'mark/unavailable', 'TeeJS/bedrock-panel', 'original/bedrock-panel',
   ]);
   assert.deepEqual(result.items[2], {
-    fullName:'TeeJS/open-quake', private:false, archived:false, fork:false, defaultBranch:'main',
-    permission:'read', updatedAt:'2026-08-24T09:00:00Z', url:'https://github.com/TeeJS/open-quake',
-    relationship:'upstream', upstreamOf:'mark/open-quake',
+    fullName:'TeeJS/bedrock-panel', private:false, archived:false, fork:false, defaultBranch:'main',
+    permission:'read', updatedAt:'2026-08-24T09:00:00Z', url:'https://github.com/TeeJS/bedrock-panel',
+    relationship:'upstream', upstreamOf:'mark/bedrock-panel',
   });
   assert.equal(result.items[3].relationship, 'upstream');
-  assert.equal(result.items[3].upstreamOf, 'mark/open-quake');
+  assert.equal(result.items[3].upstreamOf, 'mark/bedrock-panel');
   assert.equal(calls.length, 3);
 });
 

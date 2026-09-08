@@ -1,4 +1,4 @@
-  const panelApi = window.openQuakePanel;
+  const panelApi = window.bedrockPanel;
   // Software mode = the panel served into a normal desktop window (?mode=software). No device, no knob:
   // the stage scales to fit the window (never rotates) and a floating button drives the page menu.
   const SOFTWARE_MODE = new URLSearchParams(location.search).get('mode') === 'software';

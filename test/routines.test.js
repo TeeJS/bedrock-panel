@@ -122,26 +122,26 @@ test('a stale profileId is carried through — the host falls back on its own', 
 const chatB = (id, name, backend, dir) => ({ id, name, kind: 'app', app: 'ai-voice', options: { backend, projectDir: dir } });
 
 test('normalizeRoutine carries a folder and trims it', () => {
-  const r = normalizeRoutine({ prompt: 'go', folder: '  D:/Github/open-quake  ' }, ids);
-  assert.equal(r.folder, 'D:/Github/open-quake');
+  const r = normalizeRoutine({ prompt: 'go', folder: '  D:/Github/bedrock-panel  ' }, ids);
+  assert.equal(r.folder, 'D:/Github/bedrock-panel');
   assert.equal(normalizeRoutine({ prompt: 'go' }, ids).folder, '');
 });
 
 test('a folder that differs from the page is reported so the session restarts there', () => {
-  const list = [{ id: 'r1', prompt: 'build it', appPageId: 'c1', folder: 'D:/Github/open-quake' }];
+  const list = [{ id: 'r1', prompt: 'build it', appPageId: 'c1', folder: 'D:/Github/bedrock-panel' }];
   const r = resolveRoutine('r1', { routines: list, grids: [chatB('c1', 'Claude', 'claude', 'D:/Github/other')] });
   assert.equal(r.ok, true);
-  assert.equal(r.folder, 'D:/Github/open-quake');
+  assert.equal(r.folder, 'D:/Github/bedrock-panel');
 });
 
 test('a folder the page is already in is NOT reported — no needless session restart', () => {
-  const list = [{ id: 'r1', prompt: 'build it', appPageId: 'c1', folder: 'D:/Github/open-quake' }];
-  const r = resolveRoutine('r1', { routines: list, grids: [chatB('c1', 'Claude', 'claude', 'D:/Github/open-quake')] });
+  const list = [{ id: 'r1', prompt: 'build it', appPageId: 'c1', folder: 'D:/Github/bedrock-panel' }];
+  const r = resolveRoutine('r1', { routines: list, grids: [chatB('c1', 'Claude', 'claude', 'D:/Github/bedrock-panel')] });
   assert.equal(r.folder, '');
 });
 
 test('a chat-only backend ignores a folder even if one was stored', () => {
-  const list = [{ id: 'r1', prompt: 'summarize', appPageId: 'c1', folder: 'D:/Github/open-quake' }];
+  const list = [{ id: 'r1', prompt: 'summarize', appPageId: 'c1', folder: 'D:/Github/bedrock-panel' }];
   for (const backend of ['owui', 'api']) {
     const r = resolveRoutine('r1', { routines: list, grids: [chatB('c1', 'Chat', backend, '')] });
     assert.equal(r.folder, '', backend + ' should have no folder');

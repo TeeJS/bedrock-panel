@@ -250,7 +250,7 @@ test('read-only capability probes validate channels while mutating commands stay
   assert.deepEqual(transport.requests.find(value => value.command === 'GET_CHANNELS'), { command: 'GET_CHANNELS', args: { guild_id: 'guild' } });
   assert.equal(transport.requests.some(value => value.command === 'SELECT_TEXT_CHANNEL' || value.command === 'SET_ACTIVITY'), false);
   await service.selectTextChannel('text');
-  await service.setActivity({ details: 'Using open-quake' });
+  await service.setActivity({ details: 'Using Bedrock Panel' });
   assert.equal(service.getCapabilityStates().textChannelSelection, 'available');
   assert.equal(service.getCapabilityStates().activity, 'available');
   service.stop();

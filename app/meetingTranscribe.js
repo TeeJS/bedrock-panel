@@ -60,7 +60,7 @@ function httpPostWav(url, filename, buf, timeoutMs, fields) {
     let u;
     try { u = new URL(url); } catch (e) { return reject(new Error('bad server URL: ' + url)); }
     const mod = u.protocol === 'https:' ? https : http;
-    const boundary = '----OpenQuakeMeeting' + Math.random().toString(36).slice(2);
+    const boundary = '----BedrockPanelMeeting' + Math.random().toString(36).slice(2);
     const parts = [];
     for (const k of Object.keys(fields || {})) {   // text fields (threshold, attendees) before the file
       parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="' + k + '"\r\n\r\n' + fields[k] + '\r\n'));

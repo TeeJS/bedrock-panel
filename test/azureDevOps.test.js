@@ -83,7 +83,7 @@ test('app assets are relative and the panel defines exactly four overview slots'
 
 test('overview cards present healthy, warning, and failure states from existing datasets', () => {
   const datasets = {
-    repositories: { repositories: [{ name: 'open-quake', defaultBranch: 'main' }] },
+    repositories: { repositories: [{ name: 'Bedrock Panel', defaultBranch: 'main' }] },
     pipelines: { pipelines: [{ id: 1 }], runs: [{ result: 'succeeded', status: 'completed' }] },
     pullRequests: { pullRequests: [] },
     workItems: { workItems: [] }
@@ -92,7 +92,7 @@ test('overview cards present healthy, warning, and failure states from existing 
   const pipeline = server._test.metricFor('pipelines', datasets);
   const pullRequests = server._test.metricFor('pull-requests', datasets);
   const workItems = server._test.metricFor('work-items', datasets);
-  assert.equal(repository.message, 'open-quake · main');
+  assert.equal(repository.message, 'Bedrock Panel · main');
   assert.equal(repository.unit, 'Repository');
   assert.equal(pipeline.tone, 'healthy');
   assert.equal(pipeline.message, 'No recent pipeline failures');
@@ -207,10 +207,10 @@ test('failed project refresh returns the last successful dataset as stale', asyn
 test('repository discovery and detail map branches, commits, and pull requests', async () => {
   server._test.setFetch(async url => {
     if (url.includes('/_apis/projects')) return response({ value: [{ id: 'project-1', name: 'Quake', state: 'wellFormed' }] });
-    if (url.includes('/git/repositories?')) return response({ value: [{ id: 'repo-1', name: 'open-quake', defaultBranch: 'refs/heads/main', size: 1000 }] });
+    if (url.includes('/git/repositories?')) return response({ value: [{ id: 'repo-1', name: 'Bedrock Panel', defaultBranch: 'refs/heads/main', size: 1000 }] });
     if (url.includes('/refs?')) return response({ value: [{ name: 'refs/heads/main', objectId: 'abcdef' }] });
     if (url.includes('/commits?')) return response({ value: [{ commitId: 'abcdef', comment: 'Change', author: { name: 'Alex', date: '2026-08-26T10:00:00Z' } }] });
-    if (url.includes('/pullrequests?')) return response({ value: [{ pullRequestId: 8, title: 'Review', status: 'active', repository: { id: 'repo-1', name: 'open-quake' } }] });
+    if (url.includes('/pullrequests?')) return response({ value: [{ pullRequestId: 8, title: 'Review', status: 'active', repository: { id: 'repo-1', name: 'Bedrock Panel' } }] });
     throw new Error(`Unexpected request: ${url}`);
   });
   const ctx = context({ query: { organization: 'contoso', project: 'project-1', repository: 'repo-1' } });
@@ -228,7 +228,7 @@ test('pipeline detail maps stage failures and reliable run relationships', async
     if (url.includes('/_apis/projects')) return response({ value: [{ id: 'project-1', name: 'Quake', state: 'wellFormed' }] });
     if (url.includes('/timeline?')) return response({ records: [{ id: 'stage-1', name: 'Test', type: 'Stage', state: 'completed', result: 'failed', issues: [{ message: 'Tests failed' }] }] });
     if (url.includes('/workitems?')) return response({ value: [{ id: 55 }] });
-    if (url.includes('/build/builds/42?')) return response({ id: 42, buildNumber: '42', status: 'completed', result: 'failed', sourceBranch: 'refs/heads/main', sourceVersion: 'abcdef', definition: { id: 7, name: 'Build' }, repository: { id: 'repo-1', name: 'open-quake' } });
+    if (url.includes('/build/builds/42?')) return response({ id: 42, buildNumber: '42', status: 'completed', result: 'failed', sourceBranch: 'refs/heads/main', sourceVersion: 'abcdef', definition: { id: 7, name: 'Build' }, repository: { id: 'repo-1', name: 'Bedrock Panel' } });
     throw new Error(`Unexpected request: ${url}`);
   });
   const result = await server.handle('run', context({ query: { organization: 'contoso', project: 'project-1', run: '42' } }));
@@ -242,7 +242,7 @@ test('pull requests and work items stay read-only and retain explicit links', as
   server._test.setFetch(async (url, options) => {
     if (url.includes('/_apis/projects')) return response({ value: [{ id: 'project-1', name: 'Quake', state: 'wellFormed' }] });
     if (url.includes('/git/pullrequests/9/workitems')) return response({ value: [{ id: 73 }] });
-    if (url.includes('/git/pullrequests/9?')) return response({ pullRequestId: 9, title: 'Review', status: 'active', description: 'Read only', repository: { id: 'repo-1', name: 'open-quake' }, reviewers: [{ displayName: 'Sam', vote: 10 }] });
+    if (url.includes('/git/pullrequests/9?')) return response({ pullRequestId: 9, title: 'Review', status: 'active', description: 'Read only', repository: { id: 'repo-1', name: 'Bedrock Panel' }, reviewers: [{ displayName: 'Sam', vote: 10 }] });
     if (url.includes('/wit/workitemsbatch')) {
       const body = JSON.parse(options.body);
       return response({ value: [{ id: body.ids[0], fields: { 'System.Title': 'Fix issue', 'System.WorkItemType': 'Bug', 'System.State': 'Active' }, relations: [{ rel: 'ArtifactLink', url: 'vstfs:///Git/PullRequestId/x', attributes: { name: 'Pull Request' } }] }] });

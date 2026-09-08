@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const { pathToFileURL } = require('url');
 
-contextBridge.exposeInMainWorld('openQuakeConfig', {
+contextBridge.exposeInMainWorld('bedrockConfig', {
   getConfig() { return ipcRenderer.invoke('getConfig'); },
   getAppVersion() { return ipcRenderer.invoke('getAppVersion'); },
   getApps() { return ipcRenderer.invoke('getApps'); },

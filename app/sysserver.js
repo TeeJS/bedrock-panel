@@ -140,7 +140,7 @@ function json(res, obj) { res.writeHead(200, headers('application/json; charset=
 function done(res, ok) { res.writeHead(ok ? 200 : 400, headers('application/json')); res.end(JSON.stringify({ ok: !!ok })); }
 function githubJson(res, obj, nextCapability) {
   const h = headers('application/json; charset=utf-8');
-  if (nextCapability) h['X-Open-Quake-Capability'] = nextCapability;
+  if (nextCapability) h['X-Bedrock-Panel-Capability'] = nextCapability;
   res.writeHead(200, h);
   res.end(JSON.stringify(obj));
 }

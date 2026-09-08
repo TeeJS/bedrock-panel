@@ -1,7 +1,7 @@
     // ---- push-to-talk: panel relays the knob HOLD here (window.pttStart / window.pttStop).
     // Record the mic while held -> POST to OWUI's local-Whisper transcription -> fill the input + send.
     (function () {
-      var cfg = window.openQuakeChatRuntimeConfig || {};
+      var cfg = window.bedrockChatRuntimeConfig || {};
       var key = cfg.apiKey || '';
       var sttUrl = '';
       try { sttUrl = new URL(cfg.endpoint).origin + '/api/v1/audio/transcriptions'; } catch (e) {}

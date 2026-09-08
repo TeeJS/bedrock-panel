@@ -61,7 +61,7 @@
           "default": "",
           "maxLength": 128,
           "advanced": true,
-          "help": "Development/team override. Leave blank to use the built-in open-quake Discord application. Register http://127.0.0.1:51120/callback for a custom app."
+          "help": "Development/team override. Leave blank to use the built-in Bedrock Panel Discord application. Register http://127.0.0.1:51120/callback for a custom app."
         },
         {
           "key": "customVoiceScopes",
@@ -6451,7 +6451,7 @@
       },
       {
         "key": "saveFolder",
-        "label": "Save folder (blank = Documents\\OpenQuake Translations)",
+        "label": "Save folder (blank = Documents\\Bedrock Panel Translations)",
         "type": "text",
         "default": ""
       },

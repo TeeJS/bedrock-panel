@@ -118,14 +118,14 @@ indefinite heartbeat to keep a phantom entity alive. MQTT discovery creates a re
 with nothing to configure on the HA side.
 
 What Bedrock Panel publishes (topics use `<prefix>/<hostname>/…`, prefix configurable, default
-`open-quake`):
+`bedrock-panel`):
 
 | Topic | Retained | Payload |
 |---|---|---|
-| `homeassistant/binary_sensor/<host>_open_quake_busy/config` | yes | discovery document; HA creates `binary_sensor.open_quake_busy` from it |
-| `open-quake/<host>/busy` | yes | `ON` / `OFF` |
-| `open-quake/<host>/attributes` | yes | `{reason, app, since, recording, override}` |
-| `open-quake/<host>/availability` | yes | `online` / `offline` |
+| `homeassistant/binary_sensor/<host>_bedrock_panel_busy/config` | yes | discovery document; HA creates `binary_sensor.bedrock_panel_busy` from it |
+| `bedrock-panel/<host>/busy` | yes | `ON` / `OFF` |
+| `bedrock-panel/<host>/attributes` | yes | `{reason, app, since, recording, override}` |
+| `bedrock-panel/<host>/availability` | yes | `online` / `offline` |
 
 `reason` is `call`, `recording`, or `manual`, so an automation can distinguish "on a Teams call" from
 "marked busy by hand".

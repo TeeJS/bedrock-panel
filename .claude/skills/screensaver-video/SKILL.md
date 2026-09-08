@@ -1,9 +1,9 @@
 ---
 name: screensaver-video
-description: Generate seamlessly-looping 1920x480 screensaver/wallpaper videos for the open-quake touch panel using T.J.'s ComfyUI server (192.168.1.95:8188, RTX 3090). Use this whenever T.J. asks for a screensaver video, panel wallpaper, animated background, looping video, a video "like the DK-Suite wallpapers", or to animate a scene (aurora, matrix rain, city, landscape, etc.) for the panel — even if he doesn't say "screensaver" or "loop". Covers the full pipeline — Flux still → Wan 2.2 first-last-frame loop → verify → trim → deliver — with validated settings; do not improvise a different workflow when this applies.
+description: Generate seamlessly-looping 1920x480 screensaver/wallpaper videos for the Bedrock Panel touch panel using T.J.'s ComfyUI server (192.168.1.95:8188, RTX 3090). Use this whenever T.J. asks for a screensaver video, panel wallpaper, animated background, looping video, a video "like the DK-Suite wallpapers", or to animate a scene (aurora, matrix rain, city, landscape, etc.) for the panel — even if he doesn't say "screensaver" or "loop". Covers the full pipeline — Flux still → Wan 2.2 first-last-frame loop → verify → trim → deliver — with validated settings; do not improvise a different workflow when this applies.
 ---
 
-# Looping screensaver videos for the open-quake panel
+# Looping screensaver videos for the Bedrock Panel panel
 
 Produces mp4s for the panel's Screensaver app (see `docs/screensaver.md`: it plays mp4/webm/mov from a media folder, muted, each video through to the end). Because videos repeat, **the last frame must land back on the first frame** — everything below is built around that.
 

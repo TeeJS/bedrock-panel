@@ -22,7 +22,7 @@ test('githubContentsUrl builds an authenticated Contents API URL', () => {
 });
 
 test('isAllowedRepoUrl accepts only github hosts', () => {
-  assert.equal(isAllowedRepoUrl('https://github.com/TeeJS/open-quake/tree/main/community-apps'), true);
+  assert.equal(isAllowedRepoUrl('https://github.com/TeeJS/bedrock-panel/tree/main/community-apps'), true);
   assert.equal(isAllowedRepoUrl('https://raw.githubusercontent.com/o/r/main/apps'), true);
   assert.equal(isAllowedRepoUrl('https://gitlab.com/o/r/-/tree/main/apps'), false);
   assert.equal(isAllowedRepoUrl('https://evil.example.com/apps'), false);
@@ -31,10 +31,10 @@ test('isAllowedRepoUrl accepts only github hosts', () => {
 });
 
 test('repoRawBase normalizes a github tree URL to the raw base', () => {
-  assert.equal(repoRawBase('https://github.com/TeeJS/open-quake/tree/main/community-apps'),
-    'https://raw.githubusercontent.com/TeeJS/open-quake/main/community-apps');
-  assert.equal(repoRawBase('https://github.com/TeeJS/open-quake/tree/main/community-apps/'),
-    'https://raw.githubusercontent.com/TeeJS/open-quake/main/community-apps');
+  assert.equal(repoRawBase('https://github.com/TeeJS/bedrock-panel/tree/main/community-apps'),
+    'https://raw.githubusercontent.com/TeeJS/bedrock-panel/main/community-apps');
+  assert.equal(repoRawBase('https://github.com/TeeJS/bedrock-panel/tree/main/community-apps/'),
+    'https://raw.githubusercontent.com/TeeJS/bedrock-panel/main/community-apps');
   assert.equal(repoRawBase('https://github.com/o/r/blob/dev/apps'),
     'https://raw.githubusercontent.com/o/r/dev/apps');
   assert.equal(repoRawBase('https://github.com/o/r/tree/main'),
@@ -51,10 +51,10 @@ test('repoRawBase passes through raw + custom http(s), rejects junk', () => {
 });
 
 test('indexUrl and zipUrl resolve against the base', () => {
-  const base = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';
-  assert.equal(indexUrl(base), 'https://raw.githubusercontent.com/TeeJS/open-quake/main/community-apps/index.json');
+  const base = 'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps';
+  assert.equal(indexUrl(base), 'https://raw.githubusercontent.com/TeeJS/bedrock-panel/main/community-apps/index.json');
   assert.equal(zipUrl(base, { zip: 'quake-bird.zip' }),
-    'https://raw.githubusercontent.com/TeeJS/open-quake/main/community-apps/quake-bird.zip');
+    'https://raw.githubusercontent.com/TeeJS/bedrock-panel/main/community-apps/quake-bird.zip');
   assert.equal(zipUrl(base, { zip: 'https://cdn.example.com/x.zip' }), 'https://cdn.example.com/x.zip');
   assert.equal(zipUrl(base, {}), '');
 });

@@ -1,8 +1,8 @@
-# Translation for open-quake — implementation handoff
+# Translation for Bedrock Panel — implementation handoff
 
 ## Objective
 
-Add opt-in translation without changing raw transcripts. open-quake talks to a translation
+Add opt-in translation without changing raw transcripts. Bedrock Panel talks to a translation
 service over localhost HTTP, using a documented subset of the LibreTranslate API. The preferred
 backend is a small CTranslate2 + OPUS-MT service; a stock LibreTranslate instance remains a
 drop-in alternative. An existing configured LLM backend may be used only when the user explicitly
@@ -39,7 +39,7 @@ Phase 1 must be complete and tested before starting Phase 2 or 3.
 - Editing or replacing raw transcripts.
 - Translating audio directly.
 - Simultaneous interpreting before an utterance has completed STT.
-- Bundling a Python runtime or translation models in the open-quake installer.
+- Bundling a Python runtime or translation models in the Bedrock Panel installer.
 - Automatically downloading or executing a translation server from Electron.
 - Exposing a generic renderer-controlled proxy to the configured translation URL.
 - Translating arbitrary HTML in the first release.
@@ -47,7 +47,7 @@ Phase 1 must be complete and tested before starting Phase 2 or 3.
 
 ## External service contract
 
-The open-quake client supports this subset of the LibreTranslate API.
+The Bedrock Panel client supports this subset of the LibreTranslate API.
 
 ### `GET /health`
 
@@ -149,7 +149,7 @@ Implementation requirements:
 - Include server URL, source language, default target language, fallback policy, connection test,
   and a dynamically loaded language-pair selector.
 - Saving an unreachable server is allowed; the connection test reports the problem without blocking
-  the rest of open-quake.
+  the rest of Bedrock Panel.
 
 ## New main-process modules
 
@@ -239,7 +239,7 @@ Translation algorithm:
 2. Require a `-diarizer-response.json` transcript; do not treat meeting-info sidecars as transcripts.
 3. Parse JSON and require a non-empty `segments` array.
 4. Extract non-empty `segment.text` values as structured items.
-5. Keep `segment.speaker` in open-quake. Never send speaker names through machine translation.
+5. Keep `segment.speaker` in Bedrock Panel. Never send speaker names through machine translation.
 6. Merge consecutive segments from the same speaker only when needed to reduce requests, while
    retaining enough mapping to produce stable output order.
 7. Translate text as an array and verify result count/order.
@@ -373,7 +373,7 @@ Required behavior:
 ## Preferred CT2 + OPUS-MT service deliverable
 
 This service is a separate component/repository. If the programming task is scoped only to
-open-quake, implement the client contract and mocks but do not place a Python runtime in this repo.
+Bedrock Panel, implement the client contract and mocks but do not place a Python runtime in this repo.
 
 Required service behavior:
 
@@ -452,7 +452,7 @@ Update:
 - `NOTICE` or the appropriate third-party attribution document for official OPUS-MT model attribution
   when the preferred service is distributed.
 - Building/deployment documentation for the separate service, without suggesting that Python or
-  models ship inside open-quake.
+  models ship inside Bedrock Panel.
 
 Do not publish unverified performance numbers as guarantees. Label benchmark hardware, model pair,
 quantization, batch size, and cold/warm state.

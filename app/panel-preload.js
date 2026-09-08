@@ -9,7 +9,7 @@ function on(channel, callback) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 
-contextBridge.exposeInMainWorld('openQuakePanel', {
+contextBridge.exposeInMainWorld('bedrockPanel', {
   launch(action) { ipcRenderer.send('launch', action); },
   volume(value) { ipcRenderer.send('volume', value); },
   media(cmd) { ipcRenderer.send('media', cmd); },
