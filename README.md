@@ -5,8 +5,6 @@
   </picture>
 </p>
 
-# Bedrock Panel
-
 **[Website](https://bedrockpanel.com)** · **[Discord](https://discord.gg/NAvWXZZBZ)** · **[Download](https://github.com/TeeJS/bedrock-panel/releases/)** · **[Docs](docs/README.md)**
 
 *A multi-use control platform for your computer.*
