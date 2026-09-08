@@ -10,6 +10,10 @@ const fs = require('fs');
 const sign = require('./sign');
 
 exports.default = async function (context) {
+  // Windows only: the helpers are .exe/.node files signed with Azure Trusted Signing. A macOS build
+  // is signed (ad-hoc for now) by electron-builder itself, which also covers everything under
+  // <Name>.app/Contents/Resources/app.asar.unpacked — nothing for this hook to do there.
+  if (context.electronPlatformName !== 'win32') { console.log('  • afterPack: ' + context.electronPlatformName + ' — no Windows helper signing'); return; }
   const dir = path.join(context.appOutDir, 'resources', 'app.asar.unpacked', 'app', 'native');
   let natives = [];
   try { natives = fs.readdirSync(dir).filter(f => /\.(?:exe|node)$/i.test(f)); } catch (e) {}

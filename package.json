@@ -14,7 +14,8 @@
     "build:dpapi": "node build-dpapi.js",
     "build:smtc": "node build-smtc.js",
     "test": "node --test test/*.test.js",
-    "dist": "node build-dpapi.js && node build-smtc.js && electron-builder --win"
+    "dist": "node build-dpapi.js && node build-smtc.js && electron-builder --win",
+    "dist:mac": "electron-builder --mac"
   },
   "license": "SEE LICENSE IN LICENSE",
   "keywords": [
@@ -61,7 +62,11 @@
       "!.ua/**",
       "!community-apps/**",
       "!community-wallpapers/**",
-      "!node_modules/win-ca/pem/**"
+      "!node_modules/win-ca/pem/**",
+      "!packaging/**",
+      "!test/**",
+      "!X/**",
+      "!.claude/**"
     ],
     "npmRebuild": false,
     "afterPack": "./afterpack.js",
@@ -90,6 +95,30 @@
       "perMachine": false,
       "guid": "6b73d4a7-2e13-5aef-9474-9432dfa413dd",
       "artifactName": "bedrock-panel-setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities",
+      "icon": "app/icon-mac.png",
+      "artifactName": "bedrock-panel-${arch}.${ext}",
+      "minimumSystemVersion": "14.2",
+      "identity": "-",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "packaging/mac/entitlements.mac.plist",
+      "entitlementsInherit": "packaging/mac/entitlements.mac.inherit.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Bedrock Panel records your microphone for meeting recordings, dictation, and the voice apps.",
+        "NSAudioCaptureUsageDescription": "Bedrock Panel records what your Mac is playing (the other side of a meeting) for meeting recordings.",
+        "NSLocalNetworkUsageDescription": "Bedrock Panel talks to Home Assistant, OBS, WLED lights, and MQTT brokers on your local network.",
+        "NSDocumentsFolderUsageDescription": "Bedrock Panel saves meeting recordings and transcripts under Documents by default."
+      }
+    },
+    "dmg": {
+      "sign": false
     }
   }
 }

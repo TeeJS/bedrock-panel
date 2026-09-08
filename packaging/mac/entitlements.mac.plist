@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the main Bedrock Panel.app (electron-builder `mac.entitlements`).
+  Lives here because `build/` is gitignored. Keep this list minimal: every key is a capability the
+  notarization review sees.
+-->
+<plist version="1.0">
+<dict>
+  <!-- V8 needs a JIT-able region. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <!-- Required while the signature is ad-hoc (no Team ID): hardened runtime would otherwise refuse to
+       load our own frameworks and .node modules. Try removing it once a Developer ID signs every
+       nested Mach-O. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- Microphone under hardened runtime. electron-builder's default template omits it, and without it
+       getUserMedia "succeeds" with no samples. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <!-- AppleScript control of Music/Spotify (native helpers milestone). Harmless until then. -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+</dict>
+</plist>

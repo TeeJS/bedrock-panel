@@ -202,6 +202,11 @@ Visual Studio 2022 C++ build tools and a working Python/node-gyp setup. See
   use injected fakes like the reserved-display tests.
 - Do not assume C# helper compilation succeeded merely because `npm start` exited the build
   step successfully; `build-smtc.js` intentionally treats unavailable toolchains as non-fatal.
+- Never add a platform-specific `files` list (`build.mac.files`, `build.win.files`) to the
+  electron-builder config. In electron-builder 26.15 it replaces the global `build.files` list instead
+  of extending it, so a list of negations silently drops every global exclusion and default ignore —
+  the first macOS build packed `.git`, `docs`, `community-apps`, and the in-progress `dist` output
+  (384 MB instead of 131 MB). Keep all exclusions in the global `build.files`.
 - `PROJECT.md` is a feature charter, not a complete architecture document. Validate its claims
   against current code before using it as implementation guidance.
 - Tests are sparse and do not cover real Electron windows, hardware, dashboards, or packaging.
