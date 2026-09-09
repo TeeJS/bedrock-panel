@@ -158,20 +158,24 @@ test('a stale grant (no prompt, no grant within the grace period) is reset with 
   } finally { Date.now = origNow; }
 });
 
-test('Accessibility: the prompt call is trusted after a stale-entry reset; without a reset the pane is the fallback', async () => {
-  let entryReset = false;
-  const prefs = { calls: [], isTrustedAccessibilityClient(prompt) { prefs.calls.push(['axs', prompt]); return entryReset; }, getMediaAccessStatus() { return 'granted'; }, async askForMediaAccess() { return true; } };
-  const execFile = (file, args, opts, cb) => { if (file === '/usr/bin/tccutil') { entryReset = true; return cb(null, ''); } cb(new Error('unexpected ' + args.join(' '))); };
+test('Accessibility: one prompt call, then wait for the grant — never a reset (it would wipe an entry being added by hand)', async () => {
+  let toggledOn = false;
+  const prefs = { calls: [], isTrustedAccessibilityClient(prompt) { prefs.calls.push(['axs', prompt]); return toggledOn; }, getMediaAccessStatus() { return 'granted'; }, async askForMediaAccess() { return true; } };
+  const tccutil = [];
+  const execFile = (file, args, opts, cb) => { if (file === '/usr/bin/tccutil') { tccutil.push(args); return cb(null, ''); } cb(new Error('unexpected ' + args.join(' '))); };
   let t = 0;
   const origNow = Date.now;
   Date.now = () => 1000 + t;
   try {
-    const p = createMacPermissions({ platform: 'darwin', systemPreferences: prefs, helperPath: '/x/privacy', execFile, bundleId: 'com.apple.Terminal', pollMs: 100, pollTimeoutMs: 2000, staleGraceMs: 300, sleep: async ms => { t += ms; } });
-    assert.deepStrictEqual(await p.request('accessibility'), { ok: true, reset: true });
-    assert.deepStrictEqual(prefs.calls.filter(c => c[1] === true).length, 2, 'prompted, reset, prompted again');
-    // No execFile at all (no helper wiring) = no reset possible: the request just reports not granted.
-    const q = createMacPermissions({ platform: 'darwin', systemPreferences: { isTrustedAccessibilityClient: () => false, getMediaAccessStatus: () => 'granted' }, pollMs: 100, pollTimeoutMs: 500, staleGraceMs: 200, sleep: async ms => { t += ms; } });
+    // The person adds the entry with + and toggles it on while we poll.
+    const p = createMacPermissions({ platform: 'darwin', systemPreferences: prefs, helperPath: '/x/privacy', execFile, bundleId: 'com.apple.Terminal', pollMs: 100, pollTimeoutMs: 5000, staleGraceMs: 300, sleep: async ms => { t += ms; if (t >= 1500) toggledOn = true; } });
+    assert.deepStrictEqual(await p.request('accessibility'), { ok: true });
+    assert.strictEqual(prefs.calls.filter(c => c[1] === true).length, 1, 'exactly one prompt call');
+    assert.deepStrictEqual(tccutil, [], 'no tccutil reset for Accessibility');
+    // Never granted: reports not-granted after the poll window, still without a reset.
+    const q = createMacPermissions({ platform: 'darwin', systemPreferences: { isTrustedAccessibilityClient: () => false, getMediaAccessStatus: () => 'granted' }, helperPath: '/x/privacy', execFile, pollMs: 100, pollTimeoutMs: 500, staleGraceMs: 200, sleep: async ms => { t += ms; } });
     assert.deepStrictEqual(await q.request('accessibility'), { ok: false, reason: 'not-granted' });
+    assert.deepStrictEqual(tccutil, []);
   } finally { Date.now = origNow; }
 });
 

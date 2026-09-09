@@ -122,17 +122,17 @@ function createMacPermissions({
     return { ok: false, reason: 'not-granted' };
   }
 
-  // Same idea for Accessibility: isTrustedAccessibilityClient(true) shows the prompt only when no
-  // entry exists, so a stale one is cleared first when the prompt does not lead to a grant.
+  // Accessibility: one prompt call (macOS shows it where it shows one at all), then wait for the
+  // grant. No automatic reset here: on a Mac without prompts the person is adding the entry with +
+  // while we wait, and a reset would wipe that entry before it is toggled on (it did, once). A stale
+  // entry from an older build is removed and re-added by hand (docs/macos.md); resetStaleGrant stays
+  // available for callers that know the entry is stale.
   async function requestAccessibility() {
     promptedAccessibility = true;
     const trusted = () => { try { return !!systemPreferences.isTrustedAccessibilityClient(false); } catch (e) { return false; } };
     if (systemPreferences.isTrustedAccessibilityClient(true)) return { ok: true };
     const deadline = Date.now() + pollTimeoutMs;
-    const pollUntil = async until => { while (Date.now() < until) { await sleep(pollMs); if (trusted()) return true; } return false; };
-    if (await pollUntil(Math.min(deadline, Date.now() + staleGraceMs))) return { ok: true };
-    if (await resetStaleGrant('Accessibility') && systemPreferences.isTrustedAccessibilityClient(true)) return { ok: true, reset: true };
-    if (await pollUntil(deadline)) return { ok: true, reset: resetDone.has('Accessibility') };
+    while (Date.now() < deadline) { await sleep(pollMs); if (trusted()) return { ok: true }; }
     return { ok: false, reason: 'not-granted' };
   }
 

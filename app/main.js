@@ -48,28 +48,20 @@ let deviceAccessibilityRequest = null; // its in-flight promise: a refused touch
 // CGRequestListenEventAccess, and IOHIDDeviceOpen, usage string present). Accessibility, on the
 // other hand, prompts reliably, lists the app, and COVERS Input Monitoring for physical devices (the
 // TCC rule Karabiner-Elements relies on: "granting Accessibility also provides the permission needed
-// to capture input events from physical devices"). The app needs Accessibility anyway (Reserved
-// Display, keystrokes), so one prompt unlocks everything: a refused device open asks for
-// Accessibility, and the connector's rescan picks the touchscreen up as soon as it is granted.
-//
-// And some Macs (T.J.'s macOS 26.6) show NO prompt for either permission and do not list the app
-// on request — the + button in System Settings is the only way in. So the guidance does not wait
-// for a prompt: the pane opens at once with the + steps on the panel, the Accessibility prompt is
-// requested alongside (it appears where macOS still shows one), and the rescan connects the
-// touchscreen the moment either permission lands.
+// to capture input events from physical devices") — on paper. On T.J.'s macOS 26.6 neither
+// permission is ever prompted for or listed on request, and an Accessibility grant alone did NOT
+// open the touch controller; the Input Monitoring entry added with + did. So the touchscreen path
+// (dev 'error' below) opens the Input Monitoring pane with the + steps and nothing else, and this
+// function serves Reserved Display only: one Accessibility prompt call (shown where macOS shows one),
+// the pane with the + steps, and a wait for the grant — never a reset, never a second pane.
 function requestAccessibilityForDevice(reason) {
   if (deviceAccessibilityRequest) return deviceAccessibilityRequest;
   console.log('[permissions] Accessibility requested (' + reason + ')');
-  const steps = 'System Settings → Privacy & Security → ' + (reason === 'Reserved Display' ? 'Accessibility' : 'Input Monitoring (or Accessibility)') +
-    ': click +, pick Bedrock Panel from Applications, turn it on. macOS shows no prompt for this on some Macs.';
-  panelNotice((reason === 'Reserved Display' ? 'Reserved Display needs the Accessibility permission. ' : 'macOS is blocking the touchscreen. ') + steps);
-  if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings(reason === 'Reserved Display' ? 'accessibility' : 'inputMonitoring'); }
+  const steps = 'System Settings → Privacy & Security → Accessibility: click +, pick Bedrock Panel from Applications, turn it on. macOS shows no prompt for this on some Macs.';
+  panelNotice('Reserved Display needs the Accessibility permission. ' + steps);
+  if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('accessibility'); }
   deviceAccessibilityRequest = macPermissions.request('accessibility').then(r => {
-    if (r && r.ok) {
-      console.log('[permissions] Accessibility granted' + (r.reset ? ' after clearing a stale entry' : '') + ' — the touchscreen reconnects on the next rescan');
-      panelNotice('Accessibility granted.');
-      return r;
-    }
+    if (r && r.ok) { console.log('[permissions] Accessibility granted'); panelNotice('Accessibility granted — Reserved Display is active.'); return r; }
     console.log('[permissions] Accessibility not granted (' + (r && r.reason) + ') — ' + steps);
     return r;
   });
@@ -4627,13 +4619,17 @@ app.whenReady().then(async () => {
   dev.on('state', s => { if (s && typeof s === 'object') Object.assign(lastDeviceState, s); });
   dev.on('error', e => {
     console.log('dev error:', e.message);
-    // macOS refused to open a device (Input Monitoring). Ask for Accessibility, which covers it and
-    // is the one permission macOS actually prompts for — see requestAccessibilityForDevice. A denial
-    // recorded for Input Monitoring by an earlier build's request is cleared first so it cannot
-    // override the Accessibility grant. Once per session; the rescan retries every few seconds.
+    // macOS refused to open a device: Input Monitoring. Open that pane with the + steps on the panel
+    // (macOS records a silent denial for the refused open and shows no prompt — see
+    // requestAccessibilityForDevice for what was tried), clear the denial it just recorded so the
+    // person's + entry is not shadowed, and let the rescan pick the device up. No Accessibility call
+    // here: it opened a second pane and, being synchronous, stalled a launch on T.J.'s Mac.
     if (process.platform === 'darwin' && e && e.cause && e.cause.code === 'HID_OPEN_FAILED' && !deviceAccessRequested) {
       deviceAccessRequested = true;
-      macPermissions.resetStaleGrant('ListenEvent').then(() => requestAccessibilityForDevice('touch controller refused'), () => requestAccessibilityForDevice('touch controller refused'));
+      panelNotice('macOS is blocking the touchscreen. System Settings → Privacy & Security → Input Monitoring: click +, pick Bedrock Panel from Applications, turn it on. (macOS shows no prompt for this.)');
+      macPermissions.resetStaleGrant('ListenEvent').catch(() => {}).then(() => {
+        if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('inputMonitoring'); }
+      });
     }
   });
   dev.start();
