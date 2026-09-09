@@ -20,7 +20,8 @@ related components, but verify conclusions against current source. The implement
   Both native modules ship macOS prebuilds, so nothing is rebuilt on a Mac.
 - C#/.NET Framework helpers provide Windows SMTC and reserved-display integration. Their macOS
   counterparts are the Swift helpers in `native/mac/` (system volume, foreground app and window
-  focus, mic-session auto-record, now-playing and transport, reserved display); Outlook meeting info
+  focus, mic-session auto-record, now-playing and transport, reserved display, the panel display's
+  place in the arrangement, and the Input Monitoring / Screen Recording prompts); Outlook meeting info
   stays Windows-only. `app/nativeHelpers.js` maps each feature to its per-platform binary,
   and `app/macPermissions.js` owns the macOS permission status/prompts.
 - `electron-builder` produces Windows portable and NSIS artifacts (Azure Trusted Signing when the

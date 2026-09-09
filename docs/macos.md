@@ -45,7 +45,7 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 
 | Feature | Pane | Who | When macOS asks | If it does not ask |
 |---|---|---|---|---|
-| **DK-QUAKE touchscreen** (the app takes the touch controller away from macOS, which otherwise treats it as a mouse: every tap would be a click on the Quake, making it the active display and pulling menus and new windows onto it) | **Input Monitoring** | Bedrock Panel / Terminal | Often not at all for the touch controller — so the app opens this pane for you the first time the touchscreen is refused, and says so on the panel | Turn **Bedrock Panel** on; click **+** and pick it from Applications if it is not listed. **If it is listed and already on, remove it with − and add it again**: until builds are notarized, every new build is a new app to macOS and the old grant is stale. The panel picks the touchscreen up within about three seconds, no restart. Device Diagnostics shows the refusal on the Touchscreen row until then. |
+| **DK-QUAKE touchscreen** (the app reads the touch controller itself; macOS demands this permission for it because the controller also carries digitizer and mouse collections) | **Input Monitoring** | Bedrock Panel / Terminal | macOS never asks for this one on its own, so the app asks for it: the first time the touchscreen is refused, macOS shows "Bedrock Panel would like to receive keystrokes from any application" (for `npm start` it names the terminal app) — click **Allow**. The same prompt is behind **Request** on the Input Monitoring row of the permissions block. | If the prompt was dismissed or does not appear (macOS shows it once per build), the app opens this pane and says so on the panel: turn **Bedrock Panel** on — the prompt has already listed it, so **+** is only needed if it is missing. **If it is listed and already on, remove it with − and add it again**: until builds are notarized, every new build is a new app to macOS and the old grant is stale. The panel picks the touchscreen up within about three seconds, no restart. Device Diagnostics shows the refusal on the Touchscreen row until then. |
 | **Knob** | none | | | Works as soon as it is plugged in. |
 | **Keystrokes** (paste tiles, macros, meeting hotkeys, media and volume keys) and **Reserved Display** | **Accessibility** | Bedrock Panel / Terminal | The first keystroke, or the **Request** button | Open the pane and turn the entry on. Takes effect immediately. |
 | **Microphone** (meeting recordings, dictation, AI Voice, Live Translate) | **Microphone** | Bedrock Panel / Terminal | The first recording or dictation | Open the pane and turn the entry on. |
@@ -70,10 +70,12 @@ for `npm start` runs.)
 
 ## 4. Reserved Display: keep other windows off the panel
 
-macOS decides where an app opens its windows and will happily put them on the panel — where they
-end up behind it, because in Panel mode the panel always covers that display, menu bar and Dock
-included. Reserved Display moves them to another display within half a second. It is on by default
-on a Mac and only needs Accessibility.
+macOS opens an app's new windows on the *active* display — the one you clicked last — and will
+happily put them on the panel, where they end up behind it, because in Panel mode the panel always
+covers that display, menu bar and Dock included. Two things keep that from happening: the display
+arrangement rule in section 5 keeps the cursor (and so your clicks) off the Quake, and Reserved
+Display moves any window that still lands there to another display within half a second. Reserved
+Display is on by default on a Mac and only needs Accessibility.
 
 1. Grant **Accessibility** (section 3). Until it is granted, the panel shows a notice the moment a
    window lands behind it.
@@ -89,14 +91,28 @@ Space cannot be moved by any app.
 
 ## 5. Panel mode on a Mac
 
-Panel mode places the panel on the 1920×480 display using macOS simple full screen (no separate
-Space) and never takes keyboard focus, so touching the panel does not steal focus from what you are
-doing. The panel window sits above the menu bar and the Dock on that display, so neither shows on
-the Quake. The one thing that can still appear over it is macOS's privacy indicator in the top-right
-corner: orange for the microphone, green for the camera, **purple for screen recording** — and a
-DisplayLink adapter shows the purple one permanently, because DisplayLink Manager records the screen
-to drive its displays. That indicator belongs to macOS; no app can hide it. The Windows-only **Set up
-touchscreen** wizard has no macOS counterpart and is not shown.
+Panel mode covers the 1920×480 display with a plain window built the way DK-Suite builds its own:
+no full-screen Space, pinned above the menu bar and the Dock on that display (so neither shows on
+the Quake), never the keyboard focus, and ignoring the mouse — touch arrives over the USB
+connection, so a cursor that strays onto the Quake cannot press a tile, and nothing on the panel
+steals focus from what you are doing. The one thing that can still appear over it is macOS's
+privacy indicator in the top-right corner: orange for the microphone, green for the camera,
+**purple for screen recording** — and a DisplayLink adapter shows the purple one permanently,
+because DisplayLink Manager records the screen to drive its displays. That indicator belongs to
+macOS; no app can hide it. The Windows-only **Set up touchscreen** wizard has no macOS counterpart
+and is not shown.
+
+**Display arrangement.** With "Displays have separate Spaces" (the macOS default) the display you
+clicked last owns the active menu bar and gets every new window, and a 1920×480 strip arranged
+under a big display is exactly where the cursor lands when it moves down off that display — one
+click there and your menus open on the Quake, behind the panel. So Bedrock Panel keeps the Quake at
+the **far right of your other displays, never mirrored and never the main display**, the same rule
+DK-Suite enforces. It checks at launch, whenever a display is added or changes, and whenever you
+save Settings; when it has to move the Quake the panel says so and the log shows
+`[display-arrange] arrangement fixed`. The change is written to macOS like a change in System
+Settings → Displays, so it stays after Bedrock Panel quits, and nothing else about your displays is
+touched. To arrange the Quake yourself, untick **Keep the panel display at the far right of the
+display arrangement** under ⚙ Settings → Device → Monitor first, or it will be moved back.
 
 ## 6. What is still Windows-only
 
@@ -122,9 +138,16 @@ Secrets saved on Windows cannot be read on a Mac: after copying a config over, r
 - **A purple dot in the panel's top-right corner** — macOS's screen-recording indicator, usually
   DisplayLink Manager (click the dot in the menu bar to see who is recording). Not Bedrock Panel, and
   not hideable.
-- **App menus disappear, or the menu bar looks inactive on your main display** — macOS made the
-  Quake the active display. Click once on your main display to bring it back. It happens when
-  something clicks on the Quake: before Input Monitoring is granted the touchscreen itself does that
-  (macOS treats it as a mouse until the app can take it over), and quitting Bedrock Panel lets the
-  Quake go dark while macOS still uses it. If windows are stuck on a dark Quake, unplug its display
-  cable for a few seconds; macOS moves them to the remaining displays.
+- **App menus open behind the panel, or the menu bar looks inactive on your main display** — macOS
+  made the Quake the active display, which takes a click on it: the cursor slid onto the Quake
+  (arranged under or beside a display) and the next click landed there. Click once on your main
+  display to bring the menus back, and leave the far-right arrangement rule on (section 5) so the
+  cursor cannot get there. Quitting Bedrock Panel lets the Quake go dark while macOS still uses it;
+  if windows are stuck on a dark Quake, unplug its display cable for a few seconds and macOS moves
+  them to the remaining displays.
+- **The Quake jumped to the far right of the display arrangement** — the arrangement rule in
+  section 5 did that (the panel said so, and the log has `[display-arrange]`). Untick the setting
+  under ⚙ Settings → Device → Monitor to arrange it yourself.
+- **`connect: touch (shared, seize refused: …)` in the log** — macOS let the app read the
+  touchscreen but not take it away from its own drivers; touch works, and the app is in the same
+  mode DK-Suite runs in. Nothing to do.

@@ -3755,7 +3755,7 @@
   // ---- settings page ----
   const DEFAULT_APP_REPO = 'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps';
   const LEGACY_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';   // saved by pre-rename installs
-  const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: IS_MAC, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
+  const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: IS_MAC, panelFarRight: IS_MAC, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
   function appSettings() { return Object.assign({}, DEFAULT_SETTINGS, config.settings || {}); }
   function renderSettings() {
     ['tilegrid', 'mergebar', 'tileform', 'iconpane'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });
@@ -3915,7 +3915,7 @@
 
 ${IS_MAC ? `
       <p class="sectitle">macOS permissions</p>
-      <details class="hint"><summary>macOS asks for each permission the first time a feature needs it; this shows what is granted and opens the matching System Settings pane.</summary> <b>Accessibility</b> lets Bedrock Panel send keystrokes (paste tiles, macros, meeting hotkeys, media keys). <b>Microphone</b> is for recordings, dictation, and the voice apps. <b>Screen &amp; System Audio Recording</b> covers slide capture and the other side of a meeting recording (System Audio Recording Only). Grants attach to the app build, so an update may ask again until builds are notarized.</details>
+      <details class="hint"><summary>macOS asks for each permission the first time a feature needs it; this shows what is granted and opens the matching System Settings pane. <b>Input Monitoring</b> (the DK-QUAKE touchscreen) is the one macOS never asks for by itself: the first refused touchscreen open raises its prompt, and <b>Request</b> raises it again.</summary> <b>Accessibility</b> lets Bedrock Panel send keystrokes (paste tiles, macros, meeting hotkeys, media keys). <b>Microphone</b> is for recordings, dictation, and the voice apps. <b>Screen &amp; System Audio Recording</b> covers slide capture and the other side of a meeting recording (System Audio Recording Only). Grants attach to the app build, so an update may ask again until builds are notarized.</details>
       <div id="sMacPerms"></div>` : `
       <p class="sectitle">Touchscreen</p>
       <details class="hint"><summary>If touches land on the wrong monitor, click <b>Set up touchscreen</b>.</summary> Bedrock Panel launches Windows' built-in touch-identify wizard (the one Microsoft buried behind the broken-in-24H2 Tablet PC Settings UI) — accept the UAC prompt, then <b>press Enter on your keyboard</b> to skip past your other monitors as the prompt cycles through them, and <b>tap the panel with your finger</b> only when the prompt appears on the panel. That writes a persistent binding under <code>HKLM\\…\\Wisp\\Pen\\Digimon</code> that survives reboot, sleep, and primary-display swaps.</details>
@@ -3928,6 +3928,11 @@ ${IS_MAC ? `
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}> Keep application windows off the panel display</label></div>
       <details class="hint"><summary>Windows dragged, opened, or relocated onto the panel display are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits. On a Mac this needs the Accessibility permission (Hardware tab → macOS permissions).</summary> If your other displays disconnect, their positions are held and restored when a display returns. Bedrock Panel, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
 
+${IS_MAC ? `
+      <p class="sectitle">Panel display arrangement</p>
+      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sFarRight" ${s.panelFarRight ? 'checked' : ''}> Keep the panel display at the far right of the display arrangement</label></div>
+      <details class="hint"><summary>macOS gives the display you clicked last the active menu bar and every new window, and a 1920×480 strip arranged under a display catches the cursor as it moves down. Parked at the far right of your other displays — never mirrored, never the main display — it stays out of the way; DK-Suite applies the same rule.</summary> Checked at launch, whenever a display is added or changes, and when this setting is saved. The arrangement is written to macOS (it is what System Settings → Displays would store), so it stays after Bedrock Panel quits; nothing else about your displays is touched. Paused during Monitor mode.</details>
+` : ''}
       <p class="sectitle">Monitor mode <span id="sMonPill" class="stpill off">checking…</span></p>
       <details class="hint"><summary>Use the device as a normal monitor: it shows your Windows desktop and touch acts as the mouse.</summary> Enter it below, from the tray menu, or with a “System → monitor” tile; exit from the tray. These set what the knob does while in Monitor mode.</details>
       <div class="row"><button id="sMonEnter" disabled>Enter Monitor mode</button><span id="sMonEnterMsg" class="hint" style="margin:0 0 0 10px"></span></div>
@@ -5118,7 +5123,8 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
           if (!st || !st.supported) { el.innerHTML = ""; return; }
           const ROWS = [["accessibility", "Accessibility — keystrokes (paste tiles, macros, meeting hotkeys, media keys) and Reserved Display"], ["inputMonitoring", "Input Monitoring — the DK-QUAKE touchscreen"], ["microphone", "Microphone — recordings, dictation, voice apps"], ["screen", "Screen &amp; System Audio Recording — slide capture, and the screen part of a meeting recording"], ["systemAudio", "System Audio Recording Only — the other side of a meeting recording"]];
           const pill = v => v === "granted" ? ["ok", "granted"] : v === "not-determined" ? ["off", "not asked yet"] : v == null ? ["off", "check in System Settings"] : ["off", v === "denied" || v === "restricted" ? "not granted" : "unknown"];
-          const requestable = { accessibility: 1, microphone: 1, screen: 1 };   // macOS has no query or prompt API for the others: System Settings only
+          // Input Monitoring is promptable only through the bundled privacy helper (its status is then present); macOS has no query or prompt API for the rest: System Settings only.
+          const requestable = { accessibility: 1, microphone: 1, screen: 1, inputMonitoring: st.inputMonitoring != null ? 1 : 0 };
           el.innerHTML = ROWS.map(([k, label]) => { const [cls, txt] = pill(st[k]); return `<div class="row" style="gap:8px;align-items:center"><span style="flex:1">${label}</span><span class="stpill ${cls}">${txt}</span>${st[k] === "granted" || !requestable[k] ? "" : `<button data-req="${k}">Request</button>`}<button data-pane="${k}">Open System Settings</button></div>`; }).join("");
           el.querySelectorAll("button[data-req]").forEach(b => b.onclick = () => configApi.requestMacPermission(b.dataset.req).then(renderMacPerms, renderMacPerms));
           el.querySelectorAll("button[data-pane]").forEach(b => b.onclick = () => configApi.openMacPrivacyPane(b.dataset.pane));
@@ -5162,6 +5168,8 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
     } else if (tab === 'monitor') {
       // Monitor mode — knob turn/press behavior (applied by the main process while in monitor mode)
       document.getElementById('sReserved').onchange = e => setS('reservedDisplay', e.target.checked);
+      const farRight = document.getElementById('sFarRight');   // macOS only
+      if (farRight) farRight.onchange = e => setS('panelFarRight', e.target.checked);
       // Live state pill + direct enter action (enter-only; exit stays on the tray)
       const monPill = document.getElementById('sMonPill'), monBtn = document.getElementById('sMonEnter'), monMsg = document.getElementById('sMonEnterMsg');
       const refreshMonState = async () => {

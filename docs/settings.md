@@ -45,11 +45,14 @@ protection and what the knob does in monitor mode):
   the ring **instantly**; **Save to device** writes them to the device's own memory so
   they persist across power-cycles.
 - **macOS permissions** (Hardware tab, Mac only) — one row each for **Accessibility** (keystrokes:
-  paste tiles, macros, meeting hotkeys, media keys), **Microphone**, and **Screen & System Audio
-  Recording** (slide capture, and the other side of a meeting recording), with a status pill,
-  **Request** (fires the system prompt where macOS allows it) and **Open System Settings** (jumps
-  to the matching Privacy & Security pane). Nothing is requested at startup — each feature asks
-  the first time it needs a permission; this block is where to check and repair. Grants attach to
+  paste tiles, macros, meeting hotkeys, media keys, and Reserved Display), **Input Monitoring**
+  (the DK-QUAKE touchscreen — the one permission macOS never asks for by itself, so the app raises
+  its prompt on the first refused touchscreen open and **Request** raises it again),
+  **Microphone**, and **Screen & System Audio Recording** (slide capture, and the other side of a
+  meeting recording), with a status pill, **Request** (fires the system prompt where macOS allows
+  it) and **Open System Settings** (jumps to the matching Privacy & Security pane). Nothing is
+  requested at startup — each feature asks the first time it needs a permission; this block is
+  where to check and repair. Grants attach to
   the app build, so an update may ask again until builds are notarized. See
   [building.md](building.md#build--run-macos) for the full list.
 - **Knob behavior** (under the ring controls) — what **turning** and **clicking** the knob
@@ -86,6 +89,14 @@ protection and what the knob does in monitor mode):
   windows are recoverably minimized with their last placement cached, then restored when a
   display returns. Bedrock Panel windows, shell/taskbar surfaces, tool windows, cloaked
   windows, and secure-desktop UI are excluded. This setting is off by default.
+- **Keep the panel display at the far right of the display arrangement** (Monitor tab, Mac only;
+  on by default) — macOS gives the display you clicked last the active menu bar and every new
+  window, and a 1920×480 strip arranged under a display catches the cursor as it moves down. The
+  app keeps the Quake at the far right of your other displays, never mirrored and never the main
+  display (DK-Suite applies the same rule), checking at launch, on display changes, and when
+  Settings are saved. The change is written to macOS like one made in System Settings → Displays;
+  nothing else about the displays is touched. Paused during Monitor Mode. Untick it to arrange the
+  Quake yourself.
 - **Monitor Mode** — intentionally exposes the Quake as a normal Windows desktop
   monitor. Reserved Display protection is suspended for the duration of Monitor Mode and
   resumes when it exits; the USB panel keepalive continues in either mode.

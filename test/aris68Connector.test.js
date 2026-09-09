@@ -14,7 +14,8 @@ function fakeHid({ failPaths = {}, writeFailures = 0 } = {}) {
   class HID {
     constructor(p, opts) {
       state.opens.push(opts ? [p, opts] : [p]);
-      if (failPaths[p]) throw new Error(failPaths[p]);
+      const fail = typeof failPaths[p] === 'function' ? failPaths[p](opts) : failPaths[p];   // a function decides per open mode
+      if (fail) throw new Error(fail);
       this.handlers = {};
     }
     on(ev, fn) { this.handlers[ev] = fn; }
@@ -43,7 +44,38 @@ test('a touch-digitizer open failure leaves the control interface connected and 
   assert.equal(c.lastOpenError.control, null);
   assert.match(c.lastOpenError.touch, /touch-path/);
   assert.deepEqual(state.opens[0], ['ctrl-path', { nonExclusive: true }]);
-  assert.deepEqual(state.opens[1], ['touch-path', { nonExclusive: false }], 'the touch controller must be seized on macOS so taps never become OS clicks');
+  assert.deepEqual(state.opens[1], ['touch-path', { nonExclusive: false }], 'the touch controller is opened with a seize first on macOS, so nothing it emits reaches the OS');
+  assert.deepEqual(state.opens[2], ['touch-path', { nonExclusive: true }], 'then with the shared open DK-Suite uses, before the refusal is reported');
+  assert.deepEqual(c.openMode, { control: 'shared', touch: null });
+  c.stop();
+});
+
+test('a refused seize falls back to the shared open; the connect event says which mode the touch controller got', () => {
+  const { hid, state } = fakeHid({ failPaths: { 'touch-path': opts => (opts && opts.nonExclusive === false) ? 'cannot open device with path touch-path' : null } });
+  const c = new Aris68Connector({ hid, platform: 'darwin', autoActivate: false });
+  const errors = [], connects = [];
+  c.on('error', e => errors.push(e));
+  c.on('connect', i => connects.push(i));
+  c._open();
+  assert.equal(errors.length, 0, 'a fallback that works is not an error');
+  assert.deepEqual(connects.map(i => [i.iface, i.mode]), [['control', 'shared'], ['touch', 'shared']]);
+  assert.match(connects[1].fallback, /cannot open device/);
+  assert.equal(c.lastOpenError.touch, null);
+  assert.deepEqual(c.openMode, { control: 'shared', touch: 'shared' });
+  assert.deepEqual(state.opens.slice(1), [['touch-path', { nonExclusive: false }], ['touch-path', { nonExclusive: true }]]);
+  c._closeTouch();
+  assert.equal(c.openMode.touch, null);
+  c.stop();
+});
+
+test('a granted seize is reported as such and never retried in shared mode', () => {
+  const { hid, state } = fakeHid();
+  const c = new Aris68Connector({ hid, platform: 'darwin', autoActivate: false });
+  const connects = [];
+  c.on('connect', i => connects.push(i));
+  c._open();
+  assert.deepEqual(connects.map(i => [i.iface, i.mode, i.fallback || null]), [['control', 'shared', null], ['touch', 'seized', null]]);
+  assert.equal(state.opens.length, 2);
   c.stop();
 });
 

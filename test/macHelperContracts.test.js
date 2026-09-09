@@ -68,3 +68,25 @@ test('reserved-display takes the Windows helper\'s commands and emits the events
   assert.match(s, /buttonState\(\.combinedSessionState, button: \.left\)/, 'never moves a window mid-drag');
   assert.match(s, /AXIsProcessTrusted\(\)/, 'reports the Accessibility permission instead of failing silently');
 });
+
+test('privacy drives the CoreGraphics TCC calls the wrapper relies on and prints {"granted"}', () => {
+  const s = src('privacy.swift');
+  for (const fn of ['CGPreflightListenEventAccess', 'CGRequestListenEventAccess', 'CGPreflightScreenCaptureAccess', 'CGRequestScreenCaptureAccess']) assert.match(s, new RegExp(fn + '\\(\\)'), fn);
+  assert.match(s, /\["granted": granted\]/, 'app/macPermissions.js reads the granted field');
+  assert.match(s, /"preflight", "request"/);
+  assert.match(s, /"listenEvent", "screenCapture"/);
+});
+
+test('display-arrange keeps DK-Suite\'s display_manager policy and exit codes', () => {
+  const s = src('display-arrange.swift');
+  assert.match(s, /CGConfigureDisplayOrigin/, 'moves the panel display');
+  assert.match(s, /CGConfigureDisplayMirrorOfDisplay\(cfg, panel\.id, kCGNullDirectDisplay\)/, 'un-mirrors the panel display');
+  assert.match(s, /CGCompleteDisplayConfiguration\(cfg, \.permanently\)/, 'the arrangement persists like a System Settings change');
+  assert.match(s, /if mirrored \{ return 2 \}/, 'exit 2 = mirrored (DK-Suite)');
+  assert.match(s, /if panelIsMain \|\| !farRight \{ return 3 \}/, 'exit 3 = position or main-display fix (DK-Suite)');
+  assert.match(s, /guard panel != nil else \{ return 4 \}/, 'exit 4 = no panel display (app/displayArrange.js EXIT.NO_PANEL)');
+  assert.match(s, /o\["changed"\] = c/, 'fix output carries the changed list the log shows');
+  for (const key of ['"mirrored"', '"panelIsMain"', '"farRight"', '"valid"', '"code"']) assert.match(s, new RegExp(key.replace(/"/g, '\\"')), key + ' is a field app/displayArrange.js reads');
+  assert.match(s, /panelVendor: UInt32 = 0x09E5/, 'the DK-QUAKE EDID vendor id');
+  assert.doesNotMatch(s, /CGConfigureDisplayWithDisplayMode|CGDisplaySetDisplayMode/, 'never changes resolution or rotation');
+});

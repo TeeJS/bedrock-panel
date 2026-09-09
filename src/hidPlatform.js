@@ -8,10 +8,15 @@
  *    receiving its reports) or non-exclusively. Which one is right depends on the device:
  *      * the knob/control interface is a vendor-only collection nothing else consumes — open it
  *        non-exclusively, as the original DK-Suite driver did (docs/DEVICE_PROTOCOL.md);
- *      * the DK-QUAKE touch controller ALSO carries digitizer and mouse collections, and macOS's own
- *        HID event driver turns them into pointer clicks on the panel display. A click makes that
- *        display the "active" one, so app menus and new windows move onto the panel. Seize it, as
- *        DK-Suite's plain open did: the app parses the touch reports itself and macOS sees nothing.
+ *      * the DK-QUAKE touch controller ALSO carries digitizer and mouse collections (macOS attaches
+ *        its own HID event driver to them). The app parses the vendor touch reports itself and needs
+ *        nothing from macOS, so it asks for the seize first: with it, whatever the firmware ever
+ *        sends on the digitizer/mouse collections stays away from the OS (a pointer click on the
+ *        panel display would make it the "active" display, pulling app menus and new windows onto
+ *        the panel). IOKit can refuse a seize independently of Input Monitoring (exclusive opens of
+ *        some device classes are reserved for root), so a refused seize falls back to the shared
+ *        open DK-Suite itself uses on macOS (`{ nonExclusive: true }` for both of its devices), and
+ *        the handle is tagged with the mode it got (`hidOpenMode`) so the connector can say which.
  *    node-hid >= 3.1 exposes the choice as `{ nonExclusive }`; its default on macOS is the seize.
  *  - Writes can fail transiently right after a (re)connect; DK-Suite retried them 3x. Everywhere
  *    else a failed write means the device is gone, so the connectors keep tearing down on the
@@ -34,10 +39,27 @@ function openOptions(platform = process.platform, { seize = false } = {}) {
   return platform === 'darwin' ? { nonExclusive: !seize } : null;
 }
 
-/** `new HID.HID(path[, options])` with the platform's options. */
+/**
+ * `new HID.HID(path[, options])` with the platform's options. The returned handle carries
+ * `hidOpenMode` ('default' | 'shared' | 'seized') and, when a refused seize fell back to the shared
+ * open, `hidOpenFallback` (the seize error's message). A refused open in every mode throws.
+ */
 function openDevice(HID, devicePath, platform = process.platform, { seize = false } = {}) {
   const opts = openOptions(platform, { seize });
-  return opts ? new HID.HID(devicePath, opts) : new HID.HID(devicePath);
+  if (!opts) return tagHandle(new HID.HID(devicePath), 'default');
+  try {
+    return tagHandle(new HID.HID(devicePath, opts), seize ? 'seized' : 'shared');
+  } catch (e) {
+    if (!seize) throw e;
+    return tagHandle(new HID.HID(devicePath, { nonExclusive: true }), 'shared', e);
+  }
+}
+function tagHandle(dev, mode, fallbackFrom) {
+  try {
+    dev.hidOpenMode = mode;
+    if (fallbackFrom) dev.hidOpenFallback = String((fallbackFrom && fallbackFrom.message) || fallbackFrom);
+  } catch (e) {}
+  return dev;
 }
 
 /** How many times a single write may be attempted before the device is considered gone. */

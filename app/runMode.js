@@ -20,4 +20,12 @@ function reservedDisplayEnabled(settings) {
   return !!(settings && settings.reservedDisplay);
 }
 
-module.exports = { resolveRunMode, reservedDisplayEnabled };
+// macOS: the display-arrange helper keeps the QUAKE display at the far right of the arrangement
+// (never mirrored, never the main display) so the cursor cannot wander onto it. Same gating as the
+// reserved display: pointless in software mode, otherwise the user's panelFarRight setting.
+function panelFarRightEnabled(settings) {
+  if (resolveRunMode(settings) === 'software') return false;
+  return !!(settings && settings.panelFarRight);
+}
+
+module.exports = { resolveRunMode, reservedDisplayEnabled, panelFarRightEnabled };

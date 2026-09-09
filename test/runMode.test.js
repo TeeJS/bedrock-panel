@@ -6,7 +6,16 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveRunMode, reservedDisplayEnabled } = require('../app/runMode');
+const { resolveRunMode, reservedDisplayEnabled, panelFarRightEnabled } = require('../app/runMode');
+
+test('panelFarRightEnabled follows the setting in panel/monitor mode and is off in software mode', () => {
+  assert.equal(panelFarRightEnabled({ runMode: 'panel', panelFarRight: true }), true);
+  assert.equal(panelFarRightEnabled({ runMode: 'panel', panelFarRight: false }), false);
+  assert.equal(panelFarRightEnabled({ runMode: 'monitor', panelFarRight: true }), true);
+  assert.equal(panelFarRightEnabled({ runMode: 'software', panelFarRight: true }), false);
+  assert.equal(panelFarRightEnabled({}), false);
+  assert.equal(panelFarRightEnabled(null), false);
+});
 
 test('resolveRunMode defaults to panel when unset or unknown', () => {
   assert.equal(resolveRunMode(undefined), 'panel');

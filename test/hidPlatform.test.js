@@ -55,3 +55,25 @@ test('stripLeadingReportId drops a leading 0x00 only before an expected marker',
   assert.deepEqual(Array.from(hp.stripLeadingReportId(Buffer.from([0x00, 0x55]), [0xA3])), [0x00, 0x55]);
   assert.deepEqual(hp.stripLeadingReportId([0x00, 0x01, 2], [0x01]), [0x01, 2]);   // plain arrays too
 });
+
+test('openDevice: a refused seize falls back to the shared open and tags the handle; a refused shared open throws', () => {
+  const calls = [];
+  const HID = { HID: class {
+    constructor(p, opts) {
+      calls.push(opts ? [p, opts] : [p]);
+      if (p === '/dev/touch' && opts && opts.nonExclusive === false) throw new Error('cannot open device with path /dev/touch (seize refused)');
+      if (p === '/dev/blocked') throw new Error('cannot open device with path /dev/blocked');
+    }
+  } };
+  const seized = hp.openDevice(HID, '/dev/ok', 'darwin', { seize: true });
+  assert.equal(seized.hidOpenMode, 'seized');
+  assert.equal(seized.hidOpenFallback, undefined);
+  const shared = hp.openDevice(HID, '/dev/touch', 'darwin', { seize: true });
+  assert.equal(shared.hidOpenMode, 'shared');
+  assert.match(shared.hidOpenFallback, /seize refused/);
+  assert.equal(hp.openDevice(HID, '/dev/ok', 'darwin').hidOpenMode, 'shared');
+  assert.equal(hp.openDevice(HID, '/dev/ok', 'win32', { seize: true }).hidOpenMode, 'default');
+  assert.throws(() => hp.openDevice(HID, '/dev/blocked', 'darwin', { seize: true }), /cannot open device/);
+  assert.deepEqual(calls.slice(1, 3), [['/dev/touch', { nonExclusive: false }], ['/dev/touch', { nonExclusive: true }]], 'seize first, then the shared open');
+  assert.deepEqual(calls.slice(-2), [['/dev/blocked', { nonExclusive: false }], ['/dev/blocked', { nonExclusive: true }]], 'both modes are tried before giving up');
+});

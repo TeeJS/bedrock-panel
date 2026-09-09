@@ -38,13 +38,21 @@ Panel, the Dock, menu-bar extras, or system UI); with no other display a window 
 un-minimized onto a display when one returns. Two macOS differences: there is no maximized state
 to preserve, and a window in its own full-screen Space cannot be moved.
 
-Independently of the helper, the kiosk panel window never takes key focus on macOS (the display
-owning the key window is where macOS prefers to open other apps' new windows) and always sits at
-the screen-saver window level, above the menu bar (level 24), Control Center's menu items (25), and
-the Dock (20) that macOS draws on every display when "Displays have separate Spaces" is on. A
-window that macOS opens on the panel display therefore lands behind the panel, which is why
-Reserved Display is on by default on a Mac and the panel shows a notice while Accessibility is still
-missing. macOS still decides where an app opens its windows — the helper is what keeps the panel clear.
+Independently of the helper, the kiosk panel window on macOS is a plain frameless window covering
+exactly the panel display — the way DK-Suite's own RemoteScreen window is built, not a full-screen
+or simple-full-screen window (simple full screen sets app-wide presentation options that hide the
+menu bar on every display whenever Bedrock Panel is the active app). It never takes key focus (the
+display owning the key window is where macOS prefers to open other apps' new windows), ignores the
+mouse (touch arrives over USB), is visible on every Space, and sits at the screen-saver window level
++ 1, above the menu bar (level 24), Control Center's menu items (25), and the Dock (20) that macOS
+draws on every display when "Displays have separate Spaces" is on. A window that macOS opens on the
+panel display therefore lands behind the panel, which is why Reserved Display is on by default on a
+Mac and the panel shows a notice while Accessibility is still missing. macOS still decides where an
+app opens its windows — on the display that was clicked last — so a second macOS helper,
+`native/mac/display-arrange.swift` (`app/displayArrange.js`), keeps the panel display at the far
+right of the arrangement, never mirrored and never the main display, exactly as DK-Suite's
+display_manager tool does: the cursor cannot slide onto the panel and click it active. The
+reserved-display helper is what keeps the panel clear of whatever still lands there.
 
 ## Build and automated checks
 

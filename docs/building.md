@@ -117,8 +117,11 @@ the supported surface today. The Windows C# helpers have macOS counterparts in `
 call-app list — Zoom.exe, Teams.exe, ms-teams.exe — are mapped to the Mac apps), **now-playing**
 (Spotify and Music.app through their playback notifications; browser players are not covered), and
 **transport** aimed at the displayed player (AppleScript — the first press asks for the Automation
-permission; a refusal falls back to media keys), and **Reserved Display** (windows that land on the
-panel display are moved back through the Accessibility API — see [reserved-display.md](reserved-display.md)).
+permission; a refusal falls back to media keys), **Reserved Display** (windows that land on the
+panel display are moved back through the Accessibility API — see [reserved-display.md](reserved-display.md)),
+**display-arrange** (keeps the DK-QUAKE at the far right of the arrangement, never mirrored or
+main — DK-Suite's display_manager rule; `check`/`fix`, exit codes 0/2/3/4) and **privacy** (the
+CoreGraphics Input Monitoring / Screen Recording preflight and prompt Electron does not expose).
 Still Windows-only, each reporting itself unavailable: Outlook meeting info (use the Microsoft 365
 calendar source), touchscreen setup, and album-art thumbnails (art comes from Spotify's oEmbed or
 the iTunes lookup).

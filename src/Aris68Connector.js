@@ -54,6 +54,7 @@ class Aris68Connector extends EventEmitter {
     this.HID = opts.hid || require('node-hid');
     this.platform = opts.platform || process.platform;            // injectable for the fake-HID tests
     this.lastOpenError = { control: null, touch: null };          // last failed open per interface (Device Diagnostics)
+    this.openMode = { control: null, touch: null };               // 'default' | 'shared' | 'seized' per open interface (macOS: see hidPlatform)
     this._openGate = new hidPlatform.OpenErrorGate();
     this.keepAliveMs = opts.keepAliveMs || 1500;
     this.rescanMs = opts.rescanMs || 3000;
@@ -98,31 +99,34 @@ class Aris68Connector extends EventEmitter {
       if (info) try {
         const d = hidPlatform.openDevice(this.HID, info.path, this.platform); this.ctrl = d;   // non-exclusive on macOS
         this.lastOpenError.control = null; this._openGate.clear('control');
+        this.openMode.control = d.hidOpenMode || 'default';
         d.on('data', b => this._onCtrl(b));
         d.on('error', () => this._closeCtrl());
-        this.emit('connect', { iface: 'control', info });
+        this.emit('connect', { iface: 'control', info, mode: this.openMode.control });
         if (this.autoActivate) this.activate();
       } catch (e) { this._reportOpenError('control', e); }
     }
     if (!this.touch) {
       const info = this._find(TOUCH_IFACES, devices);
       // Independent of the control interface (a failure here never takes the knob down). On macOS the
-      // touch controller is SEIZED: it also exposes digitizer/mouse collections that macOS's own HID event
-      // driver would turn into pointer clicks on the panel display, and a click makes that display the
-      // active one — app menus and new windows then land on the panel. Seizing (the original DK-Suite
-      // driver's plain open) keeps the reports for us and hides the taps from macOS. Needs Input Monitoring.
+      // touch controller is opened with a seize first: it also exposes digitizer/mouse collections that
+      // macOS attaches its own HID event driver to, and a seize keeps whatever they emit away from the
+      // OS (a pointer click on the panel display would make it the active display — app menus and new
+      // windows then land on the panel). A refused seize falls back to the shared open DK-Suite uses;
+      // the 'connect' event says which mode was granted. Both need Input Monitoring.
       if (info) try {
         const d = hidPlatform.openDevice(this.HID, info.path, this.platform, { seize: true }); this.touch = d;
         this.lastOpenError.touch = null; this._openGate.clear('touch');
+        this.openMode.touch = d.hidOpenMode || 'default';
         d.on('data', b => this._onTouch(b));
         d.on('error', () => this._closeTouch());
-        this.emit('connect', { iface: 'touch', info });
+        this.emit('connect', { iface: 'touch', info, mode: this.openMode.touch, fallback: d.hidOpenFallback || null });
       } catch (e) { this._reportOpenError('touch', e); }
     }
   }
 
-  _closeCtrl() { if (this.ctrl) { try { this.ctrl.close(); } catch (e) {} this.ctrl = null; this.emit('disconnect', { iface: 'control' }); } }
-  _closeTouch() { if (this.touch) { try { this.touch.close(); } catch (e) {} this.touch = null; this.emit('disconnect', { iface: 'touch' }); } }
+  _closeCtrl() { if (this.ctrl) { try { this.ctrl.close(); } catch (e) {} this.ctrl = null; this.openMode.control = null; this.emit('disconnect', { iface: 'control' }); } }
+  _closeTouch() { if (this.touch) { try { this.touch.close(); } catch (e) {} this.touch = null; this.openMode.touch = null; this.emit('disconnect', { iface: 'touch' }); } }
 
   // The rescan retries every few seconds: report a given failure once (decorated with the macOS Input
   // Monitoring hint when it looks like a refusal) and keep it for Device Diagnostics.

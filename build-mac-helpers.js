@@ -36,6 +36,8 @@ const TARGETS = [
   { name: 'nowplaying-monitor' },
   { name: 'nowplaying-control', plist: 'nowplaying-control.plist' },
   { name: 'reserved-display' },
+  { name: 'display-arrange' },
+  { name: 'privacy' },
 ].map(t => Object.assign(t, { src: path.join(SRC_DIR, t.name + '.swift'), out: path.join(OUT_DIR, t.name) }));
 
 const dist = process.argv.includes('--dist') || process.env.BEDROCK_MAC_ARCH === 'universal';

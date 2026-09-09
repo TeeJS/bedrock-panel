@@ -33,7 +33,12 @@ require('./userData').applyToApp(app, m => console.log(m));
 // macOS permission wiring: status + System Settings deep links for the editor, and the Accessibility
 // gate robotjs needs (keystrokes are silently dropped without it). No-op on other platforms.
 const { systemPreferences, desktopCapturer } = require('electron');
-const macPermissions = require('./macPermissions').createMacPermissions({ systemPreferences, desktopCapturer, shell, log: m => console.log('[permissions] ' + m) });
+const macPermissions = require('./macPermissions').createMacPermissions({
+  systemPreferences, desktopCapturer, shell, log: m => console.log('[permissions] ' + m),
+  helperPath: require('./nativeHelpers').helperPath('privacy'),   // Input Monitoring preflight/prompt (native/mac/privacy.swift); null off macOS
+  execFile: require('child_process').execFile,
+});
+let inputMonitoringPrompted = false;   // the Input Monitoring prompt is raised once per session, on the first refused device open
 let privacyPaneOpened = false;   // at most one automatic System Settings jump per session (a refused device open)
 // macOS system audio (meeting recorder): Electron >= 39 captures it through a CoreAudio tap on macOS
 // 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
@@ -197,6 +202,7 @@ const { enableLoopbackAudioCapture } = require('./loopback-audio'); // system-au
 const desktopFocus = require('./desktopFocus');   // tracks the PC's OS-level foreground app; auto-switches the panel to a mapped page
 const ahk = require('./ahk');                  // macro "ahk" step backend (shells out to an installed AutoHotkey.exe)
 const { createReservedDisplay } = require('./reservedDisplay'); // Windows helper that keeps foreign windows off the panel display
+const { createDisplayArrange } = require('./displayArrange');   // macOS helper that keeps the panel display far right, never mirrored/main
 const { createVoicePanelHost } = require('./voicepanel-host'); // generic voice-panel app host (state/SSE/speech/STT-TTS plumbing)
 const { createClaudeVoiceAdapter } = require('./claudevoice-adapter'); // Claude Code session adapter (CLI spawn, events, approval hook)
 const { createCodexVoiceAdapter, findCodexExe } = require('./codexvoice-session'); // OpenAI Codex session adapter (app-server JSON-RPC over stdio)
@@ -208,7 +214,7 @@ const { createLiveTranslateHost } = require('./livetranslate-host'); // Live Tra
 const { createScreensaverHost } = require('./screensaver-host'); // Screensaver app host (media list + name->path resolution, no LLM)
 const saverIdle = require('./screensaver-idle'); // pure screensaver auto-start/wake/swallow decisions
 const owuiClient = require('./owuiClient'); // shared OWUI URL normalization + model-list probe
-const { resolveRunMode, reservedDisplayEnabled } = require('./runMode'); // pure run-mode helpers (panel/software/monitor)
+const { resolveRunMode, reservedDisplayEnabled, panelFarRightEnabled } = require('./runMode'); // pure run-mode helpers (panel/software/monitor)
 const { activePane, resolvePaneColumns, softwareWindowBounds } = require('./panes');    // pure pane resolution (software-mode page stacks, 1-2 columns)
 const voiceConfig = require('./voiceConfig'); // global TTS/STT endpoints + per-page override resolution + legacy migration
 const { DiscordService } = require('./discordService'); // local Discord desktop RPC; protocol stays behind this main-process service
@@ -241,7 +247,7 @@ const LED_DEFAULT = { effect: 1, brightness: 200, speed: 128, hue: 128, sat: 255
 const THEME_DEFAULT = { appearance: 'system', accent: '#7CFFB2', presets: ['#7CFFB2', '#38B6FF', '#FF4040', '#FFB000'] };
 // reservedDisplay defaults ON on macOS: there the panel covers the menu bar and Dock at all times, so a
 // window macOS opens on the panel display would sit unreachable behind it unless protection moves it.
-const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: process.platform === 'darwin', lighting: Object.assign({}, LED_DEFAULT), theme: Object.assign({}, THEME_DEFAULT) };
+const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: process.platform === 'darwin', panelFarRight: process.platform === 'darwin', lighting: Object.assign({}, LED_DEFAULT), theme: Object.assign({}, THEME_DEFAULT) };
 const actionDeps = { fs, shell, exec, execFile, spawn, platform: process.platform, log: message => console.log(message) };
 const mediaKeys = createMediaKeys({ log: message => console.log(message), ensureTrusted: macPermissions.supported ? macPermissions.ensureTrusted : null });
 let presenceService = null;   // busy-presence fan-out (Busylight / WLED / HA over MQTT); null until boot
@@ -331,6 +337,15 @@ const reservedDisplay = createReservedDisplay({
     panelNotice('Reserved Display needs the Accessibility permission: System Settings → Privacy & Security → Accessibility → turn on Bedrock Panel (remove and re-add it if it is already on).');
     if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('accessibility'); }
   },
+});
+// macOS: the panel display's place in the arrangement (native/mac/display-arrange). DK-Suite enforces
+// the same rules with its display_manager tool: never mirrored, never the main display, far right of
+// the other displays so the cursor cannot wander onto the panel and make it the active display.
+const displayArrange = createDisplayArrange({
+  log: message => console.log('[display-arrange] ' + message),
+  onFixed: (result, checkCode) => panelNotice(checkCode === displayArrange.EXIT.MIRRORED
+    ? 'The panel display was mirroring another display: switched it to an extended display at the far right of the arrangement. Settings → Device → Monitor turns this off.'
+    : 'Moved the panel display to the far right of the display arrangement, out of the cursor\'s way. Settings → Device → Monitor turns this off.'),
 });
 // The AI Voice app = ONE app id ('ai-voice') with a per-page backend option, served by one generic
 // voice-panel host instance PER BACKEND (state/transcript/SSE/speech/STT-TTS, see
@@ -2628,24 +2643,40 @@ function refreshReservedDisplay(reason, delay) {
 // panel over our own HID path, so it needs no keyboard focus. Windows keeps its focus behavior.
 function showPanelWindow(focus) {
   if (!panelWin || panelWin.isDestroyed()) return;
-  if (process.platform === 'darwin') { panelWin.showInactive(); return; }
+  if (process.platform === 'darwin') { panelWin.showInactive(); pinPanelMac(); return; }
   panelWin.show();
   if (focus) panelWin.focus();
 }
 function applyPanelDisplayMode(d) {
   panelWin.setBounds(d.bounds);
   panelWin.setMenuBarVisibility(false);
-  if (process.platform === 'darwin') {
-    panelWin.setSimpleFullScreen(true);
-    // The panel never becomes the active app (showPanelWindow), so the presentation options that hide
-    // the menu bar and the Dock only apply while nothing else is active. With "Displays have separate
-    // Spaces" (the default) every display draws its own menu bar (window level 24, Control Center items
-    // at 25) and can host the Dock (20). Sit above all of them: the screen-saver level (1000) covers
-    // them, and the window spans exactly the panel display, so other displays are untouched. Windows
-    // that macOS opens on the panel display land behind the panel; Reserved Display (on by default on
-    // macOS) moves them to another display.
-    panelWin.setAlwaysOnTop(true, 'screen-saver');
-  } else panelWin.setFullScreen(true);
+  if (process.platform === 'darwin') pinPanelMac(d.bounds);
+  else panelWin.setFullScreen(true);
+}
+// macOS: the panel is a plain frameless window covering exactly the panel display — built the way
+// DK-Suite builds its own RemoteScreen window — and NOT a full-screen or simple-full-screen window:
+//  - Electron's simple full screen sets app-wide presentation options (auto-hide menu bar and Dock)
+//    that take effect on EVERY display whenever Bedrock Panel is the active app, so focusing the
+//    editor on the main display made the main menu bar disappear. A plain window changes nothing
+//    app-wide (DK-Suite explicitly switches simple full screen off for the same reason).
+//  - With "Displays have separate Spaces" (the default) every display draws its own menu bar (window
+//    level 24, Control Center items at 25) and can host the Dock (20). The screen-saver level + 1
+//    (1001, DK-Suite's level) covers all of them on the panel display and nothing on the others, and
+//    `enableLargerThanScreen` lets the window start at y=0 under the menu bar area.
+//  - It never takes key focus (focusable: false, showInactive) and ignores the mouse: touch arrives
+//    over the HID path, so a cursor that wanders onto the panel cannot click a tile, and macOS does
+//    not treat the window as something to activate. Windows that macOS opens on the panel display
+//    land behind the panel; Reserved Display (on by default on macOS) moves them to another display.
+//  - Visible on every Space so a Space switch on that display cannot hide it; re-pinned after every
+//    blur, which is when macOS may have re-levelled it.
+function pinPanelMac(bounds) {
+  if (!panelWin || panelWin.isDestroyed()) return;
+  try { if (panelWin.isSimpleFullScreen && panelWin.isSimpleFullScreen()) panelWin.setSimpleFullScreen(false); } catch (e) {}
+  try { if (bounds) panelWin.setBounds(bounds); } catch (e) {}
+  try { panelWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false }); } catch (e) {}
+  try { panelWin.setAlwaysOnTop(true, 'screen-saver', 1); } catch (e) { try { panelWin.setAlwaysOnTop(true, 'screen-saver'); } catch (e2) {} }
+  try { panelWin.setIgnoreMouseEvents(true); } catch (e) {}
+  try { panelWin.moveTop(); } catch (e) {}
 }
 // Windows: a brief always-on-top nudge lifts the panel over whatever the desktop left on that display
 // (Reserved Display keeps it clear afterwards). macOS pins the panel permanently in applyPanelDisplayMode,
@@ -2657,15 +2688,21 @@ function nudgePanelOnTop() {
 }
 function placePanel() {
   if (monitorMode) return;                                          // in monitor mode the panel stays hidden — don't re-show it over the desktop
+  displayArrange.request('panel placement');                        // macOS: a mirrored / main / mis-arranged panel display gets fixed (a no-op elsewhere or when off); a fix re-enters here through display-metrics-changed
   const d = deviceDisplay();
   if (!d) { console.log('placePanel: DK-QUAKE display not present'); return; }
   if (!panelWin || panelWin.isDestroyed()) {
     panelWin = new BrowserWindow({
       x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height,
       frame: false, show: false, skipTaskbar: true, resizable: false, movable: false,
-      minimizable: false, maximizable: false, fullscreenable: true, autoHideMenuBar: true,
+      minimizable: false, maximizable: false, autoHideMenuBar: true,
       focusable: process.platform !== 'darwin',   // macOS: never the key window (see showPanelWindow)
       backgroundColor: '#000000',
+      // macOS: a plain always-on-top cover of the panel display (pinPanelMac) — no full-screen Space, no
+      // rounded corners or shadow leaking the desktop at the edges, allowed to sit under the menu bar area.
+      ...(process.platform === 'darwin'
+        ? { fullscreenable: false, hasShadow: false, roundedCorners: false, enableLargerThanScreen: true, alwaysOnTop: true, closable: false }
+        : { fullscreenable: true }),
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -2676,6 +2713,7 @@ function placePanel() {
     panelWin.loadFile(path.join(__dirname, 'index.html'));
     panelWin.on('move', () => refreshReservedDisplay('panel moved', 350));
     panelWin.on('resize', () => refreshReservedDisplay('panel bounds changed', 350));
+    if (process.platform === 'darwin') panelWin.on('blur', () => setTimeout(() => { if (!monitorMode) pinPanelMac(); }, 0));   // re-pin like DK-Suite does after every blur
     panelWin.once('ready-to-show', () => {
       if (monitorMode) { pushToPanel(); return; }   // monitor mode was set before first show -> stay hidden (desktop shows)
       const dd = deviceDisplay() || d;
@@ -2813,6 +2851,7 @@ function createSoftwareWindow() {
 // the initial launch and the live mode switch, so both go through exactly the same placement path.
 function placeUiForMode() {
   const mode = runMode();
+  displayArrange.setEnabled(panelFarRightEnabled(appSettings()));      // macOS only (no helper elsewhere); before placePanel, which requests the check
   if (mode === 'software') {
     createSoftwareWindow();                              // a desktop window has no device display to protect
   } else {
@@ -2859,7 +2898,8 @@ function enterMonitorMode() {
   if (monitorMode || !panelWin || panelWin.isDestroyed()) return;
   monitorMode = true;
   reservedDisplay.setSuspended(true);
-  try { if (process.platform === 'darwin') panelWin.setSimpleFullScreen(false); else panelWin.setFullScreen(false); } catch (e) {}
+  displayArrange.setEnabled(false);                                 // the cursor is meant to reach the device now — leave the arrangement alone
+  try { if (process.platform !== 'darwin') panelWin.setFullScreen(false); } catch (e) {}   // macOS: a plain window, nothing to leave
   panelWin.hide();
   syncPollers(null);                                                // nothing on the panel is visible -> idle the page pollers
   try { dev.screenOn(); } catch (e) {}                              // keep the backlight on as the desktop takes over
@@ -2870,6 +2910,8 @@ function exitMonitorMode(reason) {
   if (!monitorMode) return;
   monitorMode = false;
   reservedDisplay.setSuspended(false);
+  displayArrange.setEnabled(panelFarRightEnabled(appSettings()));
+  displayArrange.request('monitor mode exit');
   releaseTouch();                                                   // drop any held mouse button from an in-progress touch
   if (panelWin && !panelWin.isDestroyed()) {
     const d = deviceDisplay();
@@ -4249,6 +4291,7 @@ app.whenReady().then(async () => {
     if (githubClientChanged || githubSettingsChanged) { try { sysserver.clearGitHubCapability(); } catch (error) {} }
     pushToPanel(); applyKnobSettings(); refreshTray(); applyRotationSettings(wasRot); applyFocusFollowSettings(); applyShortcuts(); applyTheme();
     reservedDisplay.setEnabled(reservedDisplayEnabled(appSettings()));   // stays off in software mode
+    if (!monitorMode) { displayArrange.setEnabled(panelFarRightEnabled(appSettings())); displayArrange.request('settings saved'); }   // macOS: (re)check the arrangement when the toggle is on
     applyDisplayBlocker();                                               // keep-display-awake: only Panel mode + when enabled
     const discordSettings = normalizeDiscordSettings((config.settings || {}).discord);
     discordAppHost.updateSettings(discordSettings);
@@ -4517,7 +4560,7 @@ app.whenReady().then(async () => {
     if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('knob', k);   // panel owns knob logic
   });
   dev.on('connect', async i => {
-    console.log('connect:', i.iface);
+    console.log('connect:', i.iface + (i.mode ? ' (' + i.mode + (i.fallback ? ', seize refused: ' + i.fallback : '') + ')' : ''));   // macOS touch: 'seized' keeps the digitizer away from the OS; 'shared' is DK-Suite's mode
     if (i.iface !== 'control') return;
     // First run: seed lighting from the device so we never change the ring unasked; otherwise the app's config wins.
     if (!config.settings || !config.settings.lighting) {
@@ -4538,13 +4581,24 @@ app.whenReady().then(async () => {
   dev.on('state', s => { if (s && typeof s === 'object') Object.assign(lastDeviceState, s); });
   dev.on('error', e => {
     console.log('dev error:', e.message);
-    // macOS refused to open a device (Input Monitoring). macOS does not always prompt for the DK-QUAKE
-    // touch controller, and an ad-hoc build's earlier grant goes stale, so say so on the panel and open
-    // the right System Settings pane once per session.
-    if (process.platform === 'darwin' && e && e.cause && e.cause.code === 'HID_OPEN_FAILED' && !privacyPaneOpened) {
-      privacyPaneOpened = true;
-      panelNotice('Touchscreen blocked by macOS: System Settings → Privacy & Security → Input Monitoring → turn on Bedrock Panel (if it is already on, remove it with − and add it again).');
-      macPermissions.openSettings('inputMonitoring');
+    // macOS refused to open a device: Input Monitoring. macOS never prompts for it on a HID open and
+    // does not even list the app until the app asks, so raise the prompt ourselves (native/mac/privacy,
+    // the call DK-Suite makes too) — the grant is picked up by the next rescan, no restart. Only when
+    // the prompt is not answered with Allow (or was answered earlier, e.g. a stale grant from a
+    // previous ad-hoc build) fall back to the panel notice and the System Settings pane, once per session.
+    if (process.platform === 'darwin' && e && e.cause && e.cause.code === 'HID_OPEN_FAILED' && !inputMonitoringPrompted) {
+      inputMonitoringPrompted = true;
+      const explain = () => {
+        panelNotice('Touchscreen blocked by macOS: System Settings → Privacy & Security → Input Monitoring → turn on Bedrock Panel (if it is already on, remove it with − and add it again).');
+        if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('inputMonitoring'); }
+      };
+      if (!macPermissions.canPromptInputMonitoring) { explain(); return; }
+      panelNotice('macOS is asking whether Bedrock Panel may use the touchscreen (Input Monitoring) — click Allow in the prompt on your Mac.');
+      macPermissions.request('inputMonitoring').then(r => {
+        if (r && r.ok) { console.log('[permissions] Input Monitoring granted — the device reconnects on the next rescan'); panelNotice('Input Monitoring granted — connecting the touchscreen.'); return; }
+        console.log('[permissions] Input Monitoring not granted (' + (r && r.reason) + ')');
+        explain();
+      });
     }
   });
   dev.start();
@@ -4568,6 +4622,7 @@ app.on('before-quit', () => {
   try { clearInterval(saverTimer); } catch (e) {}             // stop the screensaver idle check
   try { discordService.stop(); } catch (e) {}                 // close Discord IPC and cancel reconnect timers
   try { reservedDisplay.stop(); } catch (e) {}                // release WinEvent hooks and terminate the native helper
+  try { displayArrange.stop(); } catch (e) {}                 // drop any pending arrangement check
   try { claudeVoiceHost.shutdown(); } catch (e) {}       // terminate the claude CLI child, release held approvals, remove the global hook
   try { codexVoiceHost.shutdown(); } catch (e) {}        // terminate the codex app-server child
   try { copilotVoiceHost.shutdown(); } catch (e) {}      // terminate the copilot app-server child
