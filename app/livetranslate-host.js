@@ -38,7 +38,8 @@ const PANEL_OPTIONS = {
 // request, and how long a silence resets the conversation (new topic, new context).
 const AI_CONTEXT_PAIRS = 6;
 const AI_CONTEXT_RESET_MS = 120000;
-const AI_SYSTEM_PROMPT = target => 'You are a live interpreter. Translate everything the user says into ' +
+const AI_SYSTEM_PROMPT = (target, source) => 'You are a live interpreter. Translate everything the user says' +
+  (source ? ' (spoken in ' + source + ')' : '') + ' into ' +
   target + '. Output ONLY the translation — no quotes, no notes, no romanization. Keep names and numbers ' +
   'as spoken. Use the conversation so far to resolve pronouns and context.';
 
@@ -112,6 +113,10 @@ function createLiveTranslateHost({ appId = 'livetranslate', log, deps }) {
       apiKey: String(o.aiApiKey || '').trim(),
       model: String(o.aiModel || '').trim(),
       target: String(o.targetLanguage || 'en').trim() || 'en',
+      // The page's "source language": Soniox takes it as a hint, Whisper as the decode language, and the
+      // Mac's built-in engine NEEDS it — it cannot detect the language and assumes the app default
+      // (English) otherwise, which turns German into "We get a steer hat".
+      source: String(o.sourceHint || '').trim(),
     };
   }
 
@@ -149,7 +154,7 @@ function createLiveTranslateHost({ appId = 'livetranslate', log, deps }) {
     const cfg = aiConfig();
     if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) throw new Error('AI endpoint not configured (this page’s settings)');
     if (Date.now() - aiLastAt > AI_CONTEXT_RESET_MS) aiPairs = [];   // long silence = new conversation
-    const messages = [{ role: 'system', content: AI_SYSTEM_PROMPT(cfg.target) }];
+    const messages = [{ role: 'system', content: AI_SYSTEM_PROMPT(cfg.target, cfg.source) }];
     for (const p of aiPairs.slice(-AI_CONTEXT_PAIRS)) {
       messages.push({ role: 'user', content: p.src }, { role: 'assistant', content: p.tgt });
     }
@@ -183,7 +188,11 @@ function createLiveTranslateHost({ appId = 'livetranslate', log, deps }) {
       return { ok: false, error: 'STT not configured — set the Wyoming/Whisper endpoint in Settings → TTS/STT (a multilingual Whisper model, not Parakeet)' };
     }
     try {
-      const text = await wyoming.transcribe({ host, port, audio: pcmBuffer, rate: 16000, width: 2, channels: 1, log: say });
+      const language = aiConfig().source;
+      // A named language can mean a one-time model download on the Mac engine (a minute or so): give
+      // that first utterance the time; the usual 20 s stays for auto-detect.
+      const stt = (deps && deps.sttTranscribe) || wyoming.transcribe;
+      const text = await stt({ host, port, audio: pcmBuffer, rate: 16000, width: 2, channels: 1, language, timeoutMs: language ? 90000 : 20000, log: say });
       if (isSttNoisePhrase(text)) { say('STT dropped a known noise-hallucination phrase: ' + JSON.stringify(text)); return { ok: true, text: '' }; }
       const clean = String(text || '').trim();
       if (!clean) return { ok: true, text: '' };

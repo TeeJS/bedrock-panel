@@ -508,7 +508,10 @@ enum FileTranscriber {
         do {
             let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: language)) ?? Locale(identifier: language)
             let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])
-            if let req = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+            // An installed model is used as is; anything else goes through the installation request
+            // (a first-time download of a language takes up to a minute, logged as such).
+            if await AssetInventory.status(forModules: [transcriber]) != .installed,
+               let req = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
                 Out.err("\(speaker): downloading the \(locale.identifier) speech model …")
                 try await req.downloadAndInstall()
                 Out.err("\(speaker): model installed")

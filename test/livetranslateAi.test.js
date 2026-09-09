@@ -128,3 +128,29 @@ test('getState reports provider + aiConfigured + sttConfigured', () => {
   const s3 = makeHost({}).handlers.getState();
   assert.equal(s3.provider, 'soniox');
 });
+
+test('the page\'s source language reaches the STT request and the interpreter prompt (the Mac engine cannot detect it)', async () => {
+  const { server, seen, port } = await startEndpoint(['Good morning', 'Good morning']);
+  try {
+    const calls = [];
+    const mk = sourceHint => createLiveTranslateHost({
+      appId: 'livetranslate', log: () => {},
+      deps: {
+        activeServedAppConfig: () => ({ options: { provider: 'ai', aiBaseUrl: 'http://127.0.0.1:' + port, aiApiKey: 'k', aiModel: 'm', targetLanguage: 'en', sourceHint } }),
+        activeGrid: () => null, saveConfig: () => {}, getDocumentsPath: () => null,
+        voiceEndpoints: () => ({ sttHost: '127.0.0.1', sttPort: 10300 }),
+        sttTranscribe: async args => { calls.push(args); return 'Guten Morgen'; },
+      },
+    });
+    const r = await mk('de').handlers.transcribe(Buffer.alloc(3200));
+    assert.deepEqual(r, { ok: true, text: 'Good morning', original: 'Guten Morgen' });
+    assert.equal(calls[0].language, 'de', 'Whisper decodes German; the Mac engine loads the German model');
+    assert.equal(calls[0].timeoutMs, 90000, 'a named language can mean a one-time model download');
+    assert.match(seen[0].body.messages[0].content, /spoken in de/);
+    const r2 = await mk('').handlers.transcribe(Buffer.alloc(3200));
+    assert.equal(r2.ok, true);
+    assert.equal(calls[1].language, '', 'blank = the engine detects (Whisper, Soniox) or assumes the app default (Mac)');
+    assert.equal(calls[1].timeoutMs, 20000);
+    assert.doesNotMatch(seen[1].body.messages[0].content, /spoken in/);
+  } finally { server.close(); }
+});

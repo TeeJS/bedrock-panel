@@ -6399,7 +6399,7 @@
       },
       {
         "key": "sourceHint",
-        "label": "Source language hint (optional, e.g. de)",
+        "label": "Source language (code, e.g. de; blank = auto-detect — the Mac's built-in engine needs it)",
         "type": "text",
         "default": ""
       },
