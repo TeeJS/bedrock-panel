@@ -96,7 +96,9 @@ test('speech-server speaks the Wyoming events the client sends and asks for spee
   for (const ev of ['"describe"', '"transcribe"', '"audio-start"', '"audio-chunk"', '"audio-stop"', '"synthesize"']) assert.match(s, new RegExp('case ' + ev.replace(/"/g, '\\"')), 'handles ' + ev);
   for (const reply of ['send("transcript"', 'send("audio-start"', 'send("audio-chunk"', 'send("audio-stop"', 'send("info"']) assert.ok(s.includes(reply), 'replies with ' + reply);
   assert.match(s, /"data_length"/, 'data is externalized the way real Wyoming servers do (app/claudevoice-wyoming.js reads both forms)');
-  assert.match(s, /requiresOnDeviceRecognition = true/, 'on-device recognition when the language supports it');
+  assert.match(s, /requiresOnDeviceRecognition = onDevice/, 'on-device recognition when the language supports it');
+  assert.match(s, /isDictationDisabled\(e\), onDevice\(r\)/, 'with Dictation off (error 1101) the request is retried through Apple\'s servers');
+  assert.match(s, /"code": "dictation-off"/, 'app/macSpeech.js shows the Dictation setting from this status');
   assert.doesNotMatch(s.slice(s.indexOf('static func main()')), /requestAuthorization/, 'no authorization request at startup: TTS-only use never touches TCC');
   assert.match(s, /RunLoop\.main\.run\(\)/, 'AVSpeechSynthesizer needs a real main run loop');
   assert.match(s, /static var active: \[ObjectIdentifier: Session\]/, 'sessions are retained (Network.framework does not hold them)');
