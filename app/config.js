@@ -5560,6 +5560,35 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
   document.getElementById('addGrid').onclick = () => { addPageMenu.classList.remove('open'); addPage('grid'); };
   document.getElementById('addDash').onclick = () => { addPageMenu.classList.remove('open'); addPage('web'); };
   document.getElementById('addApp').onclick = () => { addPageMenu.classList.remove('open'); addPage('app'); };
+  // Starter pages: the bundled tile pages for this computer (macOS or Windows defaults), added as new
+  // pages with fresh ids so they never collide with the pages already here. The second level of the
+  // menu is rendered in place; Escape or a click elsewhere closes it like the first level.
+  const starterMenuHtml = addPageMenu.innerHTML;
+  const addStarterPage = page => {
+    const g = { id: uid(), name: page.name + (config.grids.some(x => x.name === page.name) ? ' (starter)' : ''), kind: 'grid', cols: page.cols, rows: page.rows, tiles: JSON.parse(JSON.stringify(page.tiles || [])) };
+    ensureTiles(g);
+    view = 'pages'; config.grids.push(g); gi = config.grids.length - 1; ti = -1; render(); markDirty();
+  };
+  const restoreAddMenu = () => { addPageMenu.innerHTML = starterMenuHtml; wireAddMenu(); };
+  function wireAddMenu() {
+    document.getElementById('addGrid').onclick = () => { addPageMenu.classList.remove('open'); addPage('grid'); };
+    document.getElementById('addDash').onclick = () => { addPageMenu.classList.remove('open'); addPage('web'); };
+    document.getElementById('addApp').onclick = () => { addPageMenu.classList.remove('open'); addPage('app'); };
+    document.getElementById('addStarter').onclick = async e => {
+      e.stopPropagation();
+      let pages = [];
+      try { pages = (configApi.getStarterPages && await configApi.getStarterPages()) || []; } catch (err) {}
+      if (!pages.length) { addPageMenu.innerHTML = '<div class="hint" style="padding:8px 10px">No starter pages bundled.</div><button id="starterBack">← Back</button>'; }
+      else {
+        addPageMenu.innerHTML = pages.map((p, i) => `<button data-starter="${i}">★&nbsp; ${esc(p.name)} <span class="hint" style="margin:0 0 0 6px">${p.cols}×${p.rows}</span></button>`).join('')
+          + '<button id="starterAll">★★&nbsp; All starter pages</button><button id="starterBack">← Back</button>';
+        addPageMenu.querySelectorAll('button[data-starter]').forEach(b => b.onclick = () => { addPageMenu.classList.remove('open'); addStarterPage(pages[+b.dataset.starter]); restoreAddMenu(); });
+        document.getElementById('starterAll').onclick = () => { addPageMenu.classList.remove('open'); pages.forEach(addStarterPage); restoreAddMenu(); };
+      }
+      document.getElementById('starterBack').onclick = ev => { ev.stopPropagation(); restoreAddMenu(); };
+    };
+  }
+  wireAddMenu();
   document.getElementById('pageFilter').oninput = e => { pageFilter = e.target.value; renderGrids(); renderGroups(); renderPanes(); };
   // Page-type filter pulldown: same open/close behavior as the Add-page menu.
   const pageKindsMenu = document.getElementById('pageKindsMenu');

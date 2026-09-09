@@ -75,9 +75,29 @@ async function launchApp(value, deps) {
   return !err;
 }
 
+// Windows shell one-liners the original default grid and older configs carry, and what they mean on a
+// Mac. Exact matches only, plus the generic `start <url-or-scheme>` → `open`, so a config authored on
+// Windows keeps its Settings / Sound tiles working after a copy to a Mac.
+const MAC_SHELL_ALIASES = {
+  'start ms-settings:': 'open -a "System Settings"',
+  'start ms-settings:sound': 'open "x-apple.systempreferences:com.apple.Sound-Settings.extension"',
+  'start sndvol': 'open "x-apple.systempreferences:com.apple.Sound-Settings.extension"',
+  'explorer': 'open -a Finder',
+  'calc': 'open -a Calculator',
+  'notepad': 'open -a TextEdit',
+  'taskmgr': 'open -a "Activity Monitor"',
+};
+function macShellCommand(value) {
+  const key = String(value).trim().replace(/\s+/g, ' ');
+  if (MAC_SHELL_ALIASES[key.toLowerCase()]) return MAC_SHELL_ALIASES[key.toLowerCase()];
+  const m = /^start\s+("?)([a-z][a-z0-9+.-]*:[^\s"]*)\1$/i.exec(key);   // start https://… / start ms-teams:… → open
+  if (m) return 'open "' + m[2] + '"';
+  return value;
+}
+
 function runShellCommand(value, deps) {
   if (!value || typeof value !== 'string') return false;
-  deps.exec(value, { windowsHide: true });
+  deps.exec(platformOf(deps) === 'darwin' ? macShellCommand(value) : value, { windowsHide: true });
   return true;
 }
 
@@ -96,6 +116,8 @@ function lockWorkstation(deps) {
 module.exports = {
   macAppName,
   MAC_APP_ALIASES,
+  macShellCommand,
+  MAC_SHELL_ALIASES,
   hasPathSeparator,
   resolveAppPath,
   launchApp,

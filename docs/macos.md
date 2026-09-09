@@ -21,6 +21,14 @@ what is still Windows-only.
 4. The first time the app touches a saved secret, macOS asks whether "bedrock-panel" may access a key
    in your keychain. Click **Always Allow**. (Deny leaves saved passwords and tokens unreadable until
    the next launch.)
+5. A fresh install starts with the **macOS starter pages** — Default, Media, and Dev, built from apps
+   every Mac has (Safari, Finder, Notes, Calculator, Activity Monitor, Terminal, System Settings,
+   Screenshot, Mission Control, Music, Calendar, Messages, Console, System Information), web links,
+   and volume tiles that need no permission. A config copied from Windows keeps its pages; its
+   Windows program names are mapped to Mac apps where one exists (Chrome, Edge, Explorer → Finder,
+   Notepad → TextEdit, Calc, Task Manager → Activity Monitor, `wt` → Terminal, …) and the `start
+   ms-settings:` / `start sndvol` commands open System Settings and Sound. To add the Mac pages to
+   an existing config: editor → **+ Add page → Starter pages…** and pick a page (or all three).
 
 Running from source (`npm start`) works the same way, with one difference that matters for every
 permission below: macOS attributes a command-line launch to the terminal application, so the entry

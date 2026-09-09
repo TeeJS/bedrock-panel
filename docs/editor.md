@@ -27,3 +27,12 @@ hero plus a couple of 2×2 tiles:
 Edits apply on **Save** — nothing changes on the panel until then. Which page is
 *shown* is controlled by the **knob** (double-click → page selector), not the
 editor, so editing never changes what's live.
+
+## Starter pages
+
+**+ Add page → Starter pages…** lists the tile pages a fresh install starts with on this computer —
+Default, Media, and Dev — and adds the one you pick (or all three) as new pages, without touching the
+pages you already have. They are the bundled defaults for the platform you are on: on a Mac the tiles
+name Mac apps (Safari, Finder, Activity Monitor, System Settings, Screenshot, …) and use `open` /
+osascript commands; on Windows they are the original Windows pages. Handy after copying a config from
+the other platform, or to get a known-good page back after editing one into a corner.

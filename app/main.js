@@ -269,7 +269,9 @@ const { parseAppList, monitorAllowlist, routeMonitorMessage } = require('./micMo
 
 const USER_DIR = app.getPath('userData');
 const CONFIG_PATH = path.join(USER_DIR, 'config.json');                  // writable — works inside a packaged app too
-const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config.default.json'); // bundled (read-only)
+// Bundled first-run config (read-only). The macOS file carries the same pages with tiles that work on
+// a Mac (stock apps by their real names, `open`/osascript commands); the Windows one is the original.
+const DEFAULT_CONFIG_PATH = path.join(__dirname, process.platform === 'darwin' ? 'config.default.mac.json' : 'config.default.json');
 const LEGACY_CONFIG_PATH = path.join(__dirname, 'config.json');          // pre-userData dev location, migrated once
 const APPS_DIR = path.join(__dirname, '..', 'apps').replace('app.asar', 'app.asar.unpacked'); // unpacked when packaged
 const { helperPath } = require('./nativeHelpers');       // per-platform bundled helper binaries (null = none on this platform)
@@ -4060,6 +4062,15 @@ app.whenReady().then(async () => {
   ipcMain.on('openExternal', (e, url) => { if (!isFromPanel(e) && !isFrom(e, configWin)) return; openExternalUrl(url); });
   ipcMain.on('ringState', (e, state) => { if (!isFromPanel(e)) return; setRingState(state); });
   ipcMain.handle('getConfig', (e) => isFrom(e, configWin) ? configForRenderer(config) : null);
+  // The bundled starter tile pages for this platform (editor: + Add page → Starter pages), so a config
+  // that predates the macOS defaults — or any config — can pull in the pages that work here.
+  ipcMain.handle('getStarterPages', (e) => {
+    if (!isFrom(e, configWin)) return [];
+    try {
+      const grids = (JSON.parse(fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8')).grids || []).filter(g => g && Array.isArray(g.tiles));
+      return grids.map(g => ({ id: g.id, name: g.name, cols: g.cols, rows: g.rows, tiles: g.tiles }));
+    } catch (err) { console.log('starter pages unavailable: ' + (err && err.message)); return []; }
+  });
   ipcMain.handle('getAppVersion', (e) => isFrom(e, configWin) ? app.getVersion() : null);
   ipcMain.handle('listOAuthProviders', (e) => isFrom(e, configWin) ? oauthProviderPayload() : []);
   ipcMain.handle('connectOAuthProvider', async (e, provider, scopes) => {
