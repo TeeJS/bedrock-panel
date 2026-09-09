@@ -206,14 +206,17 @@ exists, create a self-signed code-signing certificate once and name it there:
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Bedrock Panel Dev" \
   -addext "extendedKeyUsage=critical,codeSigning" -addext "keyUsage=critical,digitalSignature" \
   -keyout /tmp/bpdev.key -out /tmp/bpdev.crt \
-&& openssl pkcs12 -export -inkey /tmp/bpdev.key -in /tmp/bpdev.crt -name "Bedrock Panel Dev" -passout pass:bpdev -out /tmp/bpdev.p12 \
+&& openssl pkcs12 -export -inkey /tmp/bpdev.key -in /tmp/bpdev.crt -name "Bedrock Panel Dev" \
+  -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 -passout pass:bpdev -out /tmp/bpdev.p12 \
 && security import /tmp/bpdev.p12 -k ~/Library/Keychains/login.keychain-db -P bpdev -T /usr/bin/codesign \
 && security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db /tmp/bpdev.crt \
 && rm /tmp/bpdev.key /tmp/bpdev.p12 && mkdir -p .signing && echo "Bedrock Panel Dev" > .signing/mac-identity
 ```
 
-(`add-trusted-cert` asks for your login password; the first build asks once whether `codesign`
-may use the key — click **Always Allow**. Keychain Access → Certificate Assistant → Create a
+(The `-keypbe/-certpbe/-macalg` flags matter: OpenSSL 3's default PKCS#12 encryption makes
+`security import` fail with "MAC verification failed during PKCS12 import". `add-trusted-cert` asks
+for your login password; the first build asks once whether `codesign` may use the key — click
+**Always Allow**. Keychain Access → Certificate Assistant → Create a
 Certificate, type *Code Signing*, does the same thing with a GUI.) Check with
 `security find-identity -v -p codesigning`. Because the certificate's fingerprint is what macOS
 stores with each grant, every build signed with it keeps its permissions, including the copies
