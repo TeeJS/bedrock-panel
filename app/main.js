@@ -2708,8 +2708,10 @@ function placePanel() {
       backgroundColor: '#000000',
       // macOS: a plain always-on-top cover of the panel display (pinPanelMac) — no full-screen Space, no
       // rounded corners or shadow leaking the desktop at the edges, allowed to sit under the menu bar area.
+      // Never `closable: false` here (DK-Suite sets it and destroys its window by hand): Electron cancels
+      // the whole quit when a window refuses to close, so Cmd+Q would hang.
       ...(process.platform === 'darwin'
-        ? { fullscreenable: false, hasShadow: false, roundedCorners: false, enableLargerThanScreen: true, alwaysOnTop: true, closable: false }
+        ? { fullscreenable: false, hasShadow: false, roundedCorners: false, enableLargerThanScreen: true, alwaysOnTop: true }
         : { fullscreenable: true }),
       webPreferences: {
         nodeIntegration: false,
@@ -4631,6 +4633,9 @@ app.on('before-quit', () => {
   try { discordService.stop(); } catch (e) {}                 // close Discord IPC and cancel reconnect timers
   try { reservedDisplay.stop(); } catch (e) {}                // release WinEvent hooks and terminate the native helper
   try { displayArrange.stop(); } catch (e) {}                 // drop any pending arrangement check
+  // The kiosk panel is torn down here, not by the close pass that follows: a window that refuses to
+  // close (a sheet, a cancelled close) cancels the quit itself, and the panel has nothing to save.
+  try { if (panelWin && !panelWin.isDestroyed()) panelWin.destroy(); } catch (e) {}
   try { claudeVoiceHost.shutdown(); } catch (e) {}       // terminate the claude CLI child, release held approvals, remove the global hook
   try { codexVoiceHost.shutdown(); } catch (e) {}        // terminate the codex app-server child
   try { copilotVoiceHost.shutdown(); } catch (e) {}      // terminate the copilot app-server child
