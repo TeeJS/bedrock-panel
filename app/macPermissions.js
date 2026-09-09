@@ -7,15 +7,18 @@
 // Rule: features prompt lazily on their first use (getUserMedia, the first recording, the first
 // keystroke); nothing here runs at startup. `request()` is only ever driven by the editor's button.
 
-// System Settings → Privacy & Security pane anchors (x-apple.systempreferences URL scheme).
+// System Settings → Privacy & Security pane anchors (x-apple.systempreferences URL scheme). Every
+// anchor here was checked against the macOS 26 SecurityPrivacyExtension bundle; Local Network has no
+// anchor, so it opens the Privacy & Security page itself.
 const PANES = {
   accessibility: 'Privacy_Accessibility',
   microphone: 'Privacy_Microphone',
-  screen: 'Privacy_ScreenCapture',          // "Screen & System Audio Recording" — also hosts System Audio Recording Only
-  inputMonitoring: 'Privacy_ListenEvent',
+  screen: 'Privacy_ScreenCapture',          // "Screen & System Audio Recording"
+  systemAudio: 'Privacy_AudioCapture',      // its "System Audio Recording Only" list (meeting recordings)
+  inputMonitoring: 'Privacy_ListenEvent',   // "Input Monitoring" (the DK-QUAKE touch controller)
   automation: 'Privacy_Automation',
   calendars: 'Privacy_Calendars',
-  localNetwork: 'Privacy_LocalNetwork',
+  localNetwork: '',
   files: 'Privacy_FilesAndFolders',
 };
 const SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?';
@@ -52,8 +55,9 @@ function createMacPermissions({ platform = process.platform, systemPreferences =
 
   function openSettings(kind) {
     const anchor = PANES[kind];
-    if (!supported || !anchor || !shell) return Promise.resolve(false);
-    return Promise.resolve(shell.openExternal(SETTINGS_URL + anchor)).then(() => true, () => false);
+    if (!supported || anchor == null || !shell) return Promise.resolve(false);
+    const url = anchor ? SETTINGS_URL + anchor : SETTINGS_URL.replace(/\?$/, '');
+    return Promise.resolve(shell.openExternal(url)).then(() => true, () => false);
   }
 
   // For robotjs call sites: true when keystrokes will actually be delivered. Prompts the OS once per

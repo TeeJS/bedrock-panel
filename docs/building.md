@@ -105,6 +105,9 @@ normally need it for initial binding — `Set up touchscreen` alone is sufficien
 
 ## Build & run (macOS)
 
+> End-user setup — installing the unsigned build, every macOS permission and where to grant it,
+> Reserved Display on a Mac — is in [macos.md](macos.md). This section is the developer side.
+
 Apple Silicon only for now (the packaged app declares macOS 14.2+; Electron 44 itself needs 13+).
 **Software mode** — the resizable desktop window, the editor, and every platform-neutral app — is
 the supported surface today. The Windows C# helpers have macOS counterparts in `native/mac/`

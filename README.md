@@ -171,7 +171,9 @@ The macOS build is **not yet notarized** (Apple Developer ID pending), so on fir
 could not verify the app: click **Done**, open **System Settings → Privacy & Security**, scroll to
 *Security*, click **Open Anyway**, then **Open** — again after each update until builds are
 notarized. (Or run `xattr -dr com.apple.quarantine "/Applications/Bedrock Panel.app"`.) Config lives in
-`~/Library/Application Support/bedrock-panel`. Linux is still in progress.
+`~/Library/Application Support/bedrock-panel`. The Mac needs a few permissions (touchscreen, keystrokes,
+recording): **[docs/macos.md](docs/macos.md)** lists each one and exactly where to grant it. Linux is
+still in progress.
 
 ## 📖 Documentation
 

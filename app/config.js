@@ -5116,9 +5116,10 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
         if (!el || !configApi.getMacPermissions) return;
         configApi.getMacPermissions().then(st => {
           if (!st || !st.supported) { el.innerHTML = ""; return; }
-          const ROWS = [["accessibility", "Accessibility — keystrokes for paste tiles, macros, meeting hotkeys, media keys"], ["microphone", "Microphone — recordings, dictation, voice apps"], ["screen", "Screen &amp; System Audio Recording — slide capture, system audio in recordings"]];
-          const pill = v => v === "granted" ? ["ok", "granted"] : v === "not-determined" ? ["off", "not asked yet"] : ["off", v === "denied" || v === "restricted" ? "not granted" : "unknown"];
-          el.innerHTML = ROWS.map(([k, label]) => { const [cls, txt] = pill(st[k]); return `<div class="row" style="gap:8px;align-items:center"><span style="flex:1">${label}</span><span class="stpill ${cls}">${txt}</span>${st[k] === "granted" ? "" : `<button data-req="${k}">Request</button>`}<button data-pane="${k}">Open System Settings</button></div>`; }).join("");
+          const ROWS = [["accessibility", "Accessibility — keystrokes (paste tiles, macros, meeting hotkeys, media keys) and Reserved Display"], ["inputMonitoring", "Input Monitoring — the DK-QUAKE touchscreen"], ["microphone", "Microphone — recordings, dictation, voice apps"], ["screen", "Screen &amp; System Audio Recording — slide capture, and the screen part of a meeting recording"], ["systemAudio", "System Audio Recording Only — the other side of a meeting recording"]];
+          const pill = v => v === "granted" ? ["ok", "granted"] : v === "not-determined" ? ["off", "not asked yet"] : v == null ? ["off", "check in System Settings"] : ["off", v === "denied" || v === "restricted" ? "not granted" : "unknown"];
+          const requestable = { accessibility: 1, microphone: 1, screen: 1 };   // macOS has no query or prompt API for the others: System Settings only
+          el.innerHTML = ROWS.map(([k, label]) => { const [cls, txt] = pill(st[k]); return `<div class="row" style="gap:8px;align-items:center"><span style="flex:1">${label}</span><span class="stpill ${cls}">${txt}</span>${st[k] === "granted" || !requestable[k] ? "" : `<button data-req="${k}">Request</button>`}<button data-pane="${k}">Open System Settings</button></div>`; }).join("");
           el.querySelectorAll("button[data-req]").forEach(b => b.onclick = () => configApi.requestMacPermission(b.dataset.req).then(renderMacPerms, renderMacPerms));
           el.querySelectorAll("button[data-pane]").forEach(b => b.onclick = () => configApi.openMacPrivacyPane(b.dataset.pane));
         }).catch(() => {});
