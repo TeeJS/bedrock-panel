@@ -2708,8 +2708,8 @@ function placePanel() {
       backgroundColor: '#000000',
       // macOS: a plain always-on-top cover of the panel display (pinPanelMac) — no full-screen Space, no
       // rounded corners or shadow leaking the desktop at the edges, allowed to sit under the menu bar area.
-      // Never `closable: false` here (DK-Suite sets it and destroys its window by hand): Electron cancels
-      // the whole quit when a window refuses to close, so Cmd+Q would hang.
+      // Never make this window non-closable (DK-Suite does, and destroys its window by hand): Electron
+      // cancels the whole quit when a window refuses to close, so Cmd+Q would hang.
       ...(process.platform === 'darwin'
         ? { fullscreenable: false, hasShadow: false, roundedCorners: false, enableLargerThanScreen: true, alwaysOnTop: true }
         : { fullscreenable: true }),
