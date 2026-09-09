@@ -32,19 +32,28 @@ const { desktopCapturer } = require('electron');
  */
 function enableLoopbackAudioCapture(targetSession, options) {
   options = options || {};
+  // Denying: Electron 44 rejects `callback({})` with a TypeError (an unhandled rejection inside the
+  // handler, which surfaced as the "unexpected background error" dialog on macOS when Screen Recording
+  // was not granted yet); `callback(null)` is the documented rejection.
+  const deny = callback => { try { callback(null); } catch (e) { try { callback(); } catch (e2) {} } };
   targetSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     try {
       // A video source is mandatory in the callback even for audio-only capture.
       // The renderer throws this track away; it exists only to satisfy the API.
       const sources = await desktopCapturer.getSources({ types: ['screen'] });
       if (sources.length === 0) {
-        callback({});
+        if (options.onError) options.onError(new Error('no screen source available' + (process.platform === 'darwin' ? ' — Screen Recording permission is needed (System Settings → Privacy & Security → Screen & System Audio Recording)' : '')));
+        deny(callback);
         return;
       }
       callback({ video: sources[0], audio: 'loopback' });
     } catch (err) {
-      if (options.onError) options.onError(err);
-      callback({});
+      // desktopCapturer rejects with a bare string ("Failed to get sources") when macOS refuses
+      // screen access; hand the logger a real Error either way.
+      const e = err instanceof Error ? err : new Error(String(err));
+      if (process.platform === 'darwin' && /get sources|not permitted|denied/i.test(e.message)) e.message += ' — Screen Recording permission is needed (System Settings → Privacy & Security → Screen & System Audio Recording)';
+      if (options.onError) options.onError(e);
+      deny(callback);
     }
   });
 }

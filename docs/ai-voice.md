@@ -145,7 +145,12 @@ that backend's default.
 Speech-to-text and text-to-speech run against [Wyoming](https://github.com/rhasspy/wyoming)
 services, configured once under **Settings → TTS/STT** (override per page in Advanced settings):
 
-- **No servers of your own (default):** install [tts-sst](https://github.com/TeeJS/tts-stt-windows),
+- **On a Mac, nothing to install:** the built-in macOS speech engine is used whenever no server is
+  configured (Settings → TTS/STT → Engine): Apple's speech recognition, on-device where the language
+  supports it, and the system voices (pick one in the Voice list; better voices are downloaded under
+  System Settings → Accessibility → Spoken Content). macOS asks for the Speech Recognition permission
+  the first time something is transcribed. Details in [macos.md](macos.md).
+- **No servers of your own (Windows default):** install [tts-sst](https://github.com/TeeJS/tts-stt-windows),
   a small Windows tray app serving Whisper STT and a Piper voice locally on 127.0.0.1:10300 / 10200.
 - **Your own homelab services:** point the host/port fields at your `wyoming-faster-whisper` and
   `wyoming-piper` instances.

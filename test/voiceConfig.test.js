@@ -11,7 +11,7 @@ const { VOICE_DEFAULTS, voiceSettings, resolveVoiceEndpoints, migrateVoiceConfig
 test('voiceSettings fills defaults and trims', () => {
   assert.deepEqual(voiceSettings(undefined), VOICE_DEFAULTS);
   assert.deepEqual(voiceSettings({ voice: { sttHost: ' 10.0.0.5 ', sttPort: ' 1 ' } }),
-    { sttHost: '10.0.0.5', sttPort: '1', ttsHost: '', ttsPort: '10200' });
+    { sttHost: '10.0.0.5', sttPort: '1', ttsHost: '', ttsPort: '10200', engine: '', macVoice: '' });
 });
 
 test('resolveVoiceEndpoints returns blanks when no page is active', () => {
@@ -149,4 +149,21 @@ test('id migration never overwrites an existing backend and is idempotent', () =
   const before = JSON.stringify(cfg);
   migrateVoiceConfig(cfg);
   assert.equal(JSON.stringify(cfg), before);
+});
+
+test('engine: the built-in macOS engine is implied on a Mac with no servers, explicit choices win, and endpoints follow', () => {
+  const { macSpeechWanted, resolveVoiceEndpoints, voiceSettings, MAC_SPEECH } = require('../app/voiceConfig');
+  assert.equal(macSpeechWanted({}, 'darwin'), true, 'blank hosts on a Mac = built-in engine');
+  assert.equal(macSpeechWanted({ voice: { sttHost: 'rosie' } }, 'darwin'), false, 'a configured server wins the default');
+  assert.equal(macSpeechWanted({ voice: { sttHost: 'rosie', engine: 'macos' } }, 'darwin'), true, 'explicit macos ignores the hosts');
+  assert.equal(macSpeechWanted({ voice: { engine: 'wyoming' } }, 'darwin'), false);
+  assert.equal(macSpeechWanted({}, 'win32'), false, 'never off macOS');
+  assert.equal(macSpeechWanted({ voice: { engine: 'macos' } }, 'win32'), false);
+  assert.deepEqual(resolveVoiceEndpoints({}, {}, 'darwin'), { sttHost: MAC_SPEECH.host, sttPort: MAC_SPEECH.sttPort, ttsHost: MAC_SPEECH.host, ttsPort: MAC_SPEECH.ttsPort });
+  assert.deepEqual(resolveVoiceEndpoints({}, {}, 'win32'), { sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200' }, 'Windows unchanged');
+  assert.deepEqual(resolveVoiceEndpoints({ voice: { sttHost: 'rosie', ttsHost: 'rosie' } }, {}, 'darwin'), { sttHost: 'rosie', sttPort: '10300', ttsHost: 'rosie', ttsPort: '10200' });
+  assert.equal(resolveVoiceEndpoints({}, { voiceOverride: true, voiceSttHost: 'x', voiceSttPort: '1', voiceTtsHost: 'y', voiceTtsPort: '2' }, 'darwin').sttHost, 'x', 'a page override still wins');
+  assert.equal(resolveVoiceEndpoints({}, null, 'darwin').sttHost, '', 'no active page = nothing dialed');
+  assert.deepEqual(voiceSettings({ voice: { engine: 'bogus', macVoice: ' Samantha ' } }).engine, '', 'unknown engine values fall back');
+  assert.equal(voiceSettings({ voice: { macVoice: ' Samantha ' } }).macVoice, 'Samantha');
 });

@@ -41,9 +41,10 @@ to preserve, and a window in its own full-screen Space cannot be moved.
 Independently of the helper, the kiosk panel window on macOS is a plain frameless window covering
 exactly the panel display — the way DK-Suite's own RemoteScreen window is built, not a full-screen
 or simple-full-screen window (simple full screen sets app-wide presentation options that hide the
-menu bar on every display whenever Bedrock Panel is the active app). It never takes key focus (the
-display owning the key window is where macOS prefers to open other apps' new windows), ignores the
-mouse (touch arrives over USB), is visible on every Space, and sits at the screen-saver window level
+menu bar on every display whenever Bedrock Panel is the active app). It is placed without taking key
+focus (the display owning the key window is where macOS prefers to open other apps' new windows),
+takes it only on a deliberate click when "Mouse and keyboard can use the panel" is on (off: touch-only,
+click-through, never key), is visible on every Space, and sits at the screen-saver window level
 + 1, above the menu bar (level 24), Control Center's menu items (25), and the Dock (20) that macOS
 draws on every display when "Displays have separate Spaces" is on. A window that macOS opens on the
 panel display therefore lands behind the panel, which is why Reserved Display is on by default on a

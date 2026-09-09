@@ -3755,7 +3755,7 @@
   // ---- settings page ----
   const DEFAULT_APP_REPO = 'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps';
   const LEGACY_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';   // saved by pre-rename installs
-  const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: IS_MAC, panelFarRight: IS_MAC, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
+  const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: IS_MAC, panelFarRight: IS_MAC, panelInput: true, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
   function appSettings() { return Object.assign({}, DEFAULT_SETTINGS, config.settings || {}); }
   function renderSettings() {
     ['tilegrid', 'mergebar', 'tileform', 'iconpane'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });
@@ -3932,6 +3932,8 @@ ${IS_MAC ? `
       <p class="sectitle">Panel display arrangement</p>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sFarRight" ${s.panelFarRight ? 'checked' : ''}> Keep the panel display at the far right of the display arrangement</label></div>
       <details class="hint"><summary>macOS gives the display you clicked last the active menu bar and every new window, and a 1920×480 strip arranged under a display catches the cursor as it moves down. Parked at the far right of your other displays — never mirrored, never the main display — it stays out of the way; DK-Suite applies the same rule.</summary> Checked at launch, whenever a display is added or changes, and when this setting is saved. The arrangement is written to macOS (it is what System Settings → Displays would store), so it stays after Bedrock Panel quits; nothing else about your displays is touched. Paused during Monitor mode.</details>
+      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sPanelInput" ${s.panelInput !== false ? 'checked' : ''}> Mouse and keyboard can use the panel</label></div>
+      <details class="hint"><summary>On, like Windows: clicking a tile with the mouse works, and a dashboard on the panel can take keyboard input after a click. Off: the panel is touch-only — clicks pass through it and it never takes keyboard focus, the way DK-Suite's panel behaves.</summary> A click on the panel makes the Quake the active display until you click elsewhere (macOS puts the menu bar and new windows on the active display; Reserved Display brings windows back). Turning this off avoids that entirely. Saving re-creates the panel window.</details>
 ` : ''}
       <p class="sectitle">Monitor mode <span id="sMonPill" class="stpill off">checking…</span></p>
       <details class="hint"><summary>Use the device as a normal monitor: it shows your Windows desktop and touch acts as the mouse.</summary> Enter it below, from the tray menu, or with a “System → monitor” tile; exit from the tray. These set what the knob does while in Monitor mode.</details>
@@ -4272,7 +4274,19 @@ ${IS_MAC ? `
       <div id="diMsg" class="hint" style="margin:0 0 10px;min-height:16px"></div>
       <div id="diPane"></div>`;
 
-    const ttsHtml = `
+    const ttsHtml = `${IS_MAC ? `
+      <p class="sectitle">Speech engine</p>
+      <div class="row"><label>Engine</label>
+        <select id="ttsEngine" style="flex:1">
+          <option value="" ${!voice.engine ? 'selected' : ''}>Built-in macOS speech when no server is set below (default)</option>
+          <option value="macos" ${voice.engine === 'macos' ? 'selected' : ''}>Built-in macOS speech — Apple recognition + system voices, nothing to install</option>
+          <option value="wyoming" ${voice.engine === 'wyoming' ? 'selected' : ''}>Speech servers (Whisper / Piper) at the hosts below</option>
+        </select></div>
+      <div class="row"><label>Voice</label>
+        <select id="ttsMacVoice" style="flex:1"><option value="">System default for your language</option></select></div>
+      <div class="row"><label>Status</label><span id="ttsMacStatus" class="hint" style="margin:0">checking…</span></div>
+      <details class="hint"><summary>The built-in engine runs on this Mac only: speech recognition is Apple's (on-device where the language supports it) and speech uses the voices under System Settings → Accessibility → Spoken Content. No server, no account, no network.</summary> macOS asks for the <b>Speech Recognition</b> permission the first time something is transcribed; until then only speaking works. Better voices (Siri voices, enhanced/premium) are downloaded in System Settings → Accessibility → Spoken Content → System voice → Manage Voices. The engine listens on 127.0.0.1:10300 (STT) and :10200 (TTS) — the Wyoming protocol, so the fields below are ignored while it is active.</details>
+` : ''}
       <p class="sectitle">Speech-to-text (Whisper / STT)</p>
       <div class="row"><label>STT host / port</label>
         <input id="ttsSttHost" value="${esc(voice.sttHost)}" placeholder="127.0.0.1" style="flex:1">
@@ -5170,6 +5184,8 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
       document.getElementById('sReserved').onchange = e => setS('reservedDisplay', e.target.checked);
       const farRight = document.getElementById('sFarRight');   // macOS only
       if (farRight) farRight.onchange = e => setS('panelFarRight', e.target.checked);
+      const panelInput = document.getElementById('sPanelInput');   // macOS only
+      if (panelInput) panelInput.onchange = e => setS('panelInput', e.target.checked);
       // Live state pill + direct enter action (enter-only; exit stays on the tray)
       const monPill = document.getElementById('sMonPill'), monBtn = document.getElementById('sMonEnter'), monMsg = document.getElementById('sMonEnterMsg');
       const refreshMonState = async () => {
@@ -5204,6 +5220,26 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
       document.getElementById('ttsTtsPort').oninput = e => saveVoice('ttsPort', e.target.value.trim());
       const helper = document.getElementById('ttsHelperLink');
       if (helper) helper.onclick = e => { e.preventDefault(); configApi.openExternal('https://github.com/TeeJS/tts-stt-windows/releases'); };
+      // macOS built-in engine: selector, voice list from the helper, live status (re-read on focus).
+      const engineSel = document.getElementById('ttsEngine');
+      if (engineSel && configApi.getMacSpeechStatus) {
+        const voiceSel = document.getElementById('ttsMacVoice'), statusEl = document.getElementById('ttsMacStatus');
+        engineSel.onchange = e => saveVoice('engine', e.target.value);
+        voiceSel.onchange = e => saveVoice('macVoice', e.target.value);
+        const renderMacSpeech = () => configApi.getMacSpeechStatus().then(st => {
+          if (!st) return;
+          const chosen = ((config.settings || {}).voice || {}).macVoice || '';
+          if (Array.isArray(st.voices) && st.voices.length && voiceSel.options.length <= 1) {
+            const byLang = st.voices.slice().sort((a, b) => (a.language + a.name).localeCompare(b.language + b.name));
+            for (const v of byLang) { const o = document.createElement('option'); o.value = v.name; o.textContent = v.name + ' — ' + v.language + (v.quality && v.quality !== 'default' ? ' (' + v.quality + ')' : ''); voiceSel.appendChild(o); }
+          }
+          voiceSel.value = chosen;
+          const auth = st.speechAuth === 'authorized' ? 'speech recognition allowed' : st.speechAuth === 'denied' ? 'speech recognition denied — System Settings → Privacy & Security → Speech Recognition' : st.speechAuth === 'notDetermined' ? 'speech recognition: asks on first use' : (st.speechAuth || '');
+          statusEl.textContent = !st.available ? 'helper not built (run npm run build:mac-helpers)' : !st.wanted ? 'off — the speech servers below are used' : st.error ? 'error: ' + st.error : st.ready ? 'running on 127.0.0.1:' + st.sttPort + ' / :' + st.ttsPort + (st.onDevice ? ', on-device recognition' : '') + ', ' + auth : st.running ? 'starting…' : 'stopped';
+        }).catch(() => {});
+        renderMacSpeech();
+        if (!window.__macSpeechFocusHooked) { window.__macSpeechFocusHooked = true; window.addEventListener('focus', () => { if (document.getElementById('ttsMacStatus')) renderMacSpeech(); }); }
+      }
     } else if (tab === 'meeting') {
       const saveMe = patch => { if (!config.settings) config.settings = {}; config.settings.meeting = Object.assign(currentMe(), patch); markDirty(); };
       document.getElementById('meFolder').oninput = e => saveMe({ folder: e.target.value.trim() });

@@ -18,11 +18,12 @@ test('the panel window stays closable: Electron cancels the whole quit when a wi
 
 test('macOS panel window: plain cover of the display, never a (simple) full-screen window', () => {
   assert.match(panelOptions, /fullscreenable: false, hasShadow: false, roundedCorners: false, enableLargerThanScreen: true, alwaysOnTop: true/);
-  assert.match(panelOptions, /focusable: process\.platform !== 'darwin'/);
+  assert.match(panelOptions, /focusable: process\.platform !== 'darwin' \|\| panelInputEnabled\(\)/, 'macOS: focusable only while mouse/keyboard use of the panel is on');
+  assert.match(panelOptions, /acceptFirstMouse: process\.platform === 'darwin' && panelInputEnabled\(\)/, 'the first click presses the tile instead of just activating the window');
   const pin = src.slice(src.indexOf('function pinPanelMac('), src.indexOf('function placePanel()'));
   assert.match(pin, /setSimpleFullScreen\(false\)/, 'simple full screen is switched off if ever on (app-wide auto-hide presentation options)');
   assert.match(pin, /setAlwaysOnTop\(true, 'screen-saver', 1\)/, "DK-Suite's level: above the menu bar (24), Control Center items (25), the Dock (20)");
-  assert.match(pin, /setIgnoreMouseEvents\(true\)/, 'touch arrives over USB; a stray cursor must not press tiles');
+  assert.match(pin, /setIgnoreMouseEvents\(!panelInputEnabled\(\)\)/, 'touch-only mode is click-through; the default accepts the mouse like Windows');
   assert.match(pin, /setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: false \}\)/);
   assert.doesNotMatch(src.slice(src.indexOf('function applyPanelDisplayMode(')).split('\n').slice(0, 6).join('\n'), /setSimpleFullScreen\(true\)/);
 });

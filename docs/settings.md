@@ -98,6 +98,11 @@ protection and what the knob does in monitor mode):
   Settings are saved. The change is written to macOS like one made in System Settings → Displays;
   nothing else about the displays is touched. Paused during Monitor Mode. Untick it to arrange the
   Quake yourself.
+- **Mouse and keyboard can use the panel** (Monitor tab, Mac only; on by default) — on, the panel
+  behaves as on Windows: mouse clicks press tiles and a dashboard on the panel takes keyboard input
+  after a click (a click makes the Quake the active display until you click elsewhere). Off, the
+  panel is touch-only: clicks pass through it and it never takes keyboard focus, the way DK-Suite's
+  panel behaves. Saving re-creates the panel window.
 - **Monitor Mode** — intentionally exposes the Quake as a normal Windows desktop
   monitor. Reserved Display protection is suspended for the duration of Monitor Mode and
   resumes when it exits; the USB panel keepalive continues in either mode.

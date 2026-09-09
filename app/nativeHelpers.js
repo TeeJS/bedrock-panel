@@ -22,6 +22,7 @@ const HELPERS = {
   reservedDisplay:   { win32: 'reserved-display.exe',     darwin: path.join('mac', 'reserved-display') },
   displayArrange:    {                                     darwin: path.join('mac', 'display-arrange') },   // panel display far right, never mirrored/main
   privacy:           {                                     darwin: path.join('mac', 'privacy') },           // TCC preflight/request (Input Monitoring, Screen Recording)
+  speechServer:      {                                     darwin: path.join('mac', 'speech-server') },     // built-in macOS STT/TTS as a local Wyoming server
 };
 
 function helperPath(name, platform = process.platform, dir = path.join(__dirname, 'native')) {

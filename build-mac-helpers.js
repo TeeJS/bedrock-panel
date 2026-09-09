@@ -38,6 +38,7 @@ const TARGETS = [
   { name: 'reserved-display' },
   { name: 'display-arrange' },
   { name: 'privacy' },
+  { name: 'speech-server', plist: 'speech-server.plist' },   // TCC aborts a speech-recognition caller without its own usage string
 ].map(t => Object.assign(t, { src: path.join(SRC_DIR, t.name + '.swift'), out: path.join(OUT_DIR, t.name) }));
 
 const dist = process.argv.includes('--dist') || process.env.BEDROCK_MAC_ARCH === 'universal';

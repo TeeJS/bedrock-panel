@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Embedded as the helper's __info_plist section (build-mac-helpers.js): TCC aborts any process
+	     that asks for speech recognition without this key in its OWN Info.plist, bundle or not. -->
+	<key>CFBundleIdentifier</key>
+	<string>com.teejs.bedrockpanel.speech-server</string>
+	<key>CFBundleName</key>
+	<string>Bedrock Panel Speech</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Bedrock Panel uses macOS speech recognition on this Mac for the voice apps and dictation when you choose the built-in speech engine.</string>
+</dict>
+</plist>

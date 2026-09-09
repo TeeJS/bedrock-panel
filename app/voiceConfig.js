@@ -24,25 +24,43 @@ const LEGACY_VOICE_APPS = { 'claude-voice': 'claude', 'codex-voice': 'codex', 'c
 const LEGACY_CHAT_APP = 'chat';
 // Host blank by default (voice stays off until pointed at a server; the editor placeholder is
 // 127.0.0.1 for the tts-stt-windows helper). Ports are the standard Wyoming faster-whisper / piper.
-const VOICE_DEFAULTS = { sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200' };
+const VOICE_DEFAULTS = { sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200', engine: '', macVoice: '' };
+// The built-in macOS engine: native/mac/speech-server (Apple speech recognition + the system voices)
+// served on loopback with the standard Wyoming ports, so every Wyoming consumer dials it unchanged.
+const MAC_SPEECH = { host: '127.0.0.1', sttPort: '10300', ttsPort: '10200' };
 
 function str(x) { return String(x == null ? '' : x).trim(); }
 
-// The global voice endpoints, defaults filled in.
+// The global voice endpoints, defaults filled in. `engine`: '' (decide by platform — see
+// macSpeechWanted), 'wyoming' (the hosts below), or 'macos' (the built-in engine, hosts ignored).
 function voiceSettings(settings) {
   const v = (settings && settings.voice) || {};
+  const engine = str(v.engine);
   return {
     sttHost: str(v.sttHost) || VOICE_DEFAULTS.sttHost,
     sttPort: str(v.sttPort) || VOICE_DEFAULTS.sttPort,
     ttsHost: str(v.ttsHost) || VOICE_DEFAULTS.ttsHost,
     ttsPort: str(v.ttsPort) || VOICE_DEFAULTS.ttsPort,
+    engine: engine === 'macos' || engine === 'wyoming' ? engine : '',
+    macVoice: str(v.macVoice),
   };
+}
+
+// Should the built-in macOS engine run? Explicitly chosen, or — the default for a Mac that has no
+// speech server configured — implied, so voice works out of the box there. Off elsewhere.
+function macSpeechWanted(settings, platform = process.platform) {
+  if (platform !== 'darwin') return false;
+  const v = voiceSettings(settings);
+  if (v.engine === 'macos') return true;
+  if (v.engine === 'wyoming') return false;
+  return !v.sttHost && !v.ttsHost;
 }
 
 // Effective endpoints for a served voice page. `pageOptions` is grid.options, or null when no such
 // page is active — then the endpoints are blank so nothing gets dialed (mirrors the old behavior
-// where an inactive app returned an empty host). A page with voiceOverride uses its own values.
-function resolveVoiceEndpoints(settings, pageOptions) {
+// where an inactive app returned an empty host). A page with voiceOverride uses its own values;
+// otherwise the built-in macOS engine's loopback endpoints when that engine is in use.
+function resolveVoiceEndpoints(settings, pageOptions, platform = process.platform) {
   if (!pageOptions) return { sttHost: '', sttPort: '', ttsHost: '', ttsPort: '' };
   if (pageOptions.voiceOverride) {
     return {
@@ -50,7 +68,9 @@ function resolveVoiceEndpoints(settings, pageOptions) {
       ttsHost: str(pageOptions.voiceTtsHost), ttsPort: str(pageOptions.voiceTtsPort),
     };
   }
-  return voiceSettings(settings);
+  if (macSpeechWanted(settings, platform)) return { sttHost: MAC_SPEECH.host, sttPort: MAC_SPEECH.sttPort, ttsHost: MAC_SPEECH.host, ttsPort: MAC_SPEECH.ttsPort };
+  const v = voiceSettings(settings);
+  return { sttHost: v.sttHost, sttPort: v.sttPort, ttsHost: v.ttsHost, ttsPort: v.ttsPort };
 }
 
 // One-time migration of the legacy per-page keys (wyomingHost / wyomingSttPort / wyomingTtsPort, one
@@ -188,4 +208,4 @@ function isSttNoisePhrase(text) {
 }
 
 module.exports = {
-  VOICE_APPS, LEGACY_VOICE_APPS, VOICE_DEFAULTS, DEFAULT_AI_PROFILES, ensureAiProfiles, ensurePanelProfile, ensureRoutines, resolveAiProfile, voiceSettings, resolveVoiceEndpoints, resolveLucidEndpoints, migrateVoiceConfig, isSttNoisePhrase };
+  VOICE_APPS, LEGACY_VOICE_APPS, VOICE_DEFAULTS, MAC_SPEECH, macSpeechWanted, DEFAULT_AI_PROFILES, ensureAiProfiles, ensurePanelProfile, ensureRoutines, resolveAiProfile, voiceSettings, resolveVoiceEndpoints, resolveLucidEndpoints, migrateVoiceConfig, isSttNoisePhrase };

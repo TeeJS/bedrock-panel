@@ -119,7 +119,8 @@
         "NSDocumentsFolderUsageDescription": "Bedrock Panel saves meeting recordings and transcripts under Documents by default.",
         "NSAppleEventsUsageDescription": "Bedrock Panel controls Music and Spotify playback from the panel.",
         "NSInputMonitoringUsageDescription": "Bedrock Panel reads the DK-QUAKE touch controller directly; macOS counts that as input monitoring (Accessibility covers it).",
-        "NSAccessibilityUsageDescription": "Bedrock Panel needs Accessibility to read the DK-QUAKE touchscreen, keep other windows off the panel display, and send keystrokes for tiles and macros."
+        "NSAccessibilityUsageDescription": "Bedrock Panel needs Accessibility to read the DK-QUAKE touchscreen, keep other windows off the panel display, and send keystrokes for tiles and macros.",
+        "NSSpeechRecognitionUsageDescription": "Bedrock Panel uses macOS speech recognition (on this Mac) for the voice apps and dictation when you choose the built-in speech engine."
       }
     },
     "dmg": {

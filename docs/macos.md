@@ -107,9 +107,12 @@ Space cannot be moved by any app.
 
 Panel mode covers the 1920×480 display with a plain window built the way DK-Suite builds its own:
 no full-screen Space, pinned above the menu bar and the Dock on that display (so neither shows on
-the Quake), never the keyboard focus, and ignoring the mouse — touch arrives over the USB
-connection, so a cursor that strays onto the Quake cannot press a tile, and nothing on the panel
-steals focus from what you are doing. The one thing that can still appear over it is macOS's
+the Quake), and placed without taking keyboard focus. By default the mouse and keyboard can use the
+panel just as on Windows — click a tile, type into a dashboard after clicking it. A click on the
+panel makes the Quake the active display until you click elsewhere (macOS puts the menu bar and new
+windows on the active display; Reserved Display brings windows back). If you would rather have a
+touch-only panel that clicks pass through and that never takes focus — the way DK-Suite's panel
+behaves — untick **Mouse and keyboard can use the panel** under ⚙ Settings → Device → Monitor. The one thing that can still appear over it is macOS's
 privacy indicator in the top-right corner: orange for the microphone, green for the camera,
 **purple for screen recording** — and a DisplayLink adapter shows the purple one permanently,
 because DisplayLink Manager records the screen to drive its displays. That indicator belongs to
@@ -134,6 +137,24 @@ Outlook desktop meeting info (use Microsoft 365), the touchscreen binding wizard
 thumbnails from the media session (art comes from Spotify or the iTunes lookup instead), and the
 community apps that depend on Windows executables (`spotify-volume`, `deck-host`, `git-updater`).
 Secrets saved on Windows cannot be read on a Mac: after copying a config over, re-enter them.
+
+## 6a. Speech without a server: the built-in macOS engine
+
+On a Mac the voice features (AI Voice pages, LucidType dictation, the Test-speech button) use
+macOS itself unless you point them at speech servers: Apple's speech recognition, on-device where
+the language supports it, and the system voices. Nothing to install and nothing leaves the Mac.
+
+- ⚙ Settings → Integrations → **TTS/STT** → **Engine**: *Built-in macOS speech* (the default when
+  the host fields are empty), or *Speech servers* to use Whisper/Piper hosts of your own. The
+  **Voice** list holds every installed system voice; better ones (Siri, enhanced, premium) are added
+  under System Settings → Accessibility → Spoken Content → System voice → **Manage Voices**.
+- The first time something is transcribed, macOS asks for **Speech Recognition** — allow it. Until
+  then speaking works and dictation returns nothing; the Status line on the tab says which.
+- The engine is the `speech-server` helper serving the Wyoming protocol on 127.0.0.1:10300 (STT)
+  and :10200 (TTS), so anything else on this Mac that speaks Wyoming (Home Assistant's Wyoming
+  integration, for one) can use it too while Bedrock Panel runs. If those ports are taken by a
+  server of your own, choose *Speech servers* instead.
+- The **Microphone** permission is still needed for the pages that listen (section 3).
 
 ## 7. Troubleshooting
 

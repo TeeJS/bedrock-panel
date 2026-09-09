@@ -6,6 +6,7 @@ const { pathToFileURL } = require('url');
 contextBridge.exposeInMainWorld('bedrockConfig', {
   getConfig() { return ipcRenderer.invoke('getConfig'); },
   getStarterPages() { return ipcRenderer.invoke('getStarterPages'); },   // the bundled starter tile pages for this platform
+  getMacSpeechStatus() { return ipcRenderer.invoke('getMacSpeechStatus'); },   // macOS built-in speech engine: running / ready / permission / voices
   getAppVersion() { return ipcRenderer.invoke('getAppVersion'); },
   getApps() { return ipcRenderer.invoke('getApps'); },
   getMacPermissions() { return ipcRenderer.invoke('getMacPermissions'); },

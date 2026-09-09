@@ -90,3 +90,19 @@ test('display-arrange keeps DK-Suite\'s display_manager policy and exit codes', 
   assert.match(s, /panelVendor: UInt32 = 0x09E5/, 'the DK-QUAKE EDID vendor id');
   assert.doesNotMatch(s, /CGConfigureDisplayWithDisplayMode|CGDisplaySetDisplayMode/, 'never changes resolution or rotation');
 });
+
+test('speech-server speaks the Wyoming events the client sends and asks for speech recognition lazily', () => {
+  const s = src('speech-server.swift');
+  for (const ev of ['"describe"', '"transcribe"', '"audio-start"', '"audio-chunk"', '"audio-stop"', '"synthesize"']) assert.match(s, new RegExp('case ' + ev.replace(/"/g, '\\"')), 'handles ' + ev);
+  for (const reply of ['send("transcript"', 'send("audio-start"', 'send("audio-chunk"', 'send("audio-stop"', 'send("info"']) assert.ok(s.includes(reply), 'replies with ' + reply);
+  assert.match(s, /"data_length"/, 'data is externalized the way real Wyoming servers do (app/claudevoice-wyoming.js reads both forms)');
+  assert.match(s, /requiresOnDeviceRecognition = true/, 'on-device recognition when the language supports it');
+  assert.doesNotMatch(s.slice(s.indexOf('static func main()')), /requestAuthorization/, 'no authorization request at startup: TTS-only use never touches TCC');
+  assert.match(s, /RunLoop\.main\.run\(\)/, 'AVSpeechSynthesizer needs a real main run loop');
+  assert.match(s, /static var active: \[ObjectIdentifier: Session\]/, 'sessions are retained (Network.framework does not hold them)');
+  assert.match(s, /exitOnStdinEOF/, 'spawned with stdin piped');
+  const plist = fs.readFileSync(path.join(__dirname, '..', 'native', 'mac', 'speech-server.plist'), 'utf8');
+  assert.match(plist, /NSSpeechRecognitionUsageDescription/, 'TCC aborts a speech-recognition caller without this key');
+  const build = fs.readFileSync(path.join(__dirname, '..', 'build-mac-helpers.js'), 'utf8');
+  assert.match(build, /name: 'speech-server', plist: 'speech-server\.plist'/);
+});

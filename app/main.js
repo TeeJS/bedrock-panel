@@ -73,6 +73,9 @@ const fileLog = (() => {
   try { app.setAppLogsPath(); return require('./fileLog').install({ dir: app.getPath('logs') }); } catch (e) { return null; }
 })();
 if (fileLog) console.log('log file: ' + fileLog.file);
+// A Finder/Dock launch has a bare PATH, so the claude/codex/copilot CLIs (Homebrew, ~/.local/bin, npm,
+// volta, nvm, …) are invisible to `which` until the login shell's PATH is merged in. Before any lookup.
+try { require('./shellPath').ensureShellPath({ log: m => console.log('[startup] ' + m) }); } catch (e) { console.log('[startup] PATH merge failed: ' + (e && e.message)); }
 let privacyPaneOpened = false;   // at most one automatic System Settings jump per session (a refused device open)
 // macOS system audio (meeting recorder): Electron >= 39 captures it through a CoreAudio tap on macOS
 // 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
@@ -283,7 +286,10 @@ const LED_DEFAULT = { effect: 1, brightness: 200, speed: 128, hue: 128, sat: 255
 const THEME_DEFAULT = { appearance: 'system', accent: '#7CFFB2', presets: ['#7CFFB2', '#38B6FF', '#FF4040', '#FFB000'] };
 // reservedDisplay defaults ON on macOS: there the panel covers the menu bar and Dock at all times, so a
 // window macOS opens on the panel display would sit unreachable behind it unless protection moves it.
-const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: process.platform === 'darwin', panelFarRight: process.platform === 'darwin', lighting: Object.assign({}, LED_DEFAULT), theme: Object.assign({}, THEME_DEFAULT) };
+const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: process.platform === 'darwin', panelFarRight: process.platform === 'darwin', panelInput: true, lighting: Object.assign({}, LED_DEFAULT), theme: Object.assign({}, THEME_DEFAULT) };
+// macOS: whether the mouse and keyboard can use the panel window like on Windows (true), or the panel is
+// touch-only — click-through and never the key window, the way DK-Suite builds its panel (false).
+function panelInputEnabled() { return appSettings().panelInput !== false; }
 const actionDeps = { fs, shell, exec, execFile, spawn, platform: process.platform, log: message => console.log(message) };
 const mediaKeys = createMediaKeys({ log: message => console.log(message), ensureTrusted: macPermissions.supported ? macPermissions.ensureTrusted : null });
 let presenceService = null;   // busy-presence fan-out (Busylight / WLED / HA over MQTT); null until boot
@@ -384,6 +390,15 @@ const displayArrange = createDisplayArrange({
     ? 'The panel display was mirroring another display: switched it to an extended display at the far right of the arrangement. Settings → Device → Monitor turns this off.'
     : 'Moved the panel display to the far right of the display arrangement, out of the cursor\'s way. Settings → Device → Monitor turns this off.'),
 });
+// macOS: the built-in speech engine (native/mac/speech-server) — Apple speech recognition and the system
+// voices as a local Wyoming server, so voice works on a Mac with no server. Applied from the voice
+// settings at launch and on every save (applyMacSpeech); the editor's TTS/STT tab shows its status.
+const macSpeech = require('./macSpeech').createMacSpeech({ log: m => console.log('[mac-speech] ' + m) });
+function applyMacSpeech() {
+  if (process.platform !== 'darwin') return;
+  const v = voiceConfig.voiceSettings(config.settings);
+  macSpeech.apply(voiceConfig.macSpeechWanted(config.settings), { host: voiceConfig.MAC_SPEECH.host, sttPort: Number(voiceConfig.MAC_SPEECH.sttPort), ttsPort: Number(voiceConfig.MAC_SPEECH.ttsPort), voice: v.macVoice });
+}
 // The AI Voice app = ONE app id ('ai-voice') with a per-page backend option, served by one generic
 // voice-panel host instance PER BACKEND (state/transcript/SSE/speech/STT-TTS, see
 // voicepanel-host.js), each driven by its own session adapter. Requests route to the backend host
@@ -2700,10 +2715,12 @@ function applyPanelDisplayMode(d) {
 //    level 24, Control Center items at 25) and can host the Dock (20). The screen-saver level + 1
 //    (1001, DK-Suite's level) covers all of them on the panel display and nothing on the others, and
 //    `enableLargerThanScreen` lets the window start at y=0 under the menu bar area.
-//  - It never takes key focus (focusable: false, showInactive) and ignores the mouse: touch arrives
-//    over the HID path, so a cursor that wanders onto the panel cannot click a tile, and macOS does
-//    not treat the window as something to activate. Windows that macOS opens on the panel display
-//    land behind the panel; Reserved Display (on by default on macOS) moves them to another display.
+//  - Placement never takes key focus (showInactive). By default the mouse and keyboard can use the
+//    panel like on Windows (focusable + acceptFirstMouse: a click goes to the tile, and the window is
+//    key only after a deliberate click); with "Mouse and keyboard can use the panel" off it is
+//    touch-only — click-through and never key, the way DK-Suite builds its panel. Windows that macOS
+//    opens on the panel display land behind the panel; Reserved Display (on by default on macOS)
+//    moves them to another display.
 //  - Visible on every Space so a Space switch on that display cannot hide it; re-pinned after every
 //    blur, which is when macOS may have re-levelled it.
 function pinPanelMac(bounds) {
@@ -2712,7 +2729,7 @@ function pinPanelMac(bounds) {
   try { if (bounds) panelWin.setBounds(bounds); } catch (e) {}
   try { panelWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false }); } catch (e) {}
   try { panelWin.setAlwaysOnTop(true, 'screen-saver', 1); } catch (e) { try { panelWin.setAlwaysOnTop(true, 'screen-saver'); } catch (e2) {} }
-  try { panelWin.setIgnoreMouseEvents(true); } catch (e) {}
+  try { panelWin.setIgnoreMouseEvents(!panelInputEnabled()); } catch (e) {}   // touch-only mode is click-through, like DK-Suite's panel
   try { panelWin.moveTop(); } catch (e) {}
 }
 // Windows: a brief always-on-top nudge lifts the panel over whatever the desktop left on that display
@@ -2733,7 +2750,11 @@ function placePanel() {
       x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height,
       frame: false, show: false, skipTaskbar: true, resizable: false, movable: false,
       minimizable: false, maximizable: false, autoHideMenuBar: true,
-      focusable: process.platform !== 'darwin',   // macOS: never the key window (see showPanelWindow)
+      // macOS: focusable only when the mouse and keyboard may use the panel (Settings → Monitor); the
+      // first click then goes to the page instead of merely activating the window. Touch never needs
+      // focus (it arrives over USB), and placement always uses showInactive (see showPanelWindow).
+      focusable: process.platform !== 'darwin' || panelInputEnabled(),
+      acceptFirstMouse: process.platform === 'darwin' && panelInputEnabled(),
       backgroundColor: '#000000',
       // macOS: a plain always-on-top cover of the panel display (pinPanelMac) — no full-screen Space, no
       // rounded corners or shadow leaking the desktop at the edges, allowed to sit under the menu bar area.
@@ -2905,6 +2926,7 @@ function placeUiForMode() {
 function applyRunModeAndLaunch() {
   placeUiForMode();
   reservedDisplay.start();
+  applyMacSpeech();                                       // macOS: start the built-in speech engine when the voice settings want it
   if (rotationCfg().enabled) setRotation(true);          // auto-start cycling on launch when enabled
   applyFocusFollowSettings();                             // auto-start foreground-app polling on launch when enabled
   applyShortcuts();                                       // register per-page global hotkeys
@@ -4062,6 +4084,7 @@ app.whenReady().then(async () => {
   ipcMain.on('openExternal', (e, url) => { if (!isFromPanel(e) && !isFrom(e, configWin)) return; openExternalUrl(url); });
   ipcMain.on('ringState', (e, state) => { if (!isFromPanel(e)) return; setRingState(state); });
   ipcMain.handle('getConfig', (e) => isFrom(e, configWin) ? configForRenderer(config) : null);
+  ipcMain.handle('getMacSpeechStatus', (e) => isFrom(e, configWin) ? macSpeech.status() : null);
   // The bundled starter tile pages for this platform (editor: + Add page → Starter pages), so a config
   // that predates the macOS defaults — or any config — can pull in the pages that work here.
   ipcMain.handle('getStarterPages', (e) => {
@@ -4340,6 +4363,9 @@ app.whenReady().then(async () => {
     pushToPanel(); applyKnobSettings(); refreshTray(); applyRotationSettings(wasRot); applyFocusFollowSettings(); applyShortcuts(); applyTheme();
     reservedDisplay.setEnabled(reservedDisplayEnabled(appSettings()));   // stays off in software mode
     if (!monitorMode) { displayArrange.setEnabled(panelFarRightEnabled(appSettings())); displayArrange.request('settings saved'); }   // macOS: (re)check the arrangement when the toggle is on
+    // macOS: focusable is a window-creation option, so a changed "mouse and keyboard on the panel" toggle rebuilds the panel window.
+    if (process.platform === 'darwin' && runMode() !== 'software' && ((previousConfig.settings || {}).panelInput !== false) !== panelInputEnabled()) applyRunModeLive();
+    applyMacSpeech();                                                    // macOS: engine / voice changes take effect at once
     applyDisplayBlocker();                                               // keep-display-awake: only Panel mode + when enabled
     const discordSettings = normalizeDiscordSettings((config.settings || {}).discord);
     discordAppHost.updateSettings(discordSettings);
@@ -4665,6 +4691,7 @@ app.on('before-quit', () => {
   try { discordService.stop(); } catch (e) {}                 // close Discord IPC and cancel reconnect timers
   try { reservedDisplay.stop(); } catch (e) {}                // release WinEvent hooks and terminate the native helper
   try { displayArrange.stop(); } catch (e) {}                 // drop any pending arrangement check
+  try { macSpeech.stop(); } catch (e) {}                      // terminate the built-in speech engine helper
   // The kiosk panel is torn down here, not by the close pass that follows: a window that refuses to
   // close (a sheet, a cancelled close) cancels the quit itself, and the panel has nothing to save.
   try { if (panelWin && !panelWin.isDestroyed()) panelWin.destroy(); } catch (e) {}
