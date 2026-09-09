@@ -49,8 +49,8 @@ function createMacSpeech(options) {
         let ev; try { ev = JSON.parse(line); } catch (e) { log('helper: ' + line); return; }
         if (ev.event === 'ready') {
           restarts = 0;
-          publish({ ready: true, speechAuth: ev.speechAuth || null, onDevice: !!ev.onDevice, recognizerAvailable: !!ev.recognizerAvailable, voices: Array.isArray(ev.voices) ? ev.voices : [], language: ev.language || '', voice: ev.voice || '' });
-          log('ready on ' + ev.host + ':' + ev.sttPort + ' (STT) / :' + ev.ttsPort + ' (TTS), speech recognition ' + ev.speechAuth + (ev.onDevice ? ', on-device' : '') + ', ' + (ev.voices || []).length + ' voices');
+          publish({ ready: true, engine: ev.engine || 'sfspeech', speechAuth: ev.speechAuth || null, onDevice: !!ev.onDevice, recognizerAvailable: !!ev.recognizerAvailable, voices: Array.isArray(ev.voices) ? ev.voices : [], language: ev.language || '', voice: ev.voice || '' });
+          log('ready on ' + ev.host + ':' + ev.sttPort + ' (STT) / :' + ev.ttsPort + ' (TTS), ' + (ev.engine || 'sfspeech') + ', speech recognition ' + ev.speechAuth + (ev.onDevice ? ', on-device' : '') + ', ' + (ev.voices || []).length + ' voices');
         } else if (ev.event === 'auth') {
           publish({ speechAuth: ev.speechAuth || null });
           log('speech recognition ' + ev.speechAuth);

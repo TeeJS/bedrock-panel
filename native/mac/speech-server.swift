@@ -148,29 +148,72 @@ final class Recognizer {
         return false
     }
 
-    /// Recognize one utterance of interleaved PCM16 and call back with the final text ("" on failure).
-    static func transcribe(pcm: Data, rate: Int, channels: Int, language: String, timeout: TimeInterval = 20, done: @escaping (String) -> Void) {
-        guard authStatus == .authorized, let r = recognizer(for: language), r.isAvailable else {
-            Out.err("STT unavailable: auth=\(authString()) recognizer=\(recognizer(for: language) != nil)")
-            done(""); return
-        }
+    /// Interleaved PCM16 at `rate` -> one Float32 mono buffer at the same rate (AVAudioConverter mixes
+    /// channels down); nil when the input is empty or the formats cannot be built.
+    static func monoBuffer(pcm: Data, rate: Int, channels: Int) -> AVAudioPCMBuffer? {
         guard let inFmt = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: Double(rate), channels: AVAudioChannelCount(max(1, channels)), interleaved: true),
-              let outFmt = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Double(rate), channels: 1, interleaved: false) else { done(""); return }
+              let outFmt = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Double(rate), channels: 1, interleaved: false) else { return nil }
         let frameCount = pcm.count / (2 * max(1, channels))
-        guard frameCount > 0, let inBuf = AVAudioPCMBuffer(pcmFormat: inFmt, frameCapacity: AVAudioFrameCount(frameCount)) else { done(""); return }
+        guard frameCount > 0, let inBuf = AVAudioPCMBuffer(pcmFormat: inFmt, frameCapacity: AVAudioFrameCount(frameCount)) else { return nil }
         inBuf.frameLength = AVAudioFrameCount(frameCount)
         pcm.withUnsafeBytes { raw in
             if let base = raw.baseAddress, let dst = inBuf.int16ChannelData { memcpy(dst[0], base, frameCount * 2 * max(1, channels)) }
         }
         // Float32 mono is what the recognizer is happiest with; AVAudioConverter mixes channels down.
-        guard let conv = AVAudioConverter(from: inFmt, to: outFmt), let outBuf = AVAudioPCMBuffer(pcmFormat: outFmt, frameCapacity: AVAudioFrameCount(frameCount)) else { done(""); return }
+        guard let conv = AVAudioConverter(from: inFmt, to: outFmt), let outBuf = AVAudioPCMBuffer(pcmFormat: outFmt, frameCapacity: AVAudioFrameCount(frameCount)) else { return nil }
         var err: NSError?
         var consumed = false
         conv.convert(to: outBuf, error: &err) { _, status in
             if consumed { status.pointee = .noDataNow; return nil }
             consumed = true; status.pointee = .haveData; return inBuf
         }
-        if let e = err { Out.err("audio convert failed: \(e.localizedDescription)"); done(""); return }
+        if let e = err { Out.err("audio convert failed: \(e.localizedDescription)"); return nil }
+        return outBuf
+    }
+
+    // Live STT entry point. macOS 26+: Apple's SpeechAnalyzer — on-device, no Dictation setting, no
+    // authorization prompt, and it transcribes the 1–3 s utterances the voice pages send; the older
+    // SFSpeechRecognizer answered most of those with "No speech detected" (10–25 % of lines came
+    // through in Live Translate). A little silence is added on both sides so the analyzer finalizes
+    // the last word. Three failures in a row (no model, no download) switch to SFSpeechRecognizer for
+    // the rest of the run; macOS 14/15 use it from the start, after the authorization prompt.
+    static var analyzerFailures = 0
+    static var analyzerUsable: Bool { analyzerFailures < 3 }
+    static func engineName() -> String {
+        if #available(macOS 26, *), analyzerUsable { return "speechanalyzer" }
+        return "sfspeech"
+    }
+    static func recognize(pcm: Data, rate: Int, channels: Int, language: String, done: @escaping (String) -> Void) {
+        if #available(macOS 26, *), analyzerUsable {
+            guard let mono = monoBuffer(pcm: pcm, rate: rate, channels: channels), let ch = mono.floatChannelData else { done(""); return }
+            let samples = Array(UnsafeBufferPointer(start: ch[0], count: Int(mono.frameLength)))
+            let pad = [Float](repeating: 0, count: Int(Double(rate) * 0.3))
+            let lang = language.isEmpty ? opts.language : language
+            Task {
+                if let segs = await FileTranscriber.analyzerTranscribe(samples: pad + samples + pad, rate: Double(rate), language: lang, speaker: "STT", budget: 20) {
+                    analyzerFailures = 0
+                    done(segs.map { $0.text }.joined(separator: " "))
+                    return
+                }
+                analyzerFailures += 1
+                if !analyzerUsable { Out.line(Out.json(["event": "stt-error", "code": "analyzer-off", "message": "SpeechAnalyzer unavailable; using SFSpeechRecognizer"])) }
+                ensureAuthorized { transcribe(pcm: pcm, rate: rate, channels: channels, language: language, done: done) }
+            }
+            return
+        }
+        // Speech Recognition is asked for on the first transcription, never at startup: TTS-only use
+        // then never touches TCC, and the prompt (attributed to the app that spawned us, whose
+        // Info.plist carries NSSpeechRecognitionUsageDescription) appears when speech is first used.
+        ensureAuthorized { transcribe(pcm: pcm, rate: rate, channels: channels, language: language, done: done) }
+    }
+
+    /// Recognize one utterance of interleaved PCM16 and call back with the final text ("" on failure).
+    static func transcribe(pcm: Data, rate: Int, channels: Int, language: String, timeout: TimeInterval = 20, done: @escaping (String) -> Void) {
+        guard authStatus == .authorized, let r = recognizer(for: language), r.isAvailable else {
+            Out.err("STT unavailable: auth=\(authString()) recognizer=\(recognizer(for: language) != nil)")
+            done(""); return
+        }
+        guard let outBuf = monoBuffer(pcm: pcm, rate: rate, channels: channels) else { done(""); return }
 
         // On-device recognition needs the Dictation assets, which macOS only installs while Keyboard →
         // Dictation (or Siri) is on; with both off the task fails at once with "Siri and Dictation are
@@ -331,15 +374,9 @@ final class Session {
         case "audio-stop":
             let audio = sttAudio; sttAudio = Data()
             Out.err("STT: \(audio.count) bytes @\(sttRate)Hz x\(sttChannels) lang=\(sttLanguage.isEmpty ? opts.language : sttLanguage)")
-            // Speech Recognition is asked for on the first transcription, never at startup: TTS-only use
-            // then never touches TCC, and the prompt (attributed to the app that spawned us, whose
-            // Info.plist carries NSSpeechRecognitionUsageDescription) appears when speech is first used.
-            Recognizer.ensureAuthorized { [weak self] in
-                guard let self = self else { return }
-                Recognizer.transcribe(pcm: audio, rate: self.sttRate, channels: self.sttChannels, language: self.sttLanguage) { [weak self] text in
-                    Out.err("STT -> \(text.isEmpty ? "(empty)" : "\"\(text.prefix(80))\"")")
-                    self?.send("transcript", data: ["text": text])
-                }
+            Recognizer.recognize(pcm: audio, rate: sttRate, channels: sttChannels, language: sttLanguage) { [weak self] text in
+                Out.err("STT -> \(text.isEmpty ? "(empty)" : "\"\(text.prefix(80))\"")")
+                self?.send("transcript", data: ["text": text])
             }
         case "synthesize":
             let text = (ev.data["text"] as? String) ?? ""
@@ -467,7 +504,7 @@ enum FileTranscriber {
 
     // -- macOS 26: SpeechAnalyzer --------------------------------------------------------------
     @available(macOS 26, *)
-    static func analyzerTranscribe(samples: [Float], rate: Double, language: String, speaker: String) async -> [Seg]? {
+    static func analyzerTranscribe(samples: [Float], rate: Double, language: String, speaker: String, budget: Double? = nil) async -> [Seg]? {
         do {
             let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: language)) ?? Locale(identifier: language)
             let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])
@@ -503,8 +540,8 @@ enum FileTranscriber {
             let lastTime = try await analyzer.analyzeSequence(from: inFile)
             if let t = lastTime { try await analyzer.finalizeAndFinish(through: t) } else { try await analyzer.finalizeAndFinishThroughEndOfInput() }
             // Watchdog: transcription of a file should not take longer than the file itself several times over.
-            let budget = UInt64(max(60, seconds * 4)) * 1_000_000_000
-            let timeout = Task { try await Task.sleep(nanoseconds: budget); collector.cancel() }
+            let budgetNs = UInt64(budget ?? max(60, seconds * 4)) * 1_000_000_000
+            let timeout = Task { try await Task.sleep(nanoseconds: budgetNs); collector.cancel() }
             let segs = try await collector.value
             timeout.cancel()
             Out.err("\(speaker): \(segs.count) segment(s) via SpeechAnalyzer")
@@ -598,7 +635,7 @@ enum FileTranscriber {
         let r = Recognizer.recognizer(for: "")
         // No authorization request here (see Recognizer.ensureAuthorized): reading the status is free.
         Out.line(Out.json(["event": "ready", "host": opts.host, "sttPort": Int(opts.sttPort), "ttsPort": Int(opts.ttsPort), "language": opts.language,
-                           "speechAuth": Recognizer.authString(), "onDevice": Recognizer.onDevice(r), "recognizerAvailable": r?.isAvailable ?? false,
+                           "speechAuth": Recognizer.authString(), "onDevice": Recognizer.onDevice(r), "recognizerAvailable": r?.isAvailable ?? false, "engine": Recognizer.engineName(),
                            "voice": opts.voice, "voices": Speaker.voices()]))
         // A real main run loop (not just the main dispatch queue): AVSpeechSynthesizer's write
         // callbacks and the Speech framework's replies are delivered through it.

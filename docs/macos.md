@@ -153,7 +153,9 @@ the language supports it, and the system voices. Nothing to install and nothing 
   under System Settings → Accessibility → Spoken Content → System voice → **Manage Voices**.
 - The first time something is transcribed, macOS asks for **Speech Recognition** — allow it. Until
   then speaking works and dictation returns nothing; the Status line on the tab says which.
-- **On-device recognition needs Dictation turned on**: System Settings → **Keyboard** → **Dictation**
+- **macOS 26:** live recognition uses Apple's SpeechAnalyzer — on this Mac, no Dictation setting, no
+  prompt (the language model downloads once). The Status line says `speechanalyzer`.
+- **macOS 14 and 15 — on-device recognition needs Dictation turned on**: System Settings → **Keyboard** → **Dictation**
   → on (macOS then downloads the language). With Dictation and Siri both off, Apple's recognizer
   refuses with "Siri and Dictation are disabled"; the engine then falls back to Apple's servers for
   that request and the Status line says so. Turn Dictation on to keep everything on the Mac.

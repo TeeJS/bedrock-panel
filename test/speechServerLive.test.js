@@ -57,3 +57,33 @@ test('speech-server: ready line, describe → info, and a system voice synthesiz
     try { p.kill(); } catch (e) {}
   }
 });
+
+// Round trip: a system voice says a phrase, the STT side hears it back. On macOS 26 this runs through
+// SpeechAnalyzer, which needs no Speech Recognition grant (so it can run here); older macOS is skipped
+// because SFSpeechRecognizer would raise the authorization prompt.
+const macMajor = process.platform === 'darwin' ? parseInt(require('os').release().split('.')[0], 10) : 0;   // Darwin 25 = macOS 26
+test('speech-server: what the voice says comes back from STT (SpeechAnalyzer round trip)', { skip: skip || (macMajor < 25 && 'needs macOS 26 (SpeechAnalyzer)'), timeout: 120000 }, async () => {
+  const p = spawn(helper, ['--stt-port', String(STT + 2), '--tts-port', String(TTS + 2), '--language', 'en-US'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const errs = [];
+  p.stderr.on('data', d => errs.push(String(d)));
+  let ready = null;
+  p.stdout.on('data', d => { for (const line of String(d).split('\n')) { try { const j = JSON.parse(line); if (j.event === 'ready') ready = j; } catch (e) {} } });
+  try {
+    for (let i = 0; i < 100 && !ready; i++) await new Promise(r => setTimeout(r, 100));
+    assert.ok(ready, 'ready line');
+    assert.equal(ready.engine, 'speechanalyzer');
+    const chunks = []; let fmt = null;
+    await wyoming.synthesize({ host: '127.0.0.1', port: TTS + 2, text: 'Good morning everyone, the meeting starts now.', onFormat: f => { fmt = f; }, onChunk: b => chunks.push(b), timeoutMs: 30000 });
+    const audio = Buffer.concat(chunks);
+    assert.ok(audio.length > 20000, 'synthesized audio');
+    const t0 = Date.now();
+    const text = await wyoming.transcribe({ host: '127.0.0.1', port: STT + 2, audio, rate: fmt.rate, width: 2, channels: fmt.channels, language: 'en-US', timeoutMs: 90000 });
+    const heard = String(typeof text === 'string' ? text : (text && text.text) || '');
+    assert.match(heard.toLowerCase(), /good morning/, 'heard: "' + heard + '" — stderr: ' + errs.join('').slice(-600));
+    assert.ok(Date.now() - t0 < 60000, 'transcribed in ' + (Date.now() - t0) + ' ms');
+  } finally {
+    try { p.stdin.end(); } catch (e) {}
+    await new Promise(r => setTimeout(r, 300));
+    try { p.kill(); } catch (e) {}
+  }
+});

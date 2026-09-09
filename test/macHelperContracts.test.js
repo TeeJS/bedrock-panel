@@ -124,6 +124,16 @@ test('speech-server speaks the Wyoming events the client sends and asks for spee
   assert.match(build, /name: 'speech-server', plist: 'speech-server\.plist'/);
 });
 
+test('speech-server live STT prefers SpeechAnalyzer on macOS 26 and reports its engine', () => {
+  const s = src('speech-server.swift');
+  assert.match(s, /static func recognize\(pcm: Data/, 'one live entry point');
+  assert.match(s, /if #available\(macOS 26, \*\), analyzerUsable \{/, 'SpeechAnalyzer first on macOS 26');
+  assert.match(s, /analyzerTranscribe\(samples: pad \+ samples \+ pad, rate: Double\(rate\), language: lang, speaker: "STT", budget: 20\)/, 'padded utterance, 20 s watchdog');
+  assert.match(s, /Recognizer\.recognize\(pcm: audio, rate: sttRate, channels: sttChannels, language: sttLanguage\)/, 'the Wyoming handler goes through it');
+  assert.match(s, /"engine": Recognizer\.engineName\(\)/, 'the ready line names the engine app/macSpeech.js shows');
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'app', 'macSpeech.js'), 'utf8'), /engine: ev\.engine \|\| 'sfspeech'/);
+});
+
 test('speech-server transcribe-file produces the diarizer contract from the stereo channels', () => {
   const s = src('speech-server.swift');
   assert.match(s, /argv\.first == "transcribe-file"/, 'the file mode the meeting queue spawns');
