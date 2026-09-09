@@ -51,19 +51,26 @@ let deviceAccessibilityRequest = null; // its in-flight promise: a refused touch
 // to capture input events from physical devices"). The app needs Accessibility anyway (Reserved
 // Display, keystrokes), so one prompt unlocks everything: a refused device open asks for
 // Accessibility, and the connector's rescan picks the touchscreen up as soon as it is granted.
+//
+// And some Macs (T.J.'s macOS 26.6) show NO prompt for either permission and do not list the app
+// on request — the + button in System Settings is the only way in. So the guidance does not wait
+// for a prompt: the pane opens at once with the + steps on the panel, the Accessibility prompt is
+// requested alongside (it appears where macOS still shows one), and the rescan connects the
+// touchscreen the moment either permission lands.
 function requestAccessibilityForDevice(reason) {
   if (deviceAccessibilityRequest) return deviceAccessibilityRequest;
   console.log('[permissions] Accessibility requested (' + reason + ')');
-  panelNotice('macOS is asking for Accessibility: click Open System Settings and turn on Bedrock Panel. That unlocks the touchscreen and Reserved Display.');
+  const steps = 'System Settings → Privacy & Security → ' + (reason === 'Reserved Display' ? 'Accessibility' : 'Input Monitoring (or Accessibility)') +
+    ': click +, pick Bedrock Panel from Applications, turn it on. macOS shows no prompt for this on some Macs.';
+  panelNotice((reason === 'Reserved Display' ? 'Reserved Display needs the Accessibility permission. ' : 'macOS is blocking the touchscreen. ') + steps);
+  if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings(reason === 'Reserved Display' ? 'accessibility' : 'inputMonitoring'); }
   deviceAccessibilityRequest = macPermissions.request('accessibility').then(r => {
     if (r && r.ok) {
       console.log('[permissions] Accessibility granted' + (r.reset ? ' after clearing a stale entry' : '') + ' — the touchscreen reconnects on the next rescan');
-      panelNotice('Accessibility granted — connecting the touchscreen.');
+      panelNotice('Accessibility granted.');
       return r;
     }
-    console.log('[permissions] Accessibility not granted (' + (r && r.reason) + ')');
-    panelNotice('Touchscreen blocked: System Settings → Privacy & Security → Accessibility → turn on Bedrock Panel (click + and pick it from Applications if it is missing). Turning it on under Input Monitoring works too.');
-    if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('accessibility'); }
+    console.log('[permissions] Accessibility not granted (' + (r && r.reason) + ') — ' + steps);
     return r;
   });
   return deviceAccessibilityRequest;
@@ -4599,6 +4606,7 @@ app.whenReady().then(async () => {
   });
   dev.on('connect', async i => {
     console.log('connect:', i.iface + (i.mode ? ' (' + i.mode + (i.fallback ? ', seize refused: ' + i.fallback : '') + ')' : ''));   // macOS touch: 'seized' keeps the digitizer away from the OS; 'shared' is DK-Suite's mode
+    if (i.iface === 'touch' && deviceAccessRequested) panelNotice('Touchscreen connected.');   // the permission guidance above was shown — close the loop on the panel
     if (i.iface !== 'control') return;
     // First run: seed lighting from the device so we never change the ring unasked; otherwise the app's config wins.
     if (!config.settings || !config.settings.lighting) {
