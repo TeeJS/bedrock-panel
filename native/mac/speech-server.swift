@@ -503,10 +503,26 @@ enum FileTranscriber {
     }
 
     // -- macOS 26: SpeechAnalyzer --------------------------------------------------------------
+    /// The transcriber locale for a language setting. A bare code gets the region most people mean
+    /// by it (de → Germany, es → Spain, fr → France): Apple's own equivalence handed out de-AT /
+    /// de-CH / fr-CH / es-US here. A full code is used as is when supported. Anything else takes
+    /// Apple's equivalent, then the raw locale, which fails cleanly into the SFSpeechRecognizer path.
+    @available(macOS 26, *)
+    static func transcriberLocale(_ language: String) async -> Locale {
+        let preferred = ["de": "de-de", "en": "en-us", "es": "es-es", "fr": "fr-fr", "it": "it-it", "pt": "pt-br", "zh": "zh-cn", "ja": "ja-jp", "ko": "ko-kr"]
+        let supported = await SpeechTranscriber.supportedLocales
+        let wanted = language.replacingOccurrences(of: "_", with: "-")
+        let lower = wanted.lowercased()
+        if let hit = supported.first(where: { $0.identifier(.bcp47).lowercased() == lower }) { return hit }
+        let lang = String(lower.split(separator: "-").first ?? Substring(lower))
+        if let pref = preferred[lang], let hit = supported.first(where: { $0.identifier(.bcp47).lowercased() == pref }) { return hit }
+        return await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: wanted)) ?? Locale(identifier: wanted)
+    }
+
     @available(macOS 26, *)
     static func analyzerTranscribe(samples: [Float], rate: Double, language: String, speaker: String, budget: Double? = nil) async -> [Seg]? {
         do {
-            let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: language)) ?? Locale(identifier: language)
+            let locale = await transcriberLocale(language)
             let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])
             // An installed model is used as is; anything else goes through the installation request
             // (a first-time download of a language takes up to a minute, logged as such).
@@ -527,7 +543,7 @@ enum FileTranscriber {
             defer { try? FileManager.default.removeItem(at: tmp) }
             let inFile = try AVAudioFile(forReading: tmp)
             let seconds = Double(inFile.length) / inFile.processingFormat.sampleRate
-            Out.err("\(speaker): analyzing \(String(format: "%.1f", seconds)) s")
+            Out.err("\(speaker): analyzing \(String(format: "%.1f", seconds)) s as \(locale.identifier(.bcp47))")
             let analyzer = SpeechAnalyzer(modules: [transcriber], options: .init(priority: .userInitiated, modelRetention: .processLifetime))
             let collector = Task { () -> [Seg] in
                 var out: [Seg] = []
@@ -613,6 +629,14 @@ enum FileTranscriber {
         Out.setup()
         // One-shot file transcription for the meeting pipeline (no server, no stdin guard).
         let argv = Array(CommandLine.arguments.dropFirst())
+        // `speech-server locale <code>`: which transcriber locale a language setting maps to (tests, support).
+        if argv.first == "locale" {
+            if #available(macOS 26, *) {
+                Task { print(await FileTranscriber.transcriberLocale(argv.count > 1 ? argv[1] : opts.language).identifier(.bcp47)); exit(0) }
+                RunLoop.main.run()
+            }
+            print("sfspeech"); return
+        }
         if argv.first == "transcribe-file" {
             var path = "", language = opts.language, me = "Me", others = "Others"
             var i = 1

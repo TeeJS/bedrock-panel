@@ -87,3 +87,13 @@ test('speech-server: what the voice says comes back from STT (SpeechAnalyzer rou
     try { p.kill(); } catch (e) {}
   }
 });
+
+test('speech-server: a bare language code maps to its home region, a full code is kept', { skip: skip || (macMajor < 25 && 'needs macOS 26'), timeout: 60000 }, () => {
+  const { execFileSync } = require('child_process');
+  const loc = code => execFileSync(helper, ['locale', code], { timeout: 20000 }).toString().trim();
+  assert.equal(loc('de'), 'de-DE');
+  assert.equal(loc('en'), 'en-US');
+  assert.equal(loc('pt'), 'pt-BR');
+  assert.equal(loc('de-AT'), 'de-AT');
+  assert.equal(loc('en_GB'), 'en-GB');
+});

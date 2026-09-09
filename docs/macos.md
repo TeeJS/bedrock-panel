@@ -154,7 +154,11 @@ the language supports it, and the system voices. Nothing to install and nothing 
 - The first time something is transcribed, macOS asks for **Speech Recognition** — allow it. Until
   then speaking works and dictation returns nothing; the Status line on the tab says which.
 - **macOS 26:** live recognition uses Apple's SpeechAnalyzer — on this Mac, no Dictation setting, no
-  prompt (the language model downloads once). The Status line says `speechanalyzer`.
+  prompt. The Status line says `speechanalyzer`. Each language's model downloads once, on first use
+  (about a minute; the voice page waits). It covers German, English, Spanish, French, Italian,
+  Portuguese, Japanese, Korean, Chinese, and Cantonese; a bare code such as `de` means the home
+  region (Germany, Spain, France, Brazil for `pt`), and `de-AT`-style codes are used as given.
+  Other languages fall back to the older recognizer below, Dictation and all.
 - **macOS 14 and 15 — on-device recognition needs Dictation turned on**: System Settings → **Keyboard** → **Dictation**
   → on (macOS then downloads the language). With Dictation and Siri both off, Apple's recognizer
   refuses with "Siri and Dictation are disabled"; the engine then falls back to Apple's servers for
