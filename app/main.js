@@ -2628,15 +2628,22 @@ function applyPanelDisplayMode(d) {
   if (process.platform === 'darwin') {
     panelWin.setSimpleFullScreen(true);
     // The panel never becomes the active app (showPanelWindow), so the presentation options that hide
-    // the menu bar and the Dock only apply while nothing else is active. Sit above both permanently
-    // instead: the screen-saver level is higher than the menu bar (24) and the Dock (20), and the
-    // window covers exactly the panel display, so other displays are untouched.
-    panelWin.setAlwaysOnTop(true, 'screen-saver');
+    // the menu bar and the Dock only apply while nothing else is active. While Reserved Display is on,
+    // sit above both instead: the screen-saver level is higher than the menu bar (24) and the Dock (20),
+    // and the window covers exactly the panel display. Only then — protection is what guarantees a
+    // window landing behind the panel is moved back instead of stranded out of reach; with it off the
+    // panel stays a normal window, so other apps' windows on this display remain visible.
+    panelWin.setAlwaysOnTop(reservedDisplayEnabled(appSettings()), 'screen-saver');
   } else panelWin.setFullScreen(true);
 }
 // Windows: a brief always-on-top nudge lifts the panel over whatever the desktop left on that display
 // (Reserved Display keeps it clear afterwards). macOS pins the panel permanently in applyPanelDisplayMode,
 // and lowering it again here would bring the menu bar back.
+// macOS: the panel's window level follows the Reserved Display setting (see applyPanelDisplayMode).
+function repinPanelForMac() {
+  if (process.platform !== 'darwin' || !panelWin || panelWin.isDestroyed() || runMode() === 'software') return;
+  try { panelWin.setAlwaysOnTop(reservedDisplayEnabled(appSettings()), 'screen-saver'); } catch (e) {}
+}
 function nudgePanelOnTop() {
   if (process.platform === 'darwin' || !panelWin || panelWin.isDestroyed()) return;
   panelWin.setAlwaysOnTop(true);
@@ -4236,6 +4243,7 @@ app.whenReady().then(async () => {
     if (githubClientChanged || githubSettingsChanged) { try { sysserver.clearGitHubCapability(); } catch (error) {} }
     pushToPanel(); applyKnobSettings(); refreshTray(); applyRotationSettings(wasRot); applyFocusFollowSettings(); applyShortcuts(); applyTheme();
     reservedDisplay.setEnabled(reservedDisplayEnabled(appSettings()));   // stays off in software mode
+    repinPanelForMac();
     applyDisplayBlocker();                                               // keep-display-awake: only Panel mode + when enabled
     const discordSettings = normalizeDiscordSettings((config.settings || {}).discord);
     discordAppHost.updateSettings(discordSettings);

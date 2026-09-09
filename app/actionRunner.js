@@ -1,5 +1,22 @@
 'use strict';
 
+// Windows program names the default grid and many tiles carry ('chrome', 'calc', 'taskmgr', 'notepad'),
+// mapped to the app `open -a` should launch on a Mac. Anything not listed passes through unchanged, so a
+// real macOS app name ('Safari', 'Google Chrome') keeps working; a trailing .exe is dropped either way.
+const MAC_APP_ALIASES = {
+  chrome: 'Google Chrome', msedge: 'Microsoft Edge', firefox: 'Firefox', iexplore: 'Safari',
+  calc: 'Calculator', taskmgr: 'Activity Monitor', notepad: 'TextEdit', wordpad: 'TextEdit', explorer: 'Finder',
+  mspaint: 'Preview', snippingtool: 'Screenshot', 'ms-settings': 'System Settings', control: 'System Settings',
+  cmd: 'Terminal', powershell: 'Terminal', pwsh: 'Terminal', wt: 'Terminal', code: 'Visual Studio Code',
+  outlook: 'Microsoft Outlook', olk: 'Microsoft Outlook', winword: 'Microsoft Word', excel: 'Microsoft Excel',
+  powerpnt: 'Microsoft PowerPoint', onenote: 'Microsoft OneNote', teams: 'Microsoft Teams', 'ms-teams': 'Microsoft Teams',
+  zoom: 'zoom.us', discord: 'Discord', slack: 'Slack', spotify: 'Spotify', obs64: 'OBS', obs: 'OBS', steam: 'Steam', vlc: 'VLC',
+};
+function macAppName(value) {
+  const bare = String(value).trim().replace(/\.exe$/i, '');
+  return MAC_APP_ALIASES[bare.toLowerCase()] || bare;
+}
+
 function hasPathSeparator(value) {
   return /[\\/]/.test(value);
 }
@@ -39,9 +56,12 @@ function resolveAppPath(value, deps) {
 async function launchApp(value, deps) {
   if (!value || typeof value !== 'string') return false;
   const platform = platformOf(deps);
-  // macOS bare name: `open -a name` handles app lookup natively.
+  // macOS bare name: `open -a name` handles app lookup natively (Windows program names are mapped first).
   if (platform === 'darwin' && !hasPathSeparator(value)) {
-    deps.execFile('/usr/bin/open', ['-a', value], hiddenOptions(platform), () => {});
+    const name = macAppName(value);
+    deps.execFile('/usr/bin/open', ['-a', name], hiddenOptions(platform), err => {
+      if (err && deps.log) deps.log('launchApp: open -a "' + name + '" failed: ' + (err.message || err));
+    });
     return true;
   }
   const resolved = await resolveAppPath(value, deps);
@@ -74,6 +94,8 @@ function lockWorkstation(deps) {
 }
 
 module.exports = {
+  macAppName,
+  MAC_APP_ALIASES,
   hasPathSeparator,
   resolveAppPath,
   launchApp,
