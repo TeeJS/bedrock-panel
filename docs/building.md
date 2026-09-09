@@ -192,9 +192,36 @@ What to expect on a Mac:
 npm run dist:mac      # dist/bedrock-panel-arm64.dmg + .zip — ad-hoc signed, hardened runtime
 ```
 
-The build is signed **ad-hoc** (`mac.identity: "-"`) with the entitlements in `packaging/mac/`
-(`build/` is gitignored, so they live there) until an Apple Developer ID is available, and the DMG
-is not notarized. On a downloaded copy macOS therefore says it *could not verify* the app: click
+**Sign every build with the same certificate.** macOS ties every privacy grant (Input Monitoring for
+the touchscreen, Accessibility, Microphone, …) to the app's code signature. The default signature is
+**ad-hoc** (`mac.identity: "-"`), which is different on every build, so every build is a new app to
+macOS: the grants go stale, the prompts do not come back, and the person has to re-add the app by
+hand. `npm run dist:mac` therefore runs `build-mac.js`, which signs with a stable identity when one
+is configured: the `BEDROCK_MAC_IDENTITY` environment variable, else the one-line file
+`.signing/mac-identity` (the folder is gitignored, so it is per machine). Until an Apple Developer ID
+exists, create a self-signed code-signing certificate once and name it there:
+
+```bash
+# one time, on the build Mac — creates "Bedrock Panel Dev" in the login keychain
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=Bedrock Panel Dev" \
+  -addext "extendedKeyUsage=critical,codeSigning" -addext "keyUsage=critical,digitalSignature" \
+  -keyout /tmp/bpdev.key -out /tmp/bpdev.crt \
+&& openssl pkcs12 -export -inkey /tmp/bpdev.key -in /tmp/bpdev.crt -name "Bedrock Panel Dev" -passout pass:bpdev -out /tmp/bpdev.p12 \
+&& security import /tmp/bpdev.p12 -k ~/Library/Keychains/login.keychain-db -P bpdev -T /usr/bin/codesign \
+&& security add-trusted-cert -r trustRoot -p codeSign -k ~/Library/Keychains/login.keychain-db /tmp/bpdev.crt \
+&& rm /tmp/bpdev.key /tmp/bpdev.p12 && mkdir -p .signing && echo "Bedrock Panel Dev" > .signing/mac-identity
+```
+
+(`add-trusted-cert` asks for your login password; the first build asks once whether `codesign`
+may use the key — click **Always Allow**. Keychain Access → Certificate Assistant → Create a
+Certificate, type *Code Signing*, does the same thing with a GUI.) Check with
+`security find-identity -v -p codesigning`. Because the certificate's fingerprint is what macOS
+stores with each grant, every build signed with it keeps its permissions, including the copies
+other people install from the DMG. Gatekeeper still treats the app as from an unidentified
+developer, exactly as with the ad-hoc signature; only a Developer ID plus notarization ends that.
+
+Whichever identity signs, the build uses the entitlements in `packaging/mac/` (`build/` is
+gitignored, so they live there), and the DMG is not notarized. On a downloaded copy macOS therefore says it *could not verify* the app: click
 **Done**, open **System Settings → Privacy & Security**, scroll to *Security*, click **Open Anyway**,
 then **Open** — once per new build. Or clear the quarantine flag:
 `xattr -dr com.apple.quarantine "/Applications/Bedrock Panel.app"`. (A *"damaged"* dialog instead

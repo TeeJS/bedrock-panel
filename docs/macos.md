@@ -57,8 +57,10 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 | **Calendar meeting info** | not needed | | | Use the **Microsoft 365** calendar source (Settings → Automation → Meeting). The Outlook desktop source is Windows-only. |
 
 After installing a new build, a permission can show as on but stop working: macOS ties the grant to
-the build's signature until builds are notarized, so every new build is a new app to it, and while
-the stale entry exists macOS shows no prompt. For **Input Monitoring** and **Accessibility** the app
+the build's signature, so an **ad-hoc-signed** build (the default when nobody set up a signing
+certificate — see the macOS section of [building.md](building.md)) is a new app to it every time,
+and while the stale entry exists macOS shows no prompt. Builds signed with the same certificate,
+which is how releases should be made, keep their grants from one version to the next. For **Input Monitoring** and **Accessibility** the app
 repairs this itself the first time it needs the permission and no grant arrives within a few
 seconds: it clears its own entry (the log says "cleared a stale … entry") and asks again, which
 brings the prompt back. For the others, remove the entry with **−** and re-add it (toggling off and

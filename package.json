@@ -16,7 +16,7 @@
     "build:mac-helpers": "node build-mac-helpers.js",
     "test": "node --test test/*.test.js",
     "dist": "node build-dpapi.js && node build-smtc.js && electron-builder --win",
-    "dist:mac": "node build-mac-helpers.js && electron-builder --mac"
+    "dist:mac": "node build-mac-helpers.js && node build-mac.js"
   },
   "license": "SEE LICENSE IN LICENSE",
   "keywords": [
@@ -56,7 +56,7 @@
       "!tools/**",
       "!native/**",
       "!build-dpapi.js",
-      "!build-smtc.js",
+      "!build-smtc.js","!build-mac.js","!build-mac-helpers.js",
       "!build-mac-helpers.js",
       "!sign.js",
       "!afterpack.js",

@@ -40,6 +40,12 @@ const macPermissions = require('./macPermissions').createMacPermissions({
 });
 let inputMonitoringPrompted = false;   // the Input Monitoring prompt is raised once per session, on the first refused device open
 let accessibilityPrompted = false;     // one automatic Accessibility prompt per session (Reserved Display's first 'permission' event)
+// Everything console.* prints also goes to main.log under the platform's log folder (~/Library/Logs/
+// bedrock-panel on macOS), so a Finder/Dock launch — which has no terminal — can still be diagnosed.
+const fileLog = (() => {
+  try { app.setAppLogsPath(); return require('./fileLog').install({ dir: app.getPath('logs') }); } catch (e) { return null; }
+})();
+if (fileLog) console.log('log file: ' + fileLog.file);
 let privacyPaneOpened = false;   // at most one automatic System Settings jump per session (a refused device open)
 // macOS system audio (meeting recorder): Electron >= 39 captures it through a CoreAudio tap on macOS
 // 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
