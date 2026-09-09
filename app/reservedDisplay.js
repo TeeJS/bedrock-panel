@@ -18,6 +18,7 @@ function createReservedDisplay(options) {
   const getDisplayState = opts.getDisplayState || (() => null);
   const ownProcessId = opts.ownProcessId || process.pid;
   const restartDelay = opts.restartDelay == null ? 1500 : opts.restartDelay;
+  const onEvent = typeof opts.onEvent === 'function' ? opts.onEvent : null;   // every parsed helper event (e.g. macOS 'permission')
 
   let child = null;
   let started = false;
@@ -66,6 +67,7 @@ function createReservedDisplay(options) {
         event.fallback ? 'fallback=' + event.fallback : '',
       ].filter(Boolean).join(' ');
       if (detail) log(detail);
+      if (onEvent) { try { onEvent(event); } catch (e) { log('event handler error: ' + e.message); } }
     });
   }
 

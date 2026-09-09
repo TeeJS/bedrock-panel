@@ -238,7 +238,9 @@ const SYSVOL_EXE = helperPath('sysvolume');                // reads the real sys
 const OUTLOOK_MEETING_EXE = path.join(__dirname, 'native', 'outlook-meeting.exe').replace('app.asar', 'app.asar.unpacked'); // pulls current-meeting info from classic Outlook over COM
 const LED_DEFAULT = { effect: 1, brightness: 200, speed: 128, hue: 128, sat: 255 }; // ring lighting fallback (effect 1 = Solid Color)
 const THEME_DEFAULT = { appearance: 'system', accent: '#7CFFB2', presets: ['#7CFFB2', '#38B6FF', '#FF4040', '#FFB000'] };
-const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: false, lighting: Object.assign({}, LED_DEFAULT), theme: Object.assign({}, THEME_DEFAULT) };
+// reservedDisplay defaults ON on macOS: there the panel covers the menu bar and Dock at all times, so a
+// window macOS opens on the panel display would sit unreachable behind it unless protection moves it.
+const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: process.platform === 'darwin', lighting: Object.assign({}, LED_DEFAULT), theme: Object.assign({}, THEME_DEFAULT) };
 const actionDeps = { fs, shell, exec, execFile, spawn, platform: process.platform, log: message => console.log(message) };
 const mediaKeys = createMediaKeys({ log: message => console.log(message), ensureTrusted: macPermissions.supported ? macPermissions.ensureTrusted : null });
 let presenceService = null;   // busy-presence fan-out (Busylight / WLED / HA over MQTT); null until boot
@@ -321,6 +323,9 @@ let reservedRefreshTimer = null;
 const reservedDisplay = createReservedDisplay({
   getDisplayState: reservedDisplayState,
   log: message => console.log('[reserved-display] ' + message),
+  // macOS: the helper can see a window on the panel but not move it until Accessibility is granted —
+  // say so on the panel, where the person standing at the device will look, not just in the log.
+  onEvent: event => { if (event && event.event === 'permission') panelNotice('Reserved Display needs the Accessibility permission: in the editor open Settings → Device → Hardware → macOS permissions.'); },
 });
 // The AI Voice app = ONE app id ('ai-voice') with a per-page backend option, served by one generic
 // voice-panel host instance PER BACKEND (state/transcript/SSE/speech/STT-TTS, see
@@ -2628,22 +2633,18 @@ function applyPanelDisplayMode(d) {
   if (process.platform === 'darwin') {
     panelWin.setSimpleFullScreen(true);
     // The panel never becomes the active app (showPanelWindow), so the presentation options that hide
-    // the menu bar and the Dock only apply while nothing else is active. While Reserved Display is on,
-    // sit above both instead: the screen-saver level is higher than the menu bar (24) and the Dock (20),
-    // and the window covers exactly the panel display. Only then — protection is what guarantees a
-    // window landing behind the panel is moved back instead of stranded out of reach; with it off the
-    // panel stays a normal window, so other apps' windows on this display remain visible.
-    panelWin.setAlwaysOnTop(reservedDisplayEnabled(appSettings()), 'screen-saver');
+    // the menu bar and the Dock only apply while nothing else is active. With "Displays have separate
+    // Spaces" (the default) every display draws its own menu bar (window level 24, Control Center items
+    // at 25) and can host the Dock (20). Sit above all of them: the screen-saver level (1000) covers
+    // them, and the window spans exactly the panel display, so other displays are untouched. Windows
+    // that macOS opens on the panel display land behind the panel; Reserved Display (on by default on
+    // macOS) moves them to another display.
+    panelWin.setAlwaysOnTop(true, 'screen-saver');
   } else panelWin.setFullScreen(true);
 }
 // Windows: a brief always-on-top nudge lifts the panel over whatever the desktop left on that display
 // (Reserved Display keeps it clear afterwards). macOS pins the panel permanently in applyPanelDisplayMode,
 // and lowering it again here would bring the menu bar back.
-// macOS: the panel's window level follows the Reserved Display setting (see applyPanelDisplayMode).
-function repinPanelForMac() {
-  if (process.platform !== 'darwin' || !panelWin || panelWin.isDestroyed() || runMode() === 'software') return;
-  try { panelWin.setAlwaysOnTop(reservedDisplayEnabled(appSettings()), 'screen-saver'); } catch (e) {}
-}
 function nudgePanelOnTop() {
   if (process.platform === 'darwin' || !panelWin || panelWin.isDestroyed()) return;
   panelWin.setAlwaysOnTop(true);
@@ -4243,7 +4244,6 @@ app.whenReady().then(async () => {
     if (githubClientChanged || githubSettingsChanged) { try { sysserver.clearGitHubCapability(); } catch (error) {} }
     pushToPanel(); applyKnobSettings(); refreshTray(); applyRotationSettings(wasRot); applyFocusFollowSettings(); applyShortcuts(); applyTheme();
     reservedDisplay.setEnabled(reservedDisplayEnabled(appSettings()));   // stays off in software mode
-    repinPanelForMac();
     applyDisplayBlocker();                                               // keep-display-awake: only Panel mode + when enabled
     const discordSettings = normalizeDiscordSettings((config.settings || {}).discord);
     discordAppHost.updateSettings(discordSettings);

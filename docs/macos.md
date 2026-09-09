@@ -64,13 +64,15 @@ re-add it. From a terminal, `tccutil reset ListenEvent com.teejs.bedrockpanel` (
 
 ## 4. Reserved Display: keep other windows off the panel
 
-macOS decides where an app opens its windows and will happily put them on the panel. Reserved
-Display moves them back within half a second, and while it is on the panel also covers the menu bar
-and Dock that macOS draws on every display.
+macOS decides where an app opens its windows and will happily put them on the panel — where they
+end up behind it, because in Panel mode the panel always covers that display, menu bar and Dock
+included. Reserved Display moves them to another display within half a second. It is on by default
+on a Mac and only needs Accessibility.
 
-1. Grant **Accessibility** (section 3).
-2. **⚙ Settings → Device → Monitor**, tick **Keep application windows off the panel display**, then
-   click **Save & apply** (bottom right).
+1. Grant **Accessibility** (section 3). Until it is granted, the panel shows a notice the moment a
+   window lands behind it.
+2. **⚙ Settings → Device → Monitor**: **Keep application windows off the panel display** should
+   already be ticked; if not, tick it and click **Save & apply** (bottom right).
 3. Drag any window onto the panel and let go: it jumps back to your main display and the log shows
    `[reserved-display] moved hwnd=…`. If the log shows a `permission` line instead, Accessibility is
    not granted to the right app.
@@ -83,7 +85,8 @@ Space cannot be moved by any app.
 
 Panel mode places the panel on the 1920×480 display using macOS simple full screen (no separate
 Space) and never takes keyboard focus, so touching the panel does not steal focus from what you are
-doing. The Windows-only **Set up touchscreen** wizard has no macOS counterpart and is not shown.
+doing. The panel window sits above the menu bar and the Dock on that display, so neither shows on
+the Quake; only macOS's orange microphone/camera indicator can appear over it. The Windows-only **Set up touchscreen** wizard has no macOS counterpart and is not shown.
 
 ## 6. What is still Windows-only
 

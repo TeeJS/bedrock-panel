@@ -39,11 +39,12 @@ un-minimized onto a display when one returns. Two macOS differences: there is no
 to preserve, and a window in its own full-screen Space cannot be moved.
 
 Independently of the helper, the kiosk panel window never takes key focus on macOS (the display
-owning the key window is where macOS prefers to open other apps' new windows). While Reserved
-Display is on it also sits at the screen-saver window level, above the menu bar and the Dock that
-macOS draws on every display; with protection off it stays a normal window, so a window that lands
-on the panel remains visible and reachable rather than stranded behind it. macOS still decides where
-an app opens its windows — the helper is what keeps the panel clear.
+owning the key window is where macOS prefers to open other apps' new windows) and always sits at
+the screen-saver window level, above the menu bar (level 24), Control Center's menu items (25), and
+the Dock (20) that macOS draws on every display when "Displays have separate Spaces" is on. A
+window that macOS opens on the panel display therefore lands behind the panel, which is why
+Reserved Display is on by default on a Mac and the panel shows a notice while Accessibility is still
+missing. macOS still decides where an app opens its windows — the helper is what keeps the panel clear.
 
 ## Build and automated checks
 

@@ -3755,7 +3755,7 @@
   // ---- settings page ----
   const DEFAULT_APP_REPO = 'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps';
   const LEGACY_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';   // saved by pre-rename installs
-  const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: false, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
+  const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: IS_MAC, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
   function appSettings() { return Object.assign({}, DEFAULT_SETTINGS, config.settings || {}); }
   function renderSettings() {
     ['tilegrid', 'mergebar', 'tileform', 'iconpane'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });

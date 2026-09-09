@@ -116,3 +116,21 @@ test('active on macOS through the Swift helper, inactive where no helper exists'
     controller.stop();
   }
 });
+
+test('helper events reach onEvent (the macOS permission notice)', async () => {
+  const events = [];
+  let proc = null;
+  const controller = createReservedDisplay({
+    platform: 'darwin', ownProcessId: 42, restartDelay: 5,
+    getDisplayState: () => ({ reserved: { x: 0, y: 0, width: 1920, height: 480 }, displays: [] }),
+    log: () => {},
+    onEvent: e => events.push(e),
+    spawn: () => { proc = fakeProcess(); return proc; },
+  });
+  controller.setEnabled(true);
+  controller.start();
+  proc.stdout.write(JSON.stringify({ event: 'permission', message: 'Accessibility needed' }) + '\n');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(events, [{ event: 'permission', message: 'Accessibility needed' }]);
+  controller.stop();
+});
