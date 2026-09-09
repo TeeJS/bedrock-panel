@@ -103,10 +103,10 @@ test('request(inputMonitoring) raises the prompt through the helper and waits fo
   assert.deepStrictEqual(await q.request('inputMonitoring'), { ok: true });
   assert.strictEqual(now.calls.length, 1);
 
-  // Never granted: gives up after the poll window.
+  // Never granted (and no bundle id to reset a stale entry for): gives up after the poll window.
   let t = 0;
   const never = fakeHelper({ 'request listenEvent': false, 'preflight listenEvent': false });
-  const r = createMacPermissions({ platform: 'darwin', systemPreferences: fakePrefs(), helperPath: '/x/privacy', execFile: never.execFile, pollMs: 10, pollTimeoutMs: 35, sleep: async ms => { t += ms; } });
+  const r = createMacPermissions({ platform: 'darwin', systemPreferences: fakePrefs(), helperPath: '/x/privacy', execFile: never.execFile, bundleId: null, pollMs: 10, pollTimeoutMs: 35, sleep: async ms => { t += ms; } });
   const origNow = Date.now;
   Date.now = () => 1000 + t;
   try { assert.deepStrictEqual(await r.request('inputMonitoring'), { ok: false, reason: 'not-granted' }); } finally { Date.now = origNow; }
@@ -125,4 +125,59 @@ test('openSettings deep-links known panes only', async () => {
   assert.strictEqual(await p.openSettings('inputMonitoring'), true);
   assert.strictEqual(await p.openSettings('bogus'), false);
   assert.deepStrictEqual(opened, [SETTINGS_URL + PANES.screen, SETTINGS_URL + PANES.inputMonitoring]);
+});
+
+test('a stale grant (no prompt, no grant within the grace period) is reset with tccutil and requested again', async () => {
+  // Input Monitoring: request says no, preflight stays no until the entry is reset; the second request prompts and is granted.
+  let reset = false, polls = 0;
+  const calls = [];
+  const execFile = (file, args, opts, cb) => {
+    calls.push([file, ...args]);
+    if (file === '/usr/bin/tccutil') { reset = true; return cb(null, 'Successfully reset ListenEvent approval status for com.teejs.bedrockpanel\n'); }
+    const key = args.join(' ');
+    let granted = false;
+    if (key === 'request listenEvent') granted = reset;
+    if (key === 'preflight listenEvent') { polls++; granted = false; }
+    cb(null, JSON.stringify({ granted }) + '\n');
+  };
+  let t = 0;
+  const origNow = Date.now;
+  Date.now = () => 1000 + t;
+  try {
+    const logs = [];
+    const p = createMacPermissions({ platform: 'darwin', systemPreferences: fakePrefs(), helperPath: '/x/privacy', execFile, bundleId: 'com.teejs.bedrockpanel', pollMs: 100, pollTimeoutMs: 5000, staleGraceMs: 300, sleep: async ms => { t += ms; }, log: m => logs.push(m) });
+    assert.deepStrictEqual(await p.request('inputMonitoring'), { ok: true, reset: true });
+    assert.deepStrictEqual(calls.filter(c => c[0] === '/usr/bin/tccutil'), [['/usr/bin/tccutil', 'reset', 'ListenEvent', 'com.teejs.bedrockpanel']]);
+    assert.strictEqual(calls.filter(c => c[1] === 'request').length, 2, 'request, reset, request');
+    assert.ok(polls >= 2 && polls <= 4, 'polled through the grace period only: ' + polls);
+    assert.match(logs[0], /cleared a stale ListenEvent entry for com.teejs.bedrockpanel/);
+    // The reset runs once per session: a later refusal does not reset again.
+    reset = false; calls.length = 0;
+    assert.deepStrictEqual(await p.request('inputMonitoring'), { ok: false, reason: 'not-granted' });
+    assert.strictEqual(calls.filter(c => c[0] === '/usr/bin/tccutil').length, 0);
+  } finally { Date.now = origNow; }
+});
+
+test('Accessibility: the prompt call is trusted after a stale-entry reset; without a reset the pane is the fallback', async () => {
+  let entryReset = false;
+  const prefs = { calls: [], isTrustedAccessibilityClient(prompt) { prefs.calls.push(['axs', prompt]); return entryReset; }, getMediaAccessStatus() { return 'granted'; }, async askForMediaAccess() { return true; } };
+  const execFile = (file, args, opts, cb) => { if (file === '/usr/bin/tccutil') { entryReset = true; return cb(null, ''); } cb(new Error('unexpected ' + args.join(' '))); };
+  let t = 0;
+  const origNow = Date.now;
+  Date.now = () => 1000 + t;
+  try {
+    const p = createMacPermissions({ platform: 'darwin', systemPreferences: prefs, helperPath: '/x/privacy', execFile, bundleId: 'com.apple.Terminal', pollMs: 100, pollTimeoutMs: 2000, staleGraceMs: 300, sleep: async ms => { t += ms; } });
+    assert.deepStrictEqual(await p.request('accessibility'), { ok: true, reset: true });
+    assert.deepStrictEqual(prefs.calls.filter(c => c[1] === true).length, 2, 'prompted, reset, prompted again');
+    // No execFile at all (no helper wiring) = no reset possible: the request just reports not granted.
+    const q = createMacPermissions({ platform: 'darwin', systemPreferences: { isTrustedAccessibilityClient: () => false, getMediaAccessStatus: () => 'granted' }, pollMs: 100, pollTimeoutMs: 500, staleGraceMs: 200, sleep: async ms => { t += ms; } });
+    assert.deepStrictEqual(await q.request('accessibility'), { ok: false, reason: 'not-granted' });
+  } finally { Date.now = origNow; }
+});
+
+test('responsibleBundleId comes from LaunchServices\' environment, else the app id', () => {
+  const { responsibleBundleId } = require('../app/macPermissions');
+  assert.strictEqual(responsibleBundleId({ __CFBundleIdentifier: 'com.apple.Terminal' }), 'com.apple.Terminal');
+  assert.strictEqual(responsibleBundleId({}), 'com.teejs.bedrockpanel');
+  assert.strictEqual(responsibleBundleId(null, 'x'), 'x');
 });

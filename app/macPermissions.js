@@ -25,15 +25,44 @@ const PANES = {
 };
 const SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?';
 
+// The bundle id macOS attributes permissions to: the app's own for the installed build, the terminal
+// app's (com.apple.Terminal, …) for `npm start` — LaunchServices hands it down in the environment.
+function responsibleBundleId(env = process.env, fallback = 'com.teejs.bedrockpanel') {
+  return (env && env.__CFBundleIdentifier) || fallback;
+}
+
 function createMacPermissions({
   platform = process.platform, systemPreferences = null, desktopCapturer = null, shell = null, log = () => {},
   helperPath = null, execFile = null,           // the `privacy` helper (null = not built / not this platform)
+  bundleId = responsibleBundleId(),             // whose TCC entries a stale-grant reset clears
+  tccutil = '/usr/bin/tccutil',
   pollMs = 1000, pollTimeoutMs = 30000,         // how long request('inputMonitoring') waits for the person to answer the prompt
+  staleGraceMs = 6000,                          // no grant this long after a request = the prompt never appeared: reset the stale entry and ask again
   sleep = ms => new Promise(r => setTimeout(r, ms)),
 } = {}) {
   const supported = platform === 'darwin' && !!systemPreferences;
   const helper = supported && helperPath && execFile ? helperPath : null;
   let promptedAccessibility = false;
+  const resetDone = new Set();   // one stale-grant reset per service per session
+
+  // Until builds are notarized every ad-hoc build is a new app to TCC: the entry from the previous
+  // build still shows as "on" in System Settings but no longer matches, macOS denies the permission
+  // AND, because an entry exists, never shows the prompt again. `tccutil reset <service> <bundle>`
+  // removes that entry (it needs no admin rights for one's own bundle id), after which the next
+  // request prompts like a first install. Resolves true when the reset ran.
+  function resetStaleGrant(service) {
+    if (!supported || !execFile || !bundleId || resetDone.has(service)) return Promise.resolve(false);
+    resetDone.add(service);
+    return new Promise(resolve => {
+      try {
+        execFile(tccutil, ['reset', service, bundleId], { timeout: 15000, windowsHide: true }, (err, stdout, stderr) => {
+          if (err) { log('tccutil reset ' + service + ' ' + bundleId + ' failed: ' + ((stderr && String(stderr).trim()) || err.message || err)); return resolve(false); }
+          log('cleared a stale ' + service + ' entry for ' + bundleId + ' (a previous build\'s grant) — asking again');
+          resolve(true);
+        });
+      } catch (e) { log('tccutil start failed: ' + (e && e.message)); resolve(false); }
+    });
+  }
 
   // `privacy preflight|request listenEvent|screenCapture` -> true/false, or null when the helper is
   // missing or fails (the caller then treats the permission as "check in System Settings").
@@ -70,14 +99,40 @@ function createMacPermissions({
   // so the grant shows up in a later preflight. Resolves { ok: true } as soon as it is granted.
   async function requestInputMonitoring() {
     if (!helper) return { ok: false, reason: 'no-helper' };
-    const now = await helperCall('request', 'listenEvent');
+    const deadline = Date.now() + pollTimeoutMs;
+    const pollUntil = async until => {
+      while (Date.now() < until) {
+        await sleep(pollMs);
+        if (await helperCall('preflight', 'listenEvent') === true) return true;
+      }
+      return false;
+    };
+    let now = await helperCall('request', 'listenEvent');
     if (now === true) return { ok: true };
     if (now === null) return { ok: false, reason: 'helper-failed' };
-    const deadline = Date.now() + pollTimeoutMs;
-    while (Date.now() < deadline) {
-      await sleep(pollMs);
-      if (await helperCall('preflight', 'listenEvent') === true) return { ok: true };
+    if (await pollUntil(Math.min(deadline, Date.now() + staleGraceMs))) return { ok: true };
+    // Nothing within the grace period: either the person is still reading the prompt, or there was no
+    // prompt because a stale entry exists. A reset is harmless in the first case (the prompt is
+    // re-issued) and the only cure in the second.
+    if (await resetStaleGrant('ListenEvent')) {
+      now = await helperCall('request', 'listenEvent');
+      if (now === true) return { ok: true, reset: true };
     }
+    if (await pollUntil(deadline)) return { ok: true, reset: resetDone.has('ListenEvent') };
+    return { ok: false, reason: 'not-granted' };
+  }
+
+  // Same idea for Accessibility: isTrustedAccessibilityClient(true) shows the prompt only when no
+  // entry exists, so a stale one is cleared first when the prompt does not lead to a grant.
+  async function requestAccessibility() {
+    promptedAccessibility = true;
+    const trusted = () => { try { return !!systemPreferences.isTrustedAccessibilityClient(false); } catch (e) { return false; } };
+    if (systemPreferences.isTrustedAccessibilityClient(true)) return { ok: true };
+    const deadline = Date.now() + pollTimeoutMs;
+    const pollUntil = async until => { while (Date.now() < until) { await sleep(pollMs); if (trusted()) return true; } return false; };
+    if (await pollUntil(Math.min(deadline, Date.now() + staleGraceMs))) return { ok: true };
+    if (await resetStaleGrant('Accessibility') && systemPreferences.isTrustedAccessibilityClient(true)) return { ok: true, reset: true };
+    if (await pollUntil(deadline)) return { ok: true, reset: resetDone.has('Accessibility') };
     return { ok: false, reason: 'not-granted' };
   }
 
@@ -87,7 +142,7 @@ function createMacPermissions({
     if (!supported) return { ok: false, reason: 'unsupported' };
     try {
       if (kind === 'microphone') return { ok: !!(await systemPreferences.askForMediaAccess('microphone')) };
-      if (kind === 'accessibility') { promptedAccessibility = true; return { ok: !!systemPreferences.isTrustedAccessibilityClient(true) }; }
+      if (kind === 'accessibility') return await requestAccessibility();
       if (kind === 'screen') {
         if (desktopCapturer) await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
         return { ok: systemPreferences.getMediaAccessStatus('screen') === 'granted' };
@@ -119,7 +174,7 @@ function createMacPermissions({
     return false;
   }
 
-  return { supported, canPromptInputMonitoring: !!helper, status, request, openSettings, ensureTrusted };
+  return { supported, canPromptInputMonitoring: !!helper, bundleId, status, request, openSettings, ensureTrusted, resetStaleGrant };
 }
 
-module.exports = { createMacPermissions, PANES, SETTINGS_URL };
+module.exports = { createMacPermissions, responsibleBundleId, PANES, SETTINGS_URL };

@@ -45,7 +45,7 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 
 | Feature | Pane | Who | When macOS asks | If it does not ask |
 |---|---|---|---|---|
-| **DK-QUAKE touchscreen** (the app reads the touch controller itself; macOS demands this permission for it because the controller also carries digitizer and mouse collections) | **Input Monitoring** | Bedrock Panel / Terminal | macOS never asks for this one on its own, so the app asks for it: the first time the touchscreen is refused, macOS shows "Bedrock Panel would like to receive keystrokes from any application" (for `npm start` it names the terminal app) — click **Allow**. The same prompt is behind **Request** on the Input Monitoring row of the permissions block. | If the prompt was dismissed or does not appear (macOS shows it once per build), the app opens this pane and says so on the panel: turn **Bedrock Panel** on — the prompt has already listed it, so **+** is only needed if it is missing. **If it is listed and already on, remove it with − and add it again**: until builds are notarized, every new build is a new app to macOS and the old grant is stale. The panel picks the touchscreen up within about three seconds, no restart. Device Diagnostics shows the refusal on the Touchscreen row until then. |
+| **DK-QUAKE touchscreen** (the app reads the touch controller itself; macOS demands this permission for it because the controller also carries digitizer and mouse collections) | **Input Monitoring** | Bedrock Panel / Terminal | macOS never asks for this one on its own, so the app asks for it: the first time the touchscreen is refused, macOS shows "Bedrock Panel would like to receive keystrokes from any application" (for `npm start` it names the terminal app) — click **Allow**. The same prompt is behind **Request** on the Input Monitoring row of the permissions block. | A new build of the app carries an old build's grant in this pane that macOS no longer honors — and, because the entry exists, macOS will not show the prompt either. The app detects that (no grant a few seconds after asking), clears its own stale entry (`tccutil reset ListenEvent`, logged as "cleared a stale ListenEvent entry") and asks again, so the prompt does appear. Only if it still is not granted does the app open this pane and say so on the panel: turn **Bedrock Panel** on, or remove it with **−** and add it again with **+**. The panel picks the touchscreen up within about three seconds, no restart. Device Diagnostics shows the refusal on the Touchscreen row until then. |
 | **Knob** | none | | | Works as soon as it is plugged in. |
 | **Keystrokes** (paste tiles, macros, meeting hotkeys, media and volume keys) and **Reserved Display** | **Accessibility** | Bedrock Panel / Terminal | The first keystroke, or the **Request** button | Open the pane and turn the entry on. Takes effect immediately. |
 | **Microphone** (meeting recordings, dictation, AI Voice, Live Translate) | **Microphone** | Bedrock Panel / Terminal | The first recording or dictation | Open the pane and turn the entry on. |
@@ -57,9 +57,12 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 | **Calendar meeting info** | not needed | | | Use the **Microsoft 365** calendar source (Settings → Automation → Meeting). The Outlook desktop source is Windows-only. |
 
 After installing a new build, a permission can show as on but stop working: macOS ties the grant to
-the build's signature until builds are notarized, so every new build is a new app to it. Remove the
-entry with **−** and re-add it (toggling off and on is not always enough). From a terminal this
-clears them in one go so the next launch prompts again:
+the build's signature until builds are notarized, so every new build is a new app to it, and while
+the stale entry exists macOS shows no prompt. For **Input Monitoring** and **Accessibility** the app
+repairs this itself the first time it needs the permission and no grant arrives within a few
+seconds: it clears its own entry (the log says "cleared a stale … entry") and asks again, which
+brings the prompt back. For the others, remove the entry with **−** and re-add it (toggling off and
+on is not always enough). From a terminal this clears them in one go so the next launch prompts again:
 
 ```bash
 tccutil reset ListenEvent com.teejs.bedrockpanel; tccutil reset Accessibility com.teejs.bedrockpanel

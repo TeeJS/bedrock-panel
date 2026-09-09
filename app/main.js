@@ -39,6 +39,7 @@ const macPermissions = require('./macPermissions').createMacPermissions({
   execFile: require('child_process').execFile,
 });
 let inputMonitoringPrompted = false;   // the Input Monitoring prompt is raised once per session, on the first refused device open
+let accessibilityPrompted = false;     // one automatic Accessibility prompt per session (Reserved Display's first 'permission' event)
 let privacyPaneOpened = false;   // at most one automatic System Settings jump per session (a refused device open)
 // macOS system audio (meeting recorder): Electron >= 39 captures it through a CoreAudio tap on macOS
 // 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
@@ -333,9 +334,16 @@ const reservedDisplay = createReservedDisplay({
   // macOS: the helper can see a window on the panel but not move it until Accessibility is granted —
   // say so on the panel, where the person standing at the device will look, not just in the log.
   onEvent: event => {
-    if (!event || event.event !== 'permission') return;
-    panelNotice('Reserved Display needs the Accessibility permission: System Settings → Privacy & Security → Accessibility → turn on Bedrock Panel (remove and re-add it if it is already on).');
-    if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('accessibility'); }
+    if (!event || event.event !== 'permission' || accessibilityPrompted) return;
+    accessibilityPrompted = true;
+    // Raise the Accessibility prompt (clearing a previous build's stale entry first when the prompt
+    // does not come through); the helper re-checks on every scan, so a grant takes effect at once.
+    panelNotice('Reserved Display needs the Accessibility permission — macOS is asking for it on your Mac; allow Bedrock Panel there.');
+    macPermissions.request('accessibility').then(r => {
+      if (r && r.ok) { console.log('[permissions] Accessibility granted' + (r.reset ? ' after clearing a stale entry' : '')); panelNotice('Accessibility granted — Reserved Display is active.'); return; }
+      panelNotice('Reserved Display needs the Accessibility permission: System Settings → Privacy & Security → Accessibility → turn on Bedrock Panel (remove and re-add it if it is already on).');
+      if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('accessibility'); }
+    });
   },
 });
 // macOS: the panel display's place in the arrangement (native/mac/display-arrange). DK-Suite enforces
