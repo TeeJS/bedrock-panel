@@ -45,7 +45,7 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 
 | Feature | Pane | Who | When macOS asks | If it does not ask |
 |---|---|---|---|---|
-| **DK-QUAKE touchscreen** | **Input Monitoring** | Bedrock Panel / Terminal | Often not at all for the touch controller | Open the pane, click **+** if the app is not listed, turn it on. The panel picks the touchscreen up within about three seconds, no restart. Until then the log shows `dev error: … Input Monitoring` and Device Diagnostics shows the refusal on the Touchscreen row. |
+| **DK-QUAKE touchscreen** | **Input Monitoring** | Bedrock Panel / Terminal | Often not at all for the touch controller — so the app opens this pane for you the first time the touchscreen is refused, and says so on the panel | Turn **Bedrock Panel** on; click **+** and pick it from Applications if it is not listed. **If it is listed and already on, remove it with − and add it again**: until builds are notarized, every new build is a new app to macOS and the old grant is stale. The panel picks the touchscreen up within about three seconds, no restart. Device Diagnostics shows the refusal on the Touchscreen row until then. |
 | **Knob** | none | | | Works as soon as it is plugged in. |
 | **Keystrokes** (paste tiles, macros, meeting hotkeys, media and volume keys) and **Reserved Display** | **Accessibility** | Bedrock Panel / Terminal | The first keystroke, or the **Request** button | Open the pane and turn the entry on. Takes effect immediately. |
 | **Microphone** (meeting recordings, dictation, AI Voice, Live Translate) | **Microphone** | Bedrock Panel / Terminal | The first recording or dictation | Open the pane and turn the entry on. |
@@ -56,11 +56,17 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 | **Music page transport** (play/pause/next on Spotify or Music) | **Automation** | Bedrock Panel / Terminal | The first transport press | Open the pane, expand the app, turn on **Spotify** and/or **Music**. A refusal falls back to media keys (Accessibility). |
 | **Calendar meeting info** | not needed | | | Use the **Microsoft 365** calendar source (Settings → Automation → Meeting). The Outlook desktop source is Windows-only. |
 
-After an update, a permission can show as on but stop working: macOS ties the grant to the build's
-signature until builds are notarized. Turn the entry off and on again, or remove it with **−** and
-re-add it. From a terminal, `tccutil reset ListenEvent com.teejs.bedrockpanel` (or `Accessibility`,
-`Microphone`, `ScreenCapture`, `AppleEvents`, `All`) clears a grant for the installed app; use
-`com.apple.Terminal` for `npm start` runs.
+After installing a new build, a permission can show as on but stop working: macOS ties the grant to
+the build's signature until builds are notarized, so every new build is a new app to it. Remove the
+entry with **−** and re-add it (toggling off and on is not always enough). From a terminal this
+clears them in one go so the next launch prompts again:
+
+```bash
+tccutil reset ListenEvent com.teejs.bedrockpanel; tccutil reset Accessibility com.teejs.bedrockpanel
+```
+
+(`Microphone`, `ScreenCapture`, `AppleEvents`, or `All` work the same way; use `com.apple.Terminal`
+for `npm start` runs.)
 
 ## 4. Reserved Display: keep other windows off the panel
 
@@ -86,7 +92,11 @@ Space cannot be moved by any app.
 Panel mode places the panel on the 1920×480 display using macOS simple full screen (no separate
 Space) and never takes keyboard focus, so touching the panel does not steal focus from what you are
 doing. The panel window sits above the menu bar and the Dock on that display, so neither shows on
-the Quake; only macOS's orange microphone/camera indicator can appear over it. The Windows-only **Set up touchscreen** wizard has no macOS counterpart and is not shown.
+the Quake. The one thing that can still appear over it is macOS's privacy indicator in the top-right
+corner: orange for the microphone, green for the camera, **purple for screen recording** — and a
+DisplayLink adapter shows the purple one permanently, because DisplayLink Manager records the screen
+to drive its displays. That indicator belongs to macOS; no app can hide it. The Windows-only **Set up
+touchscreen** wizard has no macOS counterpart and is not shown.
 
 ## 6. What is still Windows-only
 
@@ -109,3 +119,6 @@ Secrets saved on Windows cannot be read on a Mac: after copying a config over, r
 - **"Secret encryption is unavailable" when saving** — the keychain prompt was denied; relaunch and
   click Always Allow.
 - **Notifications never appear** — expected for the unsigned build; they are logged instead.
+- **A purple dot in the panel's top-right corner** — macOS's screen-recording indicator, usually
+  DisplayLink Manager (click the dot in the menu bar to see who is recording). Not Bedrock Panel, and
+  not hideable.

@@ -34,6 +34,7 @@ require('./userData').applyToApp(app, m => console.log(m));
 // gate robotjs needs (keystrokes are silently dropped without it). No-op on other platforms.
 const { systemPreferences, desktopCapturer } = require('electron');
 const macPermissions = require('./macPermissions').createMacPermissions({ systemPreferences, desktopCapturer, shell, log: m => console.log('[permissions] ' + m) });
+let privacyPaneOpened = false;   // at most one automatic System Settings jump per session (a refused device open)
 // macOS system audio (meeting recorder): Electron >= 39 captures it through a CoreAudio tap on macOS
 // 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
 // ScreenCaptureKit loopback (Screen Recording permission, purple indicator) for troubleshooting only.
@@ -325,7 +326,11 @@ const reservedDisplay = createReservedDisplay({
   log: message => console.log('[reserved-display] ' + message),
   // macOS: the helper can see a window on the panel but not move it until Accessibility is granted —
   // say so on the panel, where the person standing at the device will look, not just in the log.
-  onEvent: event => { if (event && event.event === 'permission') panelNotice('Reserved Display needs the Accessibility permission: in the editor open Settings → Device → Hardware → macOS permissions.'); },
+  onEvent: event => {
+    if (!event || event.event !== 'permission') return;
+    panelNotice('Reserved Display needs the Accessibility permission: System Settings → Privacy & Security → Accessibility → turn on Bedrock Panel (remove and re-add it if it is already on).');
+    if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('accessibility'); }
+  },
 });
 // The AI Voice app = ONE app id ('ai-voice') with a per-page backend option, served by one generic
 // voice-panel host instance PER BACKEND (state/transcript/SSE/speech/STT-TTS, see
@@ -4531,7 +4536,17 @@ app.whenReady().then(async () => {
     setTimeout(() => { try { dev.screenOn(); } catch (e) {} applyMic(micState); console.log('mic LED re-assert:', micState); }, 2000);
   });
   dev.on('state', s => { if (s && typeof s === 'object') Object.assign(lastDeviceState, s); });
-  dev.on('error', e => console.log('dev error:', e.message));
+  dev.on('error', e => {
+    console.log('dev error:', e.message);
+    // macOS refused to open a device (Input Monitoring). macOS does not always prompt for the DK-QUAKE
+    // touch controller, and an ad-hoc build's earlier grant goes stale, so say so on the panel and open
+    // the right System Settings pane once per session.
+    if (process.platform === 'darwin' && e && e.cause && e.cause.code === 'HID_OPEN_FAILED' && !privacyPaneOpened) {
+      privacyPaneOpened = true;
+      panelNotice('Touchscreen blocked by macOS: System Settings → Privacy & Security → Input Monitoring → turn on Bedrock Panel (if it is already on, remove it with − and add it again).');
+      macPermissions.openSettings('inputMonitoring');
+    }
+  });
   dev.start();
 
   screen.on('display-added', () => {
