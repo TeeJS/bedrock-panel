@@ -154,3 +154,18 @@ test('the page\'s source language reaches the STT request and the interpreter pr
     assert.doesNotMatch(seen[1].body.messages[0].content, /spoken in/);
   } finally { server.close(); }
 });
+
+test('the panel can set the spoken language (sourceHint): validated code or blank, other keys untouched', () => {
+  const grid = { kind: 'app', app: 'livetranslate', options: { sourceHint: '' } };
+  let saved = 0;
+  const host = createLiveTranslateHost({ appId: 'livetranslate', log: () => {}, deps: {
+    activeServedAppConfig: () => ({ options: grid.options }), activeGrid: () => grid, saveConfig: () => { saved++; }, getDocumentsPath: () => null, voiceEndpoints: () => ({}) } });
+  assert.equal(host.handlers.setOption('sourceHint', 'DE'), true);
+  assert.equal(grid.options.sourceHint, 'de');
+  assert.equal(host.handlers.setOption('sourceHint', 'pt-BR'), true);
+  assert.equal(grid.options.sourceHint, 'pt-br');
+  assert.equal(host.handlers.setOption('sourceHint', ''), true, 'blank = auto-detect');
+  assert.equal(host.handlers.setOption('sourceHint', 'German!'), false);
+  assert.equal(host.handlers.setOption('targetLanguage', 'de'), false, 'the target stays an editor setting');
+  assert.ok(saved >= 3);
+});

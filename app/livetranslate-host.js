@@ -32,6 +32,8 @@ const PANEL_OPTIONS = {
   // Mic pick is stored as a LABEL, not a deviceId (Chromium salts ids per origin, and the served
   // origin's port changes every launch); the page re-matches label -> id at startup. '' = default.
   micDevice: v => typeof v === 'string' && v.length <= 200 ? v : null,
+  // Spoken (source) language from the panel's Settings card: a BCP-47-ish code or '' for auto-detect.
+  sourceHint: v => typeof v === 'string' && /^([A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?)?$/.test(v.trim()) ? v.trim().toLowerCase() : null,
 };
 
 // Rolling AI-translate context: how many recent (source, translation) pairs ride along in each

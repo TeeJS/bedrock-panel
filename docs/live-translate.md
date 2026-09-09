@@ -17,8 +17,9 @@ Two providers sit behind the page:
 1. Sign up at [soniox.com](https://soniox.com) and create an API key (there's a free trial credit).
 2. In the Live Translate page's editor settings: **Provider = Soniox**, paste the **API key**, and set
    a **target language** (e.g. `en`, `es`, `de` — [browse codes](https://soniox.com/docs/stt/concepts/supported-languages)).
-3. Set the **source language** (the language you expect, e.g. `de`). With Soniox and Whisper it is
-   optional — they detect the language, and the hint removes the couple-second warm-up
+3. Set the **spoken language** — on the panel: **Settings → Spoken language** (or the page's *Source
+   language* option in the editor). With Soniox and Whisper it is optional — they detect the
+   language, and the hint removes the couple-second warm-up
    Soniox otherwise spends auto-detecting the language.
 
 Your real key never reaches the panel page: Bedrock Panel mints a short-lived **temporary key** and the

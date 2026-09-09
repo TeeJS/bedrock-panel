@@ -81,6 +81,31 @@ function ensureDeviceIds(force) {
   }).catch(function () { allDevices = []; matchDevices(); devicesReady = true; });
 }
 function syncMicPickVal() { $('micPickVal').textContent = savedMicLabel || 'System default'; }
+// Spoken (source) language: the same pick overlay as the microphone. '' = auto-detect (Soniox, Whisper);
+// the Mac's built-in engine cannot detect it and assumes English when blank.
+var LANGS = [['', 'Auto (Soniox / Whisper detect it)'], ['en', 'English'], ['de', 'German'], ['es', 'Spanish'], ['fr', 'French'], ['it', 'Italian'],
+  ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'], ['sv', 'Swedish'], ['da', 'Danish'], ['nb', 'Norwegian'], ['fi', 'Finnish'], ['cs', 'Czech'],
+  ['hu', 'Hungarian'], ['ro', 'Romanian'], ['el', 'Greek'], ['tr', 'Turkish'], ['ru', 'Russian'], ['uk', 'Ukrainian'], ['he', 'Hebrew'], ['ar', 'Arabic'],
+  ['hi', 'Hindi'], ['th', 'Thai'], ['vi', 'Vietnamese'], ['id', 'Indonesian'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese']];
+function langLabel(code) { var hit = LANGS.filter(function (l) { return l[0] === code; })[0]; return hit ? hit[1] : code.toUpperCase(); }
+function syncLangPickVal() { $('langPickVal').textContent = langLabel(sourceHint); }
+function renderLangOverlay() {
+  var el = $('devList'); el.innerHTML = '';
+  var known = LANGS.some(function (l) { return l[0] === sourceHint; });
+  (known ? LANGS : LANGS.concat([[sourceHint, sourceHint.toUpperCase()]])).forEach(function (l) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'devRow' + (l[0] === sourceHint ? ' current' : '');
+    b.textContent = l[1]; b.title = l[1];
+    b.onclick = function () { pickLang(l[0]); };
+    el.appendChild(b);
+  });
+}
+function pickLang(code) {
+  $('devOverlay').classList.add('hidden');
+  sourceHint = code;
+  postOption('sourceHint', code);   // the host reads it per utterance (AI path) and at the next Soniox start
+  syncLangPickVal();
+}
 function renderDevOverlay() {
   var el = $('devList'); el.innerHTML = '';
   function addRow(label, value, current) {
@@ -108,7 +133,13 @@ function pickMic(label) {
   }
   // Soniox: the new device applies on the next start (avoids tearing a live cloud session).
 }
+$('langPickBtn').onclick = function () {
+  $('devTitle').textContent = 'Spoken language';
+  $('devOverlay').classList.remove('hidden');
+  renderLangOverlay();
+};
 $('micPickBtn').onclick = function () {
+  $('devTitle').textContent = 'Microphone';
   $('devOverlay').classList.remove('hidden');
   renderDevOverlay();
   ensureDeviceIds(true).then(function () { renderDevOverlay(); });
@@ -278,7 +309,7 @@ function applyPause() {
 $('pauseMinus').onclick = function () { vadHangoverMs -= 100; applyPause(); postOption('vadHangoverMs', vadHangoverMs); };
 $('pausePlus').onclick = function () { vadHangoverMs += 100; applyPause(); postOption('vadHangoverMs', vadHangoverMs); };
 if (provider !== 'ai') { $('pauseRow').style.display = 'none'; $('pauseHint').style.display = 'none'; }
-$('settingsBtn').onclick = function () { syncMicPickVal(); $('settingsOverlay').classList.remove('hidden'); };
+$('settingsBtn').onclick = function () { syncMicPickVal(); syncLangPickVal(); $('settingsOverlay').classList.remove('hidden'); };
 $('settingsClose').onclick = function () { $('settingsOverlay').classList.add('hidden'); };
 
 // ▲/▼ page buttons for the device list (drag-thumbs proved unreliable on the panel -- see quake-touch-ui).
