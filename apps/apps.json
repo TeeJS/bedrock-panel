@@ -224,7 +224,7 @@
         "label": "Zoom tab: use Zoom's default key mappings",
         "type": "bool",
         "default": true,
-        "help": "Zoom ships with these combos already bound: Alt+A mute, Alt+V video, Ctrl+Shift+A/D phone accept/decline, Alt+Q leave. If you haven't changed Zoom's own Keyboard Shortcuts there's nothing to configure; turn this off only if you've remapped them in Zoom yourself.",
+        "help": "Zoom ships with these combos already bound: Alt+A mute, Alt+V video, Ctrl+Shift+A/D phone accept/decline, Alt+Q leave. If you haven't changed Zoom's own Keyboard Shortcuts there's nothing to configure; turn this off only if you've remapped them in Zoom yourself. On a Mac the defaults are Cmd+Shift+A mute, Cmd+Shift+V video, Ctrl+Shift+A/D phone accept/decline, Cmd+W leave, and the panel brings Zoom to the front before each keystroke, so no Global Shortcut setting is needed there.",
         "section": "Zoom",
         "helpCollapsed": true
       },

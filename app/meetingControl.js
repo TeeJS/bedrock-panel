@@ -23,29 +23,64 @@ const fs = require('fs');
 const { helperPath } = require('./nativeHelpers');
 const FGWATCH_EXE = helperPath('foregroundWatch');   // null on platforms without a window helper
 
-// Fixed Teams shortcuts (Ctrl+Shift+...), confirmed against Microsoft's own support docs.
-// Unlike Zoom these aren't user-configurable, so there's nothing to expose in the editor.
-const TEAMS_COMBO = {
-  mute: 'control+shift+m',
-  acceptVideo: 'control+shift+a',
-  acceptAudio: 'control+shift+s',
-  decline: 'control+shift+d',
-  hangup: 'control+shift+h',
-  video: 'control+shift+o',
+// Fixed Teams shortcuts per OS, from Microsoft's "Keyboard shortcuts for Microsoft Teams" page
+// (support.microsoft.com/en-us/accessibility/teams/keyboard-shortcuts-for-microsoft-teams, read
+// 2026-09-09). The Mac column is not a plain Ctrl->Cmd swap: accept-with-video is Cmd+Shift+V and
+// accept-audio-only is Cmd+Shift+A (classic Teams had them as A and S). Unlike Zoom these aren't
+// user-configurable, so there's nothing to expose in the editor. Unknown platforms get Windows'.
+const TEAMS_COMBOS = {
+  win32: {
+    mute: 'control+shift+m',
+    acceptVideo: 'control+shift+a',
+    acceptAudio: 'control+shift+s',
+    decline: 'control+shift+d',
+    hangup: 'control+shift+h',
+    video: 'control+shift+o',
+    share: 'control+shift+e',     // "toggle share content tray"
+    fullscreen: 'f11',
+  },
+  darwin: {
+    mute: 'command+shift+m',
+    acceptVideo: 'command+shift+v',
+    acceptAudio: 'command+shift+a',
+    decline: 'command+shift+d',
+    hangup: 'command+shift+h',
+    video: 'command+shift+o',
+    share: 'command+shift+e',
+    fullscreen: 'f11',
+  },
 };
+const comboTable = (tables, platform) => tables[platform] || tables.win32;
+const TEAMS_COMBO = comboTable(TEAMS_COMBOS, process.platform);
 
-// Zoom's real shipped default keybinds (Settings -> Keyboard Shortcuts, before any user
-// customization), confirmed against Zoom's own support docs. Used when the Meeting app's "Use
-// Zoom's default keymappings" option is on (the default) -- most users never touch Zoom's own
-// shortcut settings, so these just work without any setup. "leave" opens Zoom's leave/end
-// confirmation dialog rather than leaving instantly; the user still confirms it once in Zoom.
-const ZOOM_DEFAULT_COMBO = {
-  mute: 'alt+a',
-  video: 'alt+v',
-  accept: 'control+shift+a',
-  decline: 'control+shift+d',
-  leave: 'alt+q',
+// Zoom's real shipped default keybinds per OS (Settings -> Keyboard Shortcuts, before any user
+// customization), from Zoom's "Hot keys and keyboard shortcuts" article (KB0067050, read
+// 2026-09-09). Used when the Meeting app's "Use Zoom's default keymappings" option is on (the
+// default) -- most users never touch Zoom's own shortcut settings, so these just work without any
+// setup. "leave" opens Zoom's leave/end confirmation dialog rather than leaving instantly (Alt+Q on
+// Windows; on the Mac Zoom has no leave key of its own and Cmd+W on the meeting window is the same
+// prompt). The Zoom Phone accept/decline keys use Control on both platforms.
+const ZOOM_COMBOS = {
+  win32: {
+    mute: 'alt+a',
+    video: 'alt+v',
+    accept: 'control+shift+a',
+    decline: 'control+shift+d',
+    leave: 'alt+q',
+    share: 'alt+s',
+    fullscreen: 'alt+f',
+  },
+  darwin: {
+    mute: 'command+shift+a',
+    video: 'command+shift+v',
+    accept: 'control+shift+a',
+    decline: 'control+shift+d',
+    leave: 'command+w',
+    share: 'command+shift+s',
+    fullscreen: 'command+shift+f',
+  },
 };
+const ZOOM_DEFAULT_COMBO = comboTable(ZOOM_COMBOS, process.platform);
 
 function normalizeProcessNames(processNames) {
   return (Array.isArray(processNames) ? processNames : [])
@@ -82,18 +117,26 @@ function focusTeamsWindow() {
 async function sendTeamsAction(action, deps) {
   const combo = TEAMS_COMBO[action];
   if (!combo) return { ok: false, error: 'unknown Teams action: ' + action };
-  const focus = await focusTeamsWindow();
-  await new Promise(r => setTimeout(r, 150));   // let the foreground switch settle before the keystroke
+  const focus = await ((deps && deps.focus) || focusTeamsWindow)();
+  await new Promise(r => setTimeout(r, settleMs(deps)));   // let the foreground switch settle before the keystroke
   const sent = deps.mediaKeys.tapCombo(combo);
   return { ok: sent, focused: focus.ok, focusError: focus.ok ? undefined : focus.error };
 }
 
-// No focus-forcing -- `combo` is whatever the user configured (and enabled "Global Shortcut"
-// for) inside Zoom's own Settings -> Keyboard Shortcuts.
-function sendZoomAction(combo, deps) {
+// Windows: no focus-forcing -- `combo` is whatever the user configured (and enabled "Global
+// Shortcut" for) inside Zoom's own Settings -> Keyboard Shortcuts, and stealing focus from the
+// user's notes is deliberately avoided. macOS: Zoom is brought to the front first and the keystroke
+// is withheld when that fails -- Cmd+W (leave) would close a window in whatever app is in front,
+// and Cmd+Shift+A / Cmd+Shift+V mean other things in Finder or a browser.
+const settleMs = deps => (deps && deps.settleMs != null) ? deps.settleMs : 150;
+async function sendZoomAction(combo, deps) {
   if (!combo) return { ok: false, error: 'no combo configured for this action' };
-  const sent = deps.mediaKeys.tapCombo(combo);
-  return { ok: sent };
+  const platform = (deps && deps.platform) || process.platform;
+  if (platform !== 'darwin') return { ok: deps.mediaKeys.tapCombo(combo) };
+  const focus = await ((deps && deps.focus) || focusProcessWindow)(['Zoom']);
+  if (!focus.ok) return { ok: false, focused: false, focusError: focus.error, error: 'Zoom is not in front, so nothing was sent (' + (focus.error || 'window not found') + ')' };
+  await new Promise(r => setTimeout(r, settleMs(deps)));
+  return { ok: deps.mediaKeys.tapCombo(combo), focused: true };
 }
 
-module.exports = { TEAMS_COMBO, ZOOM_DEFAULT_COMBO, focusProcessWindow, focusTeamsWindow, hasProcessWindow, sendTeamsAction, sendZoomAction };
+module.exports = { TEAMS_COMBOS, ZOOM_COMBOS, comboTable, TEAMS_COMBO, ZOOM_DEFAULT_COMBO, focusProcessWindow, focusTeamsWindow, hasProcessWindow, sendTeamsAction, sendZoomAction };

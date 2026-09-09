@@ -13,30 +13,35 @@ Add a page → **+ App** → pick **Meeting**.
   switch tabs on the panel for a one-off call on the other platform; this only sets
   what shows by default.
 - **Use Zoom's default keymappings** — on by default. Zoom ships these combos already
-  bound (Alt+A mute, Alt+V video, Ctrl+Shift+A/D phone accept/decline, Alt+Q leave); if
-  you haven't remapped them yourself in Zoom, leave this on and there's nothing else to
-  configure. Turn it off to enter your own combos, matching whatever you've customized
-  in Zoom → Settings → Keyboard Shortcuts.
+  bound (the table below, per OS); if you haven't remapped them yourself in Zoom, leave
+  this on and there's nothing else to configure. Turn it off to enter your own combos,
+  matching whatever you've customized in Zoom → Settings → Keyboard Shortcuts.
 
-| Action | Zoom default |
-|---|---|
-| Mute/unmute | `Alt+A` |
-| Start/stop video | `Alt+V` |
-| Accept inbound call | `Ctrl+Shift+A` |
-| Decline inbound call | `Ctrl+Shift+D` |
-| Leave meeting | `Alt+Q` |
+| Action | Zoom default (Windows) | Zoom default (macOS) |
+|---|---|---|
+| Mute/unmute | `Alt+A` | `Cmd+Shift+A` |
+| Start/stop video | `Alt+V` | `Cmd+Shift+V` |
+| Accept inbound call | `Ctrl+Shift+A` | `Ctrl+Shift+A` |
+| Decline inbound call | `Ctrl+Shift+D` | `Ctrl+Shift+D` |
+| Leave meeting | `Alt+Q` | `Cmd+W` (Zoom's end-or-leave prompt) |
+| Share screen (utility rail) | `Alt+S` | `Cmd+Shift+S` |
+| Full screen (utility rail) | `Alt+F` | `Cmd+Shift+F` |
 
-Whichever combo is active — default or custom — must have **"Enable Global Shortcut"**
-ticked for that action in Zoom's own Keyboard Shortcuts settings, or Zoom won't respond
-to it unless its window already has focus.
+On Windows, whichever combo is active — default or custom — must have **"Enable Global
+Shortcut"** ticked for that action in Zoom's own Keyboard Shortcuts settings, or Zoom won't
+respond to it unless its window already has focus. On a Mac the panel brings Zoom to the
+front before every keystroke and sends nothing when Zoom isn't running (`Cmd+W` would close
+a window in whatever app is in front), so no Zoom setting is needed.
 
 ## Teams
 
 Teams' combos are fixed and not configurable — they're Microsoft Teams' own built-in
-global shortcuts (`Ctrl+Shift+M` mute, `+A` accept with video, `+S` accept audio-only,
-`+D` decline, `+H` hang up, `+O` toggle video). Unlike Zoom, Teams needs its window
-force-focused immediately before each keystroke to respond reliably — Bedrock Panel does
-this automatically, so it works even when Teams isn't the visible foreground app.
+shortcuts. Windows: `Ctrl+Shift+M` mute, `+A` accept with video, `+S` accept audio-only,
+`+D` decline, `+H` hang up, `+O` toggle video, `+E` share. macOS: `Cmd+Shift+M` mute,
+`+V` accept with video, `+A` accept audio-only (Microsoft's Mac column swaps those two
+letters), `+D` decline, `+H` hang up, `+O` toggle video, `+E` share. Teams needs its
+window force-focused immediately before each keystroke to respond reliably — Bedrock Panel
+does this automatically, so it works even when Teams isn't the visible foreground app.
 
 ## Recording & transcription
 

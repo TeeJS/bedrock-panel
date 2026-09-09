@@ -2078,7 +2078,8 @@ function mediaKey(cmd) {
 // (platform-agnostic); 'zoom' sends Zoom's default keybind unless the user has turned off "Use
 // Zoom's default keymappings" in the app's Options, in which case it sends their custom combo —
 // either way, whether it works while Zoom isn't focused depends on Zoom's own "Enable Global
-// Shortcut" checkbox for that action; 'teams' force-focuses Teams first since its remaining
+// Shortcut" checkbox for that action (Windows; on macOS Zoom is brought to the front first — see
+// meetingControl.sendZoomAction); 'teams' force-focuses Teams first since its remaining
 // shortcuts require focus (the local API that used to allow background control was retired by
 // Microsoft on 2026-06-30 — see PROJECT.md).
 const ZOOM_OPTION_KEY = { mute: 'zoomMute', video: 'zoomVideo', accept: 'zoomAccept', decline: 'zoomDecline', leave: 'zoomLeave' };
@@ -2088,22 +2089,22 @@ async function onMeetingActionRequest(platform, action) {
     if (action === 'voldown') { mediaKeys.volume(-1); return { ok: true }; }
     return { ok: false, error: 'unknown system action: ' + action };
   }
-  // Utility-rail actions. Share fires the app's screen-share shortcut (Zoom Alt+S; Teams
-  // Ctrl+Shift+E — both depend on that shortcut being enabled in the app, same as the other
-  // keystroke actions here).
+  // Utility-rail actions. Share fires the app's screen-share shortcut from the per-OS tables in
+  // meetingControl.js (Zoom Alt+S / Cmd+Shift+S; Teams Ctrl+Shift+E / Cmd+Shift+E — both depend on
+  // that shortcut being enabled in the app, same as the other keystroke actions here).
   if (action === 'share') {
-    if (platform === 'zoom') return meetingControl.sendZoomAction('alt+s', { mediaKeys });
+    if (platform === 'zoom') return meetingControl.sendZoomAction(meetingControl.ZOOM_DEFAULT_COMBO.share, { mediaKeys });
     if (platform === 'teams') {
       const focus = await meetingControl.focusTeamsWindow();
       await new Promise(r => setTimeout(r, 150));
-      return { ok: mediaKeys.tapCombo('control+shift+e'), focused: focus.ok };
+      return { ok: mediaKeys.tapCombo(meetingControl.TEAMS_COMBO.share), focused: focus.ok };
     }
     return { ok: false, error: 'no share for ' + platform };
   }
   // Full screen is an in-app (not global) shortcut for both, so focus the window first, then tap:
-  // Zoom = Alt+F, Teams = F11.
+  // Zoom = Alt+F / Cmd+Shift+F, Teams = F11.
   if (action === 'fullscreen') {
-    const combo = platform === 'zoom' ? 'alt+f' : platform === 'teams' ? 'f11' : null;
+    const combo = platform === 'zoom' ? meetingControl.ZOOM_DEFAULT_COMBO.fullscreen : platform === 'teams' ? meetingControl.TEAMS_COMBO.fullscreen : null;
     if (!combo) return { ok: false, error: 'no fullscreen for ' + platform };
     const focus = platform === 'teams'
       ? await meetingControl.focusTeamsWindow()
