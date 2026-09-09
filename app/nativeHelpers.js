@@ -18,7 +18,7 @@ const HELPERS = {
   sysvolume:         { win32: 'sysvolume.exe',           darwin: path.join('mac', 'sysvolume') },
   micSessionMonitor: { win32: 'mic-session-monitor.exe', darwin: path.join('mac', 'mic-session-monitor') },
   foregroundWatch:   { win32: 'foreground-watch.exe',    darwin: path.join('mac', 'foreground-watch') },
-  outlookMeeting:    { win32: 'outlook-meeting.exe' },
+  outlookMeeting:    { win32: 'outlook-meeting.exe',   darwin: path.join('mac', 'calendar-meeting') },   // classic Outlook (COM) / macOS Calendar (EventKit): same argv and JSON
   reservedDisplay:   { win32: 'reserved-display.exe',     darwin: path.join('mac', 'reserved-display') },
   displayArrange:    {                                     darwin: path.join('mac', 'display-arrange') },   // panel display far right, never mirrored/main
   privacy:           {                                     darwin: path.join('mac', 'privacy') },           // TCC preflight/request (Input Monitoring, Screen Recording)

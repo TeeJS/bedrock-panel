@@ -62,7 +62,7 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 | **Recording folder under Documents** | **Files & Folders** | Bedrock Panel / Terminal | The first time a recording is saved | Open the pane, expand the app, turn **Documents Folder** on. |
 | **Home Assistant, OBS, WLED, MQTT** | **Local Network** | Bedrock Panel | The first connection (installed app only, macOS 15+) | Open the pane and turn the entry on. This one cannot be reset by the app; a new user account is the only reset. |
 | **Music page transport** (play/pause/next on Spotify or Music) | **Automation** | Bedrock Panel / Terminal | The first transport press | Open the pane, expand the app, turn on **Spotify** and/or **Music**. A refusal falls back to media keys (Accessibility). |
-| **Calendar meeting info** | not needed | | | Use the **Microsoft 365** calendar source (Settings → Automation → Meeting). The Outlook desktop source is Windows-only. |
+| **Calendar meeting info** (Settings → Meeting → Advanced, source **macOS Calendar**) | **Calendars** | Bedrock Panel / Terminal | The first **Check Connection**, or the first recording with the feature on | Open the pane, turn the entry on, choose **Full Access**. Outlook for Mac shares no calendar with other apps: add the account under **System Settings → Internet Accounts** with Calendars on, or use the **Microsoft 365** source. |
 
 After installing a new build, a permission can show as on but stop working: macOS ties the grant to
 the build's signature, so an **ad-hoc-signed** build (the default when nobody set up a signing

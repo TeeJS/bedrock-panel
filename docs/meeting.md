@@ -68,7 +68,7 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   microphone. It must be the same mic Teams is using; if you switch mics in Teams,
   switch here too.
 - **Calendar meeting info** (optional, Settings → Meeting → Advanced) — choose classic
-  Outlook on this PC or the signed-in Microsoft 365 calendar. When a recording starts,
+  Outlook on this PC, macOS Calendar on a Mac, or the signed-in Microsoft 365 calendar. When a recording starts,
   the matching appointment's details are saved as `<recording>.json` beside the WAV and
   move with it through transcription. The attendee names are sent to the diarizer to
   improve speaker identification. See [settings.md](settings.md).
@@ -80,8 +80,9 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   appears the first time a recording is saved. **Auto-record** works on macOS 14.2+: the monitor
   watches which app is capturing the microphone, and the Windows names in the call-app list
   (Zoom.exe, Teams.exe, ms-teams.exe, Discord.exe, …) are recognised for the Mac apps too. Teams
-  window focus works. Outlook meeting info is Windows-only — pick the **Microsoft 365** calendar
-  source instead. The hotkeys, manual recording, transcription, and analysis work as on Windows;
+  window focus works. Calendar meeting info comes from **macOS Calendar** (any account under System
+  Settings → Internet Accounts with Calendars on; the first Check Connection asks for Calendar
+  access) or from the **Microsoft 365** source — Outlook for Mac itself shares no calendar. The hotkeys, manual recording, transcription, and analysis work as on Windows;
   pre/post transcription commands run through `/bin/sh`.
 
 ## Slide capture

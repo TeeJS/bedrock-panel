@@ -199,6 +199,13 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
     uses its signed-in MAPI profile; no OAuth or app registration is needed. **Check
     Connection** fills the Account dropdown. Set the Calendar folder (usually
     "Calendar"). The new Outlook (olk.exe) has no COM interface.
+  - **macOS Calendar (this Mac)** is the same option on a Mac: it reads today's meetings from
+    macOS Calendar (EventKit), so any account under **System Settings → Internet Accounts** with
+    Calendars turned on works (Exchange / Microsoft 365, Google, iCloud). Outlook for Mac keeps
+    its calendar to itself, so add the same account there, or use the Microsoft 365 source.
+    The first **Check Connection** raises the Calendars prompt (Full Access). Account is the
+    account as Calendar names it; Calendar is the calendar's name, which Check Connection fills
+    in when the saved name does not exist (a Google account names its calendar after the address).
   - **Microsoft 365 (Graph)** uses the installed Microsoft 365 drop-in app and its app-scoped
     `Calendars.Read` connection. Select that app's page in the editor and use its **Microsoft
     365 account → Connect** control before choosing **Check Connection** here. The panel also

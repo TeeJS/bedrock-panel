@@ -120,6 +120,8 @@
         "NSAppleEventsUsageDescription": "Bedrock Panel controls Music and Spotify playback from the panel.",
         "NSInputMonitoringUsageDescription": "Bedrock Panel reads the DK-QUAKE touch controller directly; macOS counts that as input monitoring (Accessibility covers it).",
         "NSAccessibilityUsageDescription": "Bedrock Panel needs Accessibility to read the DK-QUAKE touchscreen, keep other windows off the panel display, and send keystrokes for tiles and macros.",
+        "NSCalendarsFullAccessUsageDescription": "Bedrock Panel reads today's meetings from macOS Calendar to name meeting recordings and to give the transcript the attendee list.",
+        "NSCalendarsUsageDescription": "Bedrock Panel reads today's meetings from macOS Calendar to name meeting recordings and to give the transcript the attendee list.",
         "NSSpeechRecognitionUsageDescription": "Bedrock Panel uses macOS speech recognition (on this Mac) for the voice apps and dictation when you choose the built-in speech engine."
       }
     },

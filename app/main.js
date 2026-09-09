@@ -281,7 +281,12 @@ const { helperPath } = require('./nativeHelpers');       // per-platform bundled
 const SMTC_CTL_EXE = helperPath('nowplayingControl');      // media transport helper (SMTC on Windows, AppleScript on macOS)
 const MIC_MONITOR_EXE = helperPath('micSessionMonitor');   // app-scoped mic-in-use monitor (WASAPI sessions / Core Audio process objects)
 const SYSVOL_EXE = helperPath('sysvolume');                // reads the real system volume for the meeting rail
-const OUTLOOK_MEETING_EXE = path.join(__dirname, 'native', 'outlook-meeting.exe').replace('app.asar', 'app.asar.unpacked'); // pulls current-meeting info from classic Outlook over COM
+// Meeting info for the recording sidecar: classic Outlook over COM on Windows (native/outlook-meeting.cs),
+// macOS Calendar over EventKit on the Mac (native/mac/calendar-meeting.swift) — same argv, same JSON. null elsewhere.
+const OUTLOOK_MEETING_EXE = helperPath('outlookMeeting');
+const OUTLOOK_HELPER_MISSING = process.platform === 'darwin'
+  ? 'calendar-meeting helper missing (native helpers not built: node build-mac-helpers.js)'
+  : 'outlook-meeting.exe missing (native helpers not built)';
 const LED_DEFAULT = { effect: 1, brightness: 200, speed: 128, hue: 128, sat: 255 }; // ring lighting fallback (effect 1 = Solid Color)
 const THEME_DEFAULT = { appearance: 'system', accent: '#7CFFB2', presets: ['#7CFFB2', '#38B6FF', '#FF4040', '#FFB000'] };
 // reservedDisplay defaults ON on macOS: there the panel covers the menu bar and Dock at all times, so a
@@ -2518,9 +2523,10 @@ function writeOutlookMeetingInfo(wavName) {   // wavName = basename (recorder st
     return;
   }
   if (!m.outlookAccount) return;
-  if (!fs.existsSync(OUTLOOK_MEETING_EXE)) { console.log('[meeting] outlook-meeting.exe missing — meeting info skipped'); return; }
+  if (!OUTLOOK_MEETING_EXE || !fs.existsSync(OUTLOOK_MEETING_EXE)) { console.log('[meeting] ' + OUTLOOK_HELPER_MISSING + ' — meeting info skipped'); return; }
+  // macOS: the first lookup can be the one that raises the Calendar access prompt; leave time to answer it.
   execFile(OUTLOOK_MEETING_EXE, ['meeting', m.outlookAccount, m.outlookCalendar || 'Calendar', m.outlookSkipPrefixes || ''],
-    { timeout: 30000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+    { timeout: process.platform === 'darwin' ? 120000 : 30000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
       try {
         if (err) { console.log('[meeting] outlook lookup failed: ' + err.message); return; }
         const info = JSON.parse(String(stdout));
@@ -4299,8 +4305,9 @@ app.whenReady().then(async () => {
     try { const p = ensureMeetingPromptFile(); shell.openPath(p); return p; }
     catch (err) { console.log('[meeting] prompt open failed: ' + err.message); return null; }
   });
-  // "Check Connection" on the Meeting tab verifies the selected calendar source. Classic Outlook
-  // also enumerates accounts/folders; Microsoft 365 reports the delegated signed-in profile.
+  // "Check Connection" on the Meeting tab verifies the selected calendar source. Classic Outlook (Windows)
+  // and macOS Calendar also enumerate accounts/calendars; Microsoft 365 reports the delegated signed-in
+  // profile. On macOS the first check raises the Calendar access prompt, so the wait is the user's.
   ipcMain.handle('checkOutlookMeetings', async (e, source) => {
     if (!isFrom(e, configWin)) return null;
     if (source === 'microsoft365') {
@@ -4308,8 +4315,8 @@ app.whenReady().then(async () => {
       catch (err) { return { ok: false, error: err.message || String(err), code: err.code || '' }; }
     }
     return new Promise(resolve => {
-      if (!fs.existsSync(OUTLOOK_MEETING_EXE)) return resolve({ ok: false, error: 'outlook-meeting.exe missing (native helpers not built)' });
-      execFile(OUTLOOK_MEETING_EXE, ['check'], { timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout) => {
+      if (!OUTLOOK_MEETING_EXE || !fs.existsSync(OUTLOOK_MEETING_EXE)) return resolve({ ok: false, error: OUTLOOK_HELPER_MISSING });
+      execFile(OUTLOOK_MEETING_EXE, ['check'], { timeout: process.platform === 'darwin' ? 630000 : 20000, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout) => {
         if (err) return resolve({ ok: false, error: err.message });
         try { resolve(JSON.parse(String(stdout))); } catch (e2) { resolve({ ok: false, error: 'helper returned unreadable output' }); }
       });

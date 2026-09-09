@@ -121,10 +121,12 @@ permission; a refusal falls back to media keys), **Reserved Display** (windows t
 panel display are moved back through the Accessibility API — see [reserved-display.md](reserved-display.md)),
 **display-arrange** (keeps the DK-QUAKE at the far right of the arrangement, never mirrored or
 main — DK-Suite's display_manager rule; `check`/`fix`, exit codes 0/2/3/4) and **privacy** (the
-CoreGraphics Input Monitoring / Screen Recording preflight and prompt Electron does not expose).
-Still Windows-only, each reporting itself unavailable: Outlook meeting info (use the Microsoft 365
-calendar source), touchscreen setup, and album-art thumbnails (art comes from Spotify's oEmbed or
-the iTunes lookup).
+CoreGraphics Input Monitoring / Screen Recording preflight and prompt Electron does not expose), and
+**calendar-meeting** (today's meeting from macOS Calendar through EventKit, speaking
+`outlook-meeting.exe`'s `check`/`meeting` JSON so `main.js` drives both; the Calendars prompt names
+the app that launched it, whose Info.plist must carry `NSCalendarsFullAccessUsageDescription`).
+Still Windows-only, each reporting itself unavailable: touchscreen setup and album-art thumbnails
+(art comes from Spotify's oEmbed or the iTunes lookup).
 `app/nativeHelpers.js` is the one table that maps a feature to its per-platform binary.
 
 **Knob and touchscreen hardware** is wired for macOS but not yet validated on a real console from a

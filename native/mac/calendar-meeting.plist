@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Embedded as the helper's __info_plist section (build-mac-helpers.js): TCC kills a process that
+	     asks for calendar access without these keys in its OWN Info.plist, bundle or not. The prompt
+	     itself names the app that launched us (Bedrock Panel: package.json extendInfo has the same keys). -->
+	<key>CFBundleIdentifier</key>
+	<string>com.teejs.bedrockpanel.calendar-meeting</string>
+	<key>CFBundleName</key>
+	<string>Bedrock Panel Calendar</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Bedrock Panel reads today's meetings from macOS Calendar to name meeting recordings and to give the transcript the attendee list.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Bedrock Panel reads today's meetings from macOS Calendar to name meeting recordings and to give the transcript the attendee list.</string>
+</dict>
+</plist>

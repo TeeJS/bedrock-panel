@@ -4120,16 +4120,17 @@ ${IS_MAC ? `
       <div class="row" style="margin-top:10px"><label class="iconopt" style="width:auto"><input type="checkbox" id="meOutlook" ${me.outlookEnabled ? 'checked' : ''}> Pull meeting information from my calendar</label></div>
       <details class="hint"><summary>When a recording starts, saves the matching appointment (subject, attendees, organizer, body…) as <b>&lt;recording&gt;.json</b> beside the WAV.</summary> The file travels through transcription, where its attendee list improves speaker identification. Ad-hoc calls with nothing scheduled save nothing.</details>
       <div class="row"><label>Calendar source</label>
-        <select id="meInfoSource" style="flex:1"><option value="classic" ${me.meetingInfoSource === 'microsoft365' ? '' : 'selected'}>Classic Outlook (this PC)</option><option value="microsoft365" ${me.meetingInfoSource === 'microsoft365' ? 'selected' : ''}>Microsoft 365 (Graph)</option></select>
+        <select id="meInfoSource" style="flex:1"><option value="classic" ${me.meetingInfoSource === 'microsoft365' ? '' : 'selected'}>${IS_MAC ? 'macOS Calendar (this Mac)' : 'Classic Outlook (this PC)'}</option><option value="microsoft365" ${me.meetingInfoSource === 'microsoft365' ? 'selected' : ''}>Microsoft 365 (Graph)</option></select>
         <button id="meOutCheck" type="button">Check Connection</button></div>
       <p class="hint" id="meOutMsg"></p>
       <div id="meClassicSettings">
+      ${IS_MAC ? '<p class="hint">Outlook for Mac does not share its calendar with other apps. Add the same account under <b>System Settings → Internet Accounts</b> with Calendars turned on and it appears here after Check Connection — or pick Microsoft 365 (Graph) above.</p>' : ''}
       <div class="row"><label>Account</label>
         <select id="meOutAcct" style="flex:1">${me.outlookAccount ? `<option value="${esc(me.outlookAccount)}" selected>${esc(me.outlookAccount)}</option>` : '<option value="">— click Check Connection —</option>'}</select>
       </div>
-      <div class="row"><label>Calendar folder</label>
+      <div class="row"><label>${IS_MAC ? 'Calendar' : 'Calendar folder'}</label>
         <input id="meOutCal" value="${esc(me.outlookCalendar)}" style="flex:1"></div>
-      <p class="hint">The calendar folder inside that account — almost always "Calendar".</p>
+      <p class="hint">${IS_MAC ? 'The calendar inside that account as macOS Calendar names it — "Calendar" for Exchange and iCloud, the address for a Google account. Check Connection fills it in; an account with a single calendar needs no name.' : 'The calendar folder inside that account — almost always "Calendar".'}</p>
       </div>
       <div class="row"><label>Skip prefixes</label>
         <input id="meOutSkip" value="${esc(me.outlookSkipPrefixes)}" style="flex:1"></div>
@@ -5276,7 +5277,22 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
       document.getElementById('meAppendName').onchange = e => saveMe({ appendMeetingName: e.target.checked });
       document.getElementById('meSepTx').onchange = e => saveMe({ separateTranscript: e.target.checked });
       document.getElementById('meDetails').onchange = e => saveMe({ useDetailsFolder: e.target.checked });
-      document.getElementById('meOutAcct').onchange = e => saveMe({ outlookAccount: e.target.value });
+      // macOS: the calendar name is rarely "Calendar" (Google names it after the address), so the last
+      // Check Connection result fills it in when the saved name is not one of the chosen account's calendars.
+      let lastCheckedAccounts = [];
+      const fillMacCalendar = acct => {
+        if (!IS_MAC || !acct || !acct.calendars.length) return false;
+        const cal = currentMe().outlookCalendar || 'Calendar';
+        if (acct.calendars.some(c => c.toLowerCase() === cal.toLowerCase())) return false;
+        document.getElementById('meOutCal').value = acct.calendars[0];
+        saveMe({ outlookCalendar: acct.calendars[0] });
+        return true;
+      };
+      document.getElementById('meOutAcct').onchange = e => {
+        saveMe({ outlookAccount: e.target.value });
+        const acct = lastCheckedAccounts.find(a => a.name === e.target.value);
+        if (fillMacCalendar(acct)) { const msg = document.getElementById('meOutMsg'); msg.textContent = 'Calendar set to "' + acct.calendars[0] + '"' + (acct.calendars.length > 1 ? ' (' + acct.name + ' also has: ' + acct.calendars.slice(1).join(', ') + ')' : '') + '. Save to use it.'; msg.style.color = ''; }
+      };
       document.getElementById('meOutCal').oninput = e => saveMe({ outlookCalendar: e.target.value.trim() });
       document.getElementById('meOutSkip').oninput = e => saveMe({ outlookSkipPrefixes: e.target.value });
       document.getElementById('meThreshold').onchange = e => saveMe({ transcribeThreshold: e.target.value.trim() });
@@ -5339,7 +5355,7 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
       document.getElementById('meOutCheck').onclick = async () => {
         const msg = document.getElementById('meOutMsg');
         const source = document.getElementById('meInfoSource').value;
-        msg.textContent = source === 'microsoft365' ? 'Checking Microsoft 365…' : 'Checking — classic Outlook must be running…'; msg.style.color = '';
+        msg.textContent = source === 'microsoft365' ? 'Checking Microsoft 365…' : IS_MAC ? 'Checking — if macOS asks for Calendar access, click Allow…' : 'Checking — classic Outlook must be running…'; msg.style.color = '';
         const r = await configApi.checkOutlookMeetings(source);
         if (!r || !r.ok) {
           msg.textContent = (r && r.error) || 'Check failed'; msg.style.color = '#c98';
@@ -5355,6 +5371,7 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
         }
         const sel = document.getElementById('meOutAcct');
         const saved = currentMe().outlookAccount;
+        lastCheckedAccounts = r.accounts || [];
         sel.innerHTML = '<option value="">— choose an account —</option>';
         (r.accounts || []).forEach(a => {
           const o = document.createElement('option');
@@ -5367,7 +5384,10 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
         sel.value = saved || '';
         const acct = (r.accounts || []).find(a => a.name === sel.value);
         const cal = currentMe().outlookCalendar || 'Calendar';
-        if (acct && !acct.calendars.some(c => c.toLowerCase() === cal.toLowerCase())) {
+        if (fillMacCalendar(acct)) {
+          msg.textContent = 'Connected — ' + r.accounts.length + ' account(s). Calendar set to "' + acct.calendars[0] + '"' + (acct.calendars.length > 1 ? ' (' + acct.name + ' also has: ' + acct.calendars.slice(1).join(', ') + ')' : '') + '. Save to use it.';
+          msg.style.color = '';
+        } else if (acct && !acct.calendars.some(c => c.toLowerCase() === cal.toLowerCase())) {
           msg.textContent = 'Connected — ' + r.accounts.length + ' account(s). Warning: "' + cal + '" folder not found in ' + acct.name + ' (has: ' + acct.calendars.join(', ') + ')';
           msg.style.color = '#c98';
         } else {

@@ -120,3 +120,30 @@ test('speech-server transcribe-file produces the diarizer contract from the ster
   assert.match(s, /legacyTranscribe\(/, 'SFSpeechRecognizer fallback for macOS 14/15');
   assert.match(s, /all\.sort \{ \$0\.start < \$1\.start \}/, 'segments ordered by time (docs/meetings-api.md)');
 });
+
+test('calendar-meeting speaks the outlook-meeting.exe contract from macOS Calendar and owns its access request', () => {
+  const s = src('calendar-meeting.swift');
+  for (const mode of ['"check"', '"meeting"', '"selftest"']) assert.ok(s.includes(mode), mode + ' mode');
+  assert.match(s, /requestFullAccessToEvents/, 'macOS 14 full access: attendees and notes are not readable with less');
+  assert.match(s, /case \.fullAccess: return/);
+  assert.match(s, /RunLoop\.main\.run\(\)/, 'TCC answers through the main run loop');
+  for (const key of ['subject', 'start', 'end', 'organizer', 'required_attendees', 'optional_attendees', 'response_status', 'location', 'body', 'categories', 'importance', 'is_recurring', 'meeting_status', 'online_meeting_url']) {
+    assert.ok(s.includes('"' + key + '"'), key + ' is a sidecar field the exe writes and the transcriber reads');
+  }
+  assert.match(s, /"ok": false, "none": true/, 'nothing scheduled now -> {"ok":false,"none":true}, which main.js logs and skips');
+  assert.match(s, /"ok": true, "accounts": list\.map \{ \["name": \$0\.name, "calendars"/, 'check -> accounts with their calendars, as the editor fills the dropdown');
+  assert.match(s, /yyyy-MM-dd'T'HH:mm:ss'\+00:00'/, 'UTC timestamps in the exe format');
+  assert.match(s, /boundary\.timeIntervalSince\(now\) < 5 \* 60/, 'the :00/:30 boundary rule');
+  assert.match(s, /if ev\.isAllDay \{ return false \}/, 'all-day events never count');
+  assert.match(s, /hasPrefix\(\$0\.lowercased\(\)\)/, 'skip prefixes, case-insensitive like the exe');
+  assert.match(s, /"Organizer"[\s\S]*"Accepted"[\s\S]*"NotResponded"/, 'the exe response words');
+  assert.match(s, /"MeetingCanceled"[\s\S]*"MeetingReceived"[\s\S]*"NonMeeting"/, 'the exe meeting_status words');
+  assert.match(src('calendar-meeting.plist'), /NSCalendarsFullAccessUsageDescription/, 'the helper declares the usage string itself (TCC kills a caller without one)');
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.ok(pkg.build.mac.extendInfo.NSCalendarsFullAccessUsageDescription, 'the app declares it too: the prompt is attributed to the app that launched the helper');
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'build-mac-helpers.js'), 'utf8'), /name: 'calendar-meeting', plist: 'calendar-meeting\.plist'/);
+  const main = fs.readFileSync(path.join(__dirname, '..', 'app', 'main.js'), 'utf8');
+  assert.match(main, /const OUTLOOK_MEETING_EXE = helperPath\('outlookMeeting'\)/, 'main.js reaches both binaries through the helper table');
+  assert.doesNotMatch(main, /'native', 'outlook-meeting\.exe'/, 'no hand-rolled Windows-only path left');
+  assert.match(main, /!OUTLOOK_MEETING_EXE \|\| !fs\.existsSync\(OUTLOOK_MEETING_EXE\)/, 'a platform with no helper (null) is handled before existsSync');
+});
