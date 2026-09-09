@@ -31,7 +31,7 @@ test('sendZoomAction on Windows taps without touching focus (Zoom\'s Global Shor
 test('sendZoomAction on macOS brings Zoom to the front first and withholds the keystroke when it cannot', async () => {
   const taps = []; const focused = [];
   const deps = { platform: 'darwin', settleMs: 0, mediaKeys: { tapCombo: c => { taps.push(c); return true; } }, focus: async names => { focused.push(names); return { ok: true }; } };
-  assert.deepEqual(await mc.sendZoomAction('command+w', deps), { ok: true, focused: true });
+  assert.deepEqual(await mc.sendZoomAction('command+w', deps), { ok: true, focused: true, method: 'keystroke' });
   assert.deepEqual(focused, [['Zoom']]);
   assert.deepEqual(taps, ['command+w']);
   const r = await mc.sendZoomAction('command+w', { ...deps, focus: async () => ({ ok: false, error: 'Application window not found.' }) });
@@ -72,10 +72,27 @@ test('macOS Zoom: not running / not in a meeting is reported, nothing is sent; u
   const idle = await mc.sendZoomAction('command+w', { ...base, pressMenu: async () => ({ ok: false, code: 'DISABLED', error: 'greyed out' }) });
   assert.equal(idle.ok, false); assert.equal(idle.code, 'DISABLED');
   assert.deepEqual(taps, [], 'no keystroke when Zoom is absent or idle');
-  const localized = await mc.sendZoomAction('command+w', { ...base, pressMenu: async () => ({ ok: false, code: 'NOITEM', error: 'no such item' }) });
-  assert.deepEqual(localized, { ok: true, focused: true });
+  const noButton = async () => ({ ok: false, code: 'NOBUTTON', error: 'no button with that title — it has: Chat | More' });
+  const localized = await mc.sendZoomAction('command+w', { ...base, pressMenu: async () => ({ ok: false, code: 'NOITEM', error: 'no such item' }), pressButton: noButton });
+  assert.equal(localized.ok, true); assert.equal(localized.focused, true); assert.equal(localized.method, 'keystroke');
+  assert.match(localized.menu, /^NOITEM \(no such item\); button NOBUTTON/, 'the log line carries why the menu and button paths were skipped');
   assert.deepEqual(focused, [['Zoom']]);
   assert.deepEqual(taps, ['command+w'], 'keystroke path after focusing Zoom');
   const win = await mc.sendZoomAction('alt+q', { platform: 'win32', action: 'leave', mediaKeys: { tapCombo: c => { taps.push(c); return true; } }, pressMenu: async () => { throw new Error('never on Windows'); } });
   assert.deepEqual(win, { ok: true });
+});
+
+test('macOS Zoom leave: the toolbar Leave/End button when the Meeting menu has no leave item', async () => {
+  const taps = []; const buttons = [];
+  const deps = { platform: 'darwin', action: 'leave', settleMs: 0, mediaKeys: { tapCombo: c => { taps.push(c); return true; } },
+    focus: async () => ({ ok: true }), pressMenu: async () => ({ ok: false, code: 'NOITEM', error: 'no menu item with that title — it has: Mute Audio | Stop Video' }),
+    pressButton: async (names, titles) => { buttons.push([names, titles]); return { ok: true, pressed: 'Leave' }; } };
+  const r = await mc.sendZoomAction('command+w', deps);
+  assert.equal(r.ok, true); assert.equal(r.method, 'button'); assert.equal(r.pressed, 'Leave');
+  assert.match(r.menu, /^NOITEM/);
+  assert.deepEqual(buttons, [[['Zoom'], mc.ZOOM_WINDOW_BUTTONS.leave]]);
+  assert.deepEqual(mc.ZOOM_WINDOW_BUTTONS.leave.slice(0, 2), ['Leave Meeting', 'End Meeting'], 'most specific titles first');
+  assert.deepEqual(taps, []);
+  const idle = await mc.sendZoomAction('command+w', { ...deps, pressButton: async () => ({ ok: false, code: 'DISABLED', error: 'greyed out' }) });
+  assert.equal(idle.ok, false); assert.equal(idle.method, 'button'); assert.deepEqual(taps, []);
 });

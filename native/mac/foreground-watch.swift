@@ -15,7 +15,9 @@
 //                    Names are matched like the Windows helper's ("Teams", "ms-teams.exe") through
 //                    AppAliases, so Windows-authored settings keep working.
 //   menu <name...> -- <title...>  one-shot: press the named app's menu-bar item with one of the titles
-//                    through Accessibility, app in the background ("OK <title>" or a reason word).
+//                    through Accessibility, app in the background ("OK <title>" or a reason word;
+//                    NOITEM lists the titles that were there).
+//   button <name...> -- <title...>  same for a button in one of the app's windows (title or description).
 //   focus <name...>  one-shot: bring the first named app to the front ("OK"/"NOTFOUND"). Uses
 //                    NSWorkspace's activation (what still works from a background process under
 //                    macOS 14's cooperative activation rules), then unhide + activate as a fallback.
@@ -100,27 +102,78 @@ import AppKit
         guard AXUIElementCopyAttributeValue(el, kAXEnabledAttribute as CFString, &v) == .success, let b = v as? Bool else { return true }
         return b
     }
-    /// Menu bar -> menu bar items -> menus -> items (one level of submenu): the first item titled as wanted.
-    static func findMenuItem(_ el: AXUIElement, wanted: Set<String>, depth: Int) -> AXUIElement? {
+    /// Case-insensitive, trailing ellipsis dropped ("Leave Meeting…" matches "Leave Meeting").
+    static func axNorm(_ s: String) -> String {
+        var t = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        for suffix in ["…", "..."] where t.hasSuffix(suffix) { t.removeLast(suffix.count) }
+        return t.trimmingCharacters(in: .whitespaces)
+    }
+    /// Menu bar -> menu bar items -> menus -> items (one level of submenu): every menu item with a title.
+    static func collectMenuItems(_ el: AXUIElement, depth: Int, into out: inout [(AXUIElement, String)]) {
         for child in axChildren(el) {
-            let title = axString(child, kAXTitleAttribute).trimmingCharacters(in: .whitespaces).lowercased()
-            if !title.isEmpty && wanted.contains(title) && axString(child, kAXRoleAttribute) == kAXMenuItemRole { return child }
-            if depth < 4, let hit = findMenuItem(child, wanted: wanted, depth: depth + 1) { return hit }
+            let title = axString(child, kAXTitleAttribute)
+            if !title.isEmpty && axString(child, kAXRoleAttribute) == kAXMenuItemRole { out.append((child, title)) }
+            if depth < 4 { collectMenuItems(child, depth: depth + 1, into: &out) }
         }
-        return nil
+    }
+    /// Press the first element matching the titles IN THE CALLER'S ORDER ("Leave Meeting" beats "End").
+    /// A miss lists what was there, so a wrong guess about an app's wording shows up in the log.
+    static func pressFirst(_ found: [(AXUIElement, String)], titles: [String], missWord: String) -> String {
+        for want in titles.map(axNorm) where !want.isEmpty {
+            if let hit = found.first(where: { axNorm($0.1) == want }) {
+                if !axEnabled(hit.0) { return "DISABLED " + hit.1 }
+                return AXUIElementPerformAction(hit.0, kAXPressAction as CFString) == .success ? "OK " + hit.1 : "FAILED " + hit.1
+            }
+        }
+        let seen = Array(Set(found.map { $0.1.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
+        return missWord + " " + seen.prefix(80).joined(separator: " | ")
     }
     static func pressMenuItem(_ app: NSRunningApplication, titles: [String]) -> String {
         guard AXIsProcessTrusted() else { return "NOACCESS" }
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var bar: AnyObject?
         guard AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &bar) == .success, let menuBar = bar else { return "NOMENU" }
-        let wanted = Set(titles.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty })
-        guard let item = findMenuItem(menuBar as! AXUIElement, wanted: wanted, depth: 0) else { return "NOITEM" }
-        if !axEnabled(item) { return "DISABLED" }
-        return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success ? "OK " + axString(item, kAXTitleAttribute) : "FAILED"
+        var found: [(AXUIElement, String)] = []
+        collectMenuItems(menuBar as! AXUIElement, depth: 0, into: &found)
+        return pressFirst(found, titles: titles, missWord: "NOITEM")
+    }
+
+    // ---- button <name...> -- <title...>: press a button in one of the app's windows (title or
+    // accessibility description), for controls that have no menu item — Zoom's toolbar Leave/End.
+    static func collectButtons(_ el: AXUIElement, depth: Int, budget: inout Int, into out: inout [(AXUIElement, String)]) {
+        if depth > 14 || budget <= 0 { return }
+        for child in axChildren(el) {
+            budget -= 1
+            if budget <= 0 { return }
+            let role = axString(child, kAXRoleAttribute)
+            if role == kAXButtonRole || role == kAXMenuButtonRole {
+                let title = axString(child, kAXTitleAttribute), desc = axString(child, kAXDescriptionAttribute)
+                if !title.isEmpty { out.append((child, title)) }
+                if !desc.isEmpty && axNorm(desc) != axNorm(title) { out.append((child, desc)) }
+            }
+            collectButtons(child, depth: depth + 1, budget: &budget, into: &out)
+        }
+    }
+    static func pressButton(_ app: NSRunningApplication, titles: [String]) -> String {
+        guard AXIsProcessTrusted() else { return "NOACCESS" }
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var w: AnyObject?
+        guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &w) == .success, let windows = w as? [AXUIElement], !windows.isEmpty else { return "NOWINDOW" }
+        var found: [(AXUIElement, String)] = []
+        var budget = 6000
+        for win in windows { collectButtons(win, depth: 0, budget: &budget, into: &found) }
+        return pressFirst(found, titles: titles, missWord: "NOBUTTON")
     }
 
     static func focus(_ app: NSRunningApplication) -> Bool {
+        // Accessibility first: AXFrontmost activates the app with its current key window and sends no
+        // reopen. openApplication(at:) below is a reopen, and Zoom answers one by raising its home
+        // window, shrinking a running meeting into the mini window. Used when the grant exists.
+        if AXIsProcessTrusted() {
+            if app.isHidden { app.unhide() }
+            let axApp = AXUIElementCreateApplication(app.processIdentifier)
+            if AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue) == .success { return true }
+        }
         var ok = false
         if let url = app.bundleURL {
             let cfg = NSWorkspace.OpenConfiguration()
@@ -149,17 +202,18 @@ import AppKit
             guard let app = findApp(names) else { Out.line("NOTFOUND"); exit(1) }
             if mode == "focus" && !focus(app) { Out.line("NOTFOUND"); exit(1) }
             Out.line("OK")
-        case "menu":
+        case "menu", "button":
             let rest = Array(args.dropFirst())
             guard let sep = rest.firstIndex(of: "--"), sep > 0, sep + 1 < rest.count else {
-                Out.err("usage: foreground-watch menu <name...> -- <menu item title...>"); exit(2)
+                Out.err("usage: foreground-watch " + mode + " <name...> -- <title...>"); exit(2)
             }
             guard let app = findApp(Array(rest[..<sep])) else { Out.line("NOTFOUND"); exit(1) }
-            let result = pressMenuItem(app, titles: Array(rest[(sep + 1)...]))
+            let titles = Array(rest[(sep + 1)...])
+            let result = mode == "menu" ? pressMenuItem(app, titles: titles) : pressButton(app, titles: titles)
             Out.line(result)
             exit(result.hasPrefix("OK") ? 0 : 1)
         default:
-            Out.err("usage: foreground-watch watch|list|find <name...>|focus <name...>|menu <name...> -- <title...>")
+            Out.err("usage: foreground-watch watch|list|find <name...>|focus <name...>|menu|button <name...> -- <title...>")
             exit(2)
         }
     }

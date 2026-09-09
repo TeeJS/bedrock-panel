@@ -112,25 +112,33 @@ const MENU_REASONS = {
   NOTFOUND: 'the app is not running',
   NOACCESS: 'Accessibility permission is missing for Bedrock Panel (System Settings → Privacy & Security → Accessibility)',
   NOMENU: 'the app has no menu bar to read',
-  NOITEM: 'no menu item with that title (a non-English app?)',
-  DISABLED: 'that menu item is greyed out (not in a meeting?)',
-  FAILED: 'the menu item did not accept the press',
+  NOWINDOW: 'the app has no window to read',
+  NOITEM: 'no menu item with that title',
+  NOBUTTON: 'no button with that title',
+  DISABLED: 'that control is greyed out (not in a meeting?)',
+  FAILED: 'the control did not accept the press',
 };
-function pressMenuItem(processNames, titles) {
+// `mode` is 'menu' (menu-bar item) or 'button' (a button in one of the app's windows). A miss carries
+// the titles the helper saw, so the log shows the app's real wording.
+function pressControl(mode, processNames, titles) {
   if (!FGWATCH_EXE) return Promise.resolve({ ok: false, code: 'NOHELPER', error: 'No window helper on this platform' });
   const names = normalizeProcessNames(processNames);
   const wanted = (Array.isArray(titles) ? titles : []).map(t => String(t || '').trim()).filter(Boolean);
-  if (!names.length || !wanted.length) return Promise.resolve({ ok: false, code: 'NOARGS', error: 'No process names or menu titles supplied' });
+  if (!names.length || !wanted.length) return Promise.resolve({ ok: false, code: 'NOARGS', error: 'No process names or titles supplied' });
   if (!fs.existsSync(FGWATCH_EXE)) return Promise.resolve({ ok: false, code: 'NOHELPER', error: 'foreground-watch helper missing (native helpers not built)' });
   return new Promise(resolve => {
-    execFile(FGWATCH_EXE, ['menu', ...names, '--', ...wanted], { windowsHide: true, timeout: 5000 }, (err, stdout, stderr) => {
+    execFile(FGWATCH_EXE, [mode, ...names, '--', ...wanted], { windowsHide: true, timeout: 8000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       const line = String(stdout || '').trim();
       if (line.startsWith('OK')) return resolve({ ok: true, pressed: line.slice(2).trim() });
       const code = line.split(/\s/)[0] || 'ERROR';
-      resolve({ ok: false, code, error: MENU_REASONS[code] || String(stderr || '').trim() || (err && err.message) || 'menu press failed' });
+      const rest = line.slice(code.length).trim();
+      const reason = MENU_REASONS[code] || String(stderr || '').trim() || (err && err.message) || (mode + ' press failed');
+      resolve({ ok: false, code, error: reason + (rest ? ' — it has: ' + rest : '') });
     });
   });
 }
+const pressMenuItem = (processNames, titles) => pressControl('menu', processNames, titles);
+const pressWindowButton = (processNames, titles) => pressControl('button', processNames, titles);
 
 // macOS Zoom: the Meeting menu's own items, both states of each toggle. Zoom's English titles
 // (zoom.us.app/Contents/Resources/en.lproj); a localized Zoom answers NOITEM and gets the keystroke.
@@ -140,6 +148,11 @@ const ZOOM_MENU_ITEMS = {
   leave: ['Leave Meeting', 'End Meeting'],
   share: ['Share Screen'],
   fullscreen: ['Enter Full Screen', 'Exit Full Screen'],
+};
+// Controls with no menu item: Zoom's meeting toolbar has Leave (participant) / End (host) buttons,
+// tried when the Meeting menu has no leave item. Most specific title first.
+const ZOOM_WINDOW_BUTTONS = {
+  leave: ['Leave Meeting', 'End Meeting', 'Leave meeting', 'End meeting', 'Leave', 'End'],
 };
 
 function hasProcessWindow(processNames) { return runWindowHelper('find', processNames, 'process check'); }
@@ -173,17 +186,27 @@ const settleMs = deps => (deps && deps.settleMs != null) ? deps.settleMs : 150;
 async function sendZoomAction(combo, deps) {
   const platform = (deps && deps.platform) || process.platform;
   const action = deps && deps.action;
+  let menuCode = null;
   if (platform === 'darwin' && action && ZOOM_MENU_ITEMS[action]) {
     const menu = await ((deps && deps.pressMenu) || pressMenuItem)(['Zoom'], ZOOM_MENU_ITEMS[action]);
     if (menu.ok) return { ok: true, method: 'menu', pressed: menu.pressed };
     if (menu.code === 'NOTFOUND' || menu.code === 'DISABLED') return { ok: false, method: 'menu', code: menu.code, error: 'Zoom: ' + menu.error };
+    menuCode = menu.code + (menu.error ? ' (' + menu.error + ')' : '');
+    if (ZOOM_WINDOW_BUTTONS[action]) {
+      const button = await ((deps && deps.pressButton) || pressWindowButton)(['Zoom'], ZOOM_WINDOW_BUTTONS[action]);
+      if (button.ok) return { ok: true, method: 'button', pressed: button.pressed, menu: menuCode };
+      if (button.code === 'NOTFOUND' || button.code === 'DISABLED') return { ok: false, method: 'button', code: button.code, error: 'Zoom: ' + button.error, menu: menuCode };
+      menuCode += '; button ' + button.code + (button.error ? ' (' + button.error + ')' : '');
+    }
   }
-  if (!combo) return { ok: false, error: 'no combo configured for this action' };
+  if (!combo) { const r = { ok: false, error: 'no combo configured for this action' }; if (menuCode) r.menu = menuCode; return r; }
   if (platform !== 'darwin') return { ok: deps.mediaKeys.tapCombo(combo) };
   const focus = await ((deps && deps.focus) || focusProcessWindow)(['Zoom']);
   if (!focus.ok) return { ok: false, focused: false, focusError: focus.error, error: 'Zoom is not in front, so nothing was sent (' + (focus.error || 'window not found') + ')' };
   await new Promise(r => setTimeout(r, settleMs(deps)));
-  return { ok: deps.mediaKeys.tapCombo(combo), focused: true };
+  const result = { ok: deps.mediaKeys.tapCombo(combo), focused: true, method: 'keystroke' };
+  if (menuCode) result.menu = menuCode;
+  return result;
 }
 
-module.exports = { TEAMS_COMBOS, ZOOM_COMBOS, ZOOM_MENU_ITEMS, comboTable, TEAMS_COMBO, ZOOM_DEFAULT_COMBO, focusProcessWindow, focusTeamsWindow, hasProcessWindow, pressMenuItem, sendTeamsAction, sendZoomAction };
+module.exports = { TEAMS_COMBOS, ZOOM_COMBOS, ZOOM_MENU_ITEMS, ZOOM_WINDOW_BUTTONS, comboTable, TEAMS_COMBO, ZOOM_DEFAULT_COMBO, focusProcessWindow, focusTeamsWindow, hasProcessWindow, pressMenuItem, pressWindowButton, sendTeamsAction, sendZoomAction };

@@ -39,14 +39,17 @@ test('sysvolume keeps the integer-line contract and -1 for no control', () => {
 
 test('foreground-watch menu mode presses a menu item through Accessibility and answers with the reason words the JS maps', () => {
   const s = src('foreground-watch.swift');
-  assert.match(s, /case "menu":/);
   assert.match(s, /AXIsProcessTrusted\(\)/, 'no Accessibility grant -> NOACCESS, never a hang');
-  assert.match(s, /AXUIElementPerformAction\(item, kAXPressAction as CFString\)/);
-  for (const word of ['"NOACCESS"', '"NOMENU"', '"NOITEM"', '"DISABLED"', '"FAILED"', 'Out.line("NOTFOUND")']) assert.ok(s.includes(word), word);
-  assert.match(s, /"OK " \+ axString\(item, kAXTitleAttribute\)/, 'OK carries the pressed title');
+  assert.match(s, /AXUIElementPerformAction\(hit\.0, kAXPressAction as CFString\)/);
+  for (const word of ['"NOACCESS"', '"NOMENU"', '"NOITEM"', '"DISABLED " + hit.1', '"FAILED " + hit.1', 'Out.line("NOTFOUND")']) assert.ok(s.includes(word), word);
+  assert.match(s, /"OK " \+ hit\.1/, 'OK carries the pressed title');
+  assert.match(s, /case "menu", "button":/, 'button mode presses a window button by title or description');
+  for (const word of ['"NOBUTTON"', '"NOWINDOW"', 'kAXDescriptionAttribute', 'kAXFrontmostAttribute']) assert.ok(s.includes(word), word);
+  assert.match(s, /AXUIElementSetAttributeValue\(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue\)/, 'focus activates through Accessibility first: no reopen');
+  assert.match(s, /missWord \+ " " \+ seen/, 'a miss lists the titles that were there');
   const js = fs.readFileSync(path.join(__dirname, '..', 'app', 'meetingControl.js'), 'utf8');
   for (const word of ['NOTFOUND', 'NOACCESS', 'NOMENU', 'NOITEM', 'DISABLED', 'FAILED']) assert.match(js, new RegExp(word + ': '), 'meetingControl maps ' + word);
-  assert.match(js, /\['menu', \.\.\.names, '--', \.\.\.wanted\]/, 'argv shape: menu <names> -- <titles>');
+  assert.match(js, /\[mode, \.\.\.names, '--', \.\.\.wanted\]/, 'argv shape: menu|button <names> -- <titles>');
 });
 
 test('foreground-watch keeps the PascalCase rows and OK/NOTFOUND words', () => {

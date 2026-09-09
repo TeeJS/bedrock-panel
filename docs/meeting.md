@@ -31,9 +31,9 @@ On Windows, whichever combo is active — default or custom — must have **"Ena
 Shortcut"** ticked for that action in Zoom's own Keyboard Shortcuts settings, or Zoom won't
 respond to it unless its window already has focus. On a Mac the panel does not send
 keystrokes to Zoom at all for Mute, Video, Leave, Share, and Full screen: it presses Zoom's own
-**Meeting** menu items (Mute Audio / Unmute Audio, Stop Video / Start Video, Leave Meeting /
-End Meeting, Share Screen, Enter / Exit Full Screen) through Accessibility, with Zoom left in
-the background — bringing Zoom to the front makes it raise its home window and shrink the
+**Meeting** menu items (Mute Audio / Unmute Audio, Stop Video / Start Video, Share Screen,
+Enter / Exit Full Screen) and, for Leave, the meeting window's own Leave / End button, through
+Accessibility, with Zoom left in the background — bringing Zoom to the front makes it raise its home window and shrink the
 meeting into the mini window. Bedrock Panel must be in **Privacy & Security → Accessibility**
 (it already is for the other keystroke features). "Zoom is not running" and "not in a
 meeting" are reported as such and nothing is sent. Only when the menu cannot be read (no

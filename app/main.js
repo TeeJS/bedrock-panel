@@ -2093,6 +2093,7 @@ async function onMeetingActionRequest(platform, action) {
     console.log('[meeting] action ' + platform + '/' + action + ' -> ' + (r.ok ? 'ok' : 'FAILED')
       + (r.method ? ' via ' + r.method : '') + (r.pressed ? ' (' + r.pressed + ')' : '')
       + (r.focused === false ? ' [not focused' + (r.focusError ? ': ' + r.focusError : '') + ']' : '')
+      + (r.menu ? ' [menu: ' + r.menu + ']' : '')
       + (r.error ? ': ' + r.error : ''));
   }
   return result;
