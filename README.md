@@ -157,8 +157,10 @@ you want; switch anytime from **Settings** or the tray's **Run mode** menu. → 
 Grab a build from the **[Releases](https://github.com/TeeJS/bedrock-panel/releases)** page:
 - **`bedrock-panel-portable.exe`** — Windows x64, run directly, no install.
 - **`bedrock-panel-setup.exe`** — Windows x64 installer (Start-menu shortcut + uninstaller).
-- **`bedrock-panel-arm64.dmg`** — macOS on Apple Silicon (macOS 14.2+): Software mode today; knob and
-  touchscreen support is in progress.
+- **`bedrock-panel-arm64.dmg`** — macOS on Apple Silicon (macOS 14.2+), **beta**: knob, touchscreen,
+  Panel mode, Reserved Display, meeting recording with on-Mac transcription, and voice through macOS's
+  own speech. First-launch steps and permissions: [docs/macos.md](docs/macos.md); what to test and
+  known limits: [docs/releases/v0.9.5-beta.1-macos.md](docs/releases/v0.9.5-beta.1-macos.md).
 
 The exe is **code-signed** (Azure Trusted Signing, publisher *Thomas Schmitz*) — so you see a
 verified publisher, not "Unknown publisher." Windows SmartScreen may still show a **"Windows
