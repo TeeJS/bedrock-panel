@@ -172,28 +172,54 @@ final class Recognizer {
         }
         if let e = err { Out.err("audio convert failed: \(e.localizedDescription)"); done(""); return }
 
+        // On-device recognition needs the Dictation assets, which macOS only installs while Keyboard →
+        // Dictation (or Siri) is on; with both off the task fails at once with "Siri and Dictation are
+        // disabled" (kAFAssistantErrorDomain 1101). Then retry through Apple's servers so recognition
+        // still works, and tell the app once so it can point at the setting (on-device is better).
+        run(r, outBuf, onDevice: onDevice(r), timeout: timeout) { text, err in
+            if let e = err, isDictationDisabled(e), onDevice(r) {
+                if !dictationWarned {
+                    dictationWarned = true
+                    Out.line(Out.json(["event": "stt-error", "code": "dictation-off", "message": "On-device recognition needs Dictation: System Settings → Keyboard → Dictation → on (or Siri on). Using Apple's servers until then."]))
+                }
+                Out.err("STT: on-device unavailable (Dictation off) — retrying via Apple's servers")
+                run(r, outBuf, onDevice: false, timeout: timeout) { text2, err2 in
+                    if let e2 = err2, !isNoSpeech(e2) { Out.line(Out.json(["event": "stt-error", "code": "failed", "message": e2.localizedDescription])) }
+                    done(text2)
+                }
+                return
+            }
+            if let e = err, !isNoSpeech(e), !isDictationDisabled(e) { Out.line(Out.json(["event": "stt-error", "code": "failed", "message": e.localizedDescription])) }
+            done(text)
+        }
+    }
+    static var dictationWarned = false
+    static func isDictationDisabled(_ e: Error) -> Bool { let n = e as NSError; return n.code == 1101 || n.localizedDescription.localizedCaseInsensitiveContains("Dictation are disabled") }
+    static func isNoSpeech(_ e: Error) -> Bool { let n = e as NSError; return n.code == 1110 || n.localizedDescription.localizedCaseInsensitiveContains("No speech") }
+
+    /// One recognition task over `buf`; `done(text, error)` exactly once (text may be partial on error).
+    static func run(_ r: SFSpeechRecognizer, _ buf: AVAudioPCMBuffer, onDevice: Bool, timeout: TimeInterval, done: @escaping (String, Error?) -> Void) {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = false
-        if #available(macOS 10.15, *), r.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
-        request.append(outBuf)
+        if #available(macOS 10.15, *) { request.requiresOnDeviceRecognition = onDevice }
+        request.append(buf)
         request.endAudio()
         var finished = false
         var task: SFSpeechRecognitionTask?
-        let finish: (String) -> Void = { text in
+        let finish: (String, Error?) -> Void = { text, err in
             if finished { return }
             finished = true
             task?.cancel()
-            done(text)
+            done(text, err)
         }
         task = r.recognitionTask(with: request) { result, error in
-            if let res = result, res.isFinal { finish(res.bestTranscription.formattedString); return }
+            if let res = result, res.isFinal { finish(res.bestTranscription.formattedString, nil); return }
             if let e = error {
-                // "No speech detected" and cancellations are ordinary outcomes for a silent clip.
                 Out.err("STT: \(e.localizedDescription)")
-                finish(result?.bestTranscription.formattedString ?? "")
+                finish(result?.bestTranscription.formattedString ?? "", e)
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { if !finished { Out.err("STT timed out"); finish("") } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { if !finished { Out.err("STT timed out"); finish("", NSError(domain: "speech-server", code: -1, userInfo: [NSLocalizedDescriptionKey: "timed out"])) } }
     }
 }
 

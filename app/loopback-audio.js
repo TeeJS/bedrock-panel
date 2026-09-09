@@ -36,10 +36,19 @@ function enableLoopbackAudioCapture(targetSession, options) {
   // handler, which surfaced as the "unexpected background error" dialog on macOS when Screen Recording
   // was not granted yet); `callback(null)` is the documented rejection.
   const deny = callback => { try { callback(null); } catch (e) { try { callback(); } catch (e2) {} } };
-  targetSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+  targetSession.setDisplayMediaRequestHandler(async (request, callback) => {
     try {
       // A video source is mandatory in the callback even for audio-only capture.
       // The renderer throws this track away; it exists only to satisfy the API.
+      // macOS: the requesting frame itself is a valid video source (tab capture, no permission), and
+      // Electron >= 39 on macOS 14.2+ takes loopback audio from a CoreAudio tap (the "System Audio
+      // Recording Only" permission) independently of the video source — so no Screen Recording grant
+      // is needed for an audio-only recording. desktopCapturer.getSources, which does need Screen
+      // Recording, stays as the fallback when no frame is available.
+      if (process.platform === 'darwin' && request && request.frame) {
+        callback({ video: request.frame, audio: 'loopback' });
+        return;
+      }
       const sources = await desktopCapturer.getSources({ types: ['screen'] });
       if (sources.length === 0) {
         if (options.onError) options.onError(new Error('no screen source available' + (process.platform === 'darwin' ? ' — Screen Recording permission is needed (System Settings → Privacy & Security → Screen & System Audio Recording)' : '')));

@@ -54,6 +54,11 @@ function createMacSpeech(options) {
         } else if (ev.event === 'auth') {
           publish({ speechAuth: ev.speechAuth || null });
           log('speech recognition ' + ev.speechAuth);
+        } else if (ev.event === 'stt-error') {
+          // 'dictation-off': on-device recognition needs System Settings → Keyboard → Dictation; the helper
+          // falls back to Apple's servers meanwhile. The editor's Status line shows this.
+          publish({ sttError: { code: ev.code || 'failed', message: ev.message || 'speech recognition failed' } });
+          log('speech recognition: ' + (ev.message || ev.code));
         } else if (ev.event === 'error') {
           publish({ error: ev.message || 'error' });
           log('error: ' + ev.message);

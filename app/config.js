@@ -5235,7 +5235,8 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
           }
           voiceSel.value = chosen;
           const auth = st.speechAuth === 'authorized' ? 'speech recognition allowed' : st.speechAuth === 'denied' ? 'speech recognition denied — System Settings → Privacy & Security → Speech Recognition' : st.speechAuth === 'notDetermined' ? 'speech recognition: asks on first use' : (st.speechAuth || '');
-          statusEl.textContent = !st.available ? 'helper not built (run npm run build:mac-helpers)' : !st.wanted ? 'off — the speech servers below are used' : st.error ? 'error: ' + st.error : st.ready ? 'running on 127.0.0.1:' + st.sttPort + ' / :' + st.ttsPort + (st.onDevice ? ', on-device recognition' : '') + ', ' + auth : st.running ? 'starting…' : 'stopped';
+          const sttNote = st.sttError ? ' — ' + (st.sttError.code === 'dictation-off' ? 'Dictation is off: System Settings → Keyboard → Dictation → on for on-device recognition (Apple\'s servers are used meanwhile)' : 'last recognition error: ' + st.sttError.message) : '';
+          statusEl.textContent = !st.available ? 'helper not built (run npm run build:mac-helpers)' : !st.wanted ? 'off — the speech servers below are used' : st.error ? 'error: ' + st.error : st.ready ? 'running on 127.0.0.1:' + st.sttPort + ' / :' + st.ttsPort + (st.onDevice ? ', on-device recognition' : '') + ', ' + auth + sttNote : st.running ? 'starting…' : 'stopped';
         }).catch(() => {});
         renderMacSpeech();
         if (!window.__macSpeechFocusHooked) { window.__macSpeechFocusHooked = true; window.addEventListener('focus', () => { if (document.getElementById('ttsMacStatus')) renderMacSpeech(); }); }
