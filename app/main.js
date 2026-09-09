@@ -2083,7 +2083,21 @@ function mediaKey(cmd) {
 // shortcuts require focus (the local API that used to allow background control was retired by
 // Microsoft on 2026-06-30 — see PROJECT.md).
 const ZOOM_OPTION_KEY = { mute: 'zoomMute', video: 'zoomVideo', accept: 'zoomAccept', decline: 'zoomDecline', leave: 'zoomLeave' };
+// One log line per button press (platform/action -> outcome), so a "the button did nothing" report
+// can be read from main.log instead of reconstructed. Volume presses are left out (they are frequent
+// and the volume watcher already logs the level).
 async function onMeetingActionRequest(platform, action) {
+  const result = await meetingActionInner(platform, action);
+  if (platform !== 'system') {
+    const r = result || {};
+    console.log('[meeting] action ' + platform + '/' + action + ' -> ' + (r.ok ? 'ok' : 'FAILED')
+      + (r.method ? ' via ' + r.method : '') + (r.pressed ? ' (' + r.pressed + ')' : '')
+      + (r.focused === false ? ' [not focused' + (r.focusError ? ': ' + r.focusError : '') + ']' : '')
+      + (r.error ? ': ' + r.error : ''));
+  }
+  return result;
+}
+async function meetingActionInner(platform, action) {
   if (platform === 'system') {
     if (action === 'volup') { mediaKeys.volume(1); return { ok: true }; }      // the volume watcher reports the new level within a second
     if (action === 'voldown') { mediaKeys.volume(-1); return { ok: true }; }
