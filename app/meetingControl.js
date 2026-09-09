@@ -106,6 +106,42 @@ function runWindowHelper(mode, processNames, missingWord) {
 
 function focusProcessWindow(processNames) { return runWindowHelper('focus', processNames, 'focus'); }
 
+// macOS: press an app's own menu-bar item through Accessibility (foreground-watch `menu`), app in
+// the background. Resolves { ok, pressed } or { ok:false, code, error } with the helper's reason word.
+const MENU_REASONS = {
+  NOTFOUND: 'the app is not running',
+  NOACCESS: 'Accessibility permission is missing for Bedrock Panel (System Settings → Privacy & Security → Accessibility)',
+  NOMENU: 'the app has no menu bar to read',
+  NOITEM: 'no menu item with that title (a non-English app?)',
+  DISABLED: 'that menu item is greyed out (not in a meeting?)',
+  FAILED: 'the menu item did not accept the press',
+};
+function pressMenuItem(processNames, titles) {
+  if (!FGWATCH_EXE) return Promise.resolve({ ok: false, code: 'NOHELPER', error: 'No window helper on this platform' });
+  const names = normalizeProcessNames(processNames);
+  const wanted = (Array.isArray(titles) ? titles : []).map(t => String(t || '').trim()).filter(Boolean);
+  if (!names.length || !wanted.length) return Promise.resolve({ ok: false, code: 'NOARGS', error: 'No process names or menu titles supplied' });
+  if (!fs.existsSync(FGWATCH_EXE)) return Promise.resolve({ ok: false, code: 'NOHELPER', error: 'foreground-watch helper missing (native helpers not built)' });
+  return new Promise(resolve => {
+    execFile(FGWATCH_EXE, ['menu', ...names, '--', ...wanted], { windowsHide: true, timeout: 5000 }, (err, stdout, stderr) => {
+      const line = String(stdout || '').trim();
+      if (line.startsWith('OK')) return resolve({ ok: true, pressed: line.slice(2).trim() });
+      const code = line.split(/\s/)[0] || 'ERROR';
+      resolve({ ok: false, code, error: MENU_REASONS[code] || String(stderr || '').trim() || (err && err.message) || 'menu press failed' });
+    });
+  });
+}
+
+// macOS Zoom: the Meeting menu's own items, both states of each toggle. Zoom's English titles
+// (zoom.us.app/Contents/Resources/en.lproj); a localized Zoom answers NOITEM and gets the keystroke.
+const ZOOM_MENU_ITEMS = {
+  mute: ['Mute Audio', 'Unmute Audio'],
+  video: ['Stop Video', 'Start Video'],
+  leave: ['Leave Meeting', 'End Meeting'],
+  share: ['Share Screen'],
+  fullscreen: ['Enter Full Screen', 'Exit Full Screen'],
+};
+
 function hasProcessWindow(processNames) { return runWindowHelper('find', processNames, 'process check'); }
 
 function focusTeamsWindow() {
@@ -125,13 +161,24 @@ async function sendTeamsAction(action, deps) {
 
 // Windows: no focus-forcing -- `combo` is whatever the user configured (and enabled "Global
 // Shortcut" for) inside Zoom's own Settings -> Keyboard Shortcuts, and stealing focus from the
-// user's notes is deliberately avoided. macOS: Zoom is brought to the front first and the keystroke
-// is withheld when that fails -- Cmd+W (leave) would close a window in whatever app is in front,
-// and Cmd+Shift+A / Cmd+Shift+V mean other things in Finder or a browser.
+// user's notes is deliberately avoided. macOS: `deps.action` names a Meeting-menu item, which is
+// pressed through Accessibility with Zoom in the background -- bringing Zoom to the front reopens
+// it, Zoom raises its home window, the meeting shrinks into the mini window, and the keystroke
+// lands on the wrong window (what T.J. saw: video half the time, "leave" only minimizing). Zoom
+// not running or not in a meeting is reported as such. Only when the menu cannot be read (no
+// Accessibility grant, a localized Zoom, no helper) does the keystroke path run: Zoom is brought to
+// the front first and the keystroke is withheld when that fails -- Cmd+W (leave) would close a
+// window in whatever app is in front, and Cmd+Shift+A / Cmd+Shift+V mean other things elsewhere.
 const settleMs = deps => (deps && deps.settleMs != null) ? deps.settleMs : 150;
 async function sendZoomAction(combo, deps) {
-  if (!combo) return { ok: false, error: 'no combo configured for this action' };
   const platform = (deps && deps.platform) || process.platform;
+  const action = deps && deps.action;
+  if (platform === 'darwin' && action && ZOOM_MENU_ITEMS[action]) {
+    const menu = await ((deps && deps.pressMenu) || pressMenuItem)(['Zoom'], ZOOM_MENU_ITEMS[action]);
+    if (menu.ok) return { ok: true, method: 'menu', pressed: menu.pressed };
+    if (menu.code === 'NOTFOUND' || menu.code === 'DISABLED') return { ok: false, method: 'menu', code: menu.code, error: 'Zoom: ' + menu.error };
+  }
+  if (!combo) return { ok: false, error: 'no combo configured for this action' };
   if (platform !== 'darwin') return { ok: deps.mediaKeys.tapCombo(combo) };
   const focus = await ((deps && deps.focus) || focusProcessWindow)(['Zoom']);
   if (!focus.ok) return { ok: false, focused: false, focusError: focus.error, error: 'Zoom is not in front, so nothing was sent (' + (focus.error || 'window not found') + ')' };
@@ -139,4 +186,4 @@ async function sendZoomAction(combo, deps) {
   return { ok: deps.mediaKeys.tapCombo(combo), focused: true };
 }
 
-module.exports = { TEAMS_COMBOS, ZOOM_COMBOS, comboTable, TEAMS_COMBO, ZOOM_DEFAULT_COMBO, focusProcessWindow, focusTeamsWindow, hasProcessWindow, sendTeamsAction, sendZoomAction };
+module.exports = { TEAMS_COMBOS, ZOOM_COMBOS, ZOOM_MENU_ITEMS, comboTable, TEAMS_COMBO, ZOOM_DEFAULT_COMBO, focusProcessWindow, focusTeamsWindow, hasProcessWindow, pressMenuItem, sendTeamsAction, sendZoomAction };

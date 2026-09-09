@@ -2093,7 +2093,7 @@ async function onMeetingActionRequest(platform, action) {
   // meetingControl.js (Zoom Alt+S / Cmd+Shift+S; Teams Ctrl+Shift+E / Cmd+Shift+E — both depend on
   // that shortcut being enabled in the app, same as the other keystroke actions here).
   if (action === 'share') {
-    if (platform === 'zoom') return meetingControl.sendZoomAction(meetingControl.ZOOM_DEFAULT_COMBO.share, { mediaKeys });
+    if (platform === 'zoom') return meetingControl.sendZoomAction(meetingControl.ZOOM_DEFAULT_COMBO.share, { mediaKeys, action: 'share' });
     if (platform === 'teams') {
       const focus = await meetingControl.focusTeamsWindow();
       await new Promise(r => setTimeout(r, 150));
@@ -2105,6 +2105,7 @@ async function onMeetingActionRequest(platform, action) {
   // Zoom = Alt+F / Cmd+Shift+F, Teams = F11.
   if (action === 'fullscreen') {
     const combo = platform === 'zoom' ? meetingControl.ZOOM_DEFAULT_COMBO.fullscreen : platform === 'teams' ? meetingControl.TEAMS_COMBO.fullscreen : null;
+    if (platform === 'zoom' && process.platform === 'darwin') return meetingControl.sendZoomAction(combo, { mediaKeys, action: 'fullscreen' });
     if (!combo) return { ok: false, error: 'no fullscreen for ' + platform };
     const focus = platform === 'teams'
       ? await meetingControl.focusTeamsWindow()
@@ -2120,7 +2121,7 @@ async function onMeetingActionRequest(platform, action) {
     // Default to Zoom's own shipped keybinds (matches Zoom out of the box, no setup needed);
     // only fall through to the user's custom combo when they've explicitly turned defaults off.
     const combo = opts.zoomUseDefaults === false ? opts[optKey] : meetingControl.ZOOM_DEFAULT_COMBO[action];
-    return meetingControl.sendZoomAction(combo, { mediaKeys });
+    return meetingControl.sendZoomAction(combo, { mediaKeys, action });   // macOS presses Zoom's menu item for it; the combo is the fallback
   }
   if (platform === 'teams' && action === 'focus') {
     const focused = await meetingControl.focusTeamsWindow();

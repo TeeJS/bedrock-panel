@@ -37,6 +37,18 @@ test('sysvolume keeps the integer-line contract and -1 for no control', () => {
   assert.match(s, /exitOnStdinEOF/);
 });
 
+test('foreground-watch menu mode presses a menu item through Accessibility and answers with the reason words the JS maps', () => {
+  const s = src('foreground-watch.swift');
+  assert.match(s, /case "menu":/);
+  assert.match(s, /AXIsProcessTrusted\(\)/, 'no Accessibility grant -> NOACCESS, never a hang');
+  assert.match(s, /AXUIElementPerformAction\(item, kAXPressAction as CFString\)/);
+  for (const word of ['"NOACCESS"', '"NOMENU"', '"NOITEM"', '"DISABLED"', '"FAILED"', 'Out.line("NOTFOUND")']) assert.ok(s.includes(word), word);
+  assert.match(s, /"OK " \+ axString\(item, kAXTitleAttribute\)/, 'OK carries the pressed title');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'app', 'meetingControl.js'), 'utf8');
+  for (const word of ['NOTFOUND', 'NOACCESS', 'NOMENU', 'NOITEM', 'DISABLED', 'FAILED']) assert.match(js, new RegExp(word + ': '), 'meetingControl maps ' + word);
+  assert.match(js, /\['menu', \.\.\.names, '--', \.\.\.wanted\]/, 'argv shape: menu <names> -- <titles>');
+});
+
 test('foreground-watch keeps the PascalCase rows and OK/NOTFOUND words', () => {
   const s = src('foreground-watch.swift');
   for (const key of ['"Hwnd"', '"ProcessName"', '"MainWindowTitle"', '"Minimized"']) assert.match(s, new RegExp(key.replace(/"/g, '\\"')), key + ' is read by app/desktopFocus.js');

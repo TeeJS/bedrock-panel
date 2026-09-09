@@ -14,6 +14,8 @@
 //   find <name...>   one-shot: "OK" (exit 0) if any named app is running, else "NOTFOUND" (exit 1).
 //                    Names are matched like the Windows helper's ("Teams", "ms-teams.exe") through
 //                    AppAliases, so Windows-authored settings keep working.
+//   menu <name...> -- <title...>  one-shot: press the named app's menu-bar item with one of the titles
+//                    through Accessibility, app in the background ("OK <title>" or a reason word).
 //   focus <name...>  one-shot: bring the first named app to the front ("OK"/"NOTFOUND"). Uses
 //                    NSWorkspace's activation (what still works from a background process under
 //                    macOS 14's cooperative activation rules), then unhide + activate as a fallback.
@@ -77,6 +79,47 @@ import AppKit
         Out.line(Out.json(rows))
     }
 
+    // ---- menu <name...> -- <title...>: press the first menu-bar item carrying one of the titles ----
+    // Accessibility API, so it works with the app in the background: no focus change, no reopen (a
+    // reopen makes Zoom raise its home window and shrink the meeting into the mini window), and no
+    // shortcut to get wrong. Titles are compared case-insensitively; a toggle's both states are passed
+    // ("Mute Audio", "Unmute Audio") and whichever exists is pressed. Prints one word (+ the title):
+    //   OK <title> | NOTFOUND (app not running) | NOACCESS (no Accessibility grant) | NOMENU | NOITEM | DISABLED | FAILED
+    static func axChildren(_ el: AXUIElement) -> [AXUIElement] {
+        var v: AnyObject?
+        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &v) == .success, let arr = v as? [AXUIElement] else { return [] }
+        return arr
+    }
+    static func axString(_ el: AXUIElement, _ attr: String) -> String {
+        var v: AnyObject?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success, let s = v as? String else { return "" }
+        return s
+    }
+    static func axEnabled(_ el: AXUIElement) -> Bool {
+        var v: AnyObject?
+        guard AXUIElementCopyAttributeValue(el, kAXEnabledAttribute as CFString, &v) == .success, let b = v as? Bool else { return true }
+        return b
+    }
+    /// Menu bar -> menu bar items -> menus -> items (one level of submenu): the first item titled as wanted.
+    static func findMenuItem(_ el: AXUIElement, wanted: Set<String>, depth: Int) -> AXUIElement? {
+        for child in axChildren(el) {
+            let title = axString(child, kAXTitleAttribute).trimmingCharacters(in: .whitespaces).lowercased()
+            if !title.isEmpty && wanted.contains(title) && axString(child, kAXRoleAttribute) == kAXMenuItemRole { return child }
+            if depth < 4, let hit = findMenuItem(child, wanted: wanted, depth: depth + 1) { return hit }
+        }
+        return nil
+    }
+    static func pressMenuItem(_ app: NSRunningApplication, titles: [String]) -> String {
+        guard AXIsProcessTrusted() else { return "NOACCESS" }
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var bar: AnyObject?
+        guard AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &bar) == .success, let menuBar = bar else { return "NOMENU" }
+        let wanted = Set(titles.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty })
+        guard let item = findMenuItem(menuBar as! AXUIElement, wanted: wanted, depth: 0) else { return "NOITEM" }
+        if !axEnabled(item) { return "DISABLED" }
+        return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success ? "OK " + axString(item, kAXTitleAttribute) : "FAILED"
+    }
+
     static func focus(_ app: NSRunningApplication) -> Bool {
         var ok = false
         if let url = app.bundleURL {
@@ -106,8 +149,17 @@ import AppKit
             guard let app = findApp(names) else { Out.line("NOTFOUND"); exit(1) }
             if mode == "focus" && !focus(app) { Out.line("NOTFOUND"); exit(1) }
             Out.line("OK")
+        case "menu":
+            let rest = Array(args.dropFirst())
+            guard let sep = rest.firstIndex(of: "--"), sep > 0, sep + 1 < rest.count else {
+                Out.err("usage: foreground-watch menu <name...> -- <menu item title...>"); exit(2)
+            }
+            guard let app = findApp(Array(rest[..<sep])) else { Out.line("NOTFOUND"); exit(1) }
+            let result = pressMenuItem(app, titles: Array(rest[(sep + 1)...]))
+            Out.line(result)
+            exit(result.hasPrefix("OK") ? 0 : 1)
         default:
-            Out.err("usage: foreground-watch watch|list|find <name...>|focus <name...>")
+            Out.err("usage: foreground-watch watch|list|find <name...>|focus <name...>|menu <name...> -- <title...>")
             exit(2)
         }
     }

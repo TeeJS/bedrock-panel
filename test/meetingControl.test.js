@@ -51,3 +51,31 @@ test('sendTeamsAction focuses Teams (injected here) and sends this platform\'s c
   const bad = await mc.sendTeamsAction('nope', { mediaKeys: { tapCombo: () => true } });
   assert.equal(bad.ok, false);
 });
+
+test('macOS Zoom actions press the Meeting menu item through the helper; no focus, no keystroke', async () => {
+  const taps = []; const presses = []; let focusCalls = 0;
+  const deps = { platform: 'darwin', action: 'mute', settleMs: 0, mediaKeys: { tapCombo: c => { taps.push(c); return true; } },
+    focus: async () => { focusCalls++; return { ok: true }; }, pressMenu: async (names, titles) => { presses.push([names, titles]); return { ok: true, pressed: 'Unmute Audio' }; } };
+  assert.deepEqual(await mc.sendZoomAction('command+shift+a', deps), { ok: true, method: 'menu', pressed: 'Unmute Audio' });
+  assert.deepEqual(presses, [[['Zoom'], ['Mute Audio', 'Unmute Audio']]]);
+  assert.deepEqual(taps, []);
+  assert.equal(focusCalls, 0);
+  assert.deepEqual(mc.ZOOM_MENU_ITEMS.leave, ['Leave Meeting', 'End Meeting']);
+  assert.deepEqual(mc.ZOOM_MENU_ITEMS.video, ['Stop Video', 'Start Video']);
+});
+
+test('macOS Zoom: not running / not in a meeting is reported, nothing is sent; unreadable menu falls back to the focused keystroke', async () => {
+  const taps = []; const focused = [];
+  const base = { platform: 'darwin', action: 'leave', settleMs: 0, mediaKeys: { tapCombo: c => { taps.push(c); return true; } }, focus: async n => { focused.push(n); return { ok: true }; } };
+  const off = await mc.sendZoomAction('command+w', { ...base, pressMenu: async () => ({ ok: false, code: 'NOTFOUND', error: 'the app is not running' }) });
+  assert.equal(off.ok, false); assert.equal(off.code, 'NOTFOUND'); assert.match(off.error, /^Zoom: /);
+  const idle = await mc.sendZoomAction('command+w', { ...base, pressMenu: async () => ({ ok: false, code: 'DISABLED', error: 'greyed out' }) });
+  assert.equal(idle.ok, false); assert.equal(idle.code, 'DISABLED');
+  assert.deepEqual(taps, [], 'no keystroke when Zoom is absent or idle');
+  const localized = await mc.sendZoomAction('command+w', { ...base, pressMenu: async () => ({ ok: false, code: 'NOITEM', error: 'no such item' }) });
+  assert.deepEqual(localized, { ok: true, focused: true });
+  assert.deepEqual(focused, [['Zoom']]);
+  assert.deepEqual(taps, ['command+w'], 'keystroke path after focusing Zoom');
+  const win = await mc.sendZoomAction('alt+q', { platform: 'win32', action: 'leave', mediaKeys: { tapCombo: c => { taps.push(c); return true; } }, pressMenu: async () => { throw new Error('never on Windows'); } });
+  assert.deepEqual(win, { ok: true });
+});
