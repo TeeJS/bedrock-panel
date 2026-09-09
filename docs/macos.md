@@ -18,9 +18,12 @@ what is still Windows-only.
    line "Bedrock Panel was blocked…", click **Open Anyway**, then **Open** in the dialog that follows.
    You do this once per new build. Terminal alternative:
    `xattr -dr com.apple.quarantine "/Applications/Bedrock Panel.app"`.
-4. The first time the app touches a saved secret, macOS asks whether "bedrock-panel" may access a key
-   in your keychain. Click **Always Allow**. (Deny leaves saved passwords and tokens unreadable until
-   the next launch.)
+4. The first time the app touches a saved secret, macOS asks whether "Bedrock Panel" may access the
+   key "bedrock-panel Safe Storage" in your keychain. Click **Always Allow** (it needs your login
+   password). **This comes back once per new build**, Always Allow or not: the build is signed with a
+   certificate that has no Apple Team ID, so the keychain files each build under its own code hash
+   and a new build is a new app to it. It ends with an Apple Developer ID. (Deny leaves saved
+   passwords and tokens unreadable until the next launch.)
 5. A fresh install starts with the **macOS starter pages** — Default, Media, and Dev, built from apps
    every Mac has (Safari, Finder, Notes, Calculator, Activity Monitor, Terminal, System Settings,
    Screenshot, Mission Control, Music, Calendar, Messages, Console, System Information), web links,

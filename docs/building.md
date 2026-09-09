@@ -172,9 +172,12 @@ single-instance lock, so quit one before starting the other.
 
 What to expect on a Mac:
 
-- **Secrets** are encrypted with Electron `safeStorage` (Keychain). Every rebuild of an ad-hoc-signed
-  app changes its code signature, so macOS asks *"bedrock-panel wants to access key … in your
-  keychain"* — click **Always Allow**. Deny leaves secrets unavailable for that session (saving a
+- **Secrets** are encrypted with Electron `safeStorage` (Keychain). Every new build asks *"Bedrock
+  Panel wants to access key 'bedrock-panel Safe Storage' in your keychain"* once, even after **Always
+  Allow**: the keychain item's partition list (`security dump-keychain -a`) records each build's
+  `cdhash:` because the signing certificate carries no Apple Team ID (`TeamIdentifier=not set`), and
+  only a `teamid:` partition survives rebuilds — the stable "Bedrock Panel Dev" identity keeps TCC
+  grants, not keychain access. A Developer ID ends it. Deny leaves secrets unavailable for that session (saving a
   config with secrets fails until relaunch). A `config.json` copied from Windows keeps its DPAPI
   (`oqenc:v2:`) secrets, which a Mac cannot read: re-enter them in the editor.
 - **Permissions** are requested lazily, the first time a feature needs them: Accessibility
