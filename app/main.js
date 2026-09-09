@@ -37,9 +37,37 @@ const macPermissions = require('./macPermissions').createMacPermissions({
   systemPreferences, desktopCapturer, shell, log: m => console.log('[permissions] ' + m),
   helperPath: require('./nativeHelpers').helperPath('privacy'),   // Input Monitoring preflight/prompt (native/mac/privacy.swift); null off macOS
   execFile: require('child_process').execFile,
+  pollTimeoutMs: 120000,                                          // a person needs time to find the toggle in System Settings
+  staleGraceMs: 8000,
 });
-let inputMonitoringPrompted = false;   // the Input Monitoring prompt is raised once per session, on the first refused device open
-let accessibilityPrompted = false;     // one automatic Accessibility prompt per session (Reserved Display's first 'permission' event)
+let deviceAccessRequested = false;     // the automatic permission flow below runs once per session
+let deviceAccessibilityRequest = null; // its in-flight promise: a refused touch open and Reserved Display share ONE prompt
+// macOS: the DK-QUAKE touch controller needs Input Monitoring, and macOS 15/26 never shows the Input
+// Monitoring prompt for a third-party app — the request is answered "denied" silently and the app is
+// not even listed (verified on T.J.'s Mac with signed test apps calling IOHIDRequestAccess,
+// CGRequestListenEventAccess, and IOHIDDeviceOpen, usage string present). Accessibility, on the
+// other hand, prompts reliably, lists the app, and COVERS Input Monitoring for physical devices (the
+// TCC rule Karabiner-Elements relies on: "granting Accessibility also provides the permission needed
+// to capture input events from physical devices"). The app needs Accessibility anyway (Reserved
+// Display, keystrokes), so one prompt unlocks everything: a refused device open asks for
+// Accessibility, and the connector's rescan picks the touchscreen up as soon as it is granted.
+function requestAccessibilityForDevice(reason) {
+  if (deviceAccessibilityRequest) return deviceAccessibilityRequest;
+  console.log('[permissions] Accessibility requested (' + reason + ')');
+  panelNotice('macOS is asking for Accessibility: click Open System Settings and turn on Bedrock Panel. That unlocks the touchscreen and Reserved Display.');
+  deviceAccessibilityRequest = macPermissions.request('accessibility').then(r => {
+    if (r && r.ok) {
+      console.log('[permissions] Accessibility granted' + (r.reset ? ' after clearing a stale entry' : '') + ' — the touchscreen reconnects on the next rescan');
+      panelNotice('Accessibility granted — connecting the touchscreen.');
+      return r;
+    }
+    console.log('[permissions] Accessibility not granted (' + (r && r.reason) + ')');
+    panelNotice('Touchscreen blocked: System Settings → Privacy & Security → Accessibility → turn on Bedrock Panel (click + and pick it from Applications if it is missing). Turning it on under Input Monitoring works too.');
+    if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('accessibility'); }
+    return r;
+  });
+  return deviceAccessibilityRequest;
+}
 // Everything console.* prints also goes to main.log under the platform's log folder (~/Library/Logs/
 // bedrock-panel on macOS), so a Finder/Dock launch — which has no terminal — can still be diagnosed.
 const fileLog = (() => {
@@ -340,16 +368,10 @@ const reservedDisplay = createReservedDisplay({
   // macOS: the helper can see a window on the panel but not move it until Accessibility is granted —
   // say so on the panel, where the person standing at the device will look, not just in the log.
   onEvent: event => {
-    if (!event || event.event !== 'permission' || accessibilityPrompted) return;
-    accessibilityPrompted = true;
-    // Raise the Accessibility prompt (clearing a previous build's stale entry first when the prompt
-    // does not come through); the helper re-checks on every scan, so a grant takes effect at once.
-    panelNotice('Reserved Display needs the Accessibility permission — macOS is asking for it on your Mac; allow Bedrock Panel there.');
-    macPermissions.request('accessibility').then(r => {
-      if (r && r.ok) { console.log('[permissions] Accessibility granted' + (r.reset ? ' after clearing a stale entry' : '')); panelNotice('Accessibility granted — Reserved Display is active.'); return; }
-      panelNotice('Reserved Display needs the Accessibility permission: System Settings → Privacy & Security → Accessibility → turn on Bedrock Panel (remove and re-add it if it is already on).');
-      if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('accessibility'); }
-    });
+    if (!event || event.event !== 'permission') return;
+    // Same Accessibility prompt as a refused touch open (one shared prompt); the helper re-checks on
+    // every scan, so a grant takes effect at once.
+    requestAccessibilityForDevice('Reserved Display');
   },
 });
 // macOS: the panel display's place in the arrangement (native/mac/display-arrange). DK-Suite enforces
@@ -4597,24 +4619,13 @@ app.whenReady().then(async () => {
   dev.on('state', s => { if (s && typeof s === 'object') Object.assign(lastDeviceState, s); });
   dev.on('error', e => {
     console.log('dev error:', e.message);
-    // macOS refused to open a device: Input Monitoring. macOS never prompts for it on a HID open and
-    // does not even list the app until the app asks, so raise the prompt ourselves (native/mac/privacy,
-    // the call DK-Suite makes too) — the grant is picked up by the next rescan, no restart. Only when
-    // the prompt is not answered with Allow (or was answered earlier, e.g. a stale grant from a
-    // previous ad-hoc build) fall back to the panel notice and the System Settings pane, once per session.
-    if (process.platform === 'darwin' && e && e.cause && e.cause.code === 'HID_OPEN_FAILED' && !inputMonitoringPrompted) {
-      inputMonitoringPrompted = true;
-      const explain = () => {
-        panelNotice('Touchscreen blocked by macOS: System Settings → Privacy & Security → Input Monitoring → turn on Bedrock Panel (if it is already on, remove it with − and add it again).');
-        if (!privacyPaneOpened) { privacyPaneOpened = true; macPermissions.openSettings('inputMonitoring'); }
-      };
-      if (!macPermissions.canPromptInputMonitoring) { explain(); return; }
-      panelNotice('macOS is asking whether Bedrock Panel may use the touchscreen (Input Monitoring) — click Allow in the prompt on your Mac.');
-      macPermissions.request('inputMonitoring').then(r => {
-        if (r && r.ok) { console.log('[permissions] Input Monitoring granted — the device reconnects on the next rescan'); panelNotice('Input Monitoring granted — connecting the touchscreen.'); return; }
-        console.log('[permissions] Input Monitoring not granted (' + (r && r.reason) + ')');
-        explain();
-      });
+    // macOS refused to open a device (Input Monitoring). Ask for Accessibility, which covers it and
+    // is the one permission macOS actually prompts for — see requestAccessibilityForDevice. A denial
+    // recorded for Input Monitoring by an earlier build's request is cleared first so it cannot
+    // override the Accessibility grant. Once per session; the rescan retries every few seconds.
+    if (process.platform === 'darwin' && e && e.cause && e.cause.code === 'HID_OPEN_FAILED' && !deviceAccessRequested) {
+      deviceAccessRequested = true;
+      macPermissions.resetStaleGrant('ListenEvent').then(() => requestAccessibilityForDevice('touch controller refused'), () => requestAccessibilityForDevice('touch controller refused'));
     }
   });
   dev.start();

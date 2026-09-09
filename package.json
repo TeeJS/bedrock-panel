@@ -117,7 +117,9 @@
         "NSAudioCaptureUsageDescription": "Bedrock Panel records what your Mac is playing (the other side of a meeting) for meeting recordings.",
         "NSLocalNetworkUsageDescription": "Bedrock Panel talks to Home Assistant, OBS, WLED lights, and MQTT brokers on your local network.",
         "NSDocumentsFolderUsageDescription": "Bedrock Panel saves meeting recordings and transcripts under Documents by default.",
-        "NSAppleEventsUsageDescription": "Bedrock Panel controls Music and Spotify playback from the panel."
+        "NSAppleEventsUsageDescription": "Bedrock Panel controls Music and Spotify playback from the panel.",
+        "NSInputMonitoringUsageDescription": "Bedrock Panel reads the DK-QUAKE touch controller directly; macOS counts that as input monitoring (Accessibility covers it).",
+        "NSAccessibilityUsageDescription": "Bedrock Panel needs Accessibility to read the DK-QUAKE touchscreen, keep other windows off the panel display, and send keystrokes for tiles and macros."
       }
     },
     "dmg": {

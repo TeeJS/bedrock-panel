@@ -45,9 +45,9 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 
 | Feature | Pane | Who | When macOS asks | If it does not ask |
 |---|---|---|---|---|
-| **DK-QUAKE touchscreen** (the app reads the touch controller itself; macOS demands this permission for it because the controller also carries digitizer and mouse collections) | **Input Monitoring** | Bedrock Panel / Terminal | macOS never asks for this one on its own, so the app asks for it: the first time the touchscreen is refused, macOS shows "Bedrock Panel would like to receive keystrokes from any application" (for `npm start` it names the terminal app) — click **Allow**. The same prompt is behind **Request** on the Input Monitoring row of the permissions block. | A new build of the app carries an old build's grant in this pane that macOS no longer honors — and, because the entry exists, macOS will not show the prompt either. The app detects that (no grant a few seconds after asking), clears its own stale entry (`tccutil reset ListenEvent`, logged as "cleared a stale ListenEvent entry") and asks again, so the prompt does appear. Only if it still is not granted does the app open this pane and say so on the panel: turn **Bedrock Panel** on, or remove it with **−** and add it again with **+**. The panel picks the touchscreen up within about three seconds, no restart. Device Diagnostics shows the refusal on the Touchscreen row until then. |
+| **DK-QUAKE touchscreen**, **Reserved Display**, and **keystrokes** (paste tiles, macros, meeting hotkeys, media and volume keys) | **Accessibility** | Bedrock Panel / Terminal | The first time the touchscreen is refused (a few seconds after launch), the first keystroke, the first window that lands on the panel, or the **Request** button: "Bedrock Panel would like to control this computer using accessibility features" — click **Open System Settings** and turn **Bedrock Panel** on. The touchscreen connects within about three seconds, no restart. | Open the pane and turn the entry on; click **+** and pick it from Applications if it is missing. Takes effect immediately. |
 | **Knob** | none | | | Works as soon as it is plugged in. |
-| **Keystrokes** (paste tiles, macros, meeting hotkeys, media and volume keys) and **Reserved Display** | **Accessibility** | Bedrock Panel / Terminal | The first keystroke, or the **Request** button | Open the pane and turn the entry on. Takes effect immediately. |
+| *(Input Monitoring)* | **Input Monitoring** | | Never: macOS 15 and 26 answer a third-party app's Input Monitoring request silently with "denied" and do not even list the app — verified on this Mac with signed test apps calling every API Apple offers for it. | You do not need it: macOS treats an app trusted for **Accessibility** as allowed to read input devices (the rule Karabiner-Elements documents too), which is why the touchscreen row above says Accessibility. Turning the app on here by hand (**+**, then the toggle) works as well, if you prefer not to grant Accessibility; then Reserved Display and keystrokes stay off. |
 | **Microphone** (meeting recordings, dictation, AI Voice, Live Translate) | **Microphone** | Bedrock Panel / Terminal | The first recording or dictation | Open the pane and turn the entry on. |
 | **Meeting recording — system audio** (the other side of the call) | **Screen & System Audio Recording** → the **System Audio Recording Only** list | Bedrock Panel / Terminal | The first recording | Open the pane, turn the app on under **System Audio Recording Only**, then start the recording again. Without it the recording stops with a "system audio is blocked" error rather than saving a silent channel. Needs macOS 14.2 or newer. |
 | **Meeting recording — screen** and **slide capture** | **Screen & System Audio Recording** → the **Screen Recording** list | Bedrock Panel / Terminal | The first recording or capture | Turn it on under **Screen Recording**. For recordings the video is discarded; denying only affects slide capture and window titles in its picker. macOS 15+ re-confirms this permission every month. |
@@ -60,11 +60,12 @@ After installing a new build, a permission can show as on but stop working: macO
 the build's signature, so an **ad-hoc-signed** build (the default when nobody set up a signing
 certificate — see the macOS section of [building.md](building.md)) is a new app to it every time,
 and while the stale entry exists macOS shows no prompt. Builds signed with the same certificate,
-which is how releases should be made, keep their grants from one version to the next. For **Input Monitoring** and **Accessibility** the app
-repairs this itself the first time it needs the permission and no grant arrives within a few
-seconds: it clears its own entry (the log says "cleared a stale … entry") and asks again, which
-brings the prompt back. For the others, remove the entry with **−** and re-add it (toggling off and
-on is not always enough). From a terminal this clears them in one go so the next launch prompts again:
+which is how releases should be made, keep their grants from one version to the next. For
+**Accessibility** the app repairs this itself the first time it needs the permission and no grant
+arrives within a few seconds: it clears its own entry (the log says "cleared a stale Accessibility
+entry") and asks again, which brings the prompt back; it also clears any Input Monitoring entry an
+older build left behind, so that cannot override the Accessibility grant. For the others, remove the
+entry with **−** and re-add it (toggling off and on is not always enough). From a terminal this clears them in one go so the next launch prompts again:
 
 ```bash
 tccutil reset ListenEvent com.teejs.bedrockpanel; tccutil reset Accessibility com.teejs.bedrockpanel

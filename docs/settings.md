@@ -45,9 +45,10 @@ protection and what the knob does in monitor mode):
   the ring **instantly**; **Save to device** writes them to the device's own memory so
   they persist across power-cycles.
 - **macOS permissions** (Hardware tab, Mac only) — one row each for **Accessibility** (keystrokes:
-  paste tiles, macros, meeting hotkeys, media keys, and Reserved Display), **Input Monitoring**
-  (the DK-QUAKE touchscreen — the one permission macOS never asks for by itself, so the app raises
-  its prompt on the first refused touchscreen open and **Request** raises it again),
+  paste tiles, macros, meeting hotkeys, media keys, Reserved Display, and the DK-QUAKE touchscreen —
+  macOS treats Accessibility as covering Input Monitoring for physical devices, and the first refused
+  touchscreen open raises the Accessibility prompt), **Input Monitoring** (informational: covered by
+  Accessibility; macOS never prompts for it on its own, so on its own it is a manual **+** in that pane),
   **Microphone**, and **Screen & System Audio Recording** (slide capture, and the other side of a
   meeting recording), with a status pill, **Request** (fires the system prompt where macOS allows
   it) and **Open System Settings** (jumps to the matching Privacy & Security pane). Nothing is
