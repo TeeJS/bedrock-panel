@@ -106,10 +106,13 @@ class Aris68Connector extends EventEmitter {
     }
     if (!this.touch) {
       const info = this._find(TOUCH_IFACES, devices);
-      // Independent of the control interface: on macOS the OS's own driver usually owns the digitizer,
-      // so this open can fail while the knob keeps working.
+      // Independent of the control interface (a failure here never takes the knob down). On macOS the
+      // touch controller is SEIZED: it also exposes digitizer/mouse collections that macOS's own HID event
+      // driver would turn into pointer clicks on the panel display, and a click makes that display the
+      // active one — app menus and new windows then land on the panel. Seizing (the original DK-Suite
+      // driver's plain open) keeps the reports for us and hides the taps from macOS. Needs Input Monitoring.
       if (info) try {
-        const d = hidPlatform.openDevice(this.HID, info.path, this.platform); this.touch = d;
+        const d = hidPlatform.openDevice(this.HID, info.path, this.platform, { seize: true }); this.touch = d;
         this.lastOpenError.touch = null; this._openGate.clear('touch');
         d.on('data', b => this._onTouch(b));
         d.on('error', () => this._closeTouch());

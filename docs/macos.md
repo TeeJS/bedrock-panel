@@ -45,7 +45,7 @@ turn on: **Bedrock Panel** for the installed app, **Terminal** when running `npm
 
 | Feature | Pane | Who | When macOS asks | If it does not ask |
 |---|---|---|---|---|
-| **DK-QUAKE touchscreen** | **Input Monitoring** | Bedrock Panel / Terminal | Often not at all for the touch controller — so the app opens this pane for you the first time the touchscreen is refused, and says so on the panel | Turn **Bedrock Panel** on; click **+** and pick it from Applications if it is not listed. **If it is listed and already on, remove it with − and add it again**: until builds are notarized, every new build is a new app to macOS and the old grant is stale. The panel picks the touchscreen up within about three seconds, no restart. Device Diagnostics shows the refusal on the Touchscreen row until then. |
+| **DK-QUAKE touchscreen** (the app takes the touch controller away from macOS, which otherwise treats it as a mouse: every tap would be a click on the Quake, making it the active display and pulling menus and new windows onto it) | **Input Monitoring** | Bedrock Panel / Terminal | Often not at all for the touch controller — so the app opens this pane for you the first time the touchscreen is refused, and says so on the panel | Turn **Bedrock Panel** on; click **+** and pick it from Applications if it is not listed. **If it is listed and already on, remove it with − and add it again**: until builds are notarized, every new build is a new app to macOS and the old grant is stale. The panel picks the touchscreen up within about three seconds, no restart. Device Diagnostics shows the refusal on the Touchscreen row until then. |
 | **Knob** | none | | | Works as soon as it is plugged in. |
 | **Keystrokes** (paste tiles, macros, meeting hotkeys, media and volume keys) and **Reserved Display** | **Accessibility** | Bedrock Panel / Terminal | The first keystroke, or the **Request** button | Open the pane and turn the entry on. Takes effect immediately. |
 | **Microphone** (meeting recordings, dictation, AI Voice, Live Translate) | **Microphone** | Bedrock Panel / Terminal | The first recording or dictation | Open the pane and turn the entry on. |
@@ -122,3 +122,9 @@ Secrets saved on Windows cannot be read on a Mac: after copying a config over, r
 - **A purple dot in the panel's top-right corner** — macOS's screen-recording indicator, usually
   DisplayLink Manager (click the dot in the menu bar to see who is recording). Not Bedrock Panel, and
   not hideable.
+- **App menus disappear, or the menu bar looks inactive on your main display** — macOS made the
+  Quake the active display. Click once on your main display to bring it back. It happens when
+  something clicks on the Quake: before Input Monitoring is granted the touchscreen itself does that
+  (macOS treats it as a mouse until the app can take it over), and quitting Bedrock Panel lets the
+  Quake go dark while macOS still uses it. If windows are stuck on a dark Quake, unplug its display
+  cable for a few seconds; macOS moves them to the remaining displays.

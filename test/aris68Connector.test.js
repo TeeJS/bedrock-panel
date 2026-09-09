@@ -43,6 +43,7 @@ test('a touch-digitizer open failure leaves the control interface connected and 
   assert.equal(c.lastOpenError.control, null);
   assert.match(c.lastOpenError.touch, /touch-path/);
   assert.deepEqual(state.opens[0], ['ctrl-path', { nonExclusive: true }]);
+  assert.deepEqual(state.opens[1], ['touch-path', { nonExclusive: false }], 'the touch controller must be seized on macOS so taps never become OS clicks');
   c.stop();
 });
 

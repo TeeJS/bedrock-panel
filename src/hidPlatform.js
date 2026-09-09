@@ -4,10 +4,15 @@
  * require) and `platform`-injectable so the connectors' fake-HID tests cover every branch.
  *
  * macOS:
- *  - IOKit opens HID devices exclusively by default. The original DK-Suite driver opened the panel
- *    non-exclusively (docs/DEVICE_PROTOCOL.md), and an exclusive open fails whenever the OS's own
- *    driver (the touch digitizer) or another process already holds the device. node-hid >= 3.1
- *    exposes this as `{ nonExclusive: true }`.
+ *  - IOKit can open a HID device exclusively ("seize": the system and every other client stop
+ *    receiving its reports) or non-exclusively. Which one is right depends on the device:
+ *      * the knob/control interface is a vendor-only collection nothing else consumes — open it
+ *        non-exclusively, as the original DK-Suite driver did (docs/DEVICE_PROTOCOL.md);
+ *      * the DK-QUAKE touch controller ALSO carries digitizer and mouse collections, and macOS's own
+ *        HID event driver turns them into pointer clicks on the panel display. A click makes that
+ *        display the "active" one, so app menus and new windows move onto the panel. Seize it, as
+ *        DK-Suite's plain open did: the app parses the touch reports itself and macOS sees nothing.
+ *    node-hid >= 3.1 exposes the choice as `{ nonExclusive }`; its default on macOS is the seize.
  *  - Writes can fail transiently right after a (re)connect; DK-Suite retried them 3x. Everywhere
  *    else a failed write means the device is gone, so the connectors keep tearing down on the
  *    first failure there.
@@ -21,14 +26,17 @@
 const INPUT_MONITORING_HINT =
   'macOS may be blocking the device — allow Bedrock Panel (or, for npm start, the terminal app it was launched from) under System Settings → Privacy & Security → Input Monitoring; it reconnects on the next rescan';
 
-/** node-hid open options for this platform, or null when the default open is right. */
-function openOptions(platform = process.platform) {
-  return platform === 'darwin' ? { nonExclusive: true } : null;
+/**
+ * node-hid open options for this platform, or null when the default open is right.
+ * `seize` = take the device away from the OS's own HID drivers (macOS only; see the header).
+ */
+function openOptions(platform = process.platform, { seize = false } = {}) {
+  return platform === 'darwin' ? { nonExclusive: !seize } : null;
 }
 
 /** `new HID.HID(path[, options])` with the platform's options. */
-function openDevice(HID, devicePath, platform = process.platform) {
-  const opts = openOptions(platform);
+function openDevice(HID, devicePath, platform = process.platform, { seize = false } = {}) {
+  const opts = openOptions(platform, { seize });
   return opts ? new HID.HID(devicePath, opts) : new HID.HID(devicePath);
 }
 

@@ -11,7 +11,9 @@ test('openOptions / openDevice: non-exclusive on macOS only', () => {
   const HID = { HID: class { constructor(...a) { calls.push(a); } } };
   hp.openDevice(HID, '/dev/a', 'darwin');
   hp.openDevice(HID, '/dev/b', 'win32');
-  assert.deepEqual(calls, [['/dev/a', { nonExclusive: true }], ['/dev/b']]);
+  hp.openDevice(HID, '/dev/c', 'darwin', { seize: true });   // the touch controller: taken away from macOS's own driver
+  hp.openDevice(HID, '/dev/d', 'win32', { seize: true });    // no such notion elsewhere
+  assert.deepEqual(calls, [['/dev/a', { nonExclusive: true }], ['/dev/b'], ['/dev/c', { nonExclusive: false }], ['/dev/d']]);
 });
 
 test('writeWithRetry: three attempts on macOS, one elsewhere', () => {
