@@ -380,10 +380,215 @@ func listen(port: UInt16, kind: String) -> NWListener? {
     return l
 }
 
+// MARK: - file transcription (meeting recordings)
+
+// `speech-server transcribe-file <wav> [--language en-US] [--me NAME] [--others NAME]`
+// Transcribes a meeting recording on this Mac and prints the diarizer contract (docs/meetings-api.md):
+// {"segments":[{"speaker","start","end","text"}, …], "speaker_report": {…}} — segments ordered by
+// time. Apple's speech APIs transcribe but do not tell voices apart, so the speakers come from the
+// recorder's fixed stereo layout: left = the operator's microphone ("me"), right = system audio
+// (everyone else). Each channel is transcribed on its own and the two are merged by time.
+//   macOS 26+: SpeechAnalyzer + SpeechTranscriber (time-indexed, on-device; the language model is
+//              downloaded by AssetInventory the first time).
+//   macOS 14/15: SFSpeechRecognizer on-device, the channel cut into <= 55 s pieces at quiet points
+//              (server-based recognition is capped at one minute; on-device is not, but memory is).
+enum FileTranscriber {
+    struct Seg { let speaker: String; var start: Double; var end: Double; var text: String }
+
+    static func run(path: String, language: String, me: String, others: String) {
+        let url = URL(fileURLWithPath: path)
+        guard let file = try? AVAudioFile(forReading: url) else { fail("cannot read \(path)"); return }
+        let fmt = file.processingFormat
+        let channels = Int(fmt.channelCount), rate = fmt.sampleRate, frames = Int(file.length)
+        guard frames > 0, let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(frames)) else { fail("empty recording"); return }
+        do { try file.read(into: buf) } catch { fail("read failed: \(error.localizedDescription)"); return }
+        let duration = Double(frames) / rate
+        Out.err("transcribe-file: \(path) \(channels)ch @\(Int(rate))Hz \(String(format: "%.1f", duration)) s")
+        // Mono float copies per channel: [0] = me (left), [1] = others (right); a mono file is "others".
+        var lanes: [(speaker: String, samples: [Float])] = []
+        if let f = buf.floatChannelData {
+            for c in 0..<channels {
+                let samples = Array(UnsafeBufferPointer(start: f[c], count: frames))
+                lanes.append((channels == 1 ? others : (c == 0 ? me : others), samples))
+            }
+        } else if let i16 = buf.int16ChannelData {
+            for c in 0..<channels {
+                let raw = UnsafeBufferPointer(start: i16[c], count: frames)
+                lanes.append((channels == 1 ? others : (c == 0 ? me : others), raw.map { Float($0) / 32768 }))
+            }
+        }
+        if lanes.count > 2 { lanes = Array(lanes.prefix(2)) }
+        Task {
+            var all: [Seg] = []
+            var engine = "sfspeech"
+            for lane in lanes {
+                if isSilent(lane.samples) { Out.err("\(lane.speaker): channel is silent, skipped"); continue }
+                var segs: [Seg]? = nil
+                if #available(macOS 26, *) {
+                    segs = await analyzerTranscribe(samples: lane.samples, rate: rate, language: language, speaker: lane.speaker)
+                    if segs != nil { engine = "speechanalyzer" }
+                }
+                if segs == nil { segs = await legacyTranscribe(samples: lane.samples, rate: rate, language: language, speaker: lane.speaker) }
+                all.append(contentsOf: segs ?? [])
+            }
+            all.sort { $0.start < $1.start }
+            let bySpeaker = Dictionary(grouping: all, by: { $0.speaker })
+            let report: [String: Any] = [
+                "engine": engine, "language": language, "on_device": true, "diarization": "stereo-channels",
+                "speaker_count": bySpeaker.count,
+                "speakers": bySpeaker.map { ["label": $0.key, "identified": $0.key == me, "duration_sec": (($0.value.map { $0.end - $0.start }.reduce(0, +)) * 100).rounded() / 100] },
+            ]
+            let out: [String: Any] = [
+                "engine": engine, "language": language, "duration_sec": (duration * 100).rounded() / 100, "speaker_report": report,
+                "segments": all.map { ["speaker": $0.speaker, "start": ($0.start * 100).rounded() / 100, "end": ($0.end * 100).rounded() / 100, "text": $0.text] },
+            ]
+            Out.line(Out.json(out))
+            exit(0)
+        }
+        RunLoop.main.run()
+    }
+
+    static func fail(_ msg: String) { Out.line(Out.json(["error": msg])); exit(1) }
+
+    static func isSilent(_ s: [Float]) -> Bool {
+        var acc: Float = 0
+        for v in s { acc += v * v }
+        return s.isEmpty || (acc / Float(s.count)).squareRoot() < 0.002
+    }
+
+    /// Mono Float32 buffer (non-interleaved) for the recognizers.
+    static func pcmBuffer(_ samples: ArraySlice<Float>, rate: Double) -> AVAudioPCMBuffer? {
+        guard let f = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false),
+              let b = AVAudioPCMBuffer(pcmFormat: f, frameCapacity: AVAudioFrameCount(samples.count)) else { return nil }
+        b.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { src in b.floatChannelData![0].update(from: src.baseAddress!, count: samples.count) }
+        return b
+    }
+
+    // -- macOS 26: SpeechAnalyzer --------------------------------------------------------------
+    @available(macOS 26, *)
+    static func analyzerTranscribe(samples: [Float], rate: Double, language: String, speaker: String) async -> [Seg]? {
+        do {
+            let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: language)) ?? Locale(identifier: language)
+            let transcriber = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])
+            if let req = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                Out.err("\(speaker): downloading the \(locale.identifier) speech model …")
+                try await req.downloadAndInstall()
+                Out.err("\(speaker): model installed")
+            }
+            // The analyzer reads from a file: write the lane to a temporary mono WAV. The writer must be
+            // closed (deinitialized) before the file is opened for reading, or the reader sees no audio.
+            let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("bedrock-lane-\(UUID().uuidString).wav")
+            guard let b = pcmBuffer(samples[...], rate: rate) else { return nil }
+            do {
+                let outFile = try AVAudioFile(forWriting: tmp, settings: [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1, AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false], commonFormat: .pcmFormatFloat32, interleaved: false)
+                try outFile.write(from: b)
+            }
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            let inFile = try AVAudioFile(forReading: tmp)
+            let seconds = Double(inFile.length) / inFile.processingFormat.sampleRate
+            Out.err("\(speaker): analyzing \(String(format: "%.1f", seconds)) s")
+            let analyzer = SpeechAnalyzer(modules: [transcriber], options: .init(priority: .userInitiated, modelRetention: .processLifetime))
+            let collector = Task { () -> [Seg] in
+                var out: [Seg] = []
+                for try await r in transcriber.results where r.isFinal {
+                    let text = String(r.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if text.isEmpty { continue }
+                    out.append(Seg(speaker: speaker, start: r.range.start.seconds, end: r.range.end.seconds, text: text))
+                }
+                return out
+            }
+            // Feed the whole file, then close the input explicitly: the results stream ends only once the
+            // analyzer has finished, and finishAfterFile alone was seen to leave it waiting.
+            let lastTime = try await analyzer.analyzeSequence(from: inFile)
+            if let t = lastTime { try await analyzer.finalizeAndFinish(through: t) } else { try await analyzer.finalizeAndFinishThroughEndOfInput() }
+            // Watchdog: transcription of a file should not take longer than the file itself several times over.
+            let budget = UInt64(max(60, seconds * 4)) * 1_000_000_000
+            let timeout = Task { try await Task.sleep(nanoseconds: budget); collector.cancel() }
+            let segs = try await collector.value
+            timeout.cancel()
+            Out.err("\(speaker): \(segs.count) segment(s) via SpeechAnalyzer")
+            return segs
+        } catch {
+            Out.err("\(speaker): SpeechAnalyzer unavailable (\(error.localizedDescription)) — falling back to SFSpeechRecognizer")
+            return nil
+        }
+    }
+
+    // -- macOS 14/15: SFSpeechRecognizer in pieces ---------------------------------------------
+    static func legacyTranscribe(samples: [Float], rate: Double, language: String, speaker: String) async -> [Seg] {
+        await withCheckedContinuation { cont in
+            Recognizer.ensureAuthorized {
+                guard Recognizer.authStatus == .authorized, let r = Recognizer.recognizer(for: language), r.isAvailable else {
+                    Out.err("\(speaker): speech recognition not authorized (\(Recognizer.authString()))"); cont.resume(returning: []); return
+                }
+                let pieces = split(samples, rate: rate)
+                Out.err("\(speaker): \(pieces.count) piece(s) via SFSpeechRecognizer")
+                var out: [Seg] = []
+                func next(_ i: Int) {
+                    if i >= pieces.count { cont.resume(returning: out); return }
+                    let (offset, slice) = pieces[i]
+                    guard let b = pcmBuffer(slice, rate: rate) else { next(i + 1); return }
+                    Recognizer.run(r, b, onDevice: Recognizer.onDevice(r), timeout: 120) { text, err in
+                        if let e = err, Recognizer.isDictationDisabled(e) {
+                            Recognizer.run(r, b, onDevice: false, timeout: 120) { text2, _ in out.append(contentsOf: group(text2, offset: offset, length: Double(slice.count) / rate, speaker: speaker)); next(i + 1) }
+                            return
+                        }
+                        out.append(contentsOf: group(text, offset: offset, length: Double(slice.count) / rate, speaker: speaker))
+                        next(i + 1)
+                    }
+                }
+                next(0)
+            }
+        }
+    }
+    /// Cut at the quietest 20 ms window inside the last 15 s of each <= 55 s piece.
+    static func split(_ s: [Float], rate: Double) -> [(Double, ArraySlice<Float>)] {
+        let maxLen = Int(55 * rate), win = Int(0.02 * rate), search = Int(15 * rate)
+        var out: [(Double, ArraySlice<Float>)] = []
+        var start = 0
+        while start < s.count {
+            var end = min(s.count, start + maxLen)
+            if end < s.count {
+                var best = end, bestE = Float.greatestFiniteMagnitude
+                var i = max(start + maxLen - search, start + win)
+                while i + win <= end { var e: Float = 0; for j in i..<(i + win) { e += s[j] * s[j] }; if e < bestE { bestE = e; best = i }; i += win }
+                end = best
+            }
+            out.append((Double(start) / rate, s[start..<end]))
+            start = end
+        }
+        return out
+    }
+    /// One recognized piece becomes one segment (the legacy API's word timings are not reliable enough to cut finer).
+    static func group(_ text: String, offset: Double, length: Double, speaker: String) -> [Seg] {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? [] : [Seg(speaker: speaker, start: offset, end: offset + length, text: t)]
+    }
+}
+
 @main struct SpeechServer {
     static var listeners: [NWListener] = []
     static func main() {
         Out.setup()
+        // One-shot file transcription for the meeting pipeline (no server, no stdin guard).
+        let argv = Array(CommandLine.arguments.dropFirst())
+        if argv.first == "transcribe-file" {
+            var path = "", language = opts.language, me = "Me", others = "Others"
+            var i = 1
+            while i < argv.count {
+                switch argv[i] {
+                case "--language": if i + 1 < argv.count { language = argv[i + 1]; i += 1 }
+                case "--me": if i + 1 < argv.count { me = argv[i + 1]; i += 1 }
+                case "--others": if i + 1 < argv.count { others = argv[i + 1]; i += 1 }
+                default: if path.isEmpty { path = argv[i] }
+                }
+                i += 1
+            }
+            if path.isEmpty { FileTranscriber.fail("usage: speech-server transcribe-file <wav> [--language en-US] [--me NAME] [--others NAME]") }
+            FileTranscriber.run(path: path, language: language.isEmpty || language == "en" ? "en-US" : language, me: me, others: others)
+            return
+        }
         ParentGuard.exitOnStdinEOF()
         guard let stt = listen(port: opts.sttPort, kind: "stt"), let tts = listen(port: opts.ttsPort, kind: "tts") else {
             Out.line(Out.json(["event": "error", "message": "could not listen on \(opts.host):\(opts.sttPort)/\(opts.ttsPort) (ports in use?)"]))

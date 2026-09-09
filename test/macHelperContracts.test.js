@@ -108,3 +108,15 @@ test('speech-server speaks the Wyoming events the client sends and asks for spee
   const build = fs.readFileSync(path.join(__dirname, '..', 'build-mac-helpers.js'), 'utf8');
   assert.match(build, /name: 'speech-server', plist: 'speech-server\.plist'/);
 });
+
+test('speech-server transcribe-file produces the diarizer contract from the stereo channels', () => {
+  const s = src('speech-server.swift');
+  assert.match(s, /argv\.first == "transcribe-file"/, 'the file mode the meeting queue spawns');
+  for (const key of ['"segments"', '"speaker_report"', '"speaker"', '"start"', '"end"', '"text"']) assert.match(s, new RegExp(key.replace(/"/g, '\\"')), key + ' is read by meetingAnalyze / meetingTranscribe');
+  assert.match(s, /c == 0 \? me : others/, 'left channel = the operator, right = everyone else');
+  assert.match(s, /SpeechAnalyzer\(modules: \[transcriber\]/, 'macOS 26 SpeechAnalyzer path');
+  assert.match(s, /attributeOptions: \[\.audioTimeRange\]/, 'time-indexed results');
+  assert.match(s, /assetInstallationRequest\(supporting: \[transcriber\]\)/, 'the language model is installed on first use');
+  assert.match(s, /legacyTranscribe\(/, 'SFSpeechRecognizer fallback for macOS 14/15');
+  assert.match(s, /all\.sort \{ \$0\.start < \$1\.start \}/, 'segments ordered by time (docs/meetings-api.md)');
+});

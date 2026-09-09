@@ -101,6 +101,12 @@ function createMeetingTranscriber(deps) {
   const organizeByDate = deps.organizeByDate || (() => false);   // () => bool: file results into YYYY/MM subfolders
   const resolveThreshold = deps.resolveThreshold || (() => '');  // () => speaker cutoff ('' = server default)
   const resolveMyName = deps.resolveMyName || (() => '');        // () => operator's enrolled name ('' = off)
+  // Engine: 'server' (the diarizer at resolveBaseUrl) or 'local' (localTranscribe(wavPath, { myName })
+  // → the same { segments, speaker_report } shape, produced on this machine — macOS's built-in
+  // speech). With 'local' there is no health probe, no server wait, and no pre/post hooks.
+  const resolveEngine = deps.resolveEngine || (() => 'server');
+  const localTranscribe = deps.localTranscribe || null;
+  const isLocal = () => resolveEngine() === 'local' && typeof localTranscribe === 'function';
   const log = deps.log || (() => {});
   const now = deps.now || Date.now;
   const timeoutMs = deps.timeoutMs || TIMEOUT_MS;
@@ -123,6 +129,7 @@ function createMeetingTranscriber(deps) {
   let hookPhase = null;      // 'pre' | 'waiting' | 'post' | null — surfaced to the panel, never fabricated
 
   function probeHealth() {
+    if (isLocal()) { health = 'ok'; healthAt = now(); return; }   // nothing to probe: the engine is a local process
     if (healthBusy || (now() - healthAt) < healthTtlMs) return;
     healthBusy = true;
     fetchImpl(resolveBaseUrl() + '/health', { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) })
@@ -136,7 +143,8 @@ function createMeetingTranscriber(deps) {
     return {
       ok: true,
       health,
-      hooksEnabled: !!(resolveHooks() || {}).enabled,
+      engine: isLocal() ? 'local' : 'server',
+      hooksEnabled: !isLocal() && !!(resolveHooks() || {}).enabled,
       phase: hookPhase,
       current: current ? { name: current.name, status: 'running', startedAt: current.startedAt } : null,
       queue: queue.slice(),
@@ -197,7 +205,7 @@ function createMeetingTranscriber(deps) {
 
   function pump() {
     if (current || hookRunning || !queue.length) return;
-    const hooks = resolveHooks() || {};
+    const hooks = isLocal() ? {} : (resolveHooks() || {});   // local engine: no server to start or stop
     // Idle -> active with a pre hook configured: start the server, wait for it to answer, then
     // flow the queue. Failure fails every queued job (they'd all hit the same dead server) and
     // leaves the WAVs in place for retry.
@@ -234,6 +242,14 @@ function createMeetingTranscriber(deps) {
   async function runJob(name) {
     const folders = resolveFolders();
     const src = path.join(folders.unprocessed, name);
+    if (isLocal()) {
+      const myName = String(resolveMyName() || '').trim();
+      log('transcribing on this machine: ' + name);
+      const result = await localTranscribe(src, { myName, log: m => log('[local] ' + m) });
+      if (!result || !Array.isArray(result.segments)) throw new Error('local transcription returned no segments');
+      await fileResult(name, folders, result);
+      return;
+    }
     const buf = await fsp.readFile(src);
     const fields = {};
     const th = String(resolveThreshold() || '').trim();
@@ -281,11 +297,15 @@ function createMeetingTranscriber(deps) {
     let result = null;
     try { result = JSON.parse(res.text); } catch (e) {}
     if (!result || !Array.isArray(result.segments)) throw new Error('diarizer response missing segments');
+    await fileResult(name, folders, result);
+  }
 
-    // File the results: transcript JSON first (atomic tmp+rename, same discipline as saveConfig),
-    // then move the WAV. If the move fails the transcript still exists and the WAV stays visible
-    // in unprocessed — nothing is lost either way. With Organize-by-date on, both land in
-    // <processed>/YYYY/MM/ keyed to the processing date.
+  // File the results: transcript JSON first (atomic tmp+rename, same discipline as saveConfig),
+  // then move the WAV. If the move fails the transcript still exists and the WAV stays visible
+  // in unprocessed — nothing is lost either way. With Organize-by-date on, both land in
+  // <processed>/YYYY/MM/ keyed to the processing date. Shared by both engines.
+  async function fileResult(name, folders, result) {
+    const src = path.join(folders.unprocessed, name);
     let destDir = folders.processed;
     if (organizeByDate()) {
       const d = new Date(now());

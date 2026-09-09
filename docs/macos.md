@@ -159,6 +159,14 @@ the language supports it, and the system voices. Nothing to install and nothing 
   integration, for one) can use it too while Bedrock Panel runs. If those ports are taken by a
   server of your own, choose *Speech servers* instead.
 - The **Microphone** permission is still needed for the pages that listen (section 3).
+- **Meeting recordings are transcribed on this Mac too** (Settings → Automation → Meeting →
+  Transcription → *Built-in macOS speech*, the default on a Mac): Apple's on-device speech
+  (SpeechAnalyzer on macOS 26, SFSpeechRecognizer on 14/15) reads the recording's two channels —
+  your microphone, labelled with **Your name**, and the system audio, labelled "Others" — and files
+  the same transcript JSON a diarizer server would, so the AI meeting notes work unchanged. It cannot
+  tell one remote voice from another; for named attendees and enrolled voices point the Server URL at
+  a tts-sst or meeting-diarizer server and choose *Diarizer server*. The language model is downloaded
+  once, on the first transcription (a few hundred MB, needs the network that one time).
 
 ## 7. Troubleshooting
 

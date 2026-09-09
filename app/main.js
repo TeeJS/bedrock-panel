@@ -2133,7 +2133,7 @@ async function onMeetingActionRequest(platform, action) {
 // Settings live under config.settings.meeting (global, like config.settings.monitor) so auto-record
 // works regardless of which app the panel is showing — the meeting page's per-grid options only
 // exist while it's the active app, which is useless for background recording.
-const MEETING_DEFAULTS = { folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' };
+const MEETING_DEFAULTS = { folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: process.platform === 'darwin' ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' };
 function meetingSettings() { return Object.assign({}, MEETING_DEFAULTS, (config.settings || {}).meeting || {}); }
 // Open WebUI connection (config.settings.owui, edited on the Auth tab): shared by the meeting
 // Analysis-AI backend and the owui-voice panel app. apiKey is a secret — encrypted at rest by
@@ -3937,6 +3937,21 @@ app.whenReady().then(async () => {
       meetingTranscriber = require('./meetingTranscribe').createMeetingTranscriber({
         resolveFolders: resolveMeetingFolders,
         resolveBaseUrl: resolveTranscribeBaseUrl,
+        // macOS: transcribe on this Mac (native/mac/speech-server transcribe-file — Apple's on-device
+        // speech, the operator's mic channel labelled with their name, system audio "Others") when the
+        // Meeting settings say so; the diarizer server otherwise.
+        resolveEngine: () => (meetingSettings().transcribeEngine === 'local' && helperPath('speechServer')) ? 'local' : 'server',
+        localTranscribe: (wavPath, { myName, log: say }) => new Promise((resolve, reject) => {
+          const args = ['transcribe-file', wavPath, '--language', 'en-US', '--me', myName || 'Me', '--others', 'Others'];
+          require('child_process').execFile(helperPath('speechServer'), args, { maxBuffer: 64 * 1024 * 1024, timeout: 3600000 }, (err, stdout, stderr) => {
+            String(stderr || '').split('\n').filter(Boolean).forEach(l => say(l));
+            if (err) return reject(new Error('local transcription failed: ' + (err.message || err)));
+            let out = null;
+            try { out = JSON.parse(String(stdout).trim().split('\n').pop()); } catch (e) { return reject(new Error('local transcription output unreadable')); }
+            if (out && out.error) return reject(new Error(out.error));
+            resolve(out);
+          });
+        }),
         organizeByDate: () => !!meetingSettings().processedByDate,
         resolveThreshold: () => meetingSettings().transcribeThreshold,
         resolveMyName: () => meetingSettings().myName,

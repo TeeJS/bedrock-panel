@@ -159,3 +159,13 @@ configured keystroke. If nothing's on the call, nothing visibly happens. There's
 on-panel call timer or participant list; this is a remote control, not a client.
 Transcription progress is elapsed time only — the diarizer reports no percentage, so
 none is shown.
+
+## Transcribing on a Mac without a server
+
+On macOS the Meeting settings offer a **Transcription engine**: *Built-in macOS speech* (the
+default) transcribes each recording on the Mac itself with Apple's on-device speech — no server,
+nothing leaves the machine — and files the same `<name>-diarizer-response.json` a diarizer server
+would, so the AI notes and the library work unchanged. Speakers come from the recording's stereo
+layout: the microphone channel is labelled with **Your name**, the system-audio channel "Others";
+one remote voice cannot be told from another. Choose *Diarizer server* for named attendees,
+enrolled voices, and the speaker report. Details and permissions: [macos.md](macos.md).

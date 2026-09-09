@@ -3774,7 +3774,7 @@
     const th = currentTheme();
     // Meeting recording settings (config.settings.meeting) — global so auto-record works regardless of
     // which app the panel is showing. Same shape as MEETING_DEFAULTS in main.js.
-    const currentMe = () => Object.assign({ folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' }, (config.settings || {}).meeting || {}, ((config.settings || {}).meeting || {}).busyMqttBaseTopic === 'open-quake' ? { busyMqttBaseTopic: 'bedrock-panel' } : {});
+    const currentMe = () => Object.assign({ folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: IS_MAC ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' }, (config.settings || {}).meeting || {}, ((config.settings || {}).meeting || {}).busyMqttBaseTopic === 'open-quake' ? { busyMqttBaseTopic: 'bedrock-panel' } : {});
     const me = currentMe();
     // Day set for the busylight schedule. Built here so the markup below stays readable; the empty
     // guard matters because ''.split(',') yields [''] and Number('') is 0, which would silently
@@ -3972,8 +3972,14 @@ ${IS_MAC ? `
         <select id="meMic" style="flex:1"><option value="">System default</option></select></div>
       <p class="hint">This must be the same mic you use with Teams</p>
 
-      <p class="sectitle">Transcription Server</p>
-      <div class="row"><label>URL</label>
+      <p class="sectitle">Transcription</p>
+      ${IS_MAC ? `<div class="row"><label>Engine</label>
+        <select id="meTransEngine" style="flex:1">
+          <option value="local" ${me.transcribeEngine !== 'server' ? 'selected' : ''}>Built-in macOS speech on this Mac — you (mic) vs. everyone else (system audio)</option>
+          <option value="server" ${me.transcribeEngine === 'server' ? 'selected' : ''}>Diarizer server (tts-sst / meeting-diarizer) at the URL below — named speakers</option>
+        </select></div>
+      <details class="hint"><summary>The built-in engine transcribes on this Mac with Apple's on-device speech (macOS 26: SpeechAnalyzer; 14/15: SFSpeechRecognizer), no server and nothing leaves the Mac. It cannot tell voices apart: the recording's mic channel is labelled with <b>Your name</b> below (or "Me"), the system-audio channel "Others".</summary> For per-attendee names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>` : ''}
+      <div class="row"><label>Server URL</label>
         <input id="meTransUrl" value="${esc(me.transcribeUrl || 'http://127.0.0.1:10301/transcribe')}" style="flex:1"></div>
       <details class="hint"><summary>The tts-sst or meeting-diarizer endpoint that turns recordings into speaker-labeled transcripts.</summary> Edit the host/port to match your server; the panel checks its /health before sending. Remember to Save.</details>
       <div class="row" style="margin-top:12px"><label>Analysis AI</label>
@@ -5370,6 +5376,8 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
         }
       };
       document.getElementById('meTransUrl').oninput = e => saveMe({ transcribeUrl: e.target.value.trim() });
+      const meEngine = document.getElementById('meTransEngine');   // macOS only
+      if (meEngine) meEngine.onchange = e => saveMe({ transcribeEngine: e.target.value });
       document.getElementById('meAnalysisAi').onchange = e => saveMe({ analysisAi: e.target.value });
       // --- Busy status ---
       const busyDeps = document.getElementById('meBusyDeps');
