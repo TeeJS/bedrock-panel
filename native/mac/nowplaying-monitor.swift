@@ -8,8 +8,10 @@
 //                                                       Playback Position (s), Duration (ms), Track ID
 //   Music     com.apple.Music.playerInfo (+ the legacy com.apple.iTunes.playerInfo name)
 //                                                       Name, Artist, Album, Player State, Total Time (ms)
-// Browser players and other apps are not covered. Music.app's position is not in its notification,
-// so it reports 0 until the AppleScript enrichment (Automation permission) is added.
+// Browser players and other apps are not covered. A player that is already running when we start
+// posts nothing until something changes, so it is asked once through AppleScript (Automation
+// permission, the grant the transport buttons use) — at start, when it launches, and every 10 s as
+// a safety net; the same query gives Music.app's position, which its notification lacks.
 //
 // Protocol: one JSON line on every change — the same fields as the Windows helper
 // {title, artist, album, status, app, position, duration} plus bundleId and trackId (Spotify),
@@ -72,6 +74,40 @@ import AppKit
         emit()
     }
 
+    // ---- AppleScript state query: initial state, player launch, 10 s safety net ---------------
+    // Apple Events need the Automation permission ("Bedrock Panel wants to control Spotify/Music");
+    // a refusal (-1743) or an undecidable prompt (-1744) is logged once and that player is then left
+    // to its notifications for the rest of the run, so nobody is nagged.
+    static var refused: Set<String> = []
+    static var queried: [String: Source] { Dictionary(sources.map { ($0.bundleId, $0) }, uniquingKeysWith: { a, _ in a }) }
+    static func query(_ source: Source) {
+        guard !refused.contains(source.bundleId),
+              !NSRunningApplication.runningApplications(withBundleIdentifier: source.bundleId).isEmpty else { return }
+        let isSpotify = source.bundleId == "com.spotify.client"
+        // Spotify: duration in ms, `spotify url` = the track id the art lookup uses. Music: duration in s.
+        let script = """
+        tell application id "\(source.bundleId)"
+            if player state is stopped then return ""
+            set t to current track
+            return (player state as string) & linefeed & (name of t) & linefeed & (artist of t) & linefeed & (album of t) & linefeed & \(isSpotify ? "(duration of t)" : "((duration of t) * 1000)") & linefeed & (player position) & linefeed & \(isSpotify ? "(spotify url of t)" : "\"\"")
+        end tell
+        """
+        var err: NSDictionary?
+        guard let s = NSAppleScript(source: script) else { return }
+        let result = s.executeAndReturnError(&err)
+        if let e = err {
+            let code = (e[NSAppleScript.errorNumber] as? Int) ?? 0
+            if code == -1743 || code == -1744 { refused.insert(source.bundleId) }
+            Out.err("\(source.app): state query failed (\(code)): \(e[NSAppleScript.errorMessage] ?? "")")
+            return
+        }
+        let parts = (result.stringValue ?? "").components(separatedBy: "\n")
+        if parts.count < 6 || parts[1].isEmpty { handle(source, [:]); return }   // stopped: no track
+        handle(source, ["Player State": parts[0], "Name": parts[1], "Artist": parts[2], "Album": parts[3],
+                        "Duration": Double(parts[4]) ?? 0, "Playback Position": Double(parts[5]) ?? 0, "Track ID": parts.count > 6 ? parts[6] : ""])
+    }
+    static func queryAll() { for source in queried.values { query(source) } }
+
     static func chosen() -> (String, Track)? {
         if let p = tracks.first(where: { $0.value.status == "Playing" }) { return (p.key, p.value) }
         return tracks.max(by: { $0.value.changedAt < $1.value.changedAt }).map { ($0.key, $0.value) }
@@ -112,7 +148,18 @@ import AppKit
         t.schedule(deadline: .now() + 1, repeating: 1.0)
         t.setEventHandler { liveness() }
         t.resume()
-        emit()                                    // "{}" until a player posts (an idle session manager)
+        // A player launched later is asked once it is scriptable (a few seconds in); the 10 s poll covers
+        // the rest: a missed notification, position drift for the progress bar.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) { n in
+            guard let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication, let id = app.bundleIdentifier, let source = queried[id] else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { query(source) }
+        }
+        let poll = DispatchSource.makeTimerSource(queue: .main)
+        poll.schedule(deadline: .now() + 10, repeating: 10.0)
+        poll.setEventHandler { queryAll() }
+        poll.resume()
+        emit()                                    // "{}" until a player answers or posts
+        queryAll()                                // what is playing right now, before any change
         RunLoop.main.run()
     }
 }

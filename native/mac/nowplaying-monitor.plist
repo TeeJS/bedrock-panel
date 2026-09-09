@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Embedded into the nowplaying-monitor binary as its __info_plist section (build-mac-helpers.js), so
+     TCC has a usage string for the Automation prompt raised by the AppleScript state query. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.teejs.bedrockpanel.nowplaying-monitor</string>
+  <key>CFBundleName</key>
+  <string>Bedrock Panel now-playing monitor</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Bedrock Panel asks Music and Spotify what is playing, for the Music page.</string>
+</dict>
+</plist>

@@ -33,7 +33,7 @@ const TARGETS = [
   { name: 'sysvolume' },
   { name: 'foreground-watch' },
   { name: 'mic-session-monitor' },
-  { name: 'nowplaying-monitor' },
+  { name: 'nowplaying-monitor', plist: 'nowplaying-monitor.plist' },   // AppleScript state query -> Automation usage string
   { name: 'nowplaying-control', plist: 'nowplaying-control.plist' },
   { name: 'reserved-display' },
   { name: 'display-arrange' },

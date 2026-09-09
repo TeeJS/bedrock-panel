@@ -28,6 +28,13 @@ test('nowplaying-monitor speaks the smtc-monitor contract: status literals, both
   for (const key of ['"title"', '"artist"', '"album"', '"status"', '"app"', '"position"', '"duration"', '"bundleId"']) assert.match(s, new RegExp(key.replace(/"/g, '\\"')), key + ' is a field app/nowplaying.js reads');
   assert.match(s, /var line = "\{\}"/, '"{}" means no media session');
   assert.match(s, /exitOnStdinEOF/, 'spawned with stdin piped');
+  assert.match(s, /NSAppleScript\(source: script\)/, 'a running player is asked its state (initial state, launch, 10 s poll)');
+  assert.match(s, /didLaunchApplicationNotification/);
+  assert.match(s, /spotify url of t/, 'Spotify track id for the art lookup');
+  assert.match(s, /code == -1743 \|\| code == -1744/, 'an Automation refusal stops the queries for that player, no nagging');
+  assert.match(s, /queryAll\(\)\s+\/\/ what is playing right now/, 'asked at start');
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'build-mac-helpers.js'), 'utf8'), /name: 'nowplaying-monitor', plist: 'nowplaying-monitor\.plist'/);
+  assert.match(src('nowplaying-monitor.plist'), /NSAppleEventsUsageDescription/);
 });
 
 test('sysvolume keeps the integer-line contract and -1 for no control', () => {
