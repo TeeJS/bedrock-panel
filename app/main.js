@@ -4314,13 +4314,22 @@ app.whenReady().then(async () => {
       try { return await sysserver.callAppServer('office', 'check-connection'); }
       catch (err) { return { ok: false, error: err.message || String(err), code: err.code || '' }; }
     }
-    return new Promise(resolve => {
+    const runHelperCheck = () => new Promise(resolve => {
       if (!OUTLOOK_MEETING_EXE || !fs.existsSync(OUTLOOK_MEETING_EXE)) return resolve({ ok: false, error: OUTLOOK_HELPER_MISSING });
       execFile(OUTLOOK_MEETING_EXE, ['check'], { timeout: process.platform === 'darwin' ? 630000 : 20000, windowsHide: true, maxBuffer: 1024 * 1024 }, (err, stdout) => {
         if (err) return resolve({ ok: false, error: err.message });
         try { resolve(JSON.parse(String(stdout))); } catch (e2) { resolve({ ok: false, error: 'helper returned unreadable output' }); }
       });
     });
+    let result = await runHelperCheck();
+    // macOS: a Calendars entry left behind (an older build's denial, or a prompt macOS refused to show)
+    // keeps the prompt away for good. Check Connection is the user asking to be asked: clear our own
+    // entry once per run and ask again — the same self-heal the touchscreen uses for Input Monitoring.
+    if (process.platform === 'darwin' && result && result.ok === false && /Calendar access is off/.test(result.error || '')
+        && await macPermissions.resetStaleGrant('Calendar')) {
+      result = await runHelperCheck();
+    }
+    return result;
   });
   ipcMain.handle('fetchHaEntityState', (e, entityId) => {
     if (!isFrom(e, configWin)) return null;

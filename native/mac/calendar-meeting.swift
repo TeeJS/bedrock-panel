@@ -69,9 +69,10 @@ import EventKit
             store.requestFullAccessToEvents { ok, _ in granted = ok; done.signal() }
             // Longer than any caller's timeout: the prompt is the user's to answer, the caller's to give up on.
             if done.wait(timeout: .now() + 600) == .timedOut { fail("The Calendar access prompt was not answered.") }
-            // No prompt and no grant: the app that launched us declares no calendar usage string (macOS
-            // then denies silently) or the prompt was declined. Bedrock Panel declares it; a bare host may not.
-            if !granted { fail(deniedMessage + " (no grant: the prompt was declined, or the app that launched this helper declares no NSCalendarsFullAccessUsageDescription)") }
+            // No prompt and no grant: tccd refuses to ask a hardened-runtime app without the
+            // com.apple.security.personal-information.calendars entitlement ("Policy disallows prompt" in
+            // its log) — packaging/mac/entitlements.mac.plist carries it — or the prompt was declined earlier.
+            if !granted { fail(deniedMessage + " (macOS refused to ask: the app build lacks the Calendars entitlement, or the prompt was declined earlier)") }
         default: fail(deniedMessage + " (status: \(statusWord(status)))")   // denied, restricted, write-only: none lets us read events
         }
     }

@@ -22,5 +22,9 @@
   <!-- AppleScript control of Music/Spotify (native helpers milestone). Harmless until then. -->
   <key>com.apple.security.automation.apple-events</key>
   <true/>
+  <!-- Hardened-runtime resource access for Calendars: without it tccd refuses to even ask ("Policy
+       disallows prompt", a silent denial). The calendar-meeting helper reads today's meeting through it. -->
+  <key>com.apple.security.personal-information.calendars</key>
+  <true/>
 </dict>
 </plist>

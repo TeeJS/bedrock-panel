@@ -146,4 +146,9 @@ test('calendar-meeting speaks the outlook-meeting.exe contract from macOS Calend
   assert.match(main, /const OUTLOOK_MEETING_EXE = helperPath\('outlookMeeting'\)/, 'main.js reaches both binaries through the helper table');
   assert.doesNotMatch(main, /'native', 'outlook-meeting\.exe'/, 'no hand-rolled Windows-only path left');
   assert.match(main, /!OUTLOOK_MEETING_EXE \|\| !fs\.existsSync\(OUTLOOK_MEETING_EXE\)/, 'a platform with no helper (null) is handled before existsSync');
+  assert.match(main, /resetStaleGrant\('Calendar'\)/, 'Check Connection clears a stale Calendars entry once and asks again');
+  for (const f of ['entitlements.mac.plist', 'entitlements.mac.inherit.plist']) {
+    const ent = fs.readFileSync(path.join(__dirname, '..', 'packaging', 'mac', f), 'utf8');
+    assert.match(ent, /com\.apple\.security\.personal-information\.calendars<\/key>\s*<true\/>/, f + ': hardened runtime needs the Calendars entitlement or tccd refuses to prompt ("Policy disallows prompt")');
+  }
 });

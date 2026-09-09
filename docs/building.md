@@ -124,7 +124,10 @@ main — DK-Suite's display_manager rule; `check`/`fix`, exit codes 0/2/3/4) and
 CoreGraphics Input Monitoring / Screen Recording preflight and prompt Electron does not expose), and
 **calendar-meeting** (today's meeting from macOS Calendar through EventKit, speaking
 `outlook-meeting.exe`'s `check`/`meeting` JSON so `main.js` drives both; the Calendars prompt names
-the app that launched it, whose Info.plist must carry `NSCalendarsFullAccessUsageDescription`).
+the app that launched it, whose Info.plist must carry `NSCalendarsFullAccessUsageDescription` **and**
+whose hardened-runtime entitlements must include `com.apple.security.personal-information.calendars`
+— without the entitlement tccd never shows the prompt and logs "Policy disallows prompt"; both live
+in `packaging/mac/`).
 Still Windows-only, each reporting itself unavailable: touchscreen setup and album-art thumbnails
 (art comes from Spotify's oEmbed or the iTunes lookup).
 `app/nativeHelpers.js` is the one table that maps a feature to its per-platform binary.

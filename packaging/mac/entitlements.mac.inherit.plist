@@ -12,5 +12,9 @@
   <true/>
   <key>com.apple.security.device.audio-input</key>
   <true/>
+  <!-- Hardened-runtime resource access for Calendars: without it tccd refuses to even ask ("Policy
+       disallows prompt", a silent denial). The calendar-meeting helper reads today's meeting through it. -->
+  <key>com.apple.security.personal-information.calendars</key>
+  <true/>
 </dict>
 </plist>
