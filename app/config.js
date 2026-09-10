@@ -4290,7 +4290,9 @@ ${IS_MAC ? `
           <option value="wyoming" ${voice.engine === 'wyoming' ? 'selected' : ''}>Speech servers (Whisper / Piper) at the hosts below</option>
         </select></div>
       <div class="row"><label>Voice</label>
+        <select id="ttsMacLang" style="flex:0 0 230px" title="Show the voices of one language"><option value="">All languages</option></select>
         <select id="ttsMacVoice" style="flex:1"><option value="">System default for your language</option></select></div>
+      <p class="hint">Pick a language on the left to see only its voices; the list is sorted by language, then name. Enhanced and premium voices are the ones downloaded under System Settings → Accessibility → Spoken Content.</p>
       <div class="row"><label>Status</label><span id="ttsMacStatus" class="hint" style="margin:0">checking…</span></div>
       <details class="hint"><summary>The built-in engine runs on this Mac only: speech recognition is Apple's (on-device where the language supports it) and speech uses the voices under System Settings → Accessibility → Spoken Content. No server, no account, no network.</summary> macOS asks for the <b>Speech Recognition</b> permission the first time something is transcribed; until then only speaking works. Better voices (Siri voices, enhanced/premium) are downloaded in System Settings → Accessibility → Spoken Content → System voice → Manage Voices. The engine listens on 127.0.0.1:10300 (STT) and :10200 (TTS) — the Wyoming protocol, so the fields below are ignored while it is active.</details>
 ` : ''}
@@ -5233,12 +5235,42 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
         const voiceSel = document.getElementById('ttsMacVoice'), statusEl = document.getElementById('ttsMacStatus');
         engineSel.onchange = e => saveVoice('engine', e.target.value);
         voiceSel.onchange = e => saveVoice('macVoice', e.target.value);
+        // The 180-odd system voices, filtered by language (left dropdown) and grouped by language (optgroups)
+        // with a human language name (Intl.DisplayNames), sorted by language then voice name. The filter
+        // starts on the chosen voice's language; the chosen voice always stays selectable.
+        const langSel = document.getElementById('ttsMacLang');
+        let macVoices = [];
+        const langName = code => {
+          try { const n = new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(String(code).replace('_', '-')); return n && n !== code ? n + ' (' + code + ')' : code; } catch (e) { return code; }
+        };
+        const fillMacVoices = () => {
+          const chosen = ((config.settings || {}).voice || {}).macVoice || '';
+          const filter = langSel.value;
+          while (voiceSel.options.length > 1) voiceSel.remove(1);
+          const shown = macVoices.filter(v => !filter || v.language === filter || v.name === chosen);
+          const langs = [...new Set(shown.map(v => v.language))].sort((a, b) => langName(a).localeCompare(langName(b)));
+          for (const lang of langs) {
+            const grp = document.createElement('optgroup'); grp.label = langName(lang);
+            for (const v of shown.filter(x => x.language === lang).sort((a, b) => a.name.localeCompare(b.name))) {
+              const o = document.createElement('option'); o.value = v.name;
+              o.textContent = v.name + (v.quality && v.quality !== 'default' && !v.name.toLowerCase().includes(v.quality) ? ' (' + v.quality + ')' : '');   // Apple names some voices 'Ava (Premium)' already
+              grp.appendChild(o);
+            }
+            voiceSel.appendChild(grp);
+          }
+          voiceSel.value = chosen;
+        };
+        langSel.onchange = fillMacVoices;
         const renderMacSpeech = () => configApi.getMacSpeechStatus().then(st => {
           if (!st) return;
           const chosen = ((config.settings || {}).voice || {}).macVoice || '';
-          if (Array.isArray(st.voices) && st.voices.length && voiceSel.options.length <= 1) {
-            const byLang = st.voices.slice().sort((a, b) => (a.language + a.name).localeCompare(b.language + b.name));
-            for (const v of byLang) { const o = document.createElement('option'); o.value = v.name; o.textContent = v.name + ' — ' + v.language + (v.quality && v.quality !== 'default' ? ' (' + v.quality + ')' : ''); voiceSel.appendChild(o); }
+          if (Array.isArray(st.voices) && st.voices.length && !macVoices.length) {
+            macVoices = st.voices.slice();
+            const langs = [...new Set(macVoices.map(v => v.language))].sort((a, b) => langName(a).localeCompare(langName(b)));
+            for (const lang of langs) { const o = document.createElement('option'); o.value = lang; o.textContent = langName(lang); langSel.appendChild(o); }
+            const chosenLang = (macVoices.find(v => v.name === chosen) || {}).language || '';
+            langSel.value = chosenLang && langs.includes(chosenLang) ? chosenLang : '';
+            fillMacVoices();
           }
           voiceSel.value = chosen;
           const auth = st.speechAuth === 'authorized' ? 'speech recognition allowed' : st.speechAuth === 'denied' ? 'speech recognition denied — System Settings → Privacy & Security → Speech Recognition' : st.speechAuth === 'notDetermined' ? 'speech recognition: asks on first use' : (st.speechAuth || '');
