@@ -95,15 +95,18 @@ let privacyPaneOpened = false;   // at most one automatic System Settings jump p
 // 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
 // ScreenCaptureKit loopback (Screen Recording permission, purple indicator) for troubleshooting only.
 if (process.platform === 'darwin' && process.env.BEDROCK_MAC_LEGACY_LOOPBACK === '1') app.commandLine.appendSwitch('disable-features', 'MacCatapLoopbackAudioForScreenShare');
-// Linux: run through XWayland rather than as a native Wayland client. Electron picks Wayland on its
-// own in a Wayland session, and a Wayland client cannot place itself in global screen coordinates —
-// asking for the 480x1920 panel display returns a window clamped to the primary display's height
-// (measured on KDE Plasma 6.6: x11 gives 1920,0 479x1919 for that request, wayland gives 480x1080).
-// Panel mode is placement, so on Wayland it silently lands on the wrong screen at the wrong size.
-// The X11 backend also keeps globalShortcut and robotjs working, neither of which has a native
-// Wayland path. Set BEDROCK_LINUX_OZONE to override (e.g. 'wayland' for fractional scaling), knowing
-// Panel mode goes with it. Must run before app-ready, which is why it sits here.
-if (process.platform === 'linux') app.commandLine.appendSwitch('ozone-platform', process.env.BEDROCK_LINUX_OZONE || 'x11');
+// Linux: run through XWayland rather than as a native Wayland client — a Wayland client cannot place
+// itself in global screen coordinates and Panel mode is nothing but placement. The reasoning, the
+// measurements, and why appendSwitch/ELECTRON_OZONE_PLATFORM_HINT cannot do this are in
+// app/linuxSession.js. Relaunching is the only way to get the flag onto our own argv, and it happens
+// before the single-instance lock below so the relaunched process is the one that takes it.
+const linuxSession = require('./linuxSession');
+const ozoneFlag = linuxSession.ozoneRelaunchFlag();
+if (ozoneFlag) {
+  console.log('[startup] relaunching with ' + ozoneFlag + ' (a Wayland client cannot place the panel window)');
+  app.relaunch({ args: process.argv.slice(1).concat(ozoneFlag) });
+  app.exit(0);
+}
 // Desktop notification that tolerates platforms where it can't be delivered: macOS refuses
 // notifications from unsigned/ad-hoc builds (Electron 42 uses UNNotification) and fires 'failed'
 // instead of throwing. Log that and, on macOS, park the text in the tray tooltip so a boot problem
@@ -2840,7 +2843,17 @@ function placePanel() {
       applyPanelDisplayMode(dd); nudgePanelOnTop(); showPanelWindow(true);
       pushToPanel();
       console.log('panel display bounds', JSON.stringify(dd.bounds), 'workArea', JSON.stringify(dd.workArea));
-      console.log('panel placed at', JSON.stringify(panelWin.getBounds()), 'fullscreen', panelWin.isFullScreen(), 'simpleFullscreen', panelWin.isSimpleFullScreen && panelWin.isSimpleFullScreen());
+      // Read the bounds once the window manager has actually applied them. Reading synchronously
+      // here returns whatever the request was mid-flight — on Linux/X11 that consistently overstated
+      // the window by the frame insets (a 1920x480 panel logged as 1952x522), which reads like a
+      // placement bug that is not there. The page itself is the ground truth, so log that too.
+      setTimeout(async () => {
+        if (!panelWin || panelWin.isDestroyed()) return;
+        let page = null;
+        try { page = await panelWin.webContents.executeJavaScript('({w:innerWidth,h:innerHeight})'); } catch (e) {}
+        console.log('panel placed at', JSON.stringify(panelWin.getBounds()), 'page', JSON.stringify(page),
+          'fullscreen', panelWin.isFullScreen(), 'simpleFullscreen', panelWin.isSimpleFullScreen && panelWin.isSimpleFullScreen());
+      }, 600);
       refreshReservedDisplay('panel placed', 350);
     });
   } else { applyPanelDisplayMode(d); showPanelWindow(false); pushToPanel(); refreshReservedDisplay('panel placed', 350); }

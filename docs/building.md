@@ -306,12 +306,18 @@ exit immediately off their platform. User data lives in `~/.config/bedrock-panel
 
 What to expect on Linux:
 
-- **The app pins the X11 backend on Linux** (`app/main.js`, before app-ready), so it runs through
-  XWayland even in a Wayland session. Electron otherwise picks Wayland on its own, and a Wayland
-  client cannot place itself in global screen coordinates — measured on Plasma 6.6, requesting
-  1920,0 480x1920 gives 1920,0 479x1919 under x11 and 480x1080 under wayland. Panel mode IS
-  placement, so it silently lands on the wrong screen without this. X11 also keeps `globalShortcut`
-  and robotjs working, neither of which has a native Wayland path. `BEDROCK_LINUX_OZONE` overrides.
+- **The app relaunches itself onto the X11 backend** in a Wayland session (`app/linuxSession.js`),
+  so it runs through XWayland. A Wayland client cannot place itself in global screen coordinates and
+  Panel mode is nothing but placement: with the panel display in landscape at 1920,0 1920x480, the
+  page ends up 1952x522 at 1904,-10 under wayland and exactly 1920x480 at 1920,0 under x11. X11 also
+  keeps `globalShortcut` and robotjs working, neither of which has a native Wayland path.
+  `BEDROCK_LINUX_OZONE=wayland` opts out, Panel mode included.
+- **A relaunch is the only way to do that, and this is a trap worth remembering.**
+  `app.commandLine.appendSwitch('ozone-platform', 'x11')` does NOT work: Chromium picks the platform
+  before the main script runs, so the switch reaches only child processes. Their argv then reads
+  `--ozone-platform=x11` while the browser process is still Wayland, which looks fixed and is not —
+  a crash dump showing the flag is not evidence. `ELECTRON_OZONE_PLATFORM_HINT` does not work either.
+  `test/linuxSession.test.js` asserts `appendSwitch` never comes back to `app/main.js`.
 - **Raw HID is root-only** until `packaging/linux/70-bedrock-panel.rules` is installed. The deb does
   that in its postinst; a checkout or an AppImage has no installer, so the editor's Settings →
   Hardware → Device access resolves the rule's path for that install and prints the command. Until

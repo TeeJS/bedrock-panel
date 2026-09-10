@@ -69,8 +69,11 @@ function linuxDeps(installed, opened) {
       const name = args[0];
       installed.includes(name) ? cb(null, '/usr/bin/' + name + '\n') : cb(new Error('not found'));
     },
-    fs: { existsSync: () => false },
-    shell: { openPath: async p => { opened.push(p); return ''; } },
+    fs: { existsSync: p => installed.some(n => p === '/usr/bin/' + n) },
+    // Electron's shell.openPath refuses to run an executable ("launching executables is not allowed
+    // in this context"), so the Linux path must spawn. Fail loudly if anything reaches openPath.
+    shell: { openPath: async () => { throw new Error('openPath must not be used on Linux'); } },
+    spawn: (file) => { opened.push(file); return { unref() {}, on() {} }; },
     log: () => {},
   };
 }
@@ -125,4 +128,33 @@ test('Linux locks through logind, falling back to the screensaver call', () => {
   const win = [];
   lockWorkstation({ platform: 'win32', execFile: (file, args, opts, cb) => { win.push(file); cb(null); } });
   assert.deepEqual(win, ['rundll32.exe'], 'Windows is unchanged');
+});
+
+test('Linux spawns the binary instead of shell.openPath, which refuses executables', () => {
+  // Regression: every tile answered "For security reasons, launching executables is not allowed in
+  // this context" because the Linux branch went through Electron's shell.openPath.
+  const opened = [];
+  const deps = linuxDeps(['kate'], opened);
+  const spawned = [];
+  deps.spawn = (file, args, opts) => { spawned.push([file, args, opts]); return { unref() {}, on() {} }; };
+  return launchApp('editor', deps).then(ok => {
+    assert.equal(ok, true);
+    assert.deepEqual(spawned, [['/usr/bin/kate', [], { detached: true, stdio: 'ignore' }]],
+      'detached and stdio-ignored so the program outlives the panel');
+  });
+});
+
+test('Linux takes an explicit path too, and reports a spawn that throws', async () => {
+  const spawned = [];
+  const deps = linuxDeps(['obs'], []);
+  deps.fs = { existsSync: () => true };
+  deps.spawn = file => { spawned.push(file); return { unref() {}, on() {} }; };
+  assert.equal(await launchApp('/opt/thing/run.sh', deps), true);
+  assert.deepEqual(spawned, ['/opt/thing/run.sh']);
+  const logs = [];
+  const bad = linuxDeps(['kate'], []);
+  bad.spawn = () => { throw new Error('ENOENT'); };
+  bad.log = m => logs.push(m);
+  assert.equal(await launchApp('editor', bad), false);
+  assert.match(logs.join(' '), /could not start|none of the candidates/);
 });

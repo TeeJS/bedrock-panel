@@ -77,11 +77,17 @@ display; set it to **landscape** in your display settings so the desktop treats 
 and the pointer lines up with what you see. Bedrock Panel finds the panel by its resolution,
 so either orientation is detected.
 
-Panel mode places a borderless window on that display. On Linux, Bedrock Panel asks for the X11
-backend and runs through XWayland even in a Wayland session, because a native Wayland client is not
-allowed to place itself on a chosen screen: asking for the panel display returns a window clamped to
-the primary display instead. Set `BEDROCK_LINUX_OZONE=wayland` to run natively anyway, for example
-for fractional scaling, and expect Panel mode to land on the wrong screen if you do.
+**Set the panel to landscape.** It reports itself as a 480x1920 portrait display, so rotate it in
+your display settings until the desktop sees 1920x480. On KDE that is
+`kscreen-doctor output.DP-1.rotation.right`, or Display Configuration in System Settings. Bedrock
+Panel detects the panel in either orientation, but only landscape lines the pointer up with what you
+see.
+
+Panel mode places a borderless window on that display. In a Wayland session Bedrock Panel restarts
+itself once at launch to run through XWayland, because a native Wayland client is not allowed to
+place itself on a chosen screen — it lands slightly off the panel and slightly too large. You will
+see one line about this in the log. Set `BEDROCK_LINUX_OZONE=wayland` to skip the restart and run
+natively, for example for fractional scaling, and expect Panel mode to be misplaced if you do.
 
 ## 4. Secrets
 

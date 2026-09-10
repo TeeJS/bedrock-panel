@@ -90,6 +90,23 @@ function resolveAppPath(value, deps) {
   });
 }
 
+// Launch a resolved Linux binary. Electron's shell.openPath REFUSES an executable — it answers
+// "For security reasons, launching executables is not allowed in this context", which is the right
+// call for a file a web page handed you and the wrong one for a tile the user configured. On Windows
+// openPath is still the only sane launcher (Store app-execution aliases), so this is Linux-only.
+// Detached and stdio-ignored so the launched program outlives the panel and cannot block on a pipe.
+function spawnDetached(file, deps) {
+  try {
+    const child = deps.spawn(file, [], { detached: true, stdio: 'ignore' });
+    if (child && typeof child.unref === 'function') child.unref();
+    if (child && typeof child.on === 'function') child.on('error', e => { if (deps.log) deps.log('launchApp: "' + file + '" failed: ' + (e && e.message)); });
+    return true;
+  } catch (e) {
+    if (deps.log) deps.log('launchApp: could not start "' + file + '": ' + (e && e.message));
+    return false;
+  }
+}
+
 async function launchApp(value, deps) {
   if (!value || typeof value !== 'string') return false;
   const platform = platformOf(deps);
@@ -108,15 +125,15 @@ async function launchApp(value, deps) {
     for (const candidate of linuxAppCandidates(value)) {
       const hit = await resolveAppPath(candidate, deps);
       if (!hit) continue;
-      const err = await deps.shell.openPath(hit);
-      if (!err) return true;
-      if (deps.log) deps.log('launchApp: openPath error for "' + hit + '": ' + err);
+      if (spawnDetached(hit, deps)) return true;
     }
     if (deps.log) deps.log('launchApp: none of the candidates for "' + value + '" are installed');
     return false;
   }
   const resolved = await resolveAppPath(value, deps);
   if (!resolved) { if (deps.log) deps.log('launchApp: could not resolve "' + value + '"'); return false; }
+  // Linux with an explicit path: same story as above — spawn it, never openPath.
+  if (platform === 'linux') return spawnDetached(resolved, deps);
   // shell.openPath (ShellExecuteEx under the hood) is the only sane Windows launcher: it handles
   // Microsoft Store app aliases (mspaint, calc, etc. — zero-byte reparse points that direct
   // CreateProcess can't launch) AND it doesn't pass SW_HIDE to GUI apps the way detached+
