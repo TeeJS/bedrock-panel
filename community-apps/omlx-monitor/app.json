@@ -1,0 +1,23 @@
+{
+  "id": "omlx-monitor",
+  "name": "oMLX Monitor",
+  "version": "1.0.0",
+  "description": "Live view of one or more oMLX servers (omlx.ai) on the panel: loaded models with memory, requests in flight with tokens per second, queue, throughput and cache totals, memory pressure, and one-tap load/unload. Talks to each server through its own API key.",
+  "entry": "index.html",
+  "served": true,
+  "server": "server.js",
+  "knob": true,
+  "options": [
+    { "key": "url1", "label": "Server 1 URL", "type": "text", "default": "http://127.0.0.1:8000", "help": "The oMLX server, as in its Admin dashboard address without the /admin part." },
+    { "key": "key1", "label": "Server 1 API key", "type": "secret", "default": "", "serverOnly": true, "help": "The server's main API key (Admin → Settings). Used only from this Mac to read status; the main key also unlocks the admin data (per-model activity, memory pressure, load/unload). A sub key gives the basic status only." },
+    { "key": "name1", "label": "Server 1 name", "type": "text", "default": "", "help": "Shown on the tab; blank = the host name." },
+    { "key": "url2", "label": "Server 2 URL (optional)", "type": "text", "default": "" },
+    { "key": "key2", "label": "Server 2 API key", "type": "secret", "default": "", "serverOnly": true },
+    { "key": "name2", "label": "Server 2 name", "type": "text", "default": "" },
+    { "key": "url3", "label": "Server 3 URL (optional)", "type": "text", "default": "" },
+    { "key": "key3", "label": "Server 3 API key", "type": "secret", "default": "", "serverOnly": true },
+    { "key": "name3", "label": "Server 3 name", "type": "text", "default": "" },
+    { "key": "refreshSeconds", "label": "Refresh every (seconds)", "type": "select", "default": "2", "choices": [["1", "1 s"], ["2", "2 s"], ["5", "5 s"], ["10", "10 s"]] },
+    { "key": "allowControl", "label": "Show Load / Unload buttons", "type": "bool", "default": true, "help": "Unloading frees the model's memory at once; loading takes as long as the model takes. Both need the main API key." }
+  ]
+}

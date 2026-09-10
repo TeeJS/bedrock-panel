@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>oMLX Monitor</title>
+  <link rel="stylesheet" href="style.css?v=1.0.0">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><h1>oMLX</h1><nav class="tabs" id="tabs" aria-label="Server"></nav></div>
+      <div class="health" id="health"><span class="dot unknown"></span><span id="healthText">connecting…</span></div>
+      <div class="updated" id="updated">…</div>
+    </header>
+    <section class="ctx" id="ctx" aria-label="Server context"></section>
+    <section class="models" aria-label="Models">
+      <div class="sechead"><h2>Models</h2><span class="count" id="modelCount"></span></div>
+      <div class="scroll" id="modelList"></div>
+    </section>
+    <section class="live" aria-label="Requests in flight">
+      <div class="sechead"><h2>In flight</h2><span class="count" id="liveCount"></span></div>
+      <div class="scroll" id="liveList"></div>
+      <div class="device" id="device"></div>
+    </section>
+  </main>
+  <script src="app.js?v=1.0.0"></script>
+</body>
+</html>
