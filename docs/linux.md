@@ -24,21 +24,32 @@ Two artifacts are published:
 
 Or [build from source](building.md).
 
-## 2. The udev rule (only if you have the hardware)
+## 2. Device access (only if you have the hardware)
 
-Linux keeps raw HID devices root-only, so the knob and touchscreen are invisible to any
-ordinary program until a rule grants your user access. Without it Device Diagnostics shows the
-console as refused, and the log says so in plain words rather than blaming a cable.
+Linux keeps raw HID devices root-only, so the knob and touchscreen are invisible to any ordinary
+program until a udev rule grants your user access. What you do about it depends on how you
+installed.
 
-The rule ships with the app at `packaging/linux/70-bedrock-panel.rules`. Install it:
+**If you installed the `.deb`, nothing.** The package installs the rule for you, because `apt`
+already runs as root. Plug the console in and it works.
+
+**If you run the AppImage or a source checkout,** there is no installer, so it is one command.
+Open **Settings → Hardware → Device access** in the editor: it shows whether the rule is active
+and, if not, the exact command for your install, with a **Copy command** button. The path differs
+between an AppImage and a checkout, which is why the editor prints it rather than this page.
+
+The command looks like this:
 
 ```bash
-sudo cp packaging/linux/70-bedrock-panel.rules /etc/udev/rules.d/
+sudo install -Dm644 <path the editor shows> /usr/lib/udev/rules.d/70-bedrock-panel.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-Then unplug and replug the console. Bedrock Panel picks the device up on its next rescan, with
-no restart. The editor repeats these steps under **Settings → Hardware → Device access**.
+Afterwards, **unplug the console and plug it back in** — the permission is applied when the device
+connects. Bedrock Panel picks it up on its next rescan, with no restart. Until then, Device
+Diagnostics shows the Knob and Touchscreen rows as refused and names this as the cause.
+
+Removing the `.deb` takes the rule back out again.
 
 If you would rather write the file by hand, this is what it contains:
 
@@ -55,9 +66,9 @@ SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="bed0", TAG+="ua
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"
 ```
 
-`TAG+="uaccess"` hands the device to whoever is logged in at the seat, which is the right grant
-for a desktop app: no group membership, no logout, and it follows fast user switching. The
-`MODE`/`GROUP` fallbacks only matter on systems without systemd-logind.
+`TAG+="uaccess"` hands the device to whoever is logged in at the seat, which is the right grant for
+a desktop app: no group membership, no logout, and it follows fast user switching. The `MODE`/`GROUP`
+fallbacks only matter on systems without systemd-logind.
 
 ## 3. Display setup
 

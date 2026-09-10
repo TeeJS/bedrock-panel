@@ -4178,6 +4178,22 @@ app.whenReady().then(async () => {
       return grids.map(g => ({ id: g.id, name: g.name, cols: g.cols, rows: g.rows, tiles: g.tiles }));
     } catch (err) { console.log('starter pages unavailable: ' + (err && err.message)); return []; }
   });
+  // Linux: the udev rule the console needs, resolved for THIS install. The deb installs it for you
+  // (its postinst runs as root), but a source checkout or an AppImage has no installer, so the
+  // editor prints a copy-paste command pointing at wherever the rule actually is — inside a mounted
+  // AppImage that path is a temporary mount, which is exactly why it cannot be hardcoded in a doc.
+  ipcMain.handle('getLinuxDeviceAccess', (e) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return null;
+    const RULE = '70-bedrock-panel.rules';
+    const candidates = app.isPackaged
+      ? [path.join(path.dirname(process.execPath), RULE), path.join(process.resourcesPath, RULE)]
+      : [path.join(__dirname, '..', 'packaging', 'linux', RULE)];
+    const source = candidates.find(p => { try { return fs.existsSync(p); } catch (err) { return false; } }) || null;
+    // Installed by the deb's postinst, or by hand. Either location counts as active.
+    const installed = ['/usr/lib/udev/rules.d/' + RULE, '/etc/udev/rules.d/' + RULE]
+      .find(p => { try { return fs.existsSync(p); } catch (err) { return false; } }) || null;
+    return { source, installed, managed: !!installed && installed.startsWith('/usr/lib/') };
+  });
   ipcMain.handle('getAppVersion', (e) => isFrom(e, configWin) ? app.getVersion() : null);
   ipcMain.handle('listOAuthProviders', (e) => isFrom(e, configWin) ? oauthProviderPayload() : []);
   ipcMain.handle('connectOAuthProvider', async (e, provider, scopes) => {

@@ -309,9 +309,11 @@ What to expect on Linux:
 - **The app runs as an X11 client through XWayland**, which Electron picks by default. That is what
   makes Panel mode work in a Wayland session: absolute window placement on the 1920x480 display is
   honoured, and XWayland reports both outputs with correct geometry.
-- **Raw HID is root-only** until `packaging/linux/70-bedrock-panel.rules` is installed. Until then
-  every open is refused with EACCES; `src/hidPlatform.js` decorates that error with the fix, the same
-  way it decorates the macOS Input Monitoring refusal.
+- **Raw HID is root-only** until `packaging/linux/70-bedrock-panel.rules` is installed. The deb does
+  that in its postinst; a checkout or an AppImage has no installer, so the editor's Settings →
+  Hardware → Device access resolves the rule's path for that install and prints the command. Until
+  the rule is in place every open is refused with EACCES, and `src/hidPlatform.js` decorates that
+  error with the fix, the same way it decorates the macOS Input Monitoring refusal.
 - **Secrets** use Electron `safeStorage` (KWallet or GNOME Keyring). With no keyring, Chromium
   silently selects a backend that "encrypts" under a hardcoded key — `app/secretStore.js` detects it
   and refuses to write, rather than storing tokens that only look encrypted.
@@ -341,6 +343,13 @@ Two packaging rules worth keeping:
   global one instead of extending it. All exclusions stay in the global `build.files`.
 - `packaging/**` is excluded from the bundle, with `packaging/linux/70-bedrock-panel.rules`
   re-included after it so the udev rule ships inside the app. A later pattern wins, so order matters.
+  `linux.extraFiles` also drops the rule beside the executable as a real file, because a path inside
+  `app.asar` is not something a person can point `install` at.
+- **`deb.afterInstall` and `deb.afterRemove` REPLACE electron-builder's postinst/postrm, they do not
+  append.** `packaging/linux/after-install.sh` therefore reproduces the stock template verbatim before
+  adding the udev step; dropping it costs the `/usr/bin` symlink, the chrome-sandbox mode fix, and the
+  AppArmor profile. If you upgrade electron-builder, diff those two scripts against
+  `node_modules/app-builder-lib/templates/linux/after-{install,remove}.tpl`.
 
 ## Code layout
 

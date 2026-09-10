@@ -148,10 +148,18 @@
           "StartupWMClass": "bedrock-panel"
         }
       },
-      "maintainer": "TeeJS <TeeJS@users.noreply.github.com>"
+      "maintainer": "TeeJS <TeeJS@users.noreply.github.com>",
+      "extraFiles": [
+        {
+          "from": "packaging/linux/70-bedrock-panel.rules",
+          "to": "70-bedrock-panel.rules"
+        }
+      ]
     },
     "deb": {
-      "artifactName": "bedrock-panel_${arch}.${ext}"
+      "artifactName": "bedrock-panel_${arch}.${ext}",
+      "afterInstall": "packaging/linux/after-install.sh",
+      "afterRemove": "packaging/linux/after-remove.sh"
     },
     "dmg": {
       "sign": false
