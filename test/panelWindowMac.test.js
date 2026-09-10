@@ -27,3 +27,10 @@ test('macOS panel window: plain cover of the display, never a (simple) full-scre
   assert.match(pin, /setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: false \}\)/);
   assert.doesNotMatch(src.slice(src.indexOf('function applyPanelDisplayMode(')).split('\n').slice(0, 6).join('\n'), /setSimpleFullScreen\(true\)/);
 });
+
+test('macOS: the first touch of a gesture focuses the panel window when mouse/keyboard use is on, so pages driven by focus events work', () => {
+  const touch = src.slice(src.indexOf("dev.on('touch'"), src.indexOf("dev.on('knob'"));
+  assert.match(touch, /process\.platform === 'darwin' && panelInputEnabled\(\) && !panelWin\.isFocused\(\) && pts\.some\(p => p\.action === 1\)/, 'guarded by platform, the setting, and a real touch-down');
+  assert.match(touch, /panelWin\.focus\(\)/);
+  assert.match(touch, /panelWin\.webContents\.send\('touch', pts\)/, 'the touch still reaches the page');
+});

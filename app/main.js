@@ -4705,7 +4705,13 @@ app.whenReady().then(async () => {
     lastPanelInputAt = Date.now();                                             // presence stamp (all modes) — feeds the screensaver idle timer
     if (monitorMode) { const p = pts.find(q => q.action === 1) || pts[0]; if (p) injectTouch(p); return; }   // monitor mode: touch drives the Windows cursor
     if (saverConsumesInput('touch', pts)) return;                              // waking the screensaver eats the whole gesture
-    if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('touch', pts);
+    if (!panelWin || panelWin.isDestroyed()) return;
+    // macOS: the panel is shown inactive, and Chromium fires focus events only in a focused window —
+    // a page that opens its picker from an input's focus (the time zone converter) got nothing from
+    // the injected mouse events. A touch focuses the panel window, as touching it does on Windows,
+    // only while mouse/keyboard use of the panel is on (the window is not focusable otherwise).
+    if (process.platform === 'darwin' && panelInputEnabled() && !panelWin.isFocused() && pts.some(p => p.action === 1)) { try { panelWin.focus(); } catch (e) {} }
+    panelWin.webContents.send('touch', pts);
   });
   dev.on('knob', k => {
     lastPanelInputAt = Date.now();
