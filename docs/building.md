@@ -250,9 +250,30 @@ loopback for troubleshooting. Never add a top-level `productName` to `package.js
 `bedrock-panel` in dev and packaged alike, and the Keychain item ("bedrock-panel Safe Storage") is
 named after it.
 
-When the Developer ID arrives: delete `"identity": "-"`, add `"notarize": true`, and export
-`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` (or an App Store Connect API key via
-`APPLE_API_KEY`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER`). Nothing else changes.
+**Signing with a Developer ID and notarizing** (one-time setup on the build Mac; nothing in
+`package.json` changes — `build-mac.js` turns notarization on when it finds credentials):
+
+1. Certificate. Keychain Access → Certificate Assistant → *Request a Certificate From a Certificate
+   Authority…* (your email, your name, **Saved to disk**). On developer.apple.com → Certificates →
+   **+** → **Developer ID Application** → upload that request → download the `.cer` and double-click
+   it. `security find-identity -v -p codesigning` then lists
+   `Developer ID Application: Your Name (TEAMID)`; put that exact line in `.signing/mac-identity`.
+2. Notarization credentials. appleid.apple.com → Sign-In and Security → **App-Specific Passwords**
+   → generate one. Team ID: developer.apple.com → Membership. Store both once:
+   `xcrun notarytool store-credentials bedrock-notary --apple-id you@example.com --team-id TEAMID`
+   (it asks for the app-specific password). Put the profile name, `bedrock-notary`, in
+   `.signing/notary-profile`. Environment variables work too: `APPLE_KEYCHAIN_PROFILE`, or the
+   `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` trio, or the App Store Connect API key
+   trio (`APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`).
+3. `npm run dist:mac`. electron-builder signs with the Developer ID, notarizes and staples the app;
+   the script then submits the DMG and staples it (Apple answers within minutes; the build waits).
+   Check: `spctl -a -t exec -vv "dist/mac-arm64/Bedrock Panel.app"` says *accepted, source=Notarized
+   Developer ID*, and `xcrun stapler validate dist/bedrock-panel-arm64.dmg` passes.
+
+What changes for users after the switch: no *Open Anyway* step, and the keychain "Always Allow"
+dialog appears once more and then never again (a Team ID gives the item a stable partition). The
+privacy grants (Input Monitoring, Accessibility, Calendars, Automation) are tied to the signing
+certificate, so the first Developer ID build asks for them one final time.
 
 ## Code layout
 
