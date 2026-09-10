@@ -95,6 +95,15 @@ let privacyPaneOpened = false;   // at most one automatic System Settings jump p
 // 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
 // ScreenCaptureKit loopback (Screen Recording permission, purple indicator) for troubleshooting only.
 if (process.platform === 'darwin' && process.env.BEDROCK_MAC_LEGACY_LOOPBACK === '1') app.commandLine.appendSwitch('disable-features', 'MacCatapLoopbackAudioForScreenShare');
+// Linux: run through XWayland rather than as a native Wayland client. Electron picks Wayland on its
+// own in a Wayland session, and a Wayland client cannot place itself in global screen coordinates —
+// asking for the 480x1920 panel display returns a window clamped to the primary display's height
+// (measured on KDE Plasma 6.6: x11 gives 1920,0 479x1919 for that request, wayland gives 480x1080).
+// Panel mode is placement, so on Wayland it silently lands on the wrong screen at the wrong size.
+// The X11 backend also keeps globalShortcut and robotjs working, neither of which has a native
+// Wayland path. Set BEDROCK_LINUX_OZONE to override (e.g. 'wayland' for fractional scaling), knowing
+// Panel mode goes with it. Must run before app-ready, which is why it sits here.
+if (process.platform === 'linux') app.commandLine.appendSwitch('ozone-platform', process.env.BEDROCK_LINUX_OZONE || 'x11');
 // Desktop notification that tolerates platforms where it can't be delivered: macOS refuses
 // notifications from unsigned/ad-hoc builds (Electron 42 uses UNNotification) and fires 'failed'
 // instead of throwing. Log that and, on macOS, park the text in the tray tooltip so a boot problem

@@ -306,9 +306,12 @@ exit immediately off their platform. User data lives in `~/.config/bedrock-panel
 
 What to expect on Linux:
 
-- **The app runs as an X11 client through XWayland**, which Electron picks by default. That is what
-  makes Panel mode work in a Wayland session: absolute window placement on the 1920x480 display is
-  honoured, and XWayland reports both outputs with correct geometry.
+- **The app pins the X11 backend on Linux** (`app/main.js`, before app-ready), so it runs through
+  XWayland even in a Wayland session. Electron otherwise picks Wayland on its own, and a Wayland
+  client cannot place itself in global screen coordinates — measured on Plasma 6.6, requesting
+  1920,0 480x1920 gives 1920,0 479x1919 under x11 and 480x1080 under wayland. Panel mode IS
+  placement, so it silently lands on the wrong screen without this. X11 also keeps `globalShortcut`
+  and robotjs working, neither of which has a native Wayland path. `BEDROCK_LINUX_OZONE` overrides.
 - **Raw HID is root-only** until `packaging/linux/70-bedrock-panel.rules` is installed. The deb does
   that in its postinst; a checkout or an AppImage has no installer, so the editor's Settings →
   Hardware → Device access resolves the rule's path for that install and prints the command. Until

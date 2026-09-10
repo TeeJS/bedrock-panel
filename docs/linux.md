@@ -77,8 +77,11 @@ display; set it to **landscape** in your display settings so the desktop treats 
 and the pointer lines up with what you see. Bedrock Panel finds the panel by its resolution,
 so either orientation is detected.
 
-Panel mode places a borderless window on that display. Bedrock Panel runs as an X11 client
-through XWayland, which is what makes exact placement possible in a Wayland session.
+Panel mode places a borderless window on that display. On Linux, Bedrock Panel asks for the X11
+backend and runs through XWayland even in a Wayland session, because a native Wayland client is not
+allowed to place itself on a chosen screen: asking for the panel display returns a window clamped to
+the primary display instead. Set `BEDROCK_LINUX_OZONE=wayland` to run natively anyway, for example
+for fractional scaling, and expect Panel mode to land on the wrong screen if you do.
 
 ## 4. Secrets
 
