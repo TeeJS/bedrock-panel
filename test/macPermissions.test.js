@@ -185,3 +185,23 @@ test('responsibleBundleId comes from LaunchServices\' environment, else the app 
   assert.strictEqual(responsibleBundleId({}), 'com.teejs.bedrockpanel');
   assert.strictEqual(responsibleBundleId(null, 'x'), 'x');
 });
+
+test('the stale-grant reset runs once per code signature across launches, so a hand-added entry survives the next refused open', async () => {
+  const marker = { data: {}, read() { return this.data; }, write(o) { this.data = o; } };
+  const make = sig => {
+    const calls = [];
+    const execFile = (file, args, opts, cb) => { calls.push([file, ...args]); cb(null, '', ''); };
+    const m = createMacPermissions({ platform: 'darwin', systemPreferences: fakePrefs(), execFile, helperPath: '/x/privacy', bundleId: 'com.teejs.bedrockpanel', signatureId: async () => sig, resetMarker: marker });
+    return { m, calls };
+  };
+  const first = make('identifier "com.teejs.bedrockpanel" and certificate leaf = H"aaaa"');
+  assert.strictEqual(await first.m.resetStaleGrant('ListenEvent'), true, 'a signature never reset before: reset');
+  assert.deepStrictEqual(first.calls, [['/usr/bin/tccutil', 'reset', 'ListenEvent', 'com.teejs.bedrockpanel']]);
+  const second = make('identifier "com.teejs.bedrockpanel" and certificate leaf = H"aaaa"');   // next launch, same build
+  assert.strictEqual(await second.m.resetStaleGrant('ListenEvent'), false, 'same signature: the entry (added by hand) is left alone');
+  assert.deepStrictEqual(second.calls, []);
+  const rebuilt = make('identifier "com.teejs.bedrockpanel" and certificate leaf = H"bbbb"');   // a new certificate
+  assert.strictEqual(await rebuilt.m.resetStaleGrant('ListenEvent'), true, 'a new signature: its stale entry is reset once');
+  const noSig = (() => { const calls = []; const execFile = (f, a, o, cb) => { calls.push(a); cb(null, '', ''); }; return { calls, m: createMacPermissions({ platform: 'darwin', systemPreferences: fakePrefs(), execFile, helperPath: '/x/privacy', bundleId: 'b', signatureId: async () => null, resetMarker: marker }) }; })();
+  assert.strictEqual(await noSig.m.resetStaleGrant('ListenEvent'), true, 'no signature known: the old once-per-session rule');
+});

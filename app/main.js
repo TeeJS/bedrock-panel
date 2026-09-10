@@ -39,6 +39,20 @@ const macPermissions = require('./macPermissions').createMacPermissions({
   execFile: require('child_process').execFile,
   pollTimeoutMs: 120000,                                          // a person needs time to find the toggle in System Settings
   staleGraceMs: 8000,
+  // One stale-grant reset per code signature (see macPermissions.js): the signature is the app bundle's
+  // designated requirement (stable per certificate; per build for ad-hoc), remembered in userData.
+  signatureId: () => new Promise(resolve => {
+    if (process.platform !== 'darwin') return resolve(null);
+    const bundle = path.resolve(process.execPath, '..', '..', '..');
+    require('child_process').execFile('/usr/bin/codesign', ['-d', '-r-', bundle], { timeout: 10000 }, (err, stdout, stderr) => {
+      const m = /designated => (.+)/.exec(String(stdout || '') + String(stderr || ''));
+      resolve(err || !m ? null : m[1].trim());
+    });
+  }),
+  resetMarker: {
+    read: () => { try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'tcc-resets.json'), 'utf8')); } catch (e) { return {}; } },
+    write: obj => { try { fs.writeFileSync(path.join(app.getPath('userData'), 'tcc-resets.json'), JSON.stringify(obj, null, 2)); } catch (e) {} },
+  },
 });
 let deviceAccessRequested = false;     // the automatic permission flow below runs once per session
 let deviceAccessibilityRequest = null; // its in-flight promise: a refused touch open and Reserved Display share ONE prompt

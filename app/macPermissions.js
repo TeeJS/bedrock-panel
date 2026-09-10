@@ -39,6 +39,8 @@ function createMacPermissions({
   pollMs = 1000, pollTimeoutMs = 30000,         // how long request('inputMonitoring') waits for the person to answer the prompt
   staleGraceMs = 6000,                          // no grant this long after a request = the prompt never appeared: reset the stale entry and ask again
   sleep = ms => new Promise(r => setTimeout(r, ms)),
+  signatureId = null,                           // () => Promise<string|null>: what identifies this build's code signature (its designated requirement)
+  resetMarker = null,                           // { read: () => object, write: object => void }: which signature each service was last reset for
 } = {}) {
   const supported = platform === 'darwin' && !!systemPreferences;
   const helper = supported && helperPath && execFile ? helperPath : null;
@@ -50,9 +52,28 @@ function createMacPermissions({
   // AND, because an entry exists, never shows the prompt again. `tccutil reset <service> <bundle>`
   // removes that entry (it needs no admin rights for one's own bundle id), after which the next
   // request prompts like a first install. Resolves true when the reset ran.
-  function resetStaleGrant(service) {
-    if (!supported || !execFile || !bundleId || resetDone.has(service)) return Promise.resolve(false);
+  // A reset is right exactly once per code signature: the entry that stops matching is the one an
+  // earlier signature left behind. Resetting again for the SAME signature would wipe the entry the
+  // person just added by hand (seen 2026-09-10: refused open on the next launch → reset → grant gone),
+  // so the signature each service was last reset for is remembered across launches.
+  async function alreadyResetForThisSignature(service) {
+    if (!signatureId || !resetMarker) return false;
+    try {
+      const sig = await signatureId();
+      if (!sig) return false;
+      const marker = resetMarker.read() || {};
+      if (marker[service] === sig) return true;
+      resetMarker.write(Object.assign({}, marker, { [service]: sig }));
+    } catch (e) { log('reset marker unavailable: ' + (e && e.message)); }
+    return false;
+  }
+  async function resetStaleGrant(service) {
+    if (!supported || !execFile || !bundleId || resetDone.has(service)) return false;
     resetDone.add(service);
+    if (await alreadyResetForThisSignature(service)) {
+      log(service + ' was already reset once for this build\'s signature — leaving the entry alone (added by hand?); check the toggle in System Settings');
+      return false;
+    }
     return new Promise(resolve => {
       try {
         execFile(tccutil, ['reset', service, bundleId], { timeout: 15000, windowsHide: true }, (err, stdout, stderr) => {
