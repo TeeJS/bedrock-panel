@@ -9,6 +9,8 @@
 
 *A multi-use control platform for your computer.*
 
+**Runs on Windows and macOS** (Apple Silicon) · **Linux coming soon**
+
 ## Your tools. Your space. Your control.
 
 One launcher for your apps, media, dashboards, and smart home — on your computer or a

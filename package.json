@@ -2,7 +2,7 @@
   "name": "bedrock-panel",
   "version": "0.9.5",
   "private": true,
-  "description": "A multi-use launcher and control platform for Windows — your apps, media, dashboards, and smart home on your PC or a touchscreen.",
+  "description": "A multi-use launcher and control platform for Windows and macOS — your apps, media, dashboards, and smart home on your computer or a touchscreen.",
   "main": "app/main.js",
   "author": "TeeJS",
   "engines": {
