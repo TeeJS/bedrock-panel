@@ -1,6 +1,6 @@
 # Bedrock Panel on macOS
 
-Everything a Mac needs to run Bedrock Panel: installing the unsigned build, the macOS permissions
+Everything a Mac needs to run Bedrock Panel: installing the app, the macOS permissions
 each feature needs and exactly where to grant them, and the Reserved Display setup for the DK-QUAKE.
 Every path below was checked against macOS 26 (Tahoe); the same panes exist on 14 and 15.
 
@@ -12,18 +12,15 @@ what is still Windows-only.
 
 1. Open `bedrock-panel-arm64.dmg` and drag **Bedrock Panel** to **Applications**. Do not run it from
    the disk image.
-2. Launch it from Applications. Because the build is not notarized yet (Apple Developer ID pending),
-   macOS says it *could not verify* the app. Click **Done**.
-3. Open **System Settings → Privacy & Security**, scroll down to the **Security** section, find the
-   line "Bedrock Panel was blocked…", click **Open Anyway**, then **Open** in the dialog that follows.
-   You do this once per new build. Terminal alternative:
-   `xattr -dr com.apple.quarantine "/Applications/Bedrock Panel.app"`.
+2. Launch it from Applications. Releases are signed with a Developer ID and notarized, so it opens
+   like any other app. (A build you made yourself without a Developer ID is not: macOS says it
+   *could not verify* the app — click **Done**, then System Settings → Privacy & Security → scroll to
+   *Security* → **Open Anyway**.)
+3. Nothing else before the first feature: the steps below appear as the features are first used.
 4. The first time the app touches a saved secret, macOS asks whether "Bedrock Panel" may access the
    key "bedrock-panel Safe Storage" in your keychain. Click **Always Allow** (it needs your login
-   password). **This comes back once per new build**, Always Allow or not: the build is signed with a
-   certificate that has no Apple Team ID, so the keychain files each build under its own code hash
-   and a new build is a new app to it. It ends with an Apple Developer ID. (Deny leaves saved
-   passwords and tokens unreadable until the next launch.)
+   password). Once; a later update does not ask again. (Deny leaves saved passwords and tokens
+   unreadable until the next launch.)
 5. A fresh install starts with the **macOS starter pages** — Default, Media, and Dev, built from apps
    every Mac has (Safari, Finder, Notes, Calculator, Activity Monitor, Terminal, System Settings,
    Screenshot, Mission Control, Music, Calendar, Messages, Console, System Information), web links,
@@ -194,7 +191,8 @@ the language supports it, and the system voices. Nothing to install and nothing 
 - **Macros, paste tiles, or media keys do nothing** — Accessibility.
 - **"Secret encryption is unavailable" when saving** — the keychain prompt was denied; relaunch and
   click Always Allow.
-- **Notifications never appear** — expected for the unsigned build; they are logged instead.
+- **Notifications never appear** — System Settings → Notifications → Bedrock Panel → allow. (A build
+  without a Developer ID cannot post them at all; they are logged instead.)
 - **A purple dot in the panel's top-right corner** — macOS's screen-recording indicator, usually
   DisplayLink Manager (click the dot in the menu bar to see who is recording). Not Bedrock Panel, and
   not hideable.
