@@ -22,6 +22,13 @@ const CONTROL_IDENTS = [
   { vendorId: 0x1209, productId: 0xbed0, usagePage: 0xff00, device: 'bedrock' },// Bedrock (pid.codes VID)
 ];
 const DEVICE_LABEL = { aris68: 'DK-QUAKE', bedrock: 'Bedrock Console' };
+const OS_NAME = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' };
+// Wording only. Where the OS keeps raw HID away from ordinary users, name the fix in the row itself.
+const HID_DOWN_HINT = {
+  linux: 'the HID module did not load. Reinstall it for this app\'s Electron version (npm run rebuild).',
+  darwin: 'the HID module did not load. Reinstall the app, or rebuild it from source.',
+  win32: 'the HID module did not load. Reinstall the app, or rebuild it from source.',
+};
 const TOUCH_USAGE_PAGE = 0x0d;   // HID digitizer — DK-QUAKE "hotlotus" and bedrock's touchscreen both
 
 // A panel display is the 1920x480 (landscape) or 480x1920 (portrait) screen the console drives.
@@ -54,7 +61,12 @@ function classify(input) {
   const hid = Array.isArray(input.hidDevices) ? input.hidDevices : [];
   const displays = Array.isArray(input.displays) ? input.displays : [];
   const openErrors = input.openErrors || {};
-  const osName = input.platform === 'darwin' ? 'macOS' : 'Windows';
+  const osName = OS_NAME[input.platform] || 'Windows';
+  // node-hid is the app's one compiled native module. When it fails to load there is no enumeration
+  // at all, so every HID row would otherwise read "not detected" and send the person hunting for a
+  // cable that is already plugged in. Say what actually happened instead.
+  const hidDown = !!input.hidUnavailable;
+  const hidDownHint = HID_DOWN_HINT[input.platform] || HID_DOWN_HINT.win32;
 
   const controlHit = hid.find(matchControl) || null;
   const controlIdent = controlHit ? matchControl(controlHit) : null;
@@ -87,9 +99,11 @@ function classify(input) {
     level: touchHit ? (touchOpenError ? 'note' : 'ok') : (mode === 'console' ? 'fail' : 'note'),
     detail: touchHit
       ? ('Touch HID connected' + (touchHit.product ? ' (' + touchHit.product + ')' : '') + (touchOpenError ? ', but it could not be opened directly: ' + touchOpenError : ''))
-      : (mode === 'console'
-          ? 'No touch HID found. Check the touch USB cable — on the console this is a separate cable from the knob.'
-          : 'No touch HID detected.'),
+      : (hidDown
+          ? 'No touch HID found — ' + hidDownHint
+          : mode === 'console'
+            ? 'No touch HID found. Check the touch USB cable — on the console this is a separate cable from the knob.'
+            : 'No touch HID detected.'),
   };
   // A knob that is plugged in but could not be opened is the one knob state that is a hard fail — the
   // message carries the cause (on macOS typically the Input Monitoring permission).
@@ -99,7 +113,9 @@ function classify(input) {
     level: controlHit ? (knobOpenError ? 'fail' : 'ok') : 'note',
     detail: controlHit
       ? ((deviceLabel ? deviceLabel + ' ' : '') + 'control HID ' + (knobOpenError ? 'found' : 'connected') + ' (' + hex(controlHit.vendorId) + '/' + hex(controlHit.productId) + ')' + (knobOpenError ? ', but it could not be opened: ' + knobOpenError : ''))
-      : 'No knob detected. This is fine if your console has no knob — touch still works. Otherwise check the knob USB cable.',
+      : (hidDown
+          ? 'No knob detected — ' + hidDownHint
+          : 'No knob detected. This is fine if your console has no knob — touch still works. Otherwise check the knob USB cable.'),
   };
 
   const channels = { display, touch, knob };

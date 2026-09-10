@@ -1,0 +1,34 @@
+# Bedrock Panel — device access for the DK-QUAKE / ARIS-68 console, the open Bedrock knob,
+# and the virtual keyboard the macro/media-key backend creates.
+#
+# Install:
+#   sudo cp packaging/linux/70-bedrock-panel.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# then replug the console. See docs/linux.md.
+#
+# Why this is needed: Linux ships /dev/hidraw* and /dev/uinput as root-only, so without a rule
+# every open is refused with EACCES and the app reports the console as "not detected". TAG+="uaccess"
+# hands the device to whoever is logged in at the seat, which is the right grant for a desktop app —
+# no group membership, no logout, and it follows fast user switching. The MODE/GROUP fallbacks cover
+# systems without systemd-logind; they are harmless where uaccess already applies.
+
+# --- DK-QUAKE control interface (knob, mic/state, firmware, keep-alive) ---
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="4158", ATTRS{idProduct}=="514b", TAG+="uaccess", MODE="0660", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="4158", ATTRS{idProduct}=="514b", TAG+="uaccess", MODE="0660", GROUP="plugdev"
+
+# --- ARIS-68 control interface ---
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="5012", ATTRS{idProduct}=="6817", TAG+="uaccess", MODE="0660", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="5012", ATTRS{idProduct}=="6817", TAG+="uaccess", MODE="0660", GROUP="plugdev"
+
+# --- "hotlotus" multi-touch digitizer (the console's touch cable; a separate USB device) ---
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0712", ATTRS{idProduct}=="0010", TAG+="uaccess", MODE="0660", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0712", ATTRS{idProduct}=="0010", TAG+="uaccess", MODE="0660", GROUP="plugdev"
+
+# --- open Bedrock RP2040 knob (pid.codes VID) ---
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="bed0", TAG+="uaccess", MODE="0660", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="bed0", TAG+="uaccess", MODE="0660", GROUP="plugdev"
+
+# --- uinput: the virtual keyboard used for macros, media keys, and the paste shortcut ---
+# Compositor-agnostic, so macros work the same on Wayland and X11. Without this the input backend
+# reports itself unavailable and every macro/media-key tile is a no-op.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"

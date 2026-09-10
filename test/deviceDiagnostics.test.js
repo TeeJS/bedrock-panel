@@ -131,3 +131,27 @@ test('display advice names the host OS', () => {
   const legacy = classify({ hidDevices: [arisControl, touch], displays: [laptop] });   // no platform given
   assert.match(legacy.channels.display.detail, /Windows sees the screen/);
 });
+
+test('display advice names Linux too', () => {
+  const linux = classify({ hidDevices: [arisControl, touch], displays: [laptop], platform: 'linux' });
+  assert.match(linux.channels.display.detail, /Linux sees the screen/);
+});
+
+// node-hid is the one compiled module that can fail to load. When it does there is no enumeration at
+// all, so every HID row would read "not detected" and send the person after a cable that is fine.
+test('a HID module that did not load is reported as the reason, not as missing hardware', () => {
+  const r = classify({ hidDevices: [], displays: [laptop], platform: 'linux', hidUnavailable: true });
+  assert.equal(r.mode, 'software');
+  assert.match(r.channels.touch.detail, /No touch HID found — .*HID module did not load/);
+  assert.match(r.channels.knob.detail, /No knob detected — .*HID module did not load/);
+  assert.match(r.channels.touch.detail, /npm run rebuild/, 'Linux names the fix');
+  const mac = classify({ hidDevices: [], displays: [laptop], platform: 'darwin', hidUnavailable: true });
+  assert.match(mac.channels.knob.detail, /Reinstall the app/);
+  assert.doesNotMatch(mac.channels.knob.detail, /npm run rebuild/);
+});
+
+test('without the flag the wording is unchanged — a plain empty enumeration still reads as no hardware', () => {
+  const r = classify({ hidDevices: [], displays: [laptop], platform: 'linux' });
+  assert.match(r.channels.touch.detail, /No touch HID detected\./);
+  assert.match(r.channels.knob.detail, /This is fine if your console has no knob/);
+});

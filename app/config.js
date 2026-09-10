@@ -1,5 +1,7 @@
   const configApi = window.bedrockConfig;
   const IS_MAC = /^Mac/.test(navigator.platform || '');   // editor-only platform switch (no IPC): hides Windows-only controls on macOS
+  const IS_LINUX = /Linux/.test(navigator.platform || '') && !IS_MAC;   // same idea for Linux; the two were one "not Windows" branch before
+  const IS_WINDOWS = !IS_MAC && !IS_LINUX;
   let macPermFocusHooked = false;   // one window-focus listener for the macOS permissions block, however often Settings re-renders
   const VOICE_APPS = ['ai-voice'];   // apps with STT/TTS voice (one app, five backends)
   // Mirrors DEFAULT_CLEANUP_PROMPT + REWRITE_PRESETS in lucidtypeAI.js — pre-filled in the editable prompt boxes.
@@ -3911,12 +3913,15 @@
 
       <p class="sectitle">Display</p>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sKeepAwake" ${s.keepDisplayAwake ? 'checked' : ''}> Keep the display awake while running (disables the screensaver) — Panel mode only</label></div>
-      <details class="hint"><summary>Panel mode only. Keeps the screen from sleeping and stops the Windows screensaver so the QUAKE panel stays lit.</summary> <b>Off by default</b> (and always off in Software/Monitor mode) so your normal screensaver works. Windows has no per-display option, so when on it suppresses the screensaver on all displays.</details>
+      <details class="hint"><summary>Panel mode only. Keeps the screen from sleeping and stops the screensaver so the QUAKE panel stays lit.</summary> <b>Off by default</b> (and always off in Software/Monitor mode) so your normal screensaver works. There is no per-display option, so when on it suppresses the screensaver on all displays.</details>
 
 ${IS_MAC ? `
       <p class="sectitle">macOS permissions</p>
       <details class="hint"><summary>macOS asks for each permission the first time a feature needs it; this shows what is granted and opens the matching System Settings pane. The DK-QUAKE touchscreen needs <b>Input Monitoring</b>, which macOS never prompts for — but <b>Accessibility</b> covers it, so the first refused touchscreen open raises the Accessibility prompt instead; <b>Request</b> raises it again.</summary> <b>Accessibility</b> lets Bedrock Panel send keystrokes (paste tiles, macros, meeting hotkeys, media keys). <b>Microphone</b> is for recordings, dictation, and the voice apps. <b>Screen &amp; System Audio Recording</b> covers slide capture and the other side of a meeting recording (System Audio Recording Only). Grants attach to the app build, so an update may ask again until builds are notarized.</details>
-      <div id="sMacPerms"></div>` : `
+      <div id="sMacPerms"></div>` : IS_LINUX ? `
+      <p class="sectitle">Device access</p>
+      <details class="hint"><summary>Linux keeps raw HID devices root-only, so the knob and touchscreen stay invisible until a udev rule grants your user access. This is a one-time step.</summary> Copy <code>packaging/linux/70-bedrock-panel.rules</code> to <code>/etc/udev/rules.d/</code>, run <code>sudo udevadm control --reload-rules &amp;&amp; sudo udevadm trigger</code>, then unplug and replug the console. The same rule covers <code>/dev/uinput</code>, which macros and media keys use. Device Diagnostics names this as the cause when an open is refused. Full steps: <code>docs/linux.md</code>.</details>
+      <details class="hint"><summary>There is no touch-binding wizard on Linux, and none is needed.</summary> Windows binds any generic touchscreen to the primary display and needs a wizard to undo that; Linux binds a digitizer to the output its USB device reports, and Bedrock Panel reads the panel's touch reports over HID itself rather than through the desktop's pointer.</details>` : `
       <p class="sectitle">Touchscreen</p>
       <details class="hint"><summary>If touches land on the wrong monitor, click <b>Set up touchscreen</b>.</summary> Bedrock Panel launches Windows' built-in touch-identify wizard (the one Microsoft buried behind the broken-in-24H2 Tablet PC Settings UI) — accept the UAC prompt, then <b>press Enter on your keyboard</b> to skip past your other monitors as the prompt cycles through them, and <b>tap the panel with your finger</b> only when the prompt appears on the panel. That writes a persistent binding under <code>HKLM\\…\\Wisp\\Pen\\Digimon</code> that survives reboot, sleep, and primary-display swaps.</details>
       <details class="hint"><summary><b>Clear all calibrations</b> wipes any old <code>tabcal</code> coordinate calibration.</summary> You don't normally need it — only run it if your taps land on the right display but are visibly off-target.</details>
@@ -3925,7 +3930,8 @@ ${IS_MAC ? `
     // Monitor tab — reserved-display protection and intentional normal-monitor behavior
     const monHtml = `
       <p class="sectitle">Reserved Display</p>
-      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}> Keep application windows off the panel display</label></div>
+      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="sReserved" ${s.reservedDisplay ? 'checked' : ''}${IS_LINUX ? ' disabled' : ''}> Keep application windows off the panel display</label></div>${IS_LINUX ? `
+      <p class="hint">Not available on Linux. Moving another application's window needs a way to enumerate and reposition foreign windows, which Wayland deliberately does not give applications. Nothing here is switched off silently — the setting is simply inert on this platform.</p>` : ''}
       <details class="hint"><summary>Windows dragged, opened, or relocated onto the panel display are returned to another display; protection is suspended while Monitor mode is active and resumes when it exits. On a Mac this needs the Accessibility permission (Hardware tab → macOS permissions).</summary> If your other displays disconnect, their positions are held and restored when a display returns. Bedrock Panel, Windows shell surfaces, and secure desktop screens are left alone. This does not change the panel's USB keepalive.</details>
 
 ${IS_MAC ? `
@@ -4828,7 +4834,7 @@ ${IS_MAC ? `
             <summary style="cursor:pointer;color:#9fb3c8;font-size:13px;user-select:none">Advanced settings</summary>
             <label class="row" style="gap:8px;align-items:center;width:auto;margin-top:10px"><input type="checkbox" id="diAutoPage" style="width:auto"> Add a page for newly installed apps</label>
             <label class="row" style="gap:8px;align-items:center;width:auto;margin-top:8px"><input type="checkbox" id="diMulti" style="width:auto"> Allow multiple drop-in app repositories</label>
-${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label style="width:auto">Storage location</label>
+${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><label style="width:auto">Storage location</label>
               <select id="diLoc" style="width:auto">
                 <option value="appdata">%APPDATA%\\bedrock-panel</option>
                 <option value="localappdata">%LOCALAPPDATA%\\bedrock-panel</option>
@@ -5677,7 +5683,7 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
   document.getElementById('addGrid').onclick = () => { addPageMenu.classList.remove('open'); addPage('grid'); };
   document.getElementById('addDash').onclick = () => { addPageMenu.classList.remove('open'); addPage('web'); };
   document.getElementById('addApp').onclick = () => { addPageMenu.classList.remove('open'); addPage('app'); };
-  // Starter pages: the bundled tile pages for this computer (macOS or Windows defaults), added as new
+  // Starter pages: the bundled tile pages for this computer (Windows, macOS, or Linux defaults), added as new
   // pages with fresh ids so they never collide with the pages already here. The second level of the
   // menu is rendered in place; Escape or a click elsewhere closes it like the first level.
   const starterMenuHtml = addPageMenu.innerHTML;

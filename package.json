@@ -2,8 +2,9 @@
   "name": "bedrock-panel",
   "version": "0.9.5",
   "private": true,
-  "description": "A multi-use launcher and control platform for Windows and macOS — your apps, media, dashboards, and smart home on your computer or a touchscreen.",
+  "description": "A multi-use launcher and control platform for Windows, macOS, and Linux \u2014 your apps, media, dashboards, and smart home on your computer or a touchscreen.",
   "main": "app/main.js",
+  "desktopName": "bedrock-panel.desktop",
   "author": "TeeJS",
   "engines": {
     "node": ">=18 <27"
@@ -16,7 +17,8 @@
     "build:mac-helpers": "node build-mac-helpers.js",
     "test": "node --test test/*.test.js",
     "dist": "node build-dpapi.js && node build-smtc.js && electron-builder --win",
-    "dist:mac": "node build-mac-helpers.js && node build-mac.js"
+    "dist:mac": "node build-mac-helpers.js && node build-mac.js",
+    "dist:linux": "electron-builder --linux"
   },
   "license": "SEE LICENSE IN LICENSE",
   "keywords": [
@@ -56,7 +58,9 @@
       "!tools/**",
       "!native/**",
       "!build-dpapi.js",
-      "!build-smtc.js","!build-mac.js","!build-mac-helpers.js",
+      "!build-smtc.js",
+      "!build-mac.js",
+      "!build-mac-helpers.js",
       "!build-mac-helpers.js",
       "!sign.js",
       "!afterpack.js",
@@ -66,6 +70,7 @@
       "!community-wallpapers/**",
       "!node_modules/win-ca/pem/**",
       "!packaging/**",
+      "packaging/linux/70-bedrock-panel.rules",
       "!test/**",
       "!X/**",
       "!.claude/**"
@@ -124,6 +129,29 @@
         "NSCalendarsUsageDescription": "Bedrock Panel reads today's meetings from macOS Calendar to name meeting recordings and to give the transcript the attendee list.",
         "NSSpeechRecognitionUsageDescription": "Bedrock Panel uses macOS speech recognition (on this Mac) for the voice apps and dictation when you choose the built-in speech engine."
       }
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "app/icon.png",
+      "executableName": "bedrock-panel",
+      "syncDesktopName": true,
+      "artifactName": "bedrock-panel-${arch}.${ext}",
+      "synopsis": "Launcher and control platform for the DK-QUAKE touchscreen panel",
+      "desktop": {
+        "entry": {
+          "Name": "Bedrock Panel",
+          "Categories": "Utility;",
+          "StartupWMClass": "bedrock-panel"
+        }
+      },
+      "maintainer": "TeeJS <TeeJS@users.noreply.github.com>"
+    },
+    "deb": {
+      "artifactName": "bedrock-panel_${arch}.${ext}"
     },
     "dmg": {
       "sign": false

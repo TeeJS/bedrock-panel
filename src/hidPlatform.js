@@ -30,6 +30,12 @@
 
 const INPUT_MONITORING_HINT =
   'macOS may be blocking the device — allow Bedrock Panel (or, for npm start, the terminal app it was launched from) under System Settings → Privacy & Security → Input Monitoring; it reconnects on the next rescan';
+// Linux ships /dev/hidraw* as root-only, so the very first open by an ordinary user is refused. This
+// is a one-time udev rule, not a cable fault, and the message has to say so or it reads like broken
+// hardware. Same shape as the macOS hint: name the fix, and note that a rescan picks the device up.
+const UDEV_HINT =
+  'Linux keeps raw HID devices root-only until a udev rule grants your user access — the editor\'s Settings → Hardware → Device access has the one-time steps (docs/linux.md has the rule in full); it reconnects on the next rescan';
+const OPEN_HINT = { darwin: INPUT_MONITORING_HINT, linux: UDEV_HINT };
 
 /**
  * node-hid open options for this platform, or null when the default open is right.
@@ -76,11 +82,12 @@ function writeWithRetry(write, platform = process.platform) {
   return last;
 }
 
-/** An Error for a failed open, with the macOS permission hint when the message looks like a refusal. */
+/** An Error for a failed open, with the platform's permission hint when the message looks like a refusal. */
 function openError(err, platform = process.platform) {
   const msg = String((err && err.message) || err || 'could not open device');
-  const refused = /cannot open|could not open|not permitted|permission|denied|busy|exclusive/i.test(msg);
-  const out = new Error(platform === 'darwin' && refused ? msg + ' — ' + INPUT_MONITORING_HINT : msg);
+  const refused = /cannot open|could not open|not permitted|permission|denied|busy|exclusive|EACCES/i.test(msg);
+  const hint = refused ? OPEN_HINT[platform] : null;
+  const out = new Error(hint ? msg + ' — ' + hint : msg);
   out.code = 'HID_OPEN_FAILED';
   out.cause = err;
   return out;
@@ -108,4 +115,4 @@ function stripLeadingReportId(b, markers) {
   return typeof b.subarray === 'function' ? b.subarray(1) : b.slice(1);
 }
 
-module.exports = { INPUT_MONITORING_HINT, openOptions, openDevice, writeAttempts, writeWithRetry, openError, OpenErrorGate, stripLeadingReportId };
+module.exports = { INPUT_MONITORING_HINT, UDEV_HINT, openOptions, openDevice, writeAttempts, writeWithRetry, openError, OpenErrorGate, stripLeadingReportId };

@@ -141,3 +141,58 @@ test('DPAPI implementation has no shell or PowerShell process brokerage', () => 
   assert.match(nativeSource, /LocalFree/);
   assert.match(nativeSource, /SecureZeroMemory/);
 });
+
+// ---- Linux: refuse Chromium's plaintext safeStorage backend ----
+// On Linux with no reachable keyring, Chromium falls back to "basic_text": it encrypts under a
+// HARDCODED key and still reports encryption as available. Storing tokens that way is obfuscation
+// wearing the costume of encryption, so the store must treat it as no backend at all.
+function safeStorageStub(backend, { throws = false } = {}) {
+  return {
+    isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => { if (throws) throw new Error('not implemented'); return backend; },
+    encryptString: s => Buffer.from('enc:' + s),
+    decryptString: b => String(b).replace(/^enc:/, ''),
+  };
+}
+const safeStore = (backend, logs, opts) => createSecretStore({
+  safeStorage: safeStorageStub(backend, opts), dpapi: null, loadApps: () => [], log: m => logs && logs.push(m),
+});
+
+test('a keyring-backed safeStorage encrypts normally', () => {
+  for (const backend of ['gnome_libsecret', 'kwallet6', 'kwallet5', 'basic_text_but_not_really']) {
+    const store = safeStore(backend, []);
+    const out = store.encryptValue('synthetic-token');
+    assert.ok(out.startsWith('oqenc:v1:'), backend + ' should encrypt');
+  }
+});
+
+test('the plaintext backend is refused, loudly and once', () => {
+  const logs = [];
+  const store = safeStore('basic_text', logs);
+  assert.throws(() => store.encryptValue('synthetic-token'), /Secret encryption is unavailable/);
+  assert.throws(() => store.encryptValue('another'), /Secret encryption is unavailable/);
+  assert.equal(logs.length, 1, 'warned once, not once per secret');
+  assert.match(logs[0], /no keyring/);
+  assert.match(logs[0], /hardcoded key/);
+  assert.match(logs[0], /kwallet|gnome-keyring/, 'names what to install');
+});
+
+test('already-stored secrets still decrypt on a plaintext-backend session', () => {
+  // Refusing to WRITE must never mean refusing to READ: a machine whose keyring stopped answering
+  // would otherwise look like it had lost every saved token.
+  const store = safeStore('basic_text', []);
+  assert.equal(store.decryptValue('oqenc:v1:' + Buffer.from('enc:synthetic').toString('base64')), 'synthetic');
+  assert.equal(store.decryptValue('plain-value'), 'plain-value');
+});
+
+test('an Electron without getSelectedStorageBackend is left alone', () => {
+  // Windows and macOS never expose it, and older Electrons may not either. Absence must not be read
+  // as a plaintext backend, or secrets would stop saving on the two platforms that already work.
+  const store = createSecretStore({
+    safeStorage: { isEncryptionAvailable: () => true, encryptString: s => Buffer.from('enc:' + s), decryptString: b => String(b) },
+    dpapi: null, loadApps: () => [], log: () => {},
+  });
+  assert.ok(store.encryptValue('synthetic-token').startsWith('oqenc:v1:'));
+  const throwing = safeStore('basic_text', [], { throws: true });
+  assert.ok(throwing.encryptValue('synthetic-token').startsWith('oqenc:v1:'), 'a throwing probe is not treated as plaintext');
+});

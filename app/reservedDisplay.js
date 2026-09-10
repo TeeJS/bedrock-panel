@@ -150,7 +150,10 @@ function createReservedDisplay(options) {
       writeSnapshot();
     },
     refresh(reason) {
-      if (reason) log('display topology changed: ' + reason);
+      // Only worth saying where a helper could act on it. Display events arrive in bursts, so on a
+      // platform with no helper (Linux today) this printed the same line a dozen times per change
+      // while writeSnapshot did nothing at all — pages of log noise hiding the real startup errors.
+      if (reason && helperPath) log('display topology changed: ' + reason);
       writeSnapshot();
     },
     isRunning() { return !!child; },

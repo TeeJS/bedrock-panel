@@ -275,6 +275,73 @@ dialog appears once more and then never again (a Team ID gives the item a stable
 privacy grants (Input Monitoring, Accessibility, Calendars, Automation) are tied to the signing
 certificate, so the first Developer ID build asks for them one final time.
 
+## Build & run (Linux)
+
+> End-user setup — installing the `.deb` or AppImage, the udev rule, what Linux cannot do — is in
+> [linux.md](linux.md). This section is the developer side. Verified on Ubuntu 26.04 / KDE Plasma 6.6
+> (Wayland) with Node 22.
+
+**Software mode** — the resizable desktop window, the editor, and every platform-neutral app — plus
+the knob and touchscreen work today. There is deliberately **no `native/linux/` helper tree**: on
+Linux the equivalents of the Windows C# and macOS Swift helpers are reachable from JavaScript
+(MPRIS over D-Bus for now-playing, PipeWire for volume and capture-session detection), so
+`app/nativeHelpers.js` returns `null` for every Linux entry and nothing needs a compiler.
+
+```bash
+npm install --ignore-scripts            # packages on disk, no native build
+node node_modules/electron/install.js   # fetch the Electron 44 binary
+npm test                                 # node:test suite (the DPAPI tests skip off Windows)
+npm start
+```
+
+`node-hid` ships a linux-x64 N-API prebuild that loads under Electron 44 as-is, so no rebuild is
+normally needed. Check it with
+`ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron -e "console.log(require('node-hid').devices().length)"`;
+only if that fails, run `npm run rebuild` (needs `build-essential`, `libudev-dev`, and Python).
+If the binding cannot load at all the app still starts — `app/main.js` falls back to a stub that
+enumerates nothing, and Device Diagnostics says the module is the reason rather than blaming a cable.
+
+`npm start` still runs `build-dpapi.js`, `build-smtc.js`, and `build-mac-helpers.js` first; all three
+exit immediately off their platform. User data lives in `~/.config/bedrock-panel`.
+
+What to expect on Linux:
+
+- **The app runs as an X11 client through XWayland**, which Electron picks by default. That is what
+  makes Panel mode work in a Wayland session: absolute window placement on the 1920x480 display is
+  honoured, and XWayland reports both outputs with correct geometry.
+- **Raw HID is root-only** until `packaging/linux/70-bedrock-panel.rules` is installed. Until then
+  every open is refused with EACCES; `src/hidPlatform.js` decorates that error with the fix, the same
+  way it decorates the macOS Input Monitoring refusal.
+- **Secrets** use Electron `safeStorage` (KWallet or GNOME Keyring). With no keyring, Chromium
+  silently selects a backend that "encrypts" under a hardcoded key — `app/secretStore.js` detects it
+  and refuses to write, rather than storing tokens that only look encrypted.
+- **The first-run config** is `app/config.default.linux.json`. Its app tiles name a job, not a
+  program, because Linux has no single calculator or file manager; `app/actionRunner.js` resolves
+  each against `PATH` from a candidate list.
+- **Reserved Display and follow-the-focused-app are not possible** and report themselves
+  unavailable. Both need foreign-window enumeration and movement, which Wayland does not offer.
+- Transcription pre/post hooks run through `/bin/sh`, as on macOS.
+
+### Packaging (Linux)
+
+```bash
+npm run dist:linux    # dist/bedrock-panel-x86_64.AppImage + dist/bedrock-panel_amd64.deb
+```
+
+No signing and no notarization: Linux has no equivalent gatekeeper. `afterpack.js` returns early for
+a non-Windows target, and `sign.js` is never reached.
+
+Prefer the **`.deb`** when testing on Ubuntu or Debian. AppImages need FUSE 2, which Ubuntu 24.04 and
+newer no longer ship, so the AppImage exits with *"dlopen(): error loading libfuse.so.2"* on a stock
+26.04 box until `libfuse2t64` is installed.
+
+Two packaging rules worth keeping:
+
+- **Never add `build.linux.files`** — same trap as `build.mac.files`; a platform list replaces the
+  global one instead of extending it. All exclusions stay in the global `build.files`.
+- `packaging/**` is excluded from the bundle, with `packaging/linux/70-bedrock-panel.rules`
+  re-included after it so the udev rule ships inside the app. A later pattern wins, so order matters.
+
 ## Code layout
 
 ```

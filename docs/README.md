@@ -17,6 +17,7 @@ Detailed guides for Bedrock Panel. Back to the [project README](../README.md).
 - **[Settings & knob](settings.md)** — launch mode, rotation, RGB ring, knob behavior, mic
 - **[Reserved Display](reserved-display.md)** — keep other apps' windows off the panel display (Windows and macOS)
 - **[Bedrock Panel on macOS](macos.md)** — install the unsigned build, every macOS permission and exactly where to grant it, Reserved Display on a Mac
+- **[Bedrock Panel on Linux](linux.md)** — install the deb or AppImage, the one udev rule the console needs, the starter pages, and what Wayland makes impossible
 
 ## Under the hood
 

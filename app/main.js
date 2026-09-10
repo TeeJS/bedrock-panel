@@ -222,7 +222,16 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { exec, execFile, spawn } = require('child_process');
 const { pathToFileURL } = require('url');
-const HID = require('node-hid');
+// node-hid is the app's one compiled native module, and the only one that must match Electron's ABI
+// rather than the host Node's. A missing or mismatched binding used to throw here, before any window
+// existed — the whole launcher died over hardware that most Software-mode users do not even own. Fall
+// back to a stub that enumerates nothing: both connectors simply never find a device, every HID path
+// stays on its existing "not detected" branch, and Device Diagnostics says the module is the reason.
+let HID = null;
+try { HID = require('node-hid'); }
+catch (e) { console.log('[startup] node-hid unavailable (' + (e && e.message) + ') — knob and touchscreen are off; Software mode is unaffected'); }
+const HID_UNAVAILABLE = !HID;
+if (HID_UNAVAILABLE) HID = { devices: () => [], HID: function () { throw new Error('node-hid unavailable'); } };
 const emojilib = require('emojilib');   // emoji -> keyword array (MIT, muan/emojilib) — powers the tile editor's emoji search
 const EMOJI_INDEX = Object.entries(emojilib).map(([em, kws]) => [em, kws.join(' ').toLowerCase()]);
 const MultiKnob = require('./multiKnob');                                           // owns Aris68Connector + BedrockConnector; routes to whichever device is plugged in
@@ -288,7 +297,12 @@ const USER_DIR = app.getPath('userData');
 const CONFIG_PATH = path.join(USER_DIR, 'config.json');                  // writable — works inside a packaged app too
 // Bundled first-run config (read-only). The macOS file carries the same pages with tiles that work on
 // a Mac (stock apps by their real names, `open`/osascript commands); the Windows one is the original.
-const DEFAULT_CONFIG_PATH = path.join(__dirname, process.platform === 'darwin' ? 'config.default.mac.json' : 'config.default.json');
+// First-run seed, per platform. The Windows file is the fallback for anything unrecognized, as it
+// always was; darwin and linux each get a page-for-page mirror of it whose tiles name programs that
+// platform actually has. Getting this wrong is not cosmetic — a fresh install would open with a grid
+// of tiles that silently launch nothing.
+const DEFAULT_CONFIG_BY_PLATFORM = { darwin: 'config.default.mac.json', linux: 'config.default.linux.json' };
+const DEFAULT_CONFIG_PATH = path.join(__dirname, DEFAULT_CONFIG_BY_PLATFORM[process.platform] || 'config.default.json');
 const LEGACY_CONFIG_PATH = path.join(__dirname, 'config.json');          // pre-userData dev location, migrated once
 const APPS_DIR = path.join(__dirname, '..', 'apps').replace('app.asar', 'app.asar.unpacked'); // unpacked when packaged
 const { helperPath } = require('./nativeHelpers');       // per-platform bundled helper binaries (null = none on this platform)
@@ -1481,7 +1495,7 @@ function getDeviceDiagnostics() {
   try { activeName = dev && dev.activeName ? dev.activeName() : null; } catch (e) {}
   let openErrors = null;
   try { openErrors = dev && dev.lastOpenErrors ? dev.lastOpenErrors() : null; } catch (e) {}
-  const snap = deviceDiagnostics.classify({ hidDevices, displays, activeName, firmware: lastDeviceState.firmware || null, openErrors, platform: process.platform });
+  const snap = deviceDiagnostics.classify({ hidDevices, displays, activeName, firmware: lastDeviceState.firmware || null, openErrors, platform: process.platform, hidUnavailable: HID_UNAVAILABLE });
   snap.runMode = runMode();   // panel / software / monitor — the page notes when you're not on the device
   return snap;
 }
