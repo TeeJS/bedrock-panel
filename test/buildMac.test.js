@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { resolveIdentity, resolveNotary, extraBuilderArgs, notarytoolAuth, isDeveloperId } = require('../build-mac');
+const { resolveIdentity, resolveNotary, extraBuilderArgs, notarytoolAuth, isDeveloperId, builderIdentity } = require('../build-mac');
 
 test('the signing identity comes from the environment, else .signing/mac-identity, else ad-hoc', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-build-'));
@@ -46,4 +46,10 @@ test('notarize only with a Developer ID and credentials; notarytool auth flags f
   assert.deepEqual(notarytoolAuth(profile), ['--keychain-profile', 'bedrock-notary']);
   assert.deepEqual(notarytoolAuth({ kind: 'profile', profile: 'p', keychain: '/k.db' }), ['--keychain-profile', 'p', '--keychain', '/k.db']);
   assert.equal(notarytoolAuth(null), null);
+});
+
+test('electron-builder gets the identity without the Developer ID Application prefix, which it refuses', () => {
+  assert.equal(builderIdentity('Developer ID Application: Thomas Schmitz (6JAQ2U3T48)'), 'Thomas Schmitz (6JAQ2U3T48)');
+  assert.equal(builderIdentity('Bedrock Panel Dev'), 'Bedrock Panel Dev');
+  assert.equal(builderIdentity('-'), '-');
 });

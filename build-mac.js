@@ -42,6 +42,9 @@ function resolveIdentity(env = process.env, root = __dirname) {
 }
 
 const isDeveloperId = identity => /^Developer ID Application:/i.test(String(identity || ''));
+// electron-builder refuses the "Developer ID Application:" prefix (it picks the certificate type itself);
+// the .signing file keeps the full name as the keychain shows it, this strips it for the command line.
+const builderIdentity = identity => String(identity || '').replace(/^Developer ID Application:\s*/i, '');
 
 // How notarization can authenticate on this machine: a notarytool keychain profile (env or the
 // .signing file), the Apple ID trio, or the API key trio. null = no credentials.
@@ -82,7 +85,7 @@ if (require.main === module) {
   const env = Object.assign({}, process.env);
   if (notary && notary.kind === 'profile' && !env.APPLE_KEYCHAIN_PROFILE) env.APPLE_KEYCHAIN_PROFILE = notary.profile;   // electron-builder reads it from the environment
   const bin = path.join(__dirname, 'node_modules', '.bin', 'electron-builder');
-  const args = ['--mac', '-c.mac.identity=' + identity, ...extraBuilderArgs(identity, notary), ...process.argv.slice(2)];
+  const args = ['--mac', '-c.mac.identity=' + builderIdentity(identity), ...extraBuilderArgs(identity, notary), ...process.argv.slice(2)];
   const r = spawnSync(bin, args, { stdio: 'inherit', shell: process.platform === 'win32', env });
   if (r.status !== 0) process.exit(r.status == null ? 1 : r.status);
   // The .app inside is notarized and stapled by electron-builder; the disk image itself is not, and a
@@ -103,4 +106,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { resolveIdentity, resolveNotary, extraBuilderArgs, notarytoolAuth, isDeveloperId };
+module.exports = { resolveIdentity, resolveNotary, extraBuilderArgs, notarytoolAuth, isDeveloperId, builderIdentity };
