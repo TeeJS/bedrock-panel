@@ -4,26 +4,69 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>oMLX Monitor</title>
-  <link rel="stylesheet" href="style.css?v=1.0.1">
+  <link rel="stylesheet" href="style.css?v=1.1.0">
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
-      <div class="brand"><h1>oMLX</h1><nav class="tabs" id="tabs" aria-label="Server"></nav></div>
-      <div class="health" id="health"><span class="dot unknown"></span><span id="healthText">connecting…</span></div>
-      <div class="updated" id="updated">…</div>
+      <div class="brand">
+        <h1>oMLX</h1>
+        <nav class="tabs" id="tabs" aria-label="Server"></nav>
+        <span class="server" id="serverName" hidden></span>
+      </div>
+      <div class="conn" id="conn" aria-live="polite">
+        <span class="dot unknown" id="connDot"></span>
+        <span class="label" id="connLabel">Connecting</span>
+        <span class="age" id="connAge"></span>
+      </div>
+      <button type="button" class="details-btn" id="detailsBtn" aria-haspopup="dialog" aria-controls="overlay">Details</button>
     </header>
-    <section class="ctx" id="ctx" aria-label="Server context"></section>
+
+    <section class="ctx" aria-label="Server context">
+      <div class="card mem" id="mem">
+        <div class="label">Model memory <span class="badge lastknown" id="memLastKnown" hidden>Last known</span></div>
+        <div class="big"><span class="used" id="memUsed">—</span> <small class="ceil">/ <span id="memMax">—</span></small></div>
+        <div class="bar"><i id="memBar"></i></div>
+        <div class="pressure" id="memPressure">—</div>
+      </div>
+      <div class="card tps" id="tps">
+        <div class="label">Server average <span class="badge lastknown" id="tpsLastKnown" hidden>Last known</span></div>
+        <div class="gen"><span class="v" id="tpsGen">—</span><span class="u">tok/s generation</span></div>
+        <div class="pre"><span class="v" id="tpsPre">—</span><span class="u">tok/s prefill</span></div>
+      </div>
+    </section>
+
     <section class="models" aria-label="Models">
       <div class="sechead"><h2>Models</h2><span class="count" id="modelCount"></span></div>
       <div class="scroll" id="modelList"></div>
     </section>
-    <section class="live" aria-label="Requests in flight">
-      <div class="sechead"><h2>In flight</h2><span class="count" id="liveCount"></span></div>
-      <div class="scroll" id="liveList"></div>
-      <div class="device" id="device"></div>
+
+    <section class="activity" aria-label="Activity">
+      <div class="sechead"><h2>Activity</h2><span class="count" id="activityCount"></span></div>
+      <div class="current" id="activity" data-kind="connecting">
+        <div class="state"><div class="title" id="actTitle">Connecting</div><div class="text" id="actText">Waiting for the first answer</div></div>
+        <div class="reqs" id="reqList" hidden></div>
+      </div>
+      <div class="card totals" id="totals">
+        <div class="label">Session totals <span class="badge lastknown" id="totLastKnown" hidden>Last known</span></div>
+        <div class="grid">
+          <div class="stat"><div class="v" id="totRequests">—</div><div class="k">Requests</div></div>
+          <div class="stat"><div class="v" id="totCache">—</div><div class="k">Cache efficiency</div></div>
+          <div class="stat"><div class="v" id="totPrompt">—</div><div class="k">Prompt tokens</div></div>
+          <div class="stat"><div class="v" id="totGen">—</div><div class="k">Generated tokens</div></div>
+        </div>
+      </div>
     </section>
+
+    <div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="ovTitle" hidden>
+      <div class="sheet" id="sheet">
+        <div class="sheethead"><h3 id="ovTitle">Details</h3><button type="button" class="close" id="ovClose">Close</button></div>
+        <dl class="kv" id="ovBody"></dl>
+        <div class="sheetactions" id="ovActions" hidden></div>
+      </div>
+    </div>
   </main>
-  <script src="app.js?v=1.0.1"></script>
+  <script src="state.js?v=1.1.0"></script>
+  <script src="app.js?v=1.1.0"></script>
 </body>
 </html>
