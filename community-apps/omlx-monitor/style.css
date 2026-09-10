@@ -18,8 +18,10 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 button { font: inherit; color: inherit; cursor: pointer; }
 button:focus:not(:focus-visible) { outline: none; }
 button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.shell { height: 480px; width: 1920px; display: grid; grid-template-columns: 360px 936px 560px; grid-template-rows: 56px 1fr; gap: 16px; padding: 16px; }
-.topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 24px; }
+.shell { height: 480px; width: 1920px; display: grid; grid-template-columns: 360px 936px 560px; grid-template-rows: 56px 1fr; gap: 16px; padding: 16px; grid-template-areas: 'topL models topR' 'ctx models activity'; }
+.shell.multi { grid-template-areas: 'topL topL topR' 'ctx models activity'; }
+.topbar { grid-area: topL; display: flex; align-items: center; gap: 24px; }
+.topbar-right { grid-area: topR; display: flex; align-items: center; gap: 24px; justify-content: flex-end; }
 .brand { display: flex; align-items: center; gap: 24px; min-width: 0; }
 .brand h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 0.02em; }
 .tabs { display: flex; gap: 10px; }
@@ -27,7 +29,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .tabs button .dot { margin-right: 10px; }
 .tabs button.sel { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
 .server { font-size: 18px; color: var(--muted); }
-.conn { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 18px; color: var(--muted); min-height: 48px; padding: 0 20px; border-radius: 12px; background: var(--surface); }
+.conn { display: flex; align-items: center; gap: 12px; font-size: 18px; color: var(--muted); min-height: 48px; padding: 0 20px; border-radius: 12px; background: var(--surface); }
 .conn .label { color: var(--ink); font-weight: 600; }
 .conn .age { color: var(--faint); font-size: 15px; }
 .conn[data-state="offline"] .label { color: var(--error); }
@@ -39,7 +41,7 @@ section { min-height: 0; display: flex; flex-direction: column; }
 .sechead { display: flex; align-items: baseline; gap: 12px; height: 32px; flex: none; padding: 0 4px; }
 .sechead h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
 .count { font-size: 15px; color: var(--muted); }
-.ctx { gap: 16px; }
+.ctx { grid-area: ctx; gap: 16px; }
 .card { background: var(--surface); border-radius: var(--radius); padding: 18px 20px; min-width: 0; }
 .mem { flex: 176 1 0; }
 .tps { flex: 184 1 0; }
@@ -58,6 +60,7 @@ section { min-height: 0; display: flex; flex-direction: column; }
 .tps .gen .v { font-size: 40px; line-height: 44px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tps .pre .v { font-size: 28px; line-height: 32px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tps .u { font-size: 20px; color: var(--faint); }
+.models { grid-area: models; }
 .models .scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--track) transparent; }
 .models .scroll::-webkit-scrollbar { width: 8px; }
 .models .scroll::-webkit-scrollbar-track { background: transparent; }
@@ -87,7 +90,7 @@ section { min-height: 0; display: flex; flex-direction: column; }
 .subhead { font-size: 13px; color: var(--faint); letter-spacing: 0.08em; text-transform: uppercase; margin: 12px 4px 8px; }
 .empty { display: flex; align-items: center; justify-content: center; flex: 1; min-height: 112px; color: var(--faint); font-size: 18px; }
 .empty .text { text-align: center; }
-.activity { gap: 0; }   /* D1: no gap after the heading; .totals carries the 16px */
+.activity { grid-area: activity; gap: 0; }   /* D1: no gap after the heading; .totals carries the 16px */
 .current { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--radius); padding: 14px 16px; }
 .current .state { display: flex; flex-direction: column; justify-content: center; flex: 1; gap: 6px; }
 .current .state .title { font-size: 32px; font-weight: 700; }

@@ -194,7 +194,7 @@ async function handle(action, context) {
   const query = (context && context.query) || {};
   const list = instances(options);
   if (action === 'instances') {
-    return { ok: true, instances: list.map(i => ({ inst: i.n, name: i.name, url: i.url, hasKey: !!i.key })), refreshSeconds: 2, allowControl: String(options.allowControl) !== 'false' };
+    return { ok: true, instances: list.map(i => ({ inst: i.n, name: i.name, url: i.url, hasKey: !!i.key })), refreshSeconds: 15, allowControl: String(options.allowControl) !== 'false' };
   }
   if (!['status', 'load', 'unload'].includes(action)) return { ok: false, error: 'unknown action' };
   const inst = list.find(i => String(i.n) === String(query.inst)) || list[0];

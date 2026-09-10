@@ -13,7 +13,7 @@
 const S = window.OmlxState;
 const $ = s => document.querySelector(s);
 const params = new URLSearchParams(location.search);
-const RUNNING_VERSION = '1.1.0';
+const RUNNING_VERSION = '1.1.1';
 
 // Theme from the host: dark/light and the runtime accent, with a contrast-safe foreground.
 document.documentElement.dataset.theme = params.get('_dark') === '0' ? 'light' : 'dark';
@@ -65,6 +65,9 @@ function h(tag, cls, text) { const el = document.createElement(tag); if (cls) el
 function renderTabs() {
   const el = $('#tabs');
   const multi = instances.length > 1;
+  // One server: the header keeps to the left column and the Models list runs the full height.
+  // Two or three: the header spans the Models column so the server tabs have room.
+  if (document.querySelector('.shell').classList.contains('multi') !== multi) document.querySelector('.shell').classList.toggle('multi', multi);
   setHidden($('#serverName'), multi || !inst);
   if (!multi) { el.replaceChildren(); if (inst) setText($('#serverName'), inst.name); return; }
   reconcile(el, instances.map(i => ({ key: 'inst:' + i.inst, i })), it => {

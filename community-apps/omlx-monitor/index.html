@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>oMLX Monitor</title>
-  <link rel="stylesheet" href="style.css?v=1.1.0">
+  <link rel="stylesheet" href="style.css?v=1.1.1">
 </head>
 <body>
   <main class="shell">
@@ -14,13 +14,15 @@
         <nav class="tabs" id="tabs" aria-label="Server"></nav>
         <span class="server" id="serverName" hidden></span>
       </div>
+    </header>
+    <div class="topbar-right">
       <div class="conn" id="conn" aria-live="polite">
         <span class="dot unknown" id="connDot"></span>
         <span class="label" id="connLabel">Connecting</span>
         <span class="age" id="connAge"></span>
       </div>
       <button type="button" class="details-btn" id="detailsBtn" aria-haspopup="dialog" aria-controls="overlay">Details</button>
-    </header>
+    </div>
 
     <section class="ctx" aria-label="Server context">
       <div class="card mem" id="mem">
@@ -66,7 +68,7 @@
       </div>
     </div>
   </main>
-  <script src="state.js?v=1.1.0"></script>
-  <script src="app.js?v=1.1.0"></script>
+  <script src="state.js?v=1.1.1"></script>
+  <script src="app.js?v=1.1.1"></script>
 </body>
 </html>

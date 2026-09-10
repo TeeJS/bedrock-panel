@@ -56,7 +56,7 @@ test('instances: the first server plus the ones revealed by Add another server, 
   const r = await mod.handle('instances', { options: { url1: 'http://127.0.0.1:8000/', key1: 'k', more2: true, url2: '', key2: 'x', more3: true, url3: 'http://box:8000' } });
   assert.equal(r.ok, true);
   assert.deepEqual(r.instances, [{ inst: 1, name: '127.0.0.1:8000', url: 'http://127.0.0.1:8000', hasKey: true }, { inst: 3, name: 'box:8000', url: 'http://box:8000', hasKey: false }]);
-  assert.equal(r.refreshSeconds, 2);
+  assert.equal(r.refreshSeconds, 15);
   const hidden = await mod.handle('instances', { options: { url1: 'http://127.0.0.1:8000', key1: 'k', more2: false, url2: 'http://left-over:8000', key2: 'x' } });
   assert.deepEqual(hidden.instances.map(i => i.inst), [1], 'a server behind an unticked Add another server is ignored');
   assert.equal(r.allowControl, true);

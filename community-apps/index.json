@@ -132,7 +132,7 @@
       "id": "omlx-monitor",
       "name": "oMLX Monitor",
       "description": "Live view of one or more oMLX servers (omlx.ai) on the panel: loaded models with memory, requests in flight with tokens per second, queue, throughput and cache totals, memory pressure, and one-tap load/unload. Talks to each server through its own API key.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "zip": "omlx-monitor.zip",
       "server": true
     },

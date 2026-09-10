@@ -7,7 +7,9 @@ server drops.
 
 ## What the panel shows
 
-Three columns under a header:
+Three columns; with a single server the **Models** column runs the full height of the panel and the
+header keeps to the two outer columns (with two or three servers the header spans the middle so the
+server tabs have room):
 
 - **Header** — the server (tabs when more than one is configured), the connection state
   (Connecting · Starting · Connected · Stale · Offline) with how long ago the last good answer came,
@@ -32,10 +34,10 @@ seconds to confirm). While a command is in flight the button says Loading… / U
 that way until the next poll confirms the result. A failed command shows its error in the row; tap
 it to dismiss, or open the row's Details for the full text.
 
-When a server stops answering, the header says **Stale** (after 15 s without a good answer) and then
+When a server stops answering, the header says **Stale** (after 45 s without a good answer) and then
 **Offline** once a request fails; the last good numbers stay on screen marked **Last known**, and
 the Load / Unload buttons are hidden until the server is back. Polling never rebuilds the screen: a
-focused button, a scrolled list, and an open Details dialog all survive the two-second refresh.
+focused button, a scrolled list, and an open Details dialog all survive a refresh.
 
 ## Setup
 
@@ -43,7 +45,7 @@ focused button, a scrolled list, and an open Details dialog all survive the two-
 2. In the page's options set the **Server URL** (the dashboard address without `/admin`, e.g.
    `http://127.0.0.1:8000`) and the **API key** — the server's main key from its Admin → Settings.
    **Add another server** reveals the next one; up to three, each a tab named after its host.
-3. Save. The page polls every 2 s.
+3. Save. The page polls every 15 s (and right after a Load / Unload).
 
 The main API key unlocks the admin data (per-model activity, memory pressure, the model list, Load /
 Unload). A sub key only reads oMLX's public status endpoint: the page then says **Activity details
