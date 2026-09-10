@@ -161,6 +161,7 @@ Grab a build from the **[Releases](https://github.com/TeeJS/bedrock-panel/releas
   touchscreen, Panel mode, Reserved Display, meeting recording with on-Mac transcription, and voice
   through macOS's own speech. First-launch steps and permissions: [docs/macos.md](docs/macos.md);
   what is in the release: [docs/releases/v0.9.5.md](docs/releases/v0.9.5.md).
+- **`bedrock-panel-arm64.zip`** — the same macOS app without the disk image.
 
 The exe is **code-signed** (Azure Trusted Signing, publisher *Thomas Schmitz*) — so you see a
 verified publisher, not "Unknown publisher." Windows SmartScreen may still show a **"Windows
@@ -169,13 +170,12 @@ gains downloads), not a problem with the file. Confirm the publisher reads **Tho
 then click **More info → Run anyway**. Config is stored in `%APPDATA%\bedrock-panel`; upgrading from an
 open-quake install moves the old `%APPDATA%\open-quake` folder there automatically.
 
-The macOS build is **not yet notarized** (Apple Developer ID pending), so on first launch macOS says it
-could not verify the app: click **Done**, open **System Settings → Privacy & Security**, scroll to
-*Security*, click **Open Anyway**, then **Open** — again after each update until builds are
-notarized. (Or run `xattr -dr com.apple.quarantine "/Applications/Bedrock Panel.app"`.) Config lives in
+The macOS build is **signed with a Developer ID and notarized**, so it opens like any other Mac app —
+drag it to Applications and launch it, with no Gatekeeper warning to click through. Config lives in
 `~/Library/Application Support/bedrock-panel`. The Mac needs a few permissions (touchscreen, keystrokes,
-recording): **[docs/macos.md](docs/macos.md)** lists each one and exactly where to grant it. Linux is
-still in progress.
+recording): **[docs/macos.md](docs/macos.md)** lists each one and exactly where to grant it. Upgrading
+from a `v0.9.5-beta` build: the signature changed, so re-add Bedrock Panel under **Input Monitoring**
+and allow the keychain prompt once. Linux is still in progress.
 
 ## 📖 Documentation
 
