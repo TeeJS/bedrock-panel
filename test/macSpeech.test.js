@@ -80,3 +80,23 @@ test('a crash restarts the helper after the delay; a changed voice restarts it a
   assert.equal(procs.length, 3, 'not wanted: no restart');
   assert.equal(m.status().wanted, false);
 });
+
+test('rescan restarts the helper once the old one has exited, so a newly downloaded voice is read', async () => {
+  const { procs, spawn } = fakeSpawn();
+  const m = createMacSpeech({ platform: 'darwin', spawn, helperPath: '/x/speech-server', restartDelay: 1 });
+  m.apply(true, {});
+  assert.equal(procs.length, 1);
+  procs[0].say({ event: 'ready', host: '127.0.0.1', sttPort: 10300, ttsPort: 10200, voices: [{ name: 'Daniel', language: 'en-GB', quality: 'default' }] });
+  await tick();
+  assert.equal(m.status().voices.length, 1);
+  assert.equal(m.rescan(), true);
+  assert.equal(procs[0].stdin.ended, true, 'the old helper is asked to exit');
+  assert.equal(procs.length, 1, 'no second helper before the first has gone (the ports must be free)');
+  procs[0].emit('exit', 0, null);
+  await tick();
+  assert.equal(procs.length, 2, 'a fresh helper reads the installed voices again');
+  procs[1].say({ event: 'ready', host: '127.0.0.1', sttPort: 10300, ttsPort: 10200, voices: [{ name: 'Daniel', language: 'en-GB', quality: 'default' }, { name: 'Serena (Premium)', language: 'en-GB', quality: 'premium' }] });
+  await tick();
+  assert.equal(m.status().voices.length, 2);
+  m.stop();
+});

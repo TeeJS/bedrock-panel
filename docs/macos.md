@@ -149,8 +149,12 @@ the language supports it, and the system voices. Nothing to install and nothing 
 
 - ⚙ Settings → Integrations → **TTS/STT** → **Engine**: *Built-in macOS speech* (the default when
   the host fields are empty), or *Speech servers* to use Whisper/Piper hosts of your own. The
-  **Voice** list holds every installed system voice; better ones (Siri, enhanced, premium) are added
-  under System Settings → Accessibility → Spoken Content → System voice → **Manage Voices**.
+  **Voice** list holds every installed system voice, filtered by language and with a **Preview**
+  button. The default-quality voices are the small, dated ones; a voice's **Enhanced** or
+  **Premium** version is a separate download (a few hundred MB each) that the app cannot make for
+  you: System Settings → Accessibility → **Read & Speak** → the **ⓘ** next to *System voice* → pick
+  the language on the left → click the voice → **Download** (macOS 26; on macOS 14/15 it is
+  Spoken Content → System voice → **Manage Voices**). Click **Rescan** afterwards to see it here.
 - The first time something is transcribed, macOS asks for **Speech Recognition** — allow it. Until
   then speaking works and dictation returns nothing; the Status line on the tab says which.
 - **macOS 26:** live recognition uses Apple's SpeechAnalyzer — on this Mac, no Dictation setting, no

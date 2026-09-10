@@ -4123,6 +4123,24 @@ app.whenReady().then(async () => {
   ipcMain.on('ringState', (e, state) => { if (!isFromPanel(e)) return; setRingState(state); });
   ipcMain.handle('getConfig', (e) => isFrom(e, configWin) ? configForRenderer(config) : null);
   ipcMain.handle('getMacSpeechStatus', (e) => isFrom(e, configWin) ? macSpeech.status() : null);
+  ipcMain.handle('rescanMacVoices', (e) => isFrom(e, configWin) ? macSpeech.rescan() : false);   // after a voice download in Spoken Content
+  // Voice preview: macOS's own `say` speaks a sample with the chosen voice through the default output.
+  // The running helper is not involved, so it works whichever engine is selected; a new preview
+  // cuts the previous one short.
+  let voicePreviewProc = null;
+  ipcMain.handle('previewMacVoice', (e, name) => {
+    if (!isFrom(e, configWin) || process.platform !== 'darwin') return { ok: false, error: 'macOS only' };
+    const voice = String(name || '').trim();
+    try { if (voicePreviewProc) voicePreviewProc.kill(); } catch (er) {}
+    const spoken = voice ? voice.replace(/\s*\(.*$/, '') : 'the default voice';
+    return new Promise(resolve => {
+      voicePreviewProc = execFile('/usr/bin/say', [...(voice ? ['-v', voice] : []), 'Hi, this is ' + spoken + '. Your next meeting starts in five minutes.'], { timeout: 20000 }, (err, stdout, stderr) => {
+        voicePreviewProc = null;
+        if (err && !err.killed) return resolve({ ok: false, error: String(stderr || err.message).trim() });
+        resolve({ ok: true });
+      });
+    });
+  });
   // The bundled starter tile pages for this platform (editor: + Add page → Starter pages), so a config
   // that predates the macOS defaults — or any config — can pull in the pages that work here.
   ipcMain.handle('getStarterPages', (e) => {

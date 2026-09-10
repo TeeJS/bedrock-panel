@@ -107,9 +107,20 @@ function createMacSpeech(options) {
 
   function stop() { stopping = true; wanted = false; clearTimeout(restartTimer); restartTimer = null; terminate(); }
 
+  // Restart the helper so its voice list is read again: a voice downloaded under Spoken Content after
+  // the helper started is invisible to that process. The new one launches once the old has exited
+  // (the ports must be free). Returns whether a restart was started.
+  function rescan() {
+    const proc = child;
+    if (!proc) { if (wanted && !stopping) launch(); return false; }
+    terminate();
+    proc.once('exit', () => { if (wanted && !child && !stopping) { clearTimeout(restartTimer); restartTimer = null; launch(); } });
+    return true;
+  }
+
   return {
     available: !!helperPath,
-    apply, stop,
+    apply, stop, rescan,
     status: () => Object.assign({ available: !!helperPath, wanted }, status),
   };
 }

@@ -4291,8 +4291,10 @@ ${IS_MAC ? `
         </select></div>
       <div class="row"><label>Voice</label>
         <select id="ttsMacLang" style="flex:0 0 230px" title="Show the voices of one language"><option value="">All languages</option></select>
-        <select id="ttsMacVoice" style="flex:1"><option value="">System default for your language</option></select></div>
-      <p class="hint">Pick a language on the left to see only its voices; the list is sorted by language, then name. Enhanced and premium voices are the ones downloaded under System Settings → Accessibility → Spoken Content.</p>
+        <select id="ttsMacVoice" style="flex:1"><option value="">System default for your language</option></select>
+        <button id="ttsMacPreview" type="button" title="Hear a sample sentence in this voice">▶ Preview</button>
+        <button id="ttsMacRescan" type="button" title="Look for voices downloaded since the app started">Rescan</button></div>
+      <p class="hint">Pick a language on the left to see only its voices; Preview speaks a sample. The default-quality voices are the small ones; a voice's Enhanced or Premium version is a separate download: System Settings → Accessibility → Read &amp; Speak → the ⓘ next to System voice → pick the language, click the voice, Download (macOS 26; older: Spoken Content → System voice → Manage Voices). Click Rescan afterwards to see it here.</p>
       <div class="row"><label>Status</label><span id="ttsMacStatus" class="hint" style="margin:0">checking…</span></div>
       <details class="hint"><summary>The built-in engine runs on this Mac only: speech recognition is Apple's (on-device where the language supports it) and speech uses the voices under System Settings → Accessibility → Spoken Content. No server, no account, no network.</summary> macOS asks for the <b>Speech Recognition</b> permission the first time something is transcribed; until then only speaking works. Better voices (Siri voices, enhanced/premium) are downloaded in System Settings → Accessibility → Spoken Content → System voice → Manage Voices. The engine listens on 127.0.0.1:10300 (STT) and :10200 (TTS) — the Wyoming protocol, so the fields below are ignored while it is active.</details>
 ` : ''}
@@ -5261,13 +5263,31 @@ ${IS_MAC ? '' : `            <div class="row" style="margin-top:12px"><label sty
           voiceSel.value = chosen;
         };
         langSel.onchange = fillMacVoices;
+        let voiceSig = '';
+        const previewBtn = document.getElementById('ttsMacPreview'), rescanBtn = document.getElementById('ttsMacRescan');
+        previewBtn.onclick = async () => {
+          previewBtn.disabled = true; previewBtn.textContent = '▶ Playing…';
+          const r = await configApi.previewMacVoice(voiceSel.value).catch(e => ({ ok: false, error: e && e.message }));
+          previewBtn.disabled = false; previewBtn.textContent = '▶ Preview';
+          if (r && r.ok === false) { statusEl.textContent = 'preview failed: ' + (r.error || 'unknown'); statusEl.style.color = '#c98'; }
+        };
+        rescanBtn.onclick = async () => {
+          rescanBtn.disabled = true; statusEl.textContent = 'rescanning voices…';
+          await configApi.rescanMacVoices().catch(() => {});
+          setTimeout(renderMacSpeech, 1500); setTimeout(renderMacSpeech, 3500); setTimeout(() => { rescanBtn.disabled = false; }, 3600);
+        };
         const renderMacSpeech = () => configApi.getMacSpeechStatus().then(st => {
           if (!st) return;
           const chosen = ((config.settings || {}).voice || {}).macVoice || '';
-          if (Array.isArray(st.voices) && st.voices.length && !macVoices.length) {
+          const sig = Array.isArray(st.voices) ? st.voices.map(v => v.name + '|' + v.language + '|' + v.quality).join(',') : '';
+          if (sig && sig !== voiceSig) {   // first fill, or the set changed (a voice downloaded, then Rescan)
+            voiceSig = sig;
             macVoices = st.voices.slice();
+            const keepLang = langSel.value;
+            while (langSel.options.length > 1) langSel.remove(1);
             const langs = [...new Set(macVoices.map(v => v.language))].sort((a, b) => langName(a).localeCompare(langName(b)));
             for (const lang of langs) { const o = document.createElement('option'); o.value = lang; o.textContent = langName(lang); langSel.appendChild(o); }
+            if (keepLang && langs.includes(keepLang)) { langSel.value = keepLang; fillMacVoices(); voiceSel.value = chosen; return; }
             const chosenLang = (macVoices.find(v => v.name === chosen) || {}).language || '';
             langSel.value = chosenLang && langs.includes(chosenLang) ? chosenLang : '';
             fillMacVoices();
