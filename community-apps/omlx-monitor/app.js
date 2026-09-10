@@ -5,7 +5,7 @@
 // the layout and says so in the context column.
 const $ = s => document.querySelector(s);
 const params = new URLSearchParams(location.search);
-const RUNNING_VERSION = '1.0.0';
+const RUNNING_VERSION = '1.0.1';
 
 // Theme from the host: dark/light and the runtime accent, with a contrast-safe foreground.
 document.documentElement.dataset.theme = params.get('_dark') === '0' ? 'light' : 'dark';

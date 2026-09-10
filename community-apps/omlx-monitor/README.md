@@ -9,10 +9,10 @@ in flight, session totals, and average throughput. Load and Unload are one tap p
 ## Setup
 
 1. Install from **Settings → Drop-In Apps → Browse** and add an *oMLX Monitor* page.
-2. In the page's options set **Server 1 URL** (the dashboard address without `/admin`, e.g.
-   `http://127.0.0.1:8000`) and **Server 1 API key** — the server's main key from its Admin → Settings.
-   Up to three servers; each gets a tab.
-3. Save. The page polls every 2 s (adjustable).
+2. In the page's options set the **Server URL** (the dashboard address without `/admin`, e.g.
+   `http://127.0.0.1:8000`) and the **API key** — the server's main key from its Admin → Settings.
+   **Add another server** reveals the next one; up to three, each a tab named after its host.
+3. Save. The page polls every 2 s.
 
 The main API key unlocks the admin data (per-model activity, memory pressure, the model list, Load /
 Unload). A sub key only reads oMLX's public status endpoint; the page says so and shows the basics.

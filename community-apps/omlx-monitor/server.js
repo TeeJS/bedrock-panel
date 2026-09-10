@@ -30,11 +30,12 @@ const deviceCache = new Map();   // url -> { at, info }
 
 function instances(options) {
   const o = options || {};
-  return SLOTS.map(n => {
+  const on = n => n === 1 || (String(o.more2) === 'true' && (n === 2 || String(o.more3) === 'true'));   // "Add another server" toggles
+  return SLOTS.filter(on).map(n => {
     const url = str(o['url' + n]).replace(/\/+$/, '');
     let host = '';
     try { host = new URL(url).host; } catch (e) { host = url; }
-    return { n, url, key: str(o['key' + n]), name: str(o['name' + n]) || host || ('oMLX ' + n) };
+    return { n, url, key: str(o['key' + n]), name: host || ('oMLX ' + n) };
   }).filter(i => i.url);
 }
 
@@ -193,7 +194,7 @@ async function handle(action, context) {
   const query = (context && context.query) || {};
   const list = instances(options);
   if (action === 'instances') {
-    return { ok: true, instances: list.map(i => ({ inst: i.n, name: i.name, url: i.url, hasKey: !!i.key })), refreshSeconds: Number(options.refreshSeconds) || 2, allowControl: String(options.allowControl) !== 'false' };
+    return { ok: true, instances: list.map(i => ({ inst: i.n, name: i.name, url: i.url, hasKey: !!i.key })), refreshSeconds: 2, allowControl: String(options.allowControl) !== 'false' };
   }
   if (!['status', 'load', 'unload'].includes(action)) return { ok: false, error: 'unknown action' };
   const inst = list.find(i => String(i.n) === String(query.inst)) || list[0];
