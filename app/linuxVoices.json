@@ -6,7 +6,7 @@
   "country": "Albania",
   "name": "edon",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63511038,
   "md5": "01888cba8f112271d2cdb6c9de17aae7",
   "path": "sq/sq_AL/edon/medium"
@@ -18,7 +18,7 @@
   "country": "Bulgaria",
   "name": "dimitar",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63221984,
   "md5": "fc1ce62a4f04f089e22b8c3a13bde28a",
   "path": "bg/bg_BG/dimitar/medium"
@@ -30,7 +30,7 @@
   "country": "China",
   "name": "chaowen",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63221984,
   "md5": "4965c46e983653811bef0253026ff45a",
   "path": "zh/zh_CN/chaowen/medium"
@@ -42,7 +42,7 @@
   "country": "Czech Republic",
   "name": "jirka",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "da2deb0a3f93226a3f9b6e40d43c46ca",
   "path": "cs/cs_CZ/jirka/medium"
@@ -66,7 +66,7 @@
   "country": "Denmark",
   "name": "talesyntese",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "9c05494a3e0c1136337581e01222395d",
   "path": "da/da_DK/talesyntese/medium"
@@ -78,7 +78,7 @@
   "country": "Belgium",
   "name": "nathalie",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "ab0c38b5f66764b59ad9e3e98b1c2172",
   "path": "nl/nl_BE/nathalie/medium"
@@ -90,7 +90,7 @@
   "country": "Belgium",
   "name": "rdh",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63104526,
   "md5": "33d3469d745677ec4d7e96eb4145b09e",
   "path": "nl/nl_BE/rdh/medium"
@@ -102,7 +102,7 @@
   "country": "Netherlands",
   "name": "alex",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63531476,
   "md5": "34c3e80cedc491e5d943091cd1b45192",
   "path": "nl/nl_NL/alex/medium"
@@ -150,7 +150,7 @@
   "country": "Netherlands",
   "name": "pim",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63516050,
   "md5": "190b3e6463a931d3c583d2fa7cd0e4a0",
   "path": "nl/nl_NL/pim/medium"
@@ -162,10 +162,34 @@
   "country": "Netherlands",
   "name": "ronnie",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 62950044,
   "md5": "f74c8e7779cb05f935367d661de5b380",
   "path": "nl/nl_NL/ronnie/medium"
+ },
+ {
+  "id": "en_GB-alba-medium",
+  "lang": "en_GB",
+  "langName": "English",
+  "country": "Great Britain",
+  "name": "alba",
+  "quality": "medium",
+  "license": "CC BY 4.0",
+  "bytes": 63201294,
+  "md5": "c07f313752bb3aba8061041666251654",
+  "path": "en/en_GB/alba/medium"
+ },
+ {
+  "id": "en_GB-aru-medium",
+  "lang": "en_GB",
+  "langName": "English",
+  "country": "Great Britain",
+  "name": "aru",
+  "quality": "medium",
+  "license": "CC BY 4.0",
+  "bytes": 76754097,
+  "md5": "7862d75539b8ef867e7c04e772d323ea",
+  "path": "en/en_GB/aru/medium"
  },
  {
   "id": "en_GB-cori-medium",
@@ -178,6 +202,18 @@
   "bytes": 63531379,
   "md5": "f143307611eccea9d976235d0895f57c",
   "path": "en/en_GB/cori/medium"
+ },
+ {
+  "id": "en_GB-vctk-medium",
+  "lang": "en_GB",
+  "langName": "English",
+  "country": "Great Britain",
+  "name": "vctk",
+  "quality": "medium",
+  "license": "CC BY 4.0",
+  "bytes": 76952753,
+  "md5": "573025290fdc68812543b7438ace0c29",
+  "path": "en/en_GB/vctk/medium"
  },
  {
   "id": "en_US-bryce-medium",
@@ -198,7 +234,7 @@
   "country": "United States",
   "name": "joe",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "74fd6a4dc39e0aa9dce145d7f5acd4f6",
   "path": "en/en_US/joe/medium"
@@ -222,7 +258,7 @@
   "country": "United States",
   "name": "kathleen",
   "quality": "low",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63104526,
   "md5": "dd1ab131724b1cff76fe388252bec47b",
   "path": "en/en_US/kathleen/low"
@@ -282,7 +318,7 @@
   "country": "United States",
   "name": "mike",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63221984,
   "md5": "032952405bbd4eeae409385cde31b8c5",
   "path": "en/en_US/mike/medium"
@@ -306,7 +342,7 @@
   "country": "United States",
   "name": "reza_ibrahim",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63511038,
   "md5": "b9d4059c794df8336060fb7f36264a43",
   "path": "en/en_US/reza_ibrahim/medium"
@@ -342,7 +378,7 @@
   "country": "Iran",
   "name": "amir",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63531379,
   "md5": "7c0598c9726427869e1e86447b333539",
   "path": "fa/fa_IR/amir/medium"
@@ -354,7 +390,7 @@
   "country": "Iran",
   "name": "ganji",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63516050,
   "md5": "b50577af60b986135b37edaeaabb01b9",
   "path": "fa/fa_IR/ganji/medium"
@@ -366,7 +402,7 @@
   "country": "Iran",
   "name": "ganji_adabi",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63516050,
   "md5": "596844694672ac3d007c544301874553",
   "path": "fa/fa_IR/ganji_adabi/medium"
@@ -378,7 +414,7 @@
   "country": "Iran",
   "name": "reza_ibrahim",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63511038,
   "md5": "b9d4059c794df8336060fb7f36264a43",
   "path": "fa/fa_IR/reza_ibrahim/medium"
@@ -390,7 +426,7 @@
   "country": "Finland",
   "name": "harri",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "8e96b9e765f8db3e910943520aa0f475",
   "path": "fi/fi_FI/harri/medium"
@@ -402,7 +438,7 @@
   "country": "France",
   "name": "gilles",
   "quality": "low",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63104526,
   "md5": "f984386d1f0927597f09a3ec10b11b5d",
   "path": "fr/fr_FR/gilles/low"
@@ -450,7 +486,7 @@
   "country": "Germany",
   "name": "kerstin",
   "quality": "low",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63104526,
   "md5": "1d5e5788cfddb04cbb34418f2841931e",
   "path": "de/de_DE/kerstin/low"
@@ -474,7 +510,7 @@
   "country": "Germany",
   "name": "thorsten",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "a129b00fb3078df43c96bab6c94535c0",
   "path": "de/de_DE/thorsten/medium"
@@ -486,7 +522,7 @@
   "country": "Germany",
   "name": "thorsten_emotional",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 76745905,
   "md5": "7cc67d24d9d0b34d7a4f6224d16236b9",
   "path": "de/de_DE/thorsten_emotional/medium"
@@ -498,7 +534,7 @@
   "country": "Greece",
   "name": "rapunzelina",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 62950044,
   "md5": "265f2f9be00aa5ce81abc1f022145e42",
   "path": "el/el_GR/rapunzelina/medium"
@@ -510,7 +546,7 @@
   "country": "Hungary",
   "name": "anna",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "3796f9fa28bd8d390d17828e2e2e952d",
   "path": "hu/hu_HU/anna/medium"
@@ -522,7 +558,7 @@
   "country": "Hungary",
   "name": "berta",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "a94cc2562ba892f462cb502f9d3c3ca3",
   "path": "hu/hu_HU/berta/medium"
@@ -534,7 +570,7 @@
   "country": "Hungary",
   "name": "imre",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "aa0b1d1fdd539881c64ed249097e75ff",
   "path": "hu/hu_HU/imre/medium"
@@ -594,7 +630,7 @@
   "country": "Latvia",
   "name": "aivars",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63511038,
   "md5": "5b48c6f958aea5b7e9ff34f6a10882dd",
   "path": "lv/lv_LV/aivars/medium"
@@ -606,7 +642,7 @@
   "country": "Nepal",
   "name": "chitwan",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 62950044,
   "md5": "74cdb5b32816c366af74b55ed7494e25",
   "path": "ne/ne_NP/chitwan/medium"
@@ -618,7 +654,7 @@
   "country": "Norway",
   "name": "nvcc",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 76770227,
   "md5": "67e04e52b2f195e6db3ae103b58d1710",
   "path": "no/no_NO/nvcc/medium"
@@ -630,10 +666,22 @@
   "country": "Norway",
   "name": "talesyntese",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "9fc876e7edc6593086b4f2f34889f44b",
   "path": "no/no_NO/talesyntese/medium"
+ },
+ {
+  "id": "pl_PL-bass-high",
+  "lang": "pl_PL",
+  "langName": "Polish",
+  "country": "Poland",
+  "name": "bass",
+  "quality": "high",
+  "license": "Apache-2.0",
+  "bytes": 114204024,
+  "md5": "427c7c0975ee21cea29db0f58f827883",
+  "path": "pl/pl_PL/bass/high"
  },
  {
   "id": "pl_PL-darkman-medium",
@@ -642,7 +690,7 @@
   "country": "Poland",
   "name": "darkman",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "27bf2d71e934b112657544fd0b100a7a",
   "path": "pl/pl_PL/darkman/medium"
@@ -654,7 +702,7 @@
   "country": "Poland",
   "name": "gosia",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "ecf817530e575025166e454adde1f382",
   "path": "pl/pl_PL/gosia/medium"
@@ -666,7 +714,7 @@
   "country": "Poland",
   "name": "mc_speech",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "a927e2f2c882bb40cbc2e5f3356ce19b",
   "path": "pl/pl_PL/mc_speech/medium"
@@ -690,7 +738,7 @@
   "country": "Brazil",
   "name": "cadu",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 62950044,
   "md5": "6f3a6e23694c9088e3696a15191af2cc",
   "path": "pt/pt_BR/cadu/medium"
@@ -714,7 +762,7 @@
   "country": "Brazil",
   "name": "faber",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "e0724a2f07965f6523d2a1e96b488a4c",
   "path": "pt/pt_BR/faber/medium"
@@ -726,7 +774,7 @@
   "country": "Brazil",
   "name": "jeff",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 62950044,
   "md5": "dfb93e9da48638f9efa6b63fdb0b7030",
   "path": "pt/pt_BR/jeff/medium"
@@ -738,7 +786,7 @@
   "country": "Portugal",
   "name": "tug\u00e3o",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "0642048511ffe36c3b519520614b53f4",
   "path": "pt/pt_PT/tug\u00e3o/medium"
@@ -750,7 +798,7 @@
   "country": "Romania",
   "name": "mihai",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "45f4253916c93d3d05ad3fe1b07ea4f3",
   "path": "ro/ro_RO/mihai/medium"
@@ -762,7 +810,7 @@
   "country": "Russia",
   "name": "denis",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "76c2f14e521fef3ed574f97ad492728e",
   "path": "ru/ru_RU/denis/medium"
@@ -774,7 +822,7 @@
   "country": "Russia",
   "name": "dmitri",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "589ccc91745a1e2353508ff62c5941b7",
   "path": "ru/ru_RU/dmitri/medium"
@@ -786,10 +834,22 @@
   "country": "Slovakia",
   "name": "lili",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "836e078518042448bda8416a8ea52984",
   "path": "sk/sk_SK/lili/medium"
+ },
+ {
+  "id": "sl_SI-artur-medium",
+  "lang": "sl_SI",
+  "langName": "Slovenian",
+  "country": "Slovenia",
+  "name": "artur",
+  "quality": "medium",
+  "license": "CC BY 4.0",
+  "bytes": 63200492,
+  "md5": "ca0aac61139e446bebf98561e8cf9407",
+  "path": "sl/sl_SI/artur/medium"
  },
  {
   "id": "es_MX-claude-high",
@@ -822,7 +882,7 @@
   "country": "Spain",
   "name": "davefx",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63201294,
   "md5": "dc515cd4ecc5f6f72fe14a941188fc9c",
   "path": "es/es_ES/davefx/medium"
@@ -852,13 +912,37 @@
   "path": "es/es_ES/mls_9972/low"
  },
  {
+  "id": "es_ES-sharvard-medium",
+  "lang": "es_ES",
+  "langName": "Spanish",
+  "country": "Spain",
+  "name": "sharvard",
+  "quality": "medium",
+  "license": "CC BY 4.0",
+  "bytes": 76733615,
+  "md5": "77e6f9c26e92799fb04bb90b46bf1834",
+  "path": "es/es_ES/sharvard/medium"
+ },
+ {
+  "id": "sv_SE-alma-medium",
+  "lang": "sv_SE",
+  "langName": "Swedish",
+  "country": "Sweden",
+  "name": "alma",
+  "quality": "medium",
+  "license": "CC BY 4.0",
+  "bytes": 63434611,
+  "md5": "93c03e7c0e2f21e78d123a3ee82d54c1",
+  "path": "sv/sv_SE/alma/medium"
+ },
+ {
   "id": "sv_SE-nst-medium",
   "lang": "sv_SE",
   "langName": "Swedish",
   "country": "Sweden",
   "name": "nst",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 63104526,
   "md5": "20266cf58e93ca2140444b77398aea04",
   "path": "sv/sv_SE/nst/medium"
@@ -942,7 +1026,7 @@
   "country": "Ukraine",
   "name": "ukrainian_tts",
   "quality": "medium",
-  "license": "CC0",
+  "license": "Public domain",
   "bytes": 76735663,
   "md5": "3366c3d4f31cb77966fb14d042956b4f",
   "path": "uk/uk_UA/ukrainian_tts/medium"
@@ -970,6 +1054,18 @@
   "bytes": 63532015,
   "md5": "275113cbb8ffb29e3f8d51d53d266318",
   "path": "ur/ur_PK/fasih/medium"
+ },
+ {
+  "id": "vi_VN-vais1000-medium",
+  "lang": "vi_VN",
+  "langName": "Vietnamese",
+  "country": "Vietnam",
+  "name": "vais1000",
+  "quality": "medium",
+  "license": "CC BY 4.0",
+  "bytes": 63201294,
+  "md5": "5e42428c4f6131f75557cf156c9c1526",
+  "path": "vi/vi_VN/vais1000/medium"
  },
  {
   "id": "cy_GB-bu_tts-medium",

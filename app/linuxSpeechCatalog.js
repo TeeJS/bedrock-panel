@@ -28,11 +28,17 @@ const ENGINE = {
 };
 
 // The voice list lives in linuxVoices.json, generated from Piper's published index plus a reading of
-// every voice's MODEL_CARD: 82 voices across 30 languages, and every one of them CC0, public domain,
-// CC BY or MIT. The non-commercial and share-alike voices are excluded on purpose -- they sound just
-// as good and cannot ship in a product, which is the whole reason this file is curated rather than
-// mirrored. `bytes` is the model; the .json beside it is a couple of kilobytes and ignored for
-// progress. `quality` is Piper's own label and tracks size and naturalness together.
+// all 176 MODEL_CARDs: 90 voices across 36 languages, every one public domain, CC BY, Apache or MIT.
+// The non-commercial and share-alike voices are excluded on purpose -- they sound just as good and
+// cannot ship in a product, which is the whole reason this file is curated rather than mirrored.
+//
+// Read the URL as well as the words when classifying a licence. A card saying
+// "https://creativecommons.org/licenses/by/4.0/" never contains the letters "CC BY", and matching on
+// the words alone quietly dropped a shippable voice from a dozen languages -- including three of the
+// four British ones, which is how the omission was noticed.
+//
+// `bytes` is the model; the .json beside it is a couple of kilobytes and ignored for progress.
+// `quality` is Piper's own label and tracks size and naturalness together.
 const VOICES = require('./linuxVoices.json');
 
 // Where someone can browse every Piper voice, ours and the ones we cannot ship.

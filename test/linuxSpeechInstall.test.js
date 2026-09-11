@@ -36,12 +36,19 @@ test('every shipped voice carries a licence that may actually ship', () => {
 
 test('the voice list is wide enough for people who do not speak English', () => {
   const langs = catalog.voiceLanguages();
-  assert.ok(langs.length >= 25, 'only ' + langs.length + ' languages on offer');
+  assert.ok(langs.length >= 30, 'only ' + langs.length + ' languages on offer');
   const names = new Set(langs.map(l => l.name));
   for (const expected of ['German', 'French', 'Spanish', 'Italian', 'Russian', 'Chinese', 'Polish']) {
     assert.ok(names.has(expected), expected + ' has no voice');
   }
   for (const l of langs) assert.ok(l.voices.length > 0, l.name + ' is listed with no voices');
+  // One voice in a language people actually use is a sign the licence reading dropped some. It did
+  // once: three of the four British voices publish their licence as a bare URL rather than the words
+  // "CC BY", and matching on the words alone excluded them.
+  for (const code of ['en_GB', 'en_US', 'de_DE', 'fr_FR', 'es_ES']) {
+    const l = langs.find(x => x.code === code);
+    assert.ok(l && l.voices.length > 1, code + ' has ' + ((l && l.voices.length) || 0) + ' voice(s)');
+  }
 });
 
 test('every voice is listed with what a person needs to choose one', () => {
