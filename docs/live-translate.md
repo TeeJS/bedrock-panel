@@ -34,6 +34,9 @@ resolve across sentences). Captions arrive per phrase, a beat or two behind spee
 
 1. Your STT server (e.g. [tts-sst](https://github.com/TeeJS/tts-stt-windows)) must run a
    **multilingual Whisper model** — the English-only Parakeet default can't transcribe foreign speech.
+   On **Linux**, the built-in engine can do this itself: Settings → TTS/STT → Listening → choose
+   *Many languages* and press Set up. The English-only model there has the same problem, and the
+   symptom is the same — fluent, confident, wrong English.
 2. In the page's editor settings: **Provider = AI translate**, pick an **endpoint preset**
    (DeepSeek / OpenAI / custom URL), paste the **API key**, confirm the **model**
    (`deepseek-v4-flash` is fast and costs roughly $0.10/hr of speech), set the **target language**.

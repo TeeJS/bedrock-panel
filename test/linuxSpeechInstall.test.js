@@ -167,6 +167,25 @@ test('removing a voice leaves the engine, since another voice may still need it'
 
 // ---- listening, a separate download from speaking ---------------------------------------------
 
+test('listening offers a multilingual model, because an English one invents English', () => {
+  // Live Translate is the case that made this non-optional: an English-only recognizer handed German
+  // returns confident English nonsense, and the translator downstream translates the nonsense.
+  const models = catalog.sttModels();
+  assert.ok(models.some(m => m.languages.includes('en')), 'no English model');
+  const multi = models.find(m => m.languages.includes('multilingual'));
+  assert.ok(multi, 'nothing for anyone who does not speak English');
+  assert.equal(multi.family, 'whisper', 'multilingual means whisper here');
+  assert.match(multi.label, /Live Translate/, 'the label has to say what it is for');
+});
+
+test('the helper honours the spoken language the client declares', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'app', 'linux', 'speech-server.py'), 'utf8');
+  assert.match(src, /--whisper-language=/, 'the language must reach the recognizer');
+  assert.match(src, /elif kind == 'transcribe'/, "the Wyoming event carrying it must be read");
+  assert.ok(!/--whisper-tail-paddings/.test(src),
+    'tail padding stays at the default: 300 made it repeat the opening words of every utterance');
+});
+
 test('every recognition model is permissively licensed and fully pinned', () => {
   for (const m of catalog.sttModels()) {
     assert.ok(['MIT', 'Apache-2.0', 'CC0', 'Public domain'].includes(m.license), m.id + ' licence: ' + m.license);

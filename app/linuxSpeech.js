@@ -58,6 +58,10 @@ function layout(baseDir) {
   };
 }
 
+// A model directory is complete when its token list is there. The two families name that file
+// differently, which is a packaging detail rather than a difference worth configuring.
+const TOKEN_FILES = ['tokens.txt', 'tiny-tokens.txt', 'base-tokens.txt'];
+
 /** The directory of the named recognition model, or of the only one installed. */
 function sttModelDir(baseDir, name, readdir = fs.readdirSync, exists = fs.existsSync) {
   const { sttDir } = layout(baseDir);
@@ -66,7 +70,7 @@ function sttModelDir(baseDir, name, readdir = fs.readdirSync, exists = fs.exists
   const wanted = name && names.includes(name) ? [name] : names;
   for (const dir of wanted) {
     const full = path.join(sttDir, dir);
-    if (exists(path.join(full, 'tokens.txt'))) return full;
+    if (TOKEN_FILES.some(f => exists(path.join(full, f)))) return full;
   }
   return null;
 }
@@ -203,4 +207,4 @@ function createLinuxSpeech(options) {
   };
 }
 
-module.exports = { createLinuxSpeech, helperScript, layout, voiceModel, sttModelDir, TTS_PORT, STT_PORT, HOST };
+module.exports = { createLinuxSpeech, helperScript, layout, voiceModel, sttModelDir, TOKEN_FILES, TTS_PORT, STT_PORT, HOST };

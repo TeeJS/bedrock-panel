@@ -107,12 +107,28 @@ const DIARIZATION = {
 const STT_MODELS = [
   {
     id: 'moonshine-tiny-en',
-    label: 'English — fast, for dictation and commands',
+    label: 'English only — fastest',
+    family: 'moonshine',
     license: 'MIT',
     languages: ['en'],
     bytes: 29858559,
     sha256: '9ec31b342d8fa3240c3b81b8f82e1cf7e3ac467c93ca5a999b741d5887164f8d',
     url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27.tar.bz2',
+    stripComponents: 1,
+  },
+  {
+    // Needed by anything that listens to a language other than English -- Live Translate above all,
+    // which is unusable without it: an English-only model does not fail on German, it INVENTS
+    // English. "Guten Morgen, wir beginnen die Besprechung" came back as "Good morning, we begin the
+    // vascation with incorrect answer", and a translator downstream faithfully translates that.
+    id: 'whisper-tiny-multilingual',
+    label: 'Many languages — needed for Live Translate',
+    family: 'whisper',
+    license: 'MIT',
+    languages: ['multilingual'],
+    bytes: 116204861,
+    sha256: 'c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1',
+    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2',
     stripComponents: 1,
   },
 ];

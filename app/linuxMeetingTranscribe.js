@@ -164,15 +164,28 @@ function createLinuxMeetingTranscriber(options) {
       && fs.existsSync(paths.embeddingModel));
   }
 
+  /**
+   * Arguments for whichever recognition model is installed. Two families, told apart by the files
+   * present: Moonshine is English and fastest, Whisper is multilingual. A meeting in another
+   * language needs the second one, the same as Live Translate does.
+   */
   function modelArgs() {
     let dirs;
     try { dirs = fs.readdirSync(paths.sttDir); } catch (e) { return null; }
+    const at = (dir, name) => { const p = path.join(dir, name); return fs.existsSync(p) ? p : null; };
     for (const id of dirs) {
       const dir = path.join(paths.sttDir, id);
-      const enc = path.join(dir, 'encoder_model.ort');
-      const merged = path.join(dir, 'decoder_model_merged.ort');
-      const tokens = path.join(dir, 'tokens.txt');
-      if (fs.existsSync(enc) && fs.existsSync(merged) && fs.existsSync(tokens)) {
+      const wEnc = at(dir, 'tiny-encoder.int8.onnx') || at(dir, 'tiny-encoder.onnx');
+      const wDec = at(dir, 'tiny-decoder.int8.onnx') || at(dir, 'tiny-decoder.onnx');
+      const wTok = at(dir, 'tiny-tokens.txt');
+      if (wEnc && wDec && wTok) {
+        return ['--whisper-encoder=' + wEnc, '--whisper-decoder=' + wDec, '--tokens=' + wTok,
+                '--model-type=whisper', '--num-threads=4'];
+      }
+      const enc = at(dir, 'encoder_model.ort');
+      const merged = at(dir, 'decoder_model_merged.ort');
+      const tokens = at(dir, 'tokens.txt');
+      if (enc && merged && tokens) {
         return ['--moonshine-encoder=' + enc, '--moonshine-merged-decoder=' + merged, '--tokens=' + tokens];
       }
     }

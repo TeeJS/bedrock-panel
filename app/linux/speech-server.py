@@ -133,32 +133,63 @@ class Recognizer:
         self.binary, self.lib_dir, self.model_dir = binary, lib_dir, model_dir
         self.tmp = tempfile.mkdtemp(prefix='bedrock-stt-')
 
-    def model_args(self):
-        """Moonshine's four-file layout, or the merged-decoder packaging of the same model. The
-        quantized release ships the merged form, so both spellings are accepted rather than assuming
-        whichever one happened to be downloaded."""
-        enc = os.path.join(self.model_dir, 'encoder_model.ort')
-        merged = os.path.join(self.model_dir, 'decoder_model_merged.ort')
-        tokens = os.path.join(self.model_dir, 'tokens.txt')
-        if not (os.path.exists(enc) and os.path.exists(tokens)):
+    def model_args(self, language=''):
+        """Whichever recognition model was downloaded, as command-line arguments.
+
+        Two families are supported and told apart by the files present rather than by configuration,
+        so a model directory is self-describing. Whisper is the multilingual one and takes a spoken
+        LANGUAGE, which is why the Wyoming transcribe event's language field is threaded all the way
+        down here: without it, Live Translate's "source language" setting is decoration.
+
+        Whisper's tail padding is deliberately left at the default. sherpa suggests 300 for
+        multilingual models, and measured on real speech that made it repeat the opening words of
+        every utterance; the default produced clean text."""
+        return self._whisper_args(language) or self._moonshine_args()
+
+    def _whisper_args(self, language=''):
+        enc = self._first('tiny-encoder.int8.onnx', 'tiny-encoder.onnx', 'base-encoder.int8.onnx', 'base-encoder.onnx')
+        dec = self._first('tiny-decoder.int8.onnx', 'tiny-decoder.onnx', 'base-decoder.int8.onnx', 'base-decoder.onnx')
+        tokens = self._first('tiny-tokens.txt', 'base-tokens.txt')
+        if not (enc and dec and tokens):
             return None
-        if os.path.exists(merged):
+        args = ['--whisper-encoder=' + enc, '--whisper-decoder=' + dec, '--tokens=' + tokens,
+                '--model-type=whisper', '--num-threads=4']
+        # No language given means whisper detects it, which it does well; a wrong one is worse than
+        # none, so only a plain two-letter code is passed through.
+        code = str(language or '').strip().lower()[:5]
+        if code and all(c.isalpha() or c == '-' for c in code):
+            args.append('--whisper-language=' + code.split('-')[0])
+        return args
+
+    def _moonshine_args(self):
+        enc = self._first('encoder_model.ort')
+        tokens = self._first('tokens.txt')
+        if not (enc and tokens):
+            return None
+        merged = self._first('decoder_model_merged.ort')
+        if merged:
             return ['--moonshine-encoder=' + enc, '--moonshine-merged-decoder=' + merged, '--tokens=' + tokens]
-        parts = [os.path.join(self.model_dir, n) for n in
-                 ('preprocess.ort', 'uncached_decode.ort', 'cached_decode.ort')]
-        if not all(os.path.exists(p) for p in parts):
+        parts = [self._first(n) for n in ('preprocess.ort', 'uncached_decode.ort', 'cached_decode.ort')]
+        if not all(parts):
             return None
         return ['--moonshine-preprocessor=' + parts[0], '--moonshine-encoder=' + enc,
                 '--moonshine-uncached-decoder=' + parts[1], '--moonshine-cached-decoder=' + parts[2],
                 '--tokens=' + tokens]
 
+    def _first(self, *names):
+        for n in names:
+            p = os.path.join(self.model_dir, n)
+            if os.path.exists(p):
+                return p
+        return None
+
     def usable(self):
         return os.path.exists(self.binary) and self.model_args() is not None
 
-    def transcribe(self, pcm, rate, width, channels):
+    def transcribe(self, pcm, rate, width, channels, language=''):
         """16-bit PCM in, text out. Empty string when nothing could be recognized, which a client
         reads as silence rather than as a fault."""
-        args = self.model_args()
+        args = self.model_args(language)
         if not args or not pcm:
             return ''
         path = os.path.join(self.tmp, 'utt%d.wav' % threading.get_ident())
@@ -313,6 +344,7 @@ class SttHandler(socketserver.StreamRequestHandler):
     def handle(self):
         pcm = bytearray()
         fmt = {'rate': 16000, 'width': 2, 'channels': 1}
+        language = ''
         while True:
             try:
                 event = read_event(self.rfile)
@@ -321,6 +353,9 @@ class SttHandler(socketserver.StreamRequestHandler):
             kind = event['type']
             if kind == 'describe':
                 write_event(self.request, 'info', asr_info(self.server.model_name, self.server.languages))
+            elif kind == 'transcribe':
+                # The client naming the spoken language, which is what Live Translate sets.
+                language = str(event['data'].get('language') or '')
             elif kind == 'audio-start':
                 pcm = bytearray()
                 for key in ('rate', 'width', 'channels'):
@@ -329,7 +364,7 @@ class SttHandler(socketserver.StreamRequestHandler):
             elif kind == 'audio-chunk':
                 pcm.extend(event['payload'])
             elif kind == 'audio-stop':
-                text = self.server.recognizer.transcribe(bytes(pcm), fmt['rate'], fmt['width'], fmt['channels'])
+                text = self.server.recognizer.transcribe(bytes(pcm), fmt['rate'], fmt['width'], fmt['channels'], language)
                 write_event(self.request, 'transcript', {'text': text})
                 pcm = bytearray()
 
@@ -410,7 +445,7 @@ def main():
         name = os.path.basename(args.stt_model_dir.rstrip(os.sep))
         if listen(args.stt_port, SttHandler, {
                 'recognizer': recognizer, 'model_name': name,
-                'languages': ['en'] if '-en' in name or '.en' in name else []}):
+                'languages': ['en'] if '-en' in name else ['multilingual']}):
             served.append('stt')
 
     if not served:

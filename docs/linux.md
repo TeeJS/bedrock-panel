@@ -176,8 +176,11 @@ That is the whole setup. There is no server to run, no port to enter, and no acc
 - **Everything offered is free of restrictions.** Piper's voices inherit their training data's
   licence and many of the good-sounding ones are non-commercial or share-alike, so this list is only
   the ones that are public domain, CC0, CC BY or MIT. The licence is shown next to each voice.
-- **Listening is English only**, even though speaking is not. For another language, point STT at your
-  own Wyoming server.
+- **Listening offers two models.** *English only* is the fastest. *Many languages* is a multilingual
+  Whisper, roughly four times the download and a little slower, and it is what you want if you listen
+  to anything but English. **Live Translate requires it**: an English-only model does not fail on
+  foreign speech, it invents English out of the sounds, and whatever translates that downstream
+  faithfully translates nonsense.
 - **They are real speech servers.** Speaking answers on 127.0.0.1:10200 and listening on
   127.0.0.1:10300, both speaking the Wyoming protocol, so anything else on this machine that speaks
   Wyoming — Home Assistant, for one — can use them too. Same arrangement as the macOS build and the
