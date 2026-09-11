@@ -28,6 +28,7 @@ const { helperPath } = require('./nativeHelpers');
 const MONITOR_EXE = helperPath('nowplayingMonitor');   // smtc-monitor.exe on Windows, nowplaying-monitor on macOS, null elsewhere
 
 const STALE_MS = 12000;   // provider path only: if no provider refresh for this long, report null
+const STALL_MS = 6000;    // a live helper that has sent nothing for this long is restarted
 const RESPAWN_MS = 5000;  // helper crash -> retry delay (only while running)
 let snapshot = null, snapTs = 0, timer = null, running = false, busy = false;
 let proc = null, respawnTimer = null, warned = false;
@@ -127,8 +128,10 @@ async function tick() {
 
 // ---- Windows path: consume the persistent smtc-monitor.exe stream ----
 function onMonitorLine(line) {
+  // Logged BEFORE the running check on purpose: a line arriving while this module thinks it is
+  // stopped is the one failure that leaves no trace anywhere else.
+  if (!sawLine) { sawLine = true; say('helper is reporting (running=' + running + '); first line: ' + line.slice(0, 110)); }
   if (!running) return;
-  if (!sawLine) { sawLine = true; say('helper is reporting; first line: ' + line.slice(0, 120)); }
   let o;
   try { o = JSON.parse(line); } catch (e) { say('unreadable line from the helper: ' + line.slice(0, 120)); return; }
   if (!o || !o.title) {
@@ -157,7 +160,33 @@ function spawnMonitor() {
   try { proc = spawn(MONITOR_EXE, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); }
   catch (e) { proc = null; return; }
   let buf = '';
+  let sawBytes = false;
+  if (!proc.stdout) { say('the helper was started with no readable output'); return; }
+  // A stalled read, and the recovery for it.
+  //
+  // Measured on Linux: the helper runs and writes continuously while this stream sits readable,
+  // undestroyed, flowing and with a listener attached, and delivers nothing — for as long as the app
+  // is left running. The same helper spawned from a bare Electron main process, with and without the
+  // ozone relaunch, delivers immediately, so the mechanism is sound and something about the app's
+  // state at this moment is not. Rather than leave the feature silently dead, notice the silence and
+  // start over: a helper that has produced nothing while alive is not going to start.
+  const stalledAt = Date.now();
+  const watchdog = setInterval(() => {
+    if (sawBytes || !proc || proc.killed) { clearInterval(watchdog); return; }
+    const waited = Math.round((Date.now() - stalledAt) / 1000);
+    const out = proc.stdout;
+    say('no output after ' + waited + 's — pid=' + proc.pid + ' bytesRead=' + ((out && out.bytesRead) || 0)
+      + (out ? ' readable=' + out.readable + ' destroyed=' + out.destroyed
+        + ' flowing=' + out.readableFlowing + ' listeners=' + out.listenerCount('data') : ' stdout missing')
+      + '; restarting it');
+    clearInterval(watchdog);
+    const dead = proc;
+    proc = null;                       // so the close handler does not fight the respawn
+    try { dead.kill(); } catch (e) {}
+    if (running) setTimeout(spawnMonitor, 500);
+  }, STALL_MS);
   proc.stdout.on('data', d => {
+    if (!sawBytes) { sawBytes = true; say('receiving output from the helper (' + d.length + ' bytes)'); }
     buf += d.toString('utf8');
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
