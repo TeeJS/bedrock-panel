@@ -4289,7 +4289,21 @@ ${IS_MAC ? `
       <div id="diMsg" class="hint" style="margin:0 0 10px;min-height:16px"></div>
       <div id="diPane"></div>`;
 
-    const ttsHtml = `${IS_MAC ? `
+    const ttsHtml = `${IS_LINUX ? `
+      <p class="sectitle">Speech engine</p>
+      <div class="row"><label>Engine</label>
+        <select id="ttsEngine" style="flex:1">
+          <option value="" ${!voice.engine ? 'selected' : ''}>Built-in speech when no server is set below (default)</option>
+          <option value="linux" ${voice.engine === 'linux' ? 'selected' : ''}>Built-in speech on this computer — nothing to install, no GPU needed</option>
+          <option value="wyoming" ${voice.engine === 'wyoming' ? 'selected' : ''}>Speech servers (Whisper / Piper) at the hosts below</option>
+        </select></div>
+      <div class="row"><label>Voice</label>
+        <select id="ttsLinuxVoice" style="flex:1"></select>
+        <button id="ttsLinuxInstall" type="button" title="Download this voice and the speech engine">Set up</button>
+        <button id="ttsLinuxRemove" type="button" title="Delete this voice from this computer">Remove</button></div>
+      <div class="row"><label>Status</label><span id="ttsLinuxStatus" class="hint" style="margin:0">checking…</span></div>
+      <details class="hint"><summary>The built-in engine speaks on this computer with nothing to install and no GPU — pick a voice and press Set up, and it downloads about 85 MB the first time.</summary> It runs as a local speech server on 127.0.0.1:10200, the Wyoming protocol, so anything else on this machine that speaks Wyoming (Home Assistant, for one) can use it too. Every voice offered here is public domain or CC0. <b>Listening is not built in yet</b> — set an STT host below for that. If you already run your own Piper on port 10200, that one is used and this engine stays out of its way.</details>
+` : ''}${IS_MAC ? `
       <p class="sectitle">Speech engine</p>
       <div class="row"><label>Engine</label>
         <select id="ttsEngine" style="flex:1">
@@ -5268,8 +5282,65 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       document.getElementById('ttsTtsPort').oninput = e => saveVoice('ttsPort', e.target.value.trim());
       const helper = document.getElementById('ttsHelperLink');
       if (helper) helper.onclick = e => { e.preventDefault(); configApi.openExternal('https://github.com/TeeJS/tts-stt-windows/releases'); };
+      // Linux built-in engine: the same Engine selector, a catalogue of voices to download, and a
+      // status line that is also the progress bar during a download.
+      const engineSelLinux = IS_LINUX ? document.getElementById('ttsEngine') : null;
+      if (engineSelLinux && configApi.getLinuxSpeechStatus) {
+        const voiceSel = document.getElementById('ttsLinuxVoice');
+        const statusEl = document.getElementById('ttsLinuxStatus');
+        const installBtn = document.getElementById('ttsLinuxInstall');
+        const removeBtn = document.getElementById('ttsLinuxRemove');
+        engineSelLinux.onchange = e => saveVoice('engine', e.target.value);
+        voiceSel.onchange = e => saveVoice('linuxVoice', e.target.value);
+        let busy = false;
+        const mb = n => Math.round(n / 1048576) + ' MB';
+        const renderLinuxSpeech = () => configApi.getLinuxSpeechStatus().then(st => {
+          if (!st || !st.supported || busy) return;
+          const installed = st.installedVoices || [];
+          const chosen = st.selectedVoice || '';
+          voiceSel.innerHTML = (st.catalog || []).map(v =>
+            `<option value="${v.id}" ${v.id === chosen ? 'selected' : ''}>${v.label} — ${v.license}`
+            + `${installed.includes(v.id) ? ' — installed' : ' — ' + mb(v.bytes) + ' to download'}</option>`).join('');
+          const here = installed.includes(voiceSel.value);
+          installBtn.textContent = here ? 'Re-download' : 'Set up';
+          removeBtn.disabled = !here;
+          statusEl.textContent = st.failure ? 'Not working: ' + st.failure
+            : st.usingExistingServer ? 'Using the Wyoming server already running on this computer.'
+            : st.running ? 'Running — speaking on ' + st.endpoint.host + ':' + st.endpoint.port + '. Listening still needs a server below.'
+            : installed.length ? 'Installed, not running. It starts when the engine above is set to use it.'
+            : 'Not installed. Pick a voice and press Set up.';
+        }).catch(() => {});
+        voiceSel.addEventListener('change', () => renderLinuxSpeech());
+        installBtn.onclick = () => {
+          const id = voiceSel.value;
+          if (!id || busy) return;
+          busy = true;
+          installBtn.disabled = removeBtn.disabled = true;
+          statusEl.textContent = 'Starting…';
+          configApi.installLinuxSpeechVoice(id).then(r => {
+            busy = false;
+            installBtn.disabled = false;
+            statusEl.textContent = r && r.ok ? 'Ready.' : 'Could not set up speech: ' + ((r && r.error) || 'unknown error');
+            renderLinuxSpeech();
+          });
+        };
+        removeBtn.onclick = () => {
+          const id = voiceSel.value;
+          if (!id || busy) return;
+          configApi.removeLinuxSpeechVoice(id).then(() => renderLinuxSpeech());
+        };
+        if (configApi.onLinuxSpeechProgress) configApi.onLinuxSpeechProgress(p => {
+          if (!p) return;
+          if (p.phase === 'download' && p.total) {
+            statusEl.textContent = 'Downloading… ' + Math.floor(p.received / p.total * 100) + '% of ' + mb(p.total);
+          } else if (p.phase === 'extract') statusEl.textContent = 'Unpacking the speech engine…';
+          else if (p.phase === 'error') statusEl.textContent = 'Download failed: ' + p.message;
+        });
+        renderLinuxSpeech();
+        window.addEventListener('focus', renderLinuxSpeech);
+      }
       // macOS built-in engine: selector, voice list from the helper, live status (re-read on focus).
-      const engineSel = document.getElementById('ttsEngine');
+      const engineSel = IS_MAC ? document.getElementById('ttsEngine') : null;
       if (engineSel && configApi.getMacSpeechStatus) {
         const voiceSel = document.getElementById('ttsMacVoice'), statusEl = document.getElementById('ttsMacStatus');
         engineSel.onchange = e => saveVoice('engine', e.target.value);

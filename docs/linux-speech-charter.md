@@ -50,7 +50,9 @@ same class.
   is absent on the very machine this was measured on, which ships Python 3.14 without it. A feature
   that starts with "first install pip" fails the bar.
 - **sherpa-onnx** ships prebuilt Linux x64 binaries, covers **both** halves from one dependency, runs
-  on CPU, and is Apache-2.0. One download, no toolchain, no packaging system.
+  on CPU, and is Apache-2.0. One download, no toolchain, no packaging system. It remains the plan for
+  phase 2; phase 1 shipped Piper's own prebuilt release instead, because Piper is the implementation
+  this app's Wyoming client was built against and its JSON mode gives a clean per-utterance signal.
 - **speech-dispatcher** (`spd-say`) is on every desktop already and needs no download, but espeak-ng
   quality is a machine from 1990. Worth keeping as a last-resort fallback, never as the default.
 
@@ -76,16 +78,22 @@ no hosts configured, the built-in engine wins.
 
 ## Phasing
 
-- **Phase 1 — TTS.** The app speaks on a fresh install. Smaller surface than STT: no microphone, no
-  VAD, no streaming, one binary and one voice. Proves the download-and-serve machinery.
+- **Phase 1 — TTS. Done.** The app speaks on a fresh install. `app/linux/speech-server.py` holds a
+  resident Piper and serves Wyoming on 127.0.0.1:10200; `app/linuxSpeech.js` supervises it;
+  `app/linuxSpeechInstall.js` downloads and verifies the engine and voice; `app/linuxSpeechCatalog.js`
+  pins what may be fetched; the editor's TTS/STT tab sets it up. Two findings worth carrying forward:
+  Piper's raw-stdout mode has no usable end-of-utterance marker (its log line undercounts the audio
+  it wrote), and the built-in engine must key off the TTS host alone rather than both hosts, or
+  configuring only a Whisper server silently mutes the machine.
 - **Phase 2 — STT.** Dictation and the voice apps listen. Reuses Phase 1's downloader and server.
 - **Phase 3 — languages.** The picker offers more than English, which decides which model is fetched.
 
 ## Open questions
 
-1. **Voice licensing varies per voice.** sherpa-onnx is Apache-2.0 and the Moonshine English models
-   are MIT, both clean. The Piper voices inherit their dataset's terms — `amy` says only "see URL" —
-   so the shipped list must be voices with terms we have actually read.
+1. ~~**Voice licensing varies per voice.**~~ Settled by reading the MODEL_CARD of every English
+   voice: most of the good ones are CC BY-NC-SA or carry a bespoke research licence and cannot ship.
+   Twelve are public domain or CC0, and the four in the catalogue come from that set. Any voice added
+   later must be checked the same way.
 2. **Non-English is unmeasured.** Moonshine tiny is English-only; other languages mean Whisper tiny
    at 112 MB or the per-language Moonshine builds, and neither size nor accuracy has been checked.
 3. **arm64 is unmeasured**, along with the rest of the Linux port.

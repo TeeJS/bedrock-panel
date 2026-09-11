@@ -448,6 +448,34 @@ function applyMacSpeech() {
   const v = voiceConfig.voiceSettings(config.settings);
   macSpeech.apply(voiceConfig.macSpeechWanted(config.settings), { host: voiceConfig.MAC_SPEECH.host, sttPort: Number(voiceConfig.MAC_SPEECH.sttPort), ttsPort: Number(voiceConfig.MAC_SPEECH.ttsPort), voice: v.macVoice });
 }
+
+// The Linux equivalent: a resident Piper voice served as Wyoming on the same loopback ports. Unlike
+// the Mac engine it is a download, so `installed()` gates everything -- an empty config cannot imply
+// an engine that is not there. It SPEAKS only for now; listening still needs a server.
+const linuxSpeech = require('./linuxSpeech').createLinuxSpeech({
+  log: m => console.log('[linux-speech] ' + m),
+  baseDir: process.platform === 'linux' ? app.getPath('userData') : '',
+});
+let linuxSpeechInstaller = null;
+function speechInstaller() {
+  if (!linuxSpeechInstaller) {
+    linuxSpeechInstaller = require('./linuxSpeechInstall').createSpeechInstaller({
+      baseDir: app.getPath('userData'), log: m => console.log('[linux-speech] ' + m),
+    });
+  }
+  return linuxSpeechInstaller;
+}
+function builtInSpeechInstalled() {
+  if (process.platform !== 'linux') return false;
+  const v = voiceConfig.voiceSettings(config.settings);
+  return linuxSpeech.installed(v.linuxVoice);
+}
+function applyLinuxSpeech() {
+  if (process.platform !== 'linux') return;
+  const v = voiceConfig.voiceSettings(config.settings);
+  const wanted = voiceConfig.linuxSpeechWanted(config.settings, 'linux', linuxSpeech.installed(v.linuxVoice));
+  if (wanted) linuxSpeech.start(v.linuxVoice); else linuxSpeech.stop();
+}
 // The AI Voice app = ONE app id ('ai-voice') with a per-page backend option, served by one generic
 // voice-panel host instance PER BACKEND (state/transcript/SSE/speech/STT-TTS, see
 // voicepanel-host.js), each driven by its own session adapter. Requests route to the backend host
@@ -587,7 +615,8 @@ const screensaverHost = createScreensaverHost({
 // config.settings.voice unless that page overrides it (grid.options.voiceOverride). Returns blank
 // hosts when the app isn't the active served page, so a backgrounded app never dials out.
 function resolveVoiceEndpoints(appId) {
-  return voiceConfig.resolveVoiceEndpoints(config.settings, (activeServedAppConfig(appId) || {}).options || null);
+  return voiceConfig.resolveVoiceEndpoints(config.settings, (activeServedAppConfig(appId) || {}).options || null,
+    process.platform, builtInSpeechInstalled());
 }
 function voicePanelDeps(appId) {
   return {
@@ -612,7 +641,8 @@ function voiceBackendDeps(backend) {
   return {
     activeServedAppConfig: () => (owns(activeGrid()) ? activeServedAppConfig('ai-voice') : null),
     voiceEndpoints: () => voiceConfig.resolveVoiceEndpoints(config.settings,
-      owns(activeGrid()) ? ((activeServedAppConfig('ai-voice') || {}).options || null) : null),
+      owns(activeGrid()) ? ((activeServedAppConfig('ai-voice') || {}).options || null) : null,
+      process.platform, builtInSpeechInstalled()),
     activeGrid: () => activeGrid(),
     getConfig: () => config,
     saveConfig: () => saveConfig(),
@@ -3003,7 +3033,8 @@ function placeUiForMode() {
 function applyRunModeAndLaunch() {
   placeUiForMode();
   reservedDisplay.start();
-  applyMacSpeech();                                       // macOS: start the built-in speech engine when the voice settings want it
+  applyMacSpeech();
+  applyLinuxSpeech();                                     // start the built-in speech engine when the voice settings want it
   if (rotationCfg().enabled) setRotation(true);          // auto-start cycling on launch when enabled
   applyFocusFollowSettings();                             // auto-start foreground-app polling on launch when enabled
   applyShortcuts();                                       // register per-page global hotkeys
@@ -4194,6 +4225,52 @@ app.whenReady().then(async () => {
   ipcMain.on('ringState', (e, state) => { if (!isFromPanel(e)) return; setRingState(state); });
   ipcMain.handle('getConfig', (e) => isFrom(e, configWin) ? configForRenderer(config) : null);
   ipcMain.handle('getMacSpeechStatus', (e) => isFrom(e, configWin) ? macSpeech.status() : null);
+  // The Linux built-in engine: what is installed, what could be, and what it is doing. `catalog` is
+  // the pinned list, sent whole so the editor never invents a voice the installer cannot verify.
+  ipcMain.handle('getLinuxSpeechStatus', (e) => {
+    if (!isFrom(e, configWin)) return null;
+    if (process.platform !== 'linux') return { supported: false };
+    const installer = speechInstaller();
+    const v = voiceConfig.voiceSettings(config.settings);
+    return {
+      supported: true,
+      engineInstalled: installer.engineInstalled(),
+      installedVoices: installer.installedVoices(),
+      selectedVoice: v.linuxVoice || (installer.installedVoices()[0] || ''),
+      catalog: require('./linuxSpeechCatalog').voices(),
+      running: linuxSpeech.isReady(),
+      usingExistingServer: linuxSpeech.deferredToExisting(),
+      failure: linuxSpeech.failure(),
+      endpoint: linuxSpeech.endpoint(),
+    };
+  });
+  // Downloads the engine (once) and the chosen voice, reporting progress to the editor as it goes.
+  ipcMain.handle('installLinuxSpeechVoice', async (e, voiceId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
+    const send = p => { try { if (configWin && !configWin.isDestroyed()) configWin.webContents.send('linuxSpeechProgress', p); } catch (err) {} };
+    try {
+      const result = await speechInstaller().install(String(voiceId || ''), send);
+      // Installing IS choosing: a person who just downloaded a voice means to use it.
+      if (!config.settings) config.settings = {};
+      if (!config.settings.voice) config.settings.voice = {};
+      config.settings.voice.linuxVoice = result.voice;
+      saveConfig();
+      linuxSpeech.stop();
+      applyLinuxSpeech();
+      return { ok: true, voice: result.voice };
+    } catch (err) {
+      send({ phase: 'error', message: String(err && err.message) });
+      return { ok: false, error: String(err && err.message) };
+    }
+  });
+  ipcMain.handle('cancelLinuxSpeechInstall', (e) => { if (isFrom(e, configWin) && process.platform === 'linux') speechInstaller().cancel(); return true; });
+  ipcMain.handle('removeLinuxSpeechVoice', (e, voiceId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return false;
+    linuxSpeech.stop();
+    const ok = speechInstaller().removeVoice(String(voiceId || ''));
+    applyLinuxSpeech();
+    return ok;
+  });
   ipcMain.handle('rescanMacVoices', (e) => isFrom(e, configWin) ? macSpeech.rescan() : false);   // after a voice download in Spoken Content
   // Voice preview: macOS's own `say` speaks a sample with the chosen voice through the default output.
   // The running helper is not involved, so it works whichever engine is selected; a new preview
@@ -4518,7 +4595,8 @@ app.whenReady().then(async () => {
     if (!monitorMode) { displayArrange.setEnabled(panelFarRightEnabled(appSettings())); displayArrange.request('settings saved'); }   // macOS: (re)check the arrangement when the toggle is on
     // macOS: focusable is a window-creation option, so a changed "mouse and keyboard on the panel" toggle rebuilds the panel window.
     if (process.platform === 'darwin' && runMode() !== 'software' && ((previousConfig.settings || {}).panelInput !== false) !== panelInputEnabled()) applyRunModeLive();
-    applyMacSpeech();                                                    // macOS: engine / voice changes take effect at once
+    applyMacSpeech();
+    applyLinuxSpeech();                                                  // engine / voice changes take effect at once
     applyDisplayBlocker();                                               // keep-display-awake: only Panel mode + when enabled
     const discordSettings = normalizeDiscordSettings((config.settings || {}).discord);
     discordAppHost.updateSettings(discordSettings);
@@ -4851,6 +4929,7 @@ app.on('before-quit', () => {
   try { reservedDisplay.stop(); } catch (e) {}                // release WinEvent hooks and terminate the native helper
   try { displayArrange.stop(); } catch (e) {}                 // drop any pending arrangement check
   try { macSpeech.stop(); } catch (e) {}                      // terminate the built-in speech engine helper
+  try { linuxSpeech.stop(); } catch (e) {}                    // and the Linux one
   // The kiosk panel is torn down here, not by the close pass that follows: a window that refuses to
   // close (a sheet, a cancelled close) cancels the quit itself, and the panel has nothing to save.
   try { if (panelWin && !panelWin.isDestroyed()) panelWin.destroy(); } catch (e) {}

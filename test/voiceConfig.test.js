@@ -6,12 +6,12 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { VOICE_DEFAULTS, voiceSettings, resolveVoiceEndpoints, migrateVoiceConfig } = require('../app/voiceConfig');
+const { VOICE_DEFAULTS, voiceSettings, resolveVoiceEndpoints, migrateVoiceConfig, linuxSpeechWanted } = require('../app/voiceConfig');
 
 test('voiceSettings fills defaults and trims', () => {
   assert.deepEqual(voiceSettings(undefined), VOICE_DEFAULTS);
   assert.deepEqual(voiceSettings({ voice: { sttHost: ' 10.0.0.5 ', sttPort: ' 1 ' } }),
-    { sttHost: '10.0.0.5', sttPort: '1', ttsHost: '', ttsPort: '10200', engine: '', macVoice: '' });
+    { sttHost: '10.0.0.5', sttPort: '1', ttsHost: '', ttsPort: '10200', engine: '', macVoice: '', linuxVoice: '' });
 });
 
 test('resolveVoiceEndpoints returns blanks when no page is active', () => {
@@ -166,4 +166,36 @@ test('engine: the built-in macOS engine is implied on a Mac with no servers, exp
   assert.equal(resolveVoiceEndpoints({}, null, 'darwin').sttHost, '', 'no active page = nothing dialed');
   assert.deepEqual(voiceSettings({ voice: { engine: 'bogus', macVoice: ' Samantha ' } }).engine, '', 'unknown engine values fall back');
   assert.equal(voiceSettings({ voice: { macVoice: ' Samantha ' } }).macVoice, 'Samantha');
+});
+
+// ---- the built-in Linux engine ---------------------------------------------------------------
+
+test('the Linux engine is only implied once it is actually installed', () => {
+  // Unlike the Mac engine, this one is a download: an empty config cannot imply an engine that is
+  // not on disk, or every voice page would dial a port with nothing behind it.
+  assert.equal(linuxSpeechWanted({ voice: {} }, 'linux', false), false, 'not installed -> not wanted');
+  assert.equal(linuxSpeechWanted({ voice: {} }, 'linux', true), true, 'installed and nothing configured -> wanted');
+  assert.equal(linuxSpeechWanted({ voice: {} }, 'darwin', true), false, 'Linux only');
+  assert.equal(linuxSpeechWanted({ voice: { engine: 'linux' } }, 'linux', true), true, 'chosen explicitly');
+  assert.equal(linuxSpeechWanted({ voice: { engine: 'linux' } }, 'linux', false), false, 'chosen but missing');
+  assert.equal(linuxSpeechWanted({ voice: { engine: 'wyoming' } }, 'linux', true), false, 'a server was chosen instead');
+  assert.equal(linuxSpeechWanted({ voice: { ttsHost: '10.0.0.5' } }, 'linux', true), false, 'a configured host wins by default');
+});
+
+test('the Linux engine supplies speaking only, and leaves listening as configured', () => {
+  // It is a Piper voice: it speaks. Reporting a loopback STT host it does not serve would be a lie
+  // that fails later as a timeout rather than now as "not built yet".
+  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, {}, 'linux', true),
+    { sttHost: '', sttPort: '10300', ttsHost: '127.0.0.1', ttsPort: '10200' });
+  assert.deepEqual(resolveVoiceEndpoints({ voice: { sttHost: '10.0.0.5' } }, {}, 'linux', true),
+    { sttHost: '10.0.0.5', sttPort: '10300', ttsHost: '127.0.0.1', ttsPort: '10200' },
+    'their own Whisper for listening, the built-in voice for speaking');
+  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, {}, 'linux', false),
+    { sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200' }, 'nothing installed -> nothing dialed');
+});
+
+test('a page override still beats the built-in Linux engine', () => {
+  const page = { voiceOverride: true, voiceSttHost: 'a', voiceSttPort: '1', voiceTtsHost: 'b', voiceTtsPort: '2' };
+  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, page, 'linux', true),
+    { sttHost: 'a', sttPort: '1', ttsHost: 'b', ttsPort: '2' });
 });
