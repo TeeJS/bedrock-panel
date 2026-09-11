@@ -18,9 +18,11 @@ const path = require('path');
 const LINUX = name => path.join('..', 'linux', name);
 
 const HELPERS = {
-  nowplayingMonitor: { win32: 'smtc-monitor.exe',        darwin: path.join('mac', 'nowplaying-monitor'), linux: LINUX('mpris.py') },
-  nowplayingControl: { win32: 'smtc-control.exe',        darwin: path.join('mac', 'nowplaying-control'), linux: LINUX('mpris.py') },
-  nowplayingArt:     { win32: 'smtc-art.exe' },          // Linux needs none: MPRIS carries the art URL
+  // Linux has no now-playing helper at all: MPRIS is read on the session bus inside the app
+  // (linuxNowPlaying.js), which also carries the art URL and presses the transport buttons.
+  nowplayingMonitor: { win32: 'smtc-monitor.exe',        darwin: path.join('mac', 'nowplaying-monitor') },
+  nowplayingControl: { win32: 'smtc-control.exe',        darwin: path.join('mac', 'nowplaying-control') },
+  nowplayingArt:     { win32: 'smtc-art.exe' },
   sysvolume:         { win32: 'sysvolume.exe',           darwin: path.join('mac', 'sysvolume'), linux: LINUX('sysvolume.py') },
   micSessionMonitor: { win32: 'mic-session-monitor.exe', darwin: path.join('mac', 'mic-session-monitor'), linux: LINUX('mic-monitor.py') },
   foregroundWatch:   { win32: 'foreground-watch.exe',    darwin: path.join('mac', 'foreground-watch') },
@@ -43,11 +45,8 @@ function helperPath(name, platform = process.platform, dir = path.join(__dirname
  *
  * The Windows and macOS helpers are executables and run themselves. The Linux ones are Python, and
  * they are run as `python3 <script>` rather than executed through their shebang -- which is how every
- * other Linux helper in this app is already launched, and those work. The now-playing helper was the
- * one exception: executed directly, it ran and wrote continuously while the app's stream for it
- * reported readable, flowing, one listener, and bytesRead=0 forever. Same script, same app, and the
- * only difference from its working siblings was this. Running it the same way as the rest also drops
- * the dependency on an executable bit surviving packaging.
+ * other Linux helper in this app is already launched, and which drops the dependency on an executable
+ * bit surviving packaging.
  */
 function helperCommand(name, platform = process.platform, dir = path.join(__dirname, 'native')) {
   const file = helperPath(name, platform, dir);

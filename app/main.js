@@ -258,6 +258,7 @@ const { providers: oauthProviders, providerFor: oauthProviderFor, registerAppPro
 const { GitHubService, GITHUB_ACCESS_SCOPES, normalizeClientId: normalizeGitHubClientId, normalizeSettings: normalizeGitHubSettings, parseRepository: parseGitHubRepository, validRef: validGitHubRef } = require('./githubService');
 const { configForRenderer } = require('./oauthConfigBoundary');
 const nowplaying = require('./nowplaying');   // same singleton sysserver polls — read its snapshot to target transport
+const linuxNowPlaying = require('./linuxNowPlaying');   // Linux transport: MPRIS on the session bus, in this process
 const haClient = require('./haClient');       // Global HA cache (registries + dashboards); per-entity states fetched lazily
 const touchSetup = require('./touchSetup');   // Bind a touchscreen to its physical display via tabcal.exe (Windows)
 const meetingControl = require('./meetingControl');   // Zoom/Teams call-control keystrokes (Meeting app page)
@@ -2149,6 +2150,15 @@ function pasteText(value) {
 // back to the media-key tap if the helper can't act (no session, helper missing) or off-Windows.
 const SMTC_CTL_CMDS = { playpause: 1, next: 1, prev: 1 };
 function mediaKey(cmd) {
+  // Linux drives MPRIS on the session bus from this process, so there is no helper to run: same
+  // targeting, same fallback to a media-key tap when no player will take the call.
+  if (SMTC_CTL_CMDS[cmd] && linuxNowPlaying.available()) {
+    const snap = nowplaying.getSnapshot();
+    linuxNowPlaying.control(cmd, snap && snap.app)
+      .then(ok => { if (!ok) mediaKeys.transport(cmd); })
+      .catch(() => mediaKeys.transport(cmd));
+    return true;
+  }
   if (SMTC_CTL_EXE && SMTC_CTL_CMDS[cmd] && fs.existsSync(SMTC_CTL_EXE)) {
     const snap = nowplaying.getSnapshot();
     const target = snap && (snap.bundleId || snap.app);

@@ -15,6 +15,9 @@
  * Album art: the SMTC thumbnail is read by a second one-shot helper (native/smtc-art.cs ->
  * app/native/smtc-art.exe), run once per track and cached. Transport control is in main.js.
  *
+ * Linux: MPRIS is read directly on the session bus by linuxNowPlaying.js, in this process — no
+ * helper, no pipe, no python3. Same snapshots, delivered by callback instead of by line.
+ *
  * macOS: the same stream comes from native/mac/nowplaying-monitor.swift (Spotify + Music.app via their
  * distributed notifications; lines add bundleId/trackId), and art comes from Spotify's oEmbed endpoint
  * (by track id) or the iTunes lookup — there is no thumbnail helper.
@@ -25,11 +28,11 @@ const path = require('path');
 const fs = require('fs');
 
 const { helperPath, helperCommand } = require('./nativeHelpers');
+const linuxMpris = require('./linuxNowPlaying');
 const MONITOR_EXE = helperPath('nowplayingMonitor');
 const MONITOR_CMD = helperCommand('nowplayingMonitor');   // smtc-monitor.exe on Windows, nowplaying-monitor on macOS, null elsewhere
 
 const STALE_MS = 12000;   // provider path only: if no provider refresh for this long, report null
-const STALL_MS = 6000;    // a live helper that has sent nothing for this long is restarted
 const RESPAWN_MS = 5000;  // helper crash -> retry delay (only while running)
 let snapshot = null, snapTs = 0, timer = null, running = false, busy = false;
 let proc = null, respawnTimer = null, warned = false;
@@ -135,17 +138,24 @@ function onMonitorLine(line) {
   if (!running) return;
   let o;
   try { o = JSON.parse(line); } catch (e) { say('unreadable line from the helper: ' + line.slice(0, 120)); return; }
+  applySnapshot(o);
+}
+
+// One track, from whichever source found it: a helper's JSON line, or the D-Bus reader on Linux.
+// A falsy object, or one with no title, means nothing is playing.
+function applySnapshot(o) {
+  if (!running) return;
   if (!o || !o.title) {
     if (lastLogged !== 'nothing') { lastLogged = 'nothing'; say('nothing is playing'); }
-    snapshot = null; snapTs = 0; return;        // "{}" -> no media session
+    snapshot = null; snapTs = 0; return;
   }
   snapshot = { title: o.title || null, artist: o.artist || null, album: o.album || null, status: o.status || null, app: o.app || null, position: +o.position || 0, duration: +o.duration || 0 };
-  // A helper that already knows the art URL says so on the line (MPRIS carries it in the track
-  // metadata), which saves the whole second-helper-plus-cache dance Windows needs to get a thumbnail.
-  if (o.art) artCache[trackKey(snapshot)] = o.art;
   if (o.bundleId) snapshot.bundleId = String(o.bundleId);   // macOS: the player's bundle id (transport targets it)
-  if (o.trackId) snapshot.trackId = String(o.trackId);      // macOS: Spotify track URI (art lookup)
-  if ('art' in o) artCache[trackKey(snapshot)] = o.art || null;   // a helper that supplies art skips the lookups
+  if (o.trackId) snapshot.trackId = String(o.trackId);      // Spotify track URI, for the cover lookup
+  // A source that already knows the cover says so (MPRIS carries it in the track metadata, and macOS
+  // supplies a URL), which skips the second-helper-plus-cache dance Windows needs for a thumbnail.
+  // A source that has no cover is left alone so the online lookups below can still find one.
+  if (o.art) artCache[trackKey(snapshot)] = o.art;
   snapTs = Date.now();
   if (lastLogged !== o.title) { lastLogged = o.title; say('now playing: ' + JSON.stringify(o.title) + ' via ' + (o.app || '?')); }
   fetchArt(trackKey(snapshot), snapshot);
@@ -166,29 +176,6 @@ function spawnMonitor() {
   let buf = '';
   let sawBytes = false;
   if (!proc.stdout) { say('the helper was started with no readable output'); return; }
-  // A stalled read, and the recovery for it.
-  //
-  // Measured on Linux: the helper runs and writes continuously while this stream sits readable,
-  // undestroyed, flowing and with a listener attached, and delivers nothing — for as long as the app
-  // is left running. The same helper spawned from a bare Electron main process, with and without the
-  // ozone relaunch, delivers immediately, so the mechanism is sound and something about the app's
-  // state at this moment is not. Rather than leave the feature silently dead, notice the silence and
-  // start over: a helper that has produced nothing while alive is not going to start.
-  const stalledAt = Date.now();
-  const watchdog = setInterval(() => {
-    if (sawBytes || !proc || proc.killed) { clearInterval(watchdog); return; }
-    const waited = Math.round((Date.now() - stalledAt) / 1000);
-    const out = proc.stdout;
-    say('no output after ' + waited + 's — pid=' + proc.pid + ' bytesRead=' + ((out && out.bytesRead) || 0)
-      + (out ? ' readable=' + out.readable + ' destroyed=' + out.destroyed
-        + ' flowing=' + out.readableFlowing + ' listeners=' + out.listenerCount('data') : ' stdout missing')
-      + '; restarting it');
-    clearInterval(watchdog);
-    const dead = proc;
-    proc = null;                       // so the close handler does not fight the respawn
-    try { dead.kill(); } catch (e) {}
-    if (running) setTimeout(spawnMonitor, 500);
-  }, STALL_MS);
   proc.stdout.on('data', d => {
     if (!sawBytes) { sawBytes = true; say('receiving output from the helper (' + d.length + ' bytes)'); }
     buf += d.toString('utf8');
@@ -213,11 +200,13 @@ function start() {
   running = true;
   sawLine = false; lastLogged = null;
   if (provider) { say('started, reading from the configured provider'); tick(); timer = setInterval(tick, 2500); }
+  else if (linuxMpris.start(applySnapshot)) { /* Linux: read on the session bus, in this process */ }
   else if (MONITOR_EXE) { say('started, helper: ' + MONITOR_EXE); spawnMonitor(); }
-  else say('started, but this platform has no now-playing helper');
+  else say('started, but this platform has no way to see what is playing');
 }
 function stop() {
   running = false;
+  linuxMpris.stop();
   if (timer) clearInterval(timer);
   timer = null;
   if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }
