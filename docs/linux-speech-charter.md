@@ -94,9 +94,12 @@ no hosts configured, the built-in engine wins.
 - **Phase 2b — the other consumers. Done.** Listening is not only the voice apps: LucidType dictation
   resolves its endpoint through the same path and needed only to be told the built-in state, and
   meeting transcription gained a Linux "local" engine to match the macOS one. Meetings are recorded
-  as stereo with the operator's mic on the left and system audio on the right, so speakers come from
-  CHANNELS and no diarization is needed; Silero VAD splits each channel into utterances, which is
-  where the timestamps come from. Named attendees still require a diarizer server.
+  as stereo with the operator's mic on the left and system audio on the right, so the operator is
+  separated by CHANNEL; the far side is separated by DIARIZATION, because "everyone else" is not one
+  person. Silero VAD splits each channel into utterances, which is where the timestamps come from.
+  Measured: two distinct voices separate at a cluster threshold of 0.35 and one voice is never split
+  at any threshold down to 0.25, while the tool's own default of 0.60 merged two speakers into one.
+  Real names still require a diarizer server, which matches enrolled voices.
 - **Phase 3 — languages.** The picker offers more than English, which decides which model is fetched.
 
 ## Open questions

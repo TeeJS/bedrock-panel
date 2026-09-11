@@ -6,12 +6,18 @@
  * produces the same { segments, speaker_report } shape the diarizer server returns, so everything
  * downstream (meetingAnalyze, the library, the panel) is unchanged.
  *
- * Speakers come from CHANNELS, not from voices. app/meetingRecorder.js writes a 16 kHz stereo WAV
- * with the operator's microphone on the left and system audio on the right, so who is talking is
- * already known: left is you, right is everyone else. That is why this needs no speaker diarization
- * and cannot mis-attribute a sentence the way cosine-similarity clustering can. It also cannot tell
- * two remote participants apart -- for named speakers, the diarizer server is still the answer, and
- * the editor says so.
+ * Two mechanisms, because a meeting has two different problems in it.
+ *
+ * The operator is separated by CHANNEL. app/meetingRecorder.js writes a 16 kHz stereo WAV with the
+ * microphone on the left and system audio on the right, so "you versus the call" is known rather
+ * than inferred, and cannot be got wrong.
+ *
+ * The far side is separated by DIARIZATION, because "everyone else" is not one person. The system
+ * channel is clustered into distinct voices and each line is attributed to the one speaking at that
+ * moment. They come out as Speaker 1, Speaker 2 and so on, in the order they first talk -- real
+ * names still need the diarizer server, which matches enrolled voices. Without the diarization
+ * models installed this falls back to one "Others", which is the old behaviour and is stated rather
+ * than hidden.
  *
  * Each channel is split into utterances by Silero VAD and recognized by sherpa-onnx, which is where
  * the timestamps come from: the recognizer alone returns one string for whatever it is handed, with
@@ -23,10 +29,14 @@ const fsDefault = require('fs');
 const os = require('os');
 const { execFile: execFileDefault } = require('child_process');
 const { layout } = require('./linuxSpeech');
+const catalog = require('./linuxSpeechCatalog');
 
 // The recorder's format. Anything else is refused rather than guessed at.
 const CHANNELS = 2;
 const BYTES_PER_SAMPLE = 2;
+// The diarization models are trained at this rate and the tool refuses anything else. The recorder
+// writes exactly this, so it only matters for a recording that came from somewhere else.
+const DIARIZATION_RATE = 16000;
 
 /**
  * Read a canonical WAV header. Returns null when this is not the 16-bit stereo PCM the recorder
@@ -86,6 +96,43 @@ function parseSegments(stdout, speaker) {
   return out;
 }
 
+/**
+ * The diarizer prints "0.335 -- 1.600 speaker_00" per turn. Returns turns in time order with the
+ * raw cluster label; naming happens afterwards, in first-spoken order.
+ */
+function parseTurns(stdout) {
+  const out = [];
+  for (const line of String(stdout || '').split('\n')) {
+    const m = /^\s*(\d+(?:\.\d+)?)\s*--\s*(\d+(?:\.\d+)?)\s+(speaker_\d+)\s*$/.exec(line);
+    if (m) out.push({ start: Number(m[1]), end: Number(m[2]), cluster: m[3] });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/** How much two spans share, in seconds. Zero when they do not touch. */
+function overlap(a, b) {
+  return Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+}
+
+/**
+ * Give each recognized line the speaker who was talking during it — the diarized turn it shares the
+ * most time with. Speakers are numbered in the order they first speak, so the names are stable and
+ * mean something to a reader. A line overlapping no turn keeps `fallback`: the recognizer heard
+ * words there and the diarizer did not, and dropping the line would be worse than under-labelling it.
+ */
+function attribute(segments, turns, fallback) {
+  const naming = new Map();
+  for (const t of turns) if (!naming.has(t.cluster)) naming.set(t.cluster, 'Speaker ' + (naming.size + 1));
+  return segments.map(seg => {
+    let best = null, bestShare = 0;
+    for (const t of turns) {
+      const share = overlap(seg, t);
+      if (share > bestShare) { bestShare = share; best = t; }
+    }
+    return Object.assign({}, seg, { speaker: best ? naming.get(best.cluster) : fallback });
+  });
+}
+
 function createLinuxMeetingTranscriber(options) {
   const opts = options || {};
   const baseDir = opts.baseDir || '';
@@ -98,6 +145,12 @@ function createLinuxMeetingTranscriber(options) {
   /** Everything needed to transcribe a whole recording, which is more than Wyoming listening needs. */
   function available() {
     return !!(fs.existsSync(paths.sttVadBinary) && fs.existsSync(paths.vadModel) && modelArgs());
+  }
+
+  /** Can the far side be told apart, or is it one "Others"? A separate question from available(). */
+  function canDiarize() {
+    return !!(fs.existsSync(paths.diarizeBinary) && fs.existsSync(paths.segmentationModel)
+      && fs.existsSync(paths.embeddingModel));
   }
 
   function modelArgs() {
@@ -115,13 +168,30 @@ function createLinuxMeetingTranscriber(options) {
     return null;
   }
 
+  function env() {
+    return Object.assign({}, process.env, {
+      LD_LIBRARY_PATH: paths.sttLibDir + path.delimiter + (process.env.LD_LIBRARY_PATH || ''),
+    });
+  }
+
+  function diarize(wavPath) {
+    return new Promise(resolve => {
+      const args = ['--clustering.cluster-threshold=' + catalog.DIARIZATION.clusterThreshold,
+                    '--segmentation.pyannote-model=' + paths.segmentationModel,
+                    '--embedding.model=' + paths.embeddingModel, wavPath];
+      execFile(paths.diarizeBinary, args, { env: env(), maxBuffer: 64 * 1024 * 1024, timeout: 3600000 }, (err, stdout) => {
+        // A diarizer that fails must not lose the transcript: the words are already recognized, and
+        // one "Others" is worse than nothing but far better than no meeting notes.
+        if (err) { log('could not tell the far side apart, labelling it all as one: ' + (err.message || err)); resolve([]); return; }
+        resolve(parseTurns(stdout));
+      });
+    });
+  }
+
   function runOn(wavPath, speaker) {
     return new Promise((resolve, reject) => {
       const args = ['--silero-vad-model=' + paths.vadModel].concat(modelArgs(), [wavPath]);
-      const env = Object.assign({}, process.env, {
-        LD_LIBRARY_PATH: paths.sttLibDir + path.delimiter + (process.env.LD_LIBRARY_PATH || ''),
-      });
-      execFile(paths.sttVadBinary, args, { env, maxBuffer: 64 * 1024 * 1024, timeout: 3600000 }, (err, stdout) => {
+      execFile(paths.sttVadBinary, args, { env: env(), maxBuffer: 64 * 1024 * 1024, timeout: 3600000 }, (err, stdout) => {
         if (err) { reject(new Error('recognition failed on the ' + speaker + ' channel: ' + (err.message || err))); return; }
         resolve(parseSegments(stdout, speaker));
       });
@@ -148,18 +218,27 @@ function createLinuxMeetingTranscriber(options) {
       fs.writeFileSync(left, extractChannel(data, 0, header.rate));
       fs.writeFileSync(right, extractChannel(data, 1, header.rate));
       log('transcribing both channels of ' + path.basename(wavPath));
-      const [mine, theirs] = await Promise.all([runOn(left, myName), runOn(right, others)]);
+      // The far side is diarized while it is being recognized: two passes over the same audio that
+      // do not depend on each other.
+      const diarizing = canDiarize() && header.rate === DIARIZATION_RATE;
+      if (canDiarize() && !diarizing) log('the far side cannot be split: diarization needs ' + DIARIZATION_RATE + ' Hz, this is ' + header.rate);
+      const [mine, heard, turns] = await Promise.all([
+        runOn(left, myName),
+        runOn(right, others),
+        diarizing ? diarize(right) : Promise.resolve([]),
+      ]);
+      const theirs = turns.length ? attribute(heard, turns, others) : heard;
       const segments = mine.concat(theirs).sort((a, b) => a.start - b.start || a.end - b.end);
       if (!segments.length) log('no speech was found in either channel');
+      const farSide = [...new Set(theirs.map(s => s.speaker))];
+      if (turns.length) log('the far side was ' + farSide.length + ' voice(s)');
       return {
         segments,
         speaker_report: {
           engine: 'bedrock-panel-linux',
-          method: 'channels',
-          speakers: [
-            { name: myName, channel: 'left', segments: mine.length },
-            { name: others, channel: 'right', segments: theirs.length },
-          ],
+          method: turns.length ? 'channels+diarization' : 'channels',
+          speakers: [{ name: myName, channel: 'left', segments: mine.length }].concat(
+            farSide.map(name => ({ name, channel: 'right', segments: theirs.filter(s => s.speaker === name).length }))),
         },
       };
     } finally {
@@ -167,7 +246,7 @@ function createLinuxMeetingTranscriber(options) {
     }
   }
 
-  return { available, transcribe, paths };
+  return { available, canDiarize, transcribe, paths };
 }
 
-module.exports = { createLinuxMeetingTranscriber, readHeader, extractChannel, parseSegments, monoHeader };
+module.exports = { createLinuxMeetingTranscriber, readHeader, extractChannel, parseSegments, parseTurns, attribute, overlap, monoHeader };

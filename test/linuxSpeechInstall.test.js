@@ -158,8 +158,9 @@ test('a first listening install fetches its own engine and the VAD, not the spea
   const m = catalog.defaultSttModel();
   // The VAD is always counted: it is tiny, and without it a meeting recording cannot be split into
   // timestamped utterances at all.
-  assert.equal(catalog.sttDownloadBytes(m, false), catalog.STT_ENGINE.bytes + m.bytes + catalog.VAD_MODEL.bytes);
-  assert.equal(catalog.sttDownloadBytes(m, true), m.bytes + catalog.VAD_MODEL.bytes);
+  const extras = catalog.VAD_MODEL.bytes + catalog.DIARIZATION.segmentation.bytes + catalog.DIARIZATION.embedding.bytes;
+  assert.equal(catalog.sttDownloadBytes(m, false), catalog.STT_ENGINE.bytes + m.bytes + extras);
+  assert.equal(catalog.sttDownloadBytes(m, true), m.bytes + extras);
   assert.notEqual(catalog.STT_ENGINE.url, catalog.ENGINE.url, 'two engines, two downloads');
   assert.match(catalog.VAD_MODEL.sha256, /^[0-9a-f]{64}$/);
 });
@@ -173,17 +174,28 @@ function sttInstallerFor(base, { corrupt = false } = {}) {
   files[catalog.STT_ENGINE.url] = engine;
   files[model.url] = bundle;
   files[catalog.VAD_MODEL.url] = vad;
+  const seg = Buffer.from('fake segmentation tarball');
+  const emb = Buffer.from('fake speaker embedder');
+  files[catalog.DIARIZATION.segmentation.url] = seg;
+  files[catalog.DIARIZATION.embedding.url] = emb;
   const realSha = model.sha256, realBytes = model.bytes, engineSha = catalog.STT_ENGINE.sha256;
   const vadSha = catalog.VAD_MODEL.sha256, vadBytes = catalog.VAD_MODEL.bytes;
+  const dz = catalog.DIARIZATION;
+  const dzWas = { segSha: dz.segmentation.sha256, segBytes: dz.segmentation.bytes,
+                  embSha: dz.embedding.sha256, embBytes: dz.embedding.bytes };
   const sha = b => crypto.createHash('sha256').update(b).digest('hex');
   model.sha256 = corrupt ? sha(Buffer.from('other')) : sha(bundle);
   model.bytes = bundle.length;
   catalog.STT_ENGINE.sha256 = sha(engine);
   catalog.VAD_MODEL.sha256 = sha(vad);
   catalog.VAD_MODEL.bytes = vad.length;
+  dz.segmentation.sha256 = sha(seg); dz.segmentation.bytes = seg.length;
+  dz.embedding.sha256 = sha(emb); dz.embedding.bytes = emb.length;
   const restore = () => {
     model.sha256 = realSha; model.bytes = realBytes; catalog.STT_ENGINE.sha256 = engineSha;
     catalog.VAD_MODEL.sha256 = vadSha; catalog.VAD_MODEL.bytes = vadBytes;
+    dz.segmentation.sha256 = dzWas.segSha; dz.segmentation.bytes = dzWas.segBytes;
+    dz.embedding.sha256 = dzWas.embSha; dz.embedding.bytes = dzWas.embBytes;
   };
   const inst = createSpeechInstaller({
     baseDir: base, log: () => {}, get: fakeGet(files),
@@ -194,6 +206,8 @@ function sttInstallerFor(base, { corrupt = false } = {}) {
       if (dest.endsWith('sherpa')) {
         fs.mkdirSync(path.join(dest, 'bin'), { recursive: true });
         fs.writeFileSync(path.join(dest, 'bin', 'sherpa-onnx-offline'), 'binary');
+      } else if (dest.endsWith('segmentation')) {
+        fs.writeFileSync(path.join(dest, 'model.onnx'), 'segmentation');
       } else {
         fs.writeFileSync(path.join(dest, 'tokens.txt'), 'tokens');
       }
@@ -213,6 +227,8 @@ test('listening installs its engine and model, and reports progress that adds up
     assert.equal(inst.sttEngineInstalled(), true);
     assert.deepEqual(inst.installedSttModels(), ['moonshine-tiny-en']);
     assert.ok(fs.existsSync(path.join(base, 'speech', 'sherpa', 'silero_vad.onnx')), 'the VAD came too');
+    assert.ok(fs.existsSync(path.join(base, 'speech', 'sherpa', 'segmentation', 'model.onnx')), 'and the segmenter');
+    assert.ok(fs.existsSync(path.join(base, 'speech', 'sherpa', 'speaker-embedding.onnx')), 'and the speaker embedder');
     const done = seen[seen.length - 1];
     assert.equal(done.phase, 'done');
     assert.equal(done.received, done.total);
@@ -240,4 +256,15 @@ test('the two halves are independent: removing one leaves the other alone', asyn
     assert.deepEqual(speak.inst.installedVoices(), ['en_US-joe-medium'], 'the voice is untouched');
     assert.equal(speak.inst.engineInstalled(), true);
   } finally { speak.restore(); hear.restore(); fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('the diarization models are permissively licensed and fully pinned', () => {
+  // Piper voices taught this lesson: a model that sounds good is not a model that may ship.
+  assert.match(catalog.DIARIZATION.license, /MIT|Apache/);
+  for (const part of [catalog.DIARIZATION.segmentation, catalog.DIARIZATION.embedding]) {
+    assert.match(part.sha256, /^[0-9a-f]{64}$/);
+    assert.ok(part.bytes > 100000);
+  }
+  // Measured, not the tool's default: 0.60 merged two speakers into one.
+  assert.ok(catalog.DIARIZATION.clusterThreshold > 0 && catalog.DIARIZATION.clusterThreshold < 0.5);
 });

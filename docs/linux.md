@@ -187,11 +187,15 @@ Once listening is set up, two other things start working on this machine with no
 
 - **LucidType dictation** uses it automatically.
 - **Meeting transcription** can too. In **Settings → Meetings**, set Engine to *Built-in speech on
-  this computer*. Recordings are stereo with your microphone on one channel and everyone else on the
-  other, so who spoke is known rather than guessed: your lines are labelled with **Your name** and the
-  rest "Others". That is as fine-grained as it goes — to name individual attendees you still need a
-  diarizer server. A sixteen-second recording transcribes in under a second, so an hour of meeting is
-  about a minute of work.
+  this computer*. Your lines are labelled with **Your name**, and everyone on the call is separated
+  into **Speaker 1**, **Speaker 2** and so on, numbered in the order they first talk.
+
+  It works two ways at once, because a meeting has two different problems in it. You are separated
+  from the call by audio channel — recordings are stereo with your microphone on one side and the
+  call on the other — so that half can never be got wrong. The people on the call are separated by
+  voice, which is what tells two remote participants apart. Naming them is still the diarizer
+  server's job: it matches enrolled voices to real names. A nineteen-second call with three people
+  transcribes in about two seconds.
 
 Both live in `~/.config/bedrock-panel/speech` and upgrading Bedrock Panel never touches them.
 Removing either is a button in the same tab.
@@ -240,9 +244,9 @@ These features report themselves unavailable rather than failing quietly:
 - **Outlook meeting info.** Use the Microsoft 365 source instead, which works everywhere.
 - **Built-in listening is English only for now.** Other languages mean pointing STT at your own
   Wyoming server, such as faster-whisper. Speaking has English voices in US and UK accents.
-- **Named speakers in meeting transcripts** need a diarizer server. The built-in engine separates you
-  from everyone else by audio channel, which never mis-attributes a line but cannot tell two remote
-  participants apart.
+- **Real names in meeting transcripts** need a diarizer server, which matches voices you have
+  enrolled. The built-in engine tells the participants apart and numbers them, but has never been
+  introduced to anyone.
 
 ## 11. Troubleshooting
 

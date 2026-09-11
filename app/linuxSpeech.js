@@ -51,6 +51,10 @@ function layout(baseDir) {
     // The VAD+ASR binary is what turns a whole recording into timestamped utterances; the plain
     // offline one handles a single utterance handed to it over Wyoming.
     sttVadBinary: path.join(root, 'sherpa', 'bin', 'sherpa-onnx-vad-with-offline-asr'),
+    // Diarization: which of the people on the far side is speaking.
+    diarizeBinary: path.join(root, 'sherpa', 'bin', 'sherpa-onnx-offline-speaker-diarization'),
+    segmentationModel: path.join(root, 'sherpa', 'segmentation', 'model.onnx'),
+    embeddingModel: path.join(root, 'sherpa', 'speaker-embedding.onnx'),
   };
 }
 

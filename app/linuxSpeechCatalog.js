@@ -56,6 +56,34 @@ const VAD_MODEL = {
   license: 'MIT',
 };
 
+// Speaker diarization: who, among the people on the far side, said each line. Channel separation
+// already tells the operator apart from everyone else, but "everyone else" is not one person, so the
+// system-audio channel is clustered into distinct voices. Two models: segmentation finds speech
+// turns, the embedding extractor makes each turn comparable.
+//
+// pyannote segmentation 3.0 is MIT (CNRS); the WeSpeaker VoxCeleb embedder is Apache-2.0. Both were
+// checked rather than assumed, the way the voices were.
+const DIARIZATION = {
+  license: 'MIT and Apache-2.0',
+  // Measured: two distinct voices separate cleanly at 0.35 and a single voice is never split into
+  // two, at any threshold tried down to 0.25. The tool's own default of 0.60 merged two speakers
+  // into one, which is the failure that matters -- a transcript that silently attributes one
+  // person's words to another.
+  clusterThreshold: 0.35,
+  segmentation: {
+    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2',
+    bytes: 6958444,
+    sha256: '24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488',
+    stripComponents: 1,
+  },
+  embedding: {
+    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx',
+    name: 'speaker-embedding.onnx',
+    bytes: 29292684,
+    sha256: 'c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef',
+  },
+};
+
 // Recognition models. Moonshine is built for short utterances on a CPU, which is exactly dictation
 // and voice commands: it transcribed 3.85 s of speech in 0.086 s on an i5-10210U laptop. The English
 // models are MIT. Whisper tiny is the multilingual fallback when more languages are wanted, and is
@@ -104,8 +132,9 @@ function downloadBytes(voice, engineInstalled) {
 
 /** The same, for listening: the recognition engine plus the model. */
 function sttDownloadBytes(model, engineInstalled) {
-  return (engineInstalled ? 0 : STT_ENGINE.bytes) + ((model && model.bytes) || 0) + VAD_MODEL.bytes;
+  return (engineInstalled ? 0 : STT_ENGINE.bytes) + ((model && model.bytes) || 0) + VAD_MODEL.bytes
+    + DIARIZATION.segmentation.bytes + DIARIZATION.embedding.bytes;
 }
 
-module.exports = { ENGINE, STT_ENGINE, VAD_MODEL, VOICES_BASE, voices, voiceById, defaultVoice, voiceFiles, downloadBytes,
+module.exports = { ENGINE, STT_ENGINE, VAD_MODEL, DIARIZATION, VOICES_BASE, voices, voiceById, defaultVoice, voiceFiles, downloadBytes,
   sttModels, sttModelById, defaultSttModel, sttDownloadBytes };

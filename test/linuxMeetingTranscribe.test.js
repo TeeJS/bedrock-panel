@@ -5,7 +5,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const {
-  createLinuxMeetingTranscriber, readHeader, extractChannel, parseSegments, monoHeader,
+  createLinuxMeetingTranscriber, readHeader, extractChannel, parseSegments, parseTurns, attribute,
+  overlap, monoHeader,
 } = require('../app/linuxMeetingTranscribe');
 
 // A 16 kHz stereo recording in the shape app/meetingRecorder.js writes: mic left, system right.
@@ -75,7 +76,7 @@ test('segments are read from the recognizer\'s lines and everything else is igno
 
 // ---- the whole job, with the recognizer faked ------------------------------------------------
 
-function transcriberWith({ onDisk = true, outputs = {} } = {}) {
+function transcriberWith({ onDisk = true, outputs = {}, diarize = true } = {}) {
   const written = {};
   const calls = [];
   const files = {
@@ -85,6 +86,11 @@ function transcriberWith({ onDisk = true, outputs = {} } = {}) {
     '/base/speech/stt/moonshine-tiny-en/decoder_model_merged.ort': true,
     '/base/speech/stt/moonshine-tiny-en/tokens.txt': true,
   };
+  if (diarize) {
+    files['/base/speech/sherpa/bin/sherpa-onnx-offline-speaker-diarization'] = true;
+    files['/base/speech/sherpa/segmentation/model.onnx'] = true;
+    files['/base/speech/sherpa/speaker-embedding.onnx'] = true;
+  }
   const fs = {
     existsSync: p => (onDisk ? !!files[p] : false),
     readdirSync: () => (onDisk ? ['moonshine-tiny-en'] : []),
@@ -97,7 +103,8 @@ function transcriberWith({ onDisk = true, outputs = {} } = {}) {
     execFile: (bin, args, opts, cb) => {
       calls.push({ bin, args, env: opts.env });
       const wav = args[args.length - 1];
-      cb(null, outputs[wav.includes('mic') ? 'mic' : 'sys'] || '', '');
+      const which = /diarization/.test(bin) ? 'turns' : (wav.includes('mic') ? 'mic' : 'sys');
+      cb(null, outputs[which] || '', '');
     },
   });
   return { t, calls, written };
@@ -108,21 +115,23 @@ test('nothing is attempted until the whole listening install is present', () => 
   assert.equal(transcriberWith().t.available(), true);
 });
 
-test('both channels are transcribed and merged onto one timeline, labelled by channel', async () => {
+test('both channels are transcribed and merged onto one timeline, the far side told apart', async () => {
   const { t, calls } = transcriberWith({ outputs: {
     mic: '0.30 -- 1.50: Can everyone hear me?\n7.90 -- 9.80: I will send the notes.',
     sys: '4.00 -- 5.30: Yes we can hear you.\n11.60 -- 12.80: That sounds good.',
+    turns: '4.00 -- 5.30 speaker_00\n11.60 -- 12.80 speaker_01',
   } });
   const r = await t.transcribe('/recordings/meeting.wav', { myName: 'T.J.' });
   assert.deepEqual(r.segments.map(s => s.speaker + ': ' + s.text), [
     'T.J.: Can everyone hear me?',
-    'Others: Yes we can hear you.',
+    'Speaker 1: Yes we can hear you.',
     'T.J.: I will send the notes.',
-    'Others: That sounds good.',
-  ], 'interleaved in time, not grouped by channel');
+    'Speaker 2: That sounds good.',
+  ], 'interleaved in time, and two remote people are two people');
   assert.deepEqual(r.speaker_report.speakers.map(x => [x.name, x.channel, x.segments]),
-    [['T.J.', 'left', 2], ['Others', 'right', 2]]);
-  assert.equal(calls.length, 2, 'one recognizer run per channel');
+    [['T.J.', 'left', 2], ['Speaker 1', 'right', 1], ['Speaker 2', 'right', 1]]);
+  assert.equal(r.speaker_report.method, 'channels+diarization');
+  assert.equal(calls.length, 3, 'a recognizer run per channel, plus the diarizer on the far side');
   assert.ok(calls[0].env.LD_LIBRARY_PATH.startsWith(path.join('/base', 'speech', 'sherpa', 'lib')),
     'the engine finds its own libraries');
   assert.ok(calls[0].args.some(a => a.startsWith('--silero-vad-model=')), 'timestamps need the VAD');
@@ -154,4 +163,70 @@ test('a recognizer that fails names the channel it failed on', async () => {
     execFile: (b, a, o, cb) => cb(new Error('segfault')),
   });
   await assert.rejects(() => t.transcribe('/x.wav', { myName: 'T.J.' }), /channel: segfault/);
+});
+
+// ---- telling the far side apart ---------------------------------------------------------------
+
+test('diarized turns are read, and anything else on that stream is ignored', () => {
+  const out = ['Started', 'progress 50.00%', '0.335 -- 1.600 speaker_00',
+               'Duration : 10.892 s', '2.866 -- 4.520 speaker_01', 'Elapsed seconds: 0.297'].join('\n');
+  assert.deepEqual(parseTurns(out), [
+    { start: 0.335, end: 1.600, cluster: 'speaker_00' },
+    { start: 2.866, end: 4.520, cluster: 'speaker_01' },
+  ]);
+  assert.deepEqual(parseTurns(''), []);
+});
+
+test('overlap is the time two spans share, and nothing when they do not touch', () => {
+  assert.equal(overlap({ start: 0, end: 2 }, { start: 1, end: 3 }), 1);
+  assert.equal(overlap({ start: 0, end: 2 }, { start: 5, end: 6 }), 0);
+  assert.equal(overlap({ start: 0, end: 10 }, { start: 2, end: 4 }), 2, 'fully contained');
+});
+
+test('speakers are numbered in the order they first speak, so the names mean something', () => {
+  const turns = parseTurns('5.0 -- 6.0 speaker_03\n1.0 -- 2.0 speaker_01');
+  const segs = [{ start: 1.1, end: 1.9, text: 'first' }, { start: 5.1, end: 5.9, text: 'second' }];
+  assert.deepEqual(attribute(segs, turns, 'Others').map(s => s.speaker + ':' + s.text),
+    ['Speaker 1:first', 'Speaker 2:second'], 'cluster numbers are arbitrary; order of speaking is not');
+});
+
+test('a line the diarizer did not cover keeps the fallback rather than being dropped', () => {
+  // The recognizer heard words there. Losing the line would be worse than under-labelling it.
+  const turns = parseTurns('1.0 -- 2.0 speaker_00');
+  const segs = [{ start: 1.1, end: 1.9, text: 'covered' }, { start: 30, end: 31, text: 'not covered' }];
+  assert.deepEqual(attribute(segs, turns, 'Others').map(s => s.speaker),
+    ['Speaker 1', 'Others']);
+});
+
+test('a line is given the speaker it shares the most time with, not merely the first that touches it', () => {
+  const turns = parseTurns('0.0 -- 1.1 speaker_00\n1.0 -- 5.0 speaker_01');
+  const segs = [{ start: 1.0, end: 4.0, text: 'mostly the second speaker' }];
+  assert.equal(attribute(segs, turns, 'Others')[0].speaker, 'Speaker 2');
+});
+
+test('without the diarization models the far side is one Others, and the job still runs', async () => {
+  const { t, calls } = transcriberWith({ diarize: false, outputs: {
+    mic: '0.30 -- 1.50: Hello.',
+    sys: '4.00 -- 5.30: Hello back.',
+  } });
+  assert.equal(t.canDiarize(), false);
+  const r = await t.transcribe('/recordings/meeting.wav', { myName: 'T.J.' });
+  assert.deepEqual(r.segments.map(s => s.speaker), ['T.J.', 'Others']);
+  assert.equal(r.speaker_report.method, 'channels');
+  assert.equal(calls.length, 2, 'the diarizer is not run when it is not installed');
+});
+
+test('a diarizer that fails loses the speakers, never the transcript', async () => {
+  const t = createLinuxMeetingTranscriber({
+    baseDir: '/base', tmpDir: '/tmp/x', log: () => {},
+    fs: { existsSync: () => true, readdirSync: () => ['moonshine-tiny-en'],
+          readFileSync: () => stereoWav([[1, 2], [3, 4]]), writeFileSync: () => {}, unlinkSync: () => {} },
+    execFile: (bin, args, opts, cb) => {
+      if (/diarization/.test(bin)) return cb(new Error('model load failed'));
+      cb(null, args[args.length - 1].includes('mic') ? '0.1 -- 1.0: Mine.' : '2.0 -- 3.0: Theirs.', '');
+    },
+  });
+  const r = await t.transcribe('/recordings/meeting.wav', { myName: 'T.J.' });
+  assert.deepEqual(r.segments.map(s => s.speaker + ': ' + s.text), ['T.J.: Mine.', 'Others: Theirs.']);
+  assert.equal(r.speaker_report.method, 'channels');
 });

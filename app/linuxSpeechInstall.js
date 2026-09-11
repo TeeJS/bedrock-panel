@@ -183,6 +183,24 @@ function createSpeechInstaller(options) {
       received += catalog.VAD_MODEL.bytes;
     }
 
+    // Diarization models, so a meeting transcript can tell two remote people apart rather than
+    // calling the whole far side "Others".
+    if (!fs.existsSync(paths.segmentationModel)) {
+      const archive = path.join(paths.root, 'segmentation.tar.bz2');
+      await fetchTo(catalog.DIARIZATION.segmentation.url, archive,
+        { algo: 'sha256', value: catalog.DIARIZATION.segmentation.sha256 }, tick);
+      await untar(archive, path.dirname(paths.segmentationModel), catalog.DIARIZATION.segmentation.stripComponents);
+      try { fs.unlinkSync(archive); } catch (e) {}
+    } else {
+      received += catalog.DIARIZATION.segmentation.bytes;
+    }
+    if (!fs.existsSync(paths.embeddingModel)) {
+      await fetchTo(catalog.DIARIZATION.embedding.url, paths.embeddingModel,
+        { algo: 'sha256', value: catalog.DIARIZATION.embedding.sha256 }, tick);
+    } else {
+      received += catalog.DIARIZATION.embedding.bytes;
+    }
+
     const modelDir = path.join(paths.sttDir, model.id);
     if (!fs.existsSync(path.join(modelDir, 'tokens.txt'))) {
       const archive = path.join(paths.root, model.id + '.tar.bz2');
