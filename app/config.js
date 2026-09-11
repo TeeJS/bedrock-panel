@@ -5306,41 +5306,55 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
         const installBtn = document.getElementById('ttsLinuxInstall');
         const removeBtn = document.getElementById('ttsLinuxRemove');
         engineSelLinux.onchange = e => saveVoice('engine', e.target.value);
-        voiceSel.onchange = e => saveVoice('linuxVoice', e.target.value);
         let busy = false;
         const mb = n => Math.round(n / 1048576) + ' MB';
         const langSel = document.getElementById('ttsLinuxLang');
         const previewBtn = document.getElementById('ttsLinuxPreview');
         let catalog = [];
-        const fillVoices = (installed, chosen) => {
+        let installedVoices = [];
+        // The chosen voice comes from the EDITOR's config, not from the main process. A pick is not
+        // saved until Save is pressed, so asking main what the voice is would answer with the old
+        // one and silently undo the pick the moment anything re-rendered — which is exactly what it
+        // did. The macOS picker beside this one reads its own config for the same reason.
+        const chosenVoice = () => ((config.settings || {}).voice || {}).linuxVoice || '';
+        const fillVoices = () => {
           // Languages first, so 82 voices are a choice rather than a wall. The filter starts on the
           // chosen voice's language, and the chosen voice always stays selectable.
+          const chosen = chosenVoice();
           const langs = [...new Map(catalog.map(v => [v.lang, v])).values()]
             .sort((a, b) => a.langName.localeCompare(b.langName) || a.country.localeCompare(b.country));
-          const chosenVoice = catalog.find(v => v.id === chosen);
-          const wantLang = langSel.value || (chosenVoice && chosenVoice.lang) || 'en_US';
+          const current = catalog.find(v => v.id === chosen);
+          const wantLang = langSel.value || (current && current.lang) || 'en_US';
           langSel.innerHTML = langs.map(l =>
             `<option value="${l.lang}" ${l.lang === wantLang ? 'selected' : ''}>${l.langName}`
             + `${l.country && l.country !== l.langName ? ' (' + l.country + ')' : ''}</option>`).join('');
           const shown = catalog.filter(v => v.lang === langSel.value || v.id === chosen);
           voiceSel.innerHTML = shown.map(v =>
             `<option value="${v.id}" ${v.id === chosen ? 'selected' : ''}>${v.name} — ${v.quality}, ${v.license}`
-            + `${installed.includes(v.id) ? ' — installed' : ' — ' + mb(v.bytes) + ' to download'}</option>`).join('');
+            + `${installedVoices.includes(v.id) ? ' — installed' : ' — ' + mb(v.bytes) + ' to download'}</option>`).join('');
+          updateVoiceButtons();
         };
-        let lastInstalled = [];
-        langSel.onchange = () => renderLinuxSpeech();
-        const renderLinuxSpeech = () => configApi.getLinuxSpeechStatus().then(st => {
-          if (!st || !st.supported || busy) return;
-          const installed = st.installedVoices || [];
-          lastInstalled = installed;
-          const chosen = st.selectedVoice || '';
-          catalog = st.catalog || [];
-          fillVoices(installed, chosen);
-          const here = installed.includes(voiceSel.value);
+        const updateVoiceButtons = () => {
+          const here = installedVoices.includes(voiceSel.value);
           previewBtn.disabled = !here;
           previewBtn.title = here ? 'Hear this voice' : 'Download this voice first';
           installBtn.textContent = here ? 'Re-download' : 'Set up';
           removeBtn.disabled = !here;
+        };
+        voiceSel.onchange = e => { saveVoice('linuxVoice', e.target.value); updateVoiceButtons(); };
+        langSel.onchange = () => {
+          // Changing language means changing voice: the old one is not in this language, so pick its
+          // first voice rather than leaving a selection the list cannot show as selected.
+          const first = catalog.find(v => v.lang === langSel.value);
+          if (first) saveVoice('linuxVoice', first.id);
+          fillVoices();
+        };
+        const renderLinuxSpeech = () => configApi.getLinuxSpeechStatus().then(st => {
+          if (!st || !st.supported || busy) return;
+          const installed = st.installedVoices || [];
+          installedVoices = installed;
+          catalog = st.catalog || [];
+          fillVoices();
           const sttHave = st.installedSttModels || [];
           const sttChosen = st.selectedSttModel || '';
           const sttSelEl = document.getElementById('ttsLinuxStt');
@@ -5361,7 +5375,6 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
             : (installed.length || sttHave.length) ? 'Installed, not running. It starts when the engine above is set to use it.'
             : 'Not installed. Pick a voice or a language and press Set up.';
         }).catch(() => {});
-        voiceSel.addEventListener('change', () => renderLinuxSpeech());
         document.getElementById('ttsLinuxSamples').onclick = e => {
           e.preventDefault();
           configApi.openExternal('https://rhasspy.github.io/piper-samples/');
