@@ -97,8 +97,20 @@ keystrokes like any other — the same on X11 and Wayland, with nothing to appro
 
 Two consequences worth knowing:
 
-- **It needs the udev rule from section 2**, which covers `/dev/uinput` as well as the console. The
-  `.deb` installs it for you. Without it, macros and media keys report themselves unavailable.
+- **It needs write access to `/dev/uinput`**, which the udev rule from section 2 grants. The `.deb`
+  installs that rule for you.
+
+  If macros stop working and the log says *permission denied on /dev/uinput*, add yourself to the
+  `input` group and log out and back in:
+
+  ```bash
+  sudo usermod -aG input $USER
+  ```
+
+  The rule asks for access two ways, and the group is the dependable one. The modern `uaccess`
+  mechanism hands a device to whoever is logged in, but the desktop applies it when a device is
+  *added* to your session, and `/dev/uinput` is created once at boot — so that grant can be applied
+  and then quietly lost. Group membership does not come and go.
 - **Key combos are layout-independent, typed text is not.** A virtual keyboard sends key *codes* and
   your layout decides what they print, exactly as for real hardware. Ctrl+C is Ctrl+C everywhere; a
   macro that types literal text assumes US QWERTY, and characters with no key on your layout are
@@ -145,8 +157,11 @@ These features report themselves unavailable rather than failing quietly:
 
 - **Monitor mode.** Driving the desktop cursor from the knob and touchscreen needs pointer
   emulation, which the input backend does not do yet. Keystrokes work; the pointer does not.
-- **Global hotkeys.** Not wired up. A virtual keyboard sends keys, it cannot listen for them, so
-  these need the desktop's global-shortcuts portal instead.
+- **Global hotkeys work differently.** They are not unavailable, but the app cannot simply take the
+  combination you typed. It registers a named action and proposes a trigger through the desktop's
+  shortcuts portal, and the desktop decides. KDE Plasma accepts the action and assigns no key, so you
+  bind it once in System Settings → Shortcuts. Electron's own hotkey support is not used: it reports
+  success on this platform and never fires.
 - **Reserved Display.** Moving another application's window off the panel display requires
   enumerating and repositioning foreign windows, which Wayland deliberately does not allow.
 - **Follow the focused app.** Same reason: there is no cross-desktop way to be told which
@@ -173,3 +188,12 @@ still starts and Software mode is unaffected.
 
 **Tiles launch nothing.** The program is not installed under any of the names Bedrock Panel
 tries. The log says which candidates it looked for.
+
+**Macros or media keys do nothing.** The log says why. *permission denied on /dev/uinput* is the
+group problem in section 4. *cannot start python3* means `python3` is missing, which the `.deb`
+depends on but a source checkout does not enforce.
+
+**A global hotkey never fires.** On Linux the app registers a named action and the desktop assigns
+the key. Open your desktop's keyboard-shortcuts settings, find Bedrock Panel, and give the action a
+key. Until then it is registered with no key, and the log says how many of the app's shortcuts the
+desktop actually bound.

@@ -3288,15 +3288,26 @@ function modifiersInAccelerator(accel) {
   return out;
 }
 
+// Global hotkeys go through Electron on Windows and macOS, and through the XDG GlobalShortcuts portal
+// on Linux. Electron's own globalShortcut is not merely unsupported on Linux — register() returns true
+// and the shortcut never fires, even for a key pressed by real hardware, so the failure is invisible.
+// The portal changes the shape of the feature: the app registers named actions and PROPOSES triggers,
+// and the desktop decides. See app/linuxShortcuts.js. `shortcuts.apply()` is a no-op off Linux, where
+// each register() takes effect on its own.
+const linuxShortcuts = process.platform === 'linux'
+  ? require('./linuxShortcuts').createLinuxShortcuts({ log: m => console.log('[shortcuts] ' + m) })
+  : null;
+const shortcuts = linuxShortcuts || Object.assign(Object.create(globalShortcut), { apply() { return true; } });
+
 // Per-page global hotkeys: register each page's `shortcut` so pressing it (system-wide) jumps the panel
 // to that page. Re-applied on launch and after every editor save; a combo another app owns just fails to
 // register (logged). Requires app-ready.
 function applyShortcuts() {
-  try { globalShortcut.unregisterAll(); } catch (e) {}
+  try { shortcuts.unregisterAll(); } catch (e) {}
   for (const g of (config.grids || [])) {
     if (!g.shortcut) continue;
     try {
-      const ok = globalShortcut.register(g.shortcut, () => {
+      const ok = shortcuts.register(g.shortcut, () => {
         // Release any held modifiers BEFORE the gotoGrid work so the OS sees them released
         // immediately, not after async window/IPC churn. See modifiersInAccelerator above.
         if (process.platform === 'win32') modifiersInAccelerator(g.shortcut).forEach(m => mediaKeys.keyUp(m));
@@ -3315,7 +3326,7 @@ function applyShortcuts() {
   for (const p of (config.panes || [])) {
     if (!p.shortcut) continue;
     try {
-      const ok = globalShortcut.register(p.shortcut, () => {
+      const ok = shortcuts.register(p.shortcut, () => {
         if (process.platform === 'win32') modifiersInAccelerator(p.shortcut).forEach(m => mediaKeys.keyUp(m));
         gotoPane(p.id, true);
         if (p.shortcutStopsRotation) setRotation(false);
@@ -3329,7 +3340,7 @@ function applyShortcuts() {
   for (const g of (config.grids || [])) {
     if (!(g.kind === 'app' && g.app === 'livetranslate' && g.options && g.options.micHotkey)) continue;
     try {
-      const ok = globalShortcut.register(g.options.micHotkey, () => {
+      const ok = shortcuts.register(g.options.micHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(g.options.micHotkey).forEach(m => mediaKeys.keyUp(m));
         const active = activeGrid();
         if (!(active && active.id === g.id)) gotoGrid(g.id, true);   // bring the page on-screen (loads it)
@@ -3345,7 +3356,7 @@ function applyShortcuts() {
   const rot = rotationCfg();
   if (rot.enabled && rot.hotkey) {
     try {
-      const ok = globalShortcut.register(rot.hotkey, () => {
+      const ok = shortcuts.register(rot.hotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(rot.hotkey).forEach(m => mediaKeys.keyUp(m));
         toggleRotation();
       });
@@ -3356,7 +3367,7 @@ function applyShortcuts() {
   const dashReload = dashboardReloadCfg();
   if (dashReload.hotkey) {
     try {
-      const ok = globalShortcut.register(dashReload.hotkey, () => {
+      const ok = shortcuts.register(dashReload.hotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(dashReload.hotkey).forEach(m => mediaKeys.keyUp(m));
         reloadActiveDashboard();
       });
@@ -3370,7 +3381,7 @@ function applyShortcuts() {
     const combo = pageStep[spec[0]];
     if (!combo) return;
     try {
-      const ok = globalShortcut.register(combo, () => {
+      const ok = shortcuts.register(combo, () => {
         if (process.platform === 'win32') modifiersInAccelerator(combo).forEach(m => mediaKeys.keyUp(m));
         stepPage(spec[1]);
       });
@@ -3382,7 +3393,7 @@ function applyShortcuts() {
   const lt = lucidtypeSettings();
   if (lt.dictationHotkey) {
     try {
-      const ok = globalShortcut.register(lt.dictationHotkey, () => {
+      const ok = shortcuts.register(lt.dictationHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(lt.dictationHotkey).forEach(m => mediaKeys.keyUp(m));
         toggleLucidDictation();
       });
@@ -3391,7 +3402,7 @@ function applyShortcuts() {
   }
   if (lt.applyHotkey) {
     try {
-      const ok = globalShortcut.register(lt.applyHotkey, () => {
+      const ok = shortcuts.register(lt.applyHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(lt.applyHotkey).forEach(m => mediaKeys.keyUp(m));
         lucidApply();
       });
@@ -3400,7 +3411,7 @@ function applyShortcuts() {
   }
   if (lt.cleanupHotkey) {
     try {
-      const ok = globalShortcut.register(lt.cleanupHotkey, () => {
+      const ok = shortcuts.register(lt.cleanupHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(lt.cleanupHotkey).forEach(m => mediaKeys.keyUp(m));
         if (lucidDictation) lucidDictation.runCleanup();
       });
@@ -3409,7 +3420,7 @@ function applyShortcuts() {
   }
   if (lt.rewriteHotkey) {
     try {
-      const ok = globalShortcut.register(lt.rewriteHotkey, () => {
+      const ok = shortcuts.register(lt.rewriteHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(lt.rewriteHotkey).forEach(m => mediaKeys.keyUp(m));
         if (lucidDictation) lucidDictation.runRewrite();
       });
@@ -3417,6 +3428,7 @@ function applyShortcuts() {
     } catch (e) { console.log('shortcut register error:', lt.rewriteHotkey, '-', e.message); }
   }
   registerSlideHotkeys();   // last, after the unregisterAll above, so a settings change re-arms them
+  try { shortcuts.apply(); } catch (e) { console.log('[shortcuts] apply failed: ' + (e && e.message)); }
 }
 // Slide-capture global hotkeys (toggle capture / select window / manual capture). Registered as part
 // of applyShortcuts() so an editor save re-applies them; only while the feature is enabled and a combo
@@ -3433,7 +3445,7 @@ function registerSlideHotkeys() {
   for (const [combo, fn] of binds) {
     if (!combo) continue;
     try {
-      const ok = globalShortcut.register(combo, () => {
+      const ok = shortcuts.register(combo, () => {
         if (process.platform === 'win32') modifiersInAccelerator(combo).forEach(k => mediaKeys.keyUp(k));
         fn();
       });
@@ -4851,5 +4863,5 @@ app.on('before-quit', () => {
   try { if (slideCapture) slideCapture.dispose(); } catch (e) {}         // destroy the hidden slide-capture window
   try { if (sysserver) sysserver.stop(); } catch (e) {}  // stop metrics timers + close the local server
   try { if (dashSession) dashSession.cookies.flushStore(); } catch (e) {}   // commit a fresh webview login to disk before exit
-  try { globalShortcut.unregisterAll(); } catch (e) {}   // drop per-page hotkeys
+  try { shortcuts.unregisterAll(); } catch (e) {}   // drop per-page hotkeys (Linux: also ends the portal session)
 });

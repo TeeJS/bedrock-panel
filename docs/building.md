@@ -346,6 +346,21 @@ What to expect on Linux:
     unaffected.
   - The pointer half is not implemented, so Monitor mode reports itself unavailable rather than
     moving a cursor that never moves.
+- **Global hotkeys go through the XDG GlobalShortcuts portal**, not Electron. `globalShortcut.register`
+  returns true on this platform and the shortcut never fires — verified by pressing the combination
+  with this project's own uinput keyboard, so it is not a synthetic-input artefact. `app/linuxShortcuts.js`
+  is a globalShortcut-shaped shim over `app/linux/portal-shortcuts.py`, and `app/main.js` routes every
+  registration through it; `test/linuxShortcuts.test.js` fails if a bare `globalShortcut` call returns.
+  - The portal changes the feature's shape: the app registers NAMED ACTIONS and proposes triggers, and
+    the desktop decides. Plasma 6.6 accepts the action and binds no key, so the person assigns it in
+    System Settings. `triggers()` reports what was actually granted, so the editor need not imply the
+    typed combination is live.
+  - Registrations are batched because the portal binds a set in one call: `register()` collects,
+    `apply()` performs the handshake, and `applyShortcuts()` calls it last.
+  - Python again, and for a sharper reason than uinput: the portal answers a request with a signal
+    addressed to the connection that made the call. Command-line tools cannot be used at all, because
+    each `gdbus call` is its own short-lived connection and the reply lands nowhere. PyGObject gives a
+    persistent connection; the deb depends on `python3-gi`.
 - Transcription pre/post hooks run through `/bin/sh`, as on macOS.
 
 ### Packaging (Linux)

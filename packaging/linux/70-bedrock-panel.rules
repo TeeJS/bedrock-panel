@@ -31,4 +31,11 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="bed0", TAG+="uacce
 # --- uinput: the virtual keyboard used for macros, media keys, and the paste shortcut ---
 # Compositor-agnostic, so macros work the same on Wayland and X11. Without this the input backend
 # reports itself unavailable and every macro/media-key tile is a no-op.
+#
+# Both mechanisms are here on purpose. uaccess is the modern one and hands the device to whoever is
+# logged in, but it is applied by logind when a device is ADDED to a seat, and /dev/uinput is a static
+# node the kernel creates at boot — so the ACL lands on a fresh `udevadm trigger --action=add` and has
+# been observed to disappear again later. The group is the dependable fallback: add yourself to
+# `input` (`sudo usermod -aG input $USER`, then log out and back in) and macros keep working
+# regardless. docs/linux.md explains this, and the app names it when an open is refused.
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"

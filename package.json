@@ -171,7 +171,8 @@
         "libatspi2.0-0",
         "libuuid1",
         "libsecret-1-0",
-        "python3"
+        "python3",
+        "python3-gi"
       ]
     },
     "dmg": {

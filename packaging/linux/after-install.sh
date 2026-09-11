@@ -73,5 +73,7 @@ if [ -f "$RULE_SRC" ]; then
     install -Dm644 "$RULE_SRC" "$RULE_DST"
     # Best effort: a container or a chroot has no running udevd, and that must never fail the install.
     udevadm control --reload-rules >/dev/null 2>&1 || true
-    udevadm trigger --subsystem-match=hidraw --subsystem-match=misc >/dev/null 2>&1 || true
+    # --action=add, not the default "change": logind applies a uaccess ACL when a device is ADDED to
+    # a seat, and /dev/uinput is a static node that was created long before this rule existed.
+    udevadm trigger --action=add --subsystem-match=hidraw --subsystem-match=misc >/dev/null 2>&1 || true
 fi

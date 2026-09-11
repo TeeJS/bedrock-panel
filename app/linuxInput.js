@@ -70,7 +70,13 @@ function createLinuxInput(options) {
       child = null; ready = false;
       // Exit 2 or 3 is the helper refusing the job (no codes, no permission, no device). Retrying
       // that forever would spawn a process per keystroke, so treat it as permanent.
-      if (code === 2 || code === 3) { failed = 'helper exited with code ' + code + ' (see the log above)'; log('keystrokes unavailable — ' + failed); }
+      if (code === 2 || code === 3) {
+        failed = 'helper exited with code ' + code;
+        log('keystrokes unavailable — ' + failed + (code === 3
+          ? '. /dev/uinput is not writable by you. Install the udev rule (Settings → Hardware → Device access), '
+            + 'and if it still fails add yourself to the input group: sudo usermod -aG input $USER, then log out and back in.'
+          : '.'));
+      }
       else log('virtual keyboard helper exited (' + code + ')');
     });
   }
