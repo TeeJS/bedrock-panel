@@ -4344,6 +4344,35 @@ app.whenReady().then(async () => {
     });
     return (r && !r.canceled && r.filePaths && r.filePaths[0]) || '';
   });
+  // Hear an installed voice. The engine holds one voice at a time, so previewing is: make this the
+  // chosen voice, restart the engine on it, and speak a line. Choosing is what the person wanted
+  // anyway -- nobody previews a voice they are not considering.
+  ipcMain.handle('previewLinuxVoice', async (e, voiceId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
+    const id = String(voiceId || '');
+    if (!linuxSpeech.installed(id)) return { ok: false, error: 'That voice is not downloaded yet.' };
+    if (!config.settings) config.settings = {};
+    if (!config.settings.voice) config.settings.voice = {};
+    if (config.settings.voice.linuxVoice !== id) {
+      config.settings.voice.linuxVoice = id;
+      saveConfig();
+      linuxSpeech.stop();
+    }
+    applyLinuxSpeech();
+    const { host, port } = linuxSpeech.endpoint();
+    const deadline = Date.now() + 15000;
+    while (!linuxSpeech.isReady() && Date.now() < deadline) await new Promise(r => setTimeout(r, 200));
+    if (!linuxSpeech.isReady()) return { ok: false, error: 'The speech engine did not start.' };
+    try {
+      const { synthesize, wavHeader } = require('./claudevoice-wyoming');
+      const chunks = [];
+      let format = null;
+      await synthesize({ host, port, text: 'This is the voice Bedrock Panel will speak with.',
+        onFormat: f => { format = f; }, onChunk: c => chunks.push(c), timeoutMs: 20000 });
+      const wav = Buffer.concat([wavHeader(format || {}), Buffer.concat(chunks)]);
+      return { ok: true, wav: wav.toString('base64') };
+    } catch (err) { return { ok: false, error: String(err && err.message) }; }
+  });
   ipcMain.handle('cancelLinuxSpeechInstall', (e) => { if (isFrom(e, configWin) && process.platform === 'linux') speechInstaller().cancel(); return true; });
   ipcMain.handle('removeLinuxSpeechVoice', (e, voiceId) => {
     if (!isFrom(e, configWin) || process.platform !== 'linux') return false;

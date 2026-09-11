@@ -27,14 +27,17 @@ const ENGINE = {
   stripComponents: 1,
 };
 
-// Default first. `bytes` is the model; the .json beside it is a couple of kilobytes and ignored for
+// The voice list lives in linuxVoices.json, generated from Piper's published index plus a reading of
+// every voice's MODEL_CARD: 82 voices across 30 languages, and every one of them CC0, public domain,
+// CC BY or MIT. The non-commercial and share-alike voices are excluded on purpose -- they sound just
+// as good and cannot ship in a product, which is the whole reason this file is curated rather than
+// mirrored. `bytes` is the model; the .json beside it is a couple of kilobytes and ignored for
 // progress. `quality` is Piper's own label and tracks size and naturalness together.
-const VOICES = [
-  { id: 'en_US-ljspeech-medium', label: 'English (US) — female',  quality: 'medium', bytes: 63531379, md5: '109d552e9dd78d92d1169a7edd6de38d', license: 'Public domain', path: 'en/en_US/ljspeech/medium' },
-  { id: 'en_US-joe-medium',      label: 'English (US) — male',    quality: 'medium', bytes: 63201294, md5: '74fd6a4dc39e0aa9dce145d7f5acd4f6', license: 'CC0',           path: 'en/en_US/joe/medium' },
-  { id: 'en_GB-cori-medium',     label: 'English (UK) — female',  quality: 'medium', bytes: 63531379, md5: 'f143307611eccea9d976235d0895f57c', license: 'Public domain', path: 'en/en_GB/cori/medium' },
-  { id: 'en_US-kristin-medium',  label: 'English (US) — female 2', quality: 'medium', bytes: 63531379, md5: '5fed42d2296baca042e2bf74785db725', license: 'Public domain', path: 'en/en_US/kristin/medium' },
-];
+const VOICES = require('./linuxVoices.json');
+
+// Where someone can listen to any Piper voice before downloading one. A voice cannot be previewed
+// locally until it is installed, so the honest answer for "which should I pick" is upstream.
+const VOICE_SAMPLES_URL = 'https://rhasspy.github.io/piper-samples/';
 
 // The listening engine: sherpa-onnx's prebuilt Linux x64 release (Apache-2.0). Same reasoning as
 // Piper -- prebuilt, no compiler, no pip, which is what rules out whisper.cpp and faster-whisper.
@@ -116,6 +119,23 @@ const STT_MODELS = [
 
 function voices() { return VOICES.slice(); }
 
+/** The languages on offer, each with its voices, for a picker that is not one flat list of 82. */
+function voiceLanguages() {
+  const byLang = new Map();
+  for (const v of VOICES) {
+    if (!byLang.has(v.lang)) byLang.set(v.lang, { code: v.lang, name: v.langName, country: v.country, voices: [] });
+    byLang.get(v.lang).voices.push(v);
+  }
+  return [...byLang.values()].sort((a, b) => a.name.localeCompare(b.name) || a.country.localeCompare(b.country));
+}
+
+/** A voice's label in a list: who they are and how big they are, not a filename. */
+function voiceLabel(voice) {
+  if (!voice) return '';
+  const quality = voice.quality === 'x_low' ? 'smallest' : voice.quality;
+  return voice.name + ' — ' + quality + ', ' + voice.license;
+}
+
 function sttModels() { return STT_MODELS.slice(); }
 
 function sttModelById(id) { return STT_MODELS.find(m => m.id === id) || null; }
@@ -126,8 +146,12 @@ function voiceById(id) {
   return VOICES.find(v => v.id === id) || null;
 }
 
-/** The voice a fresh install gets when nobody has chosen one. */
-function defaultVoice() { return VOICES[0]; }
+/** The voice a fresh install gets when nobody has chosen one: US English, the app's own language. */
+function defaultVoice() {
+  return VOICES.find(v => v.id === 'en_US-ljspeech-medium')
+    || VOICES.find(v => v.lang === 'en_US' && v.quality === 'medium')
+    || VOICES.find(v => v.lang === 'en_US') || VOICES[0];
+}
 
 /** The two files a voice is made of: the model and the config Piper reads beside it. */
 function voiceFiles(voice) {
@@ -149,5 +173,6 @@ function sttDownloadBytes(model, engineInstalled) {
     + DIARIZATION.segmentation.bytes + DIARIZATION.embedding.bytes;
 }
 
-module.exports = { ENGINE, STT_ENGINE, VAD_MODEL, DIARIZATION, VOICES_BASE, voices, voiceById, defaultVoice, voiceFiles, downloadBytes,
+module.exports = { ENGINE, STT_ENGINE, VAD_MODEL, DIARIZATION, VOICES_BASE, VOICE_SAMPLES_URL,
+  voices, voiceLanguages, voiceLabel, voiceById, defaultVoice, voiceFiles, downloadBytes,
   sttModels, sttModelById, defaultSttModel, sttDownloadBytes };

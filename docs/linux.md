@@ -170,9 +170,14 @@ That is the whole setup. There is no server to run, no port to enter, and no acc
 - **The two halves are separate.** Take speaking, listening, or both. Neither needs the other, and
   each can be replaced by your own server independently — your own Whisper for listening with the
   built-in voice for speaking is a perfectly normal arrangement.
+- **82 voices across 30 languages**, picked by language first so the list is a choice rather than a
+  wall. **Preview** speaks a line in a voice you have downloaded; to compare voices *before*
+  downloading, the hint links to upstream samples of every one of them.
 - **Everything offered is free of restrictions.** Piper's voices inherit their training data's
-  licence and most of the good-sounding ones are non-commercial, so the list here is only the ones
-  that are public domain or CC0. The recognition models are MIT. The licence is shown next to each.
+  licence and many of the good-sounding ones are non-commercial or share-alike, so this list is only
+  the ones that are public domain, CC0, CC BY or MIT. The licence is shown next to each voice.
+- **Listening is English only**, even though speaking is not. For another language, point STT at your
+  own Wyoming server.
 - **They are real speech servers.** Speaking answers on 127.0.0.1:10200 and listening on
   127.0.0.1:10300, both speaking the Wyoming protocol, so anything else on this machine that speaks
   Wyoming — Home Assistant, for one — can use them too. Same arrangement as the macOS build and the

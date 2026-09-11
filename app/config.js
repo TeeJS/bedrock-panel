@@ -4306,9 +4306,12 @@ ${IS_MAC ? `
           <option value="wyoming" ${voice.engine === 'wyoming' ? 'selected' : ''}>Speech servers (Whisper / Piper) at the hosts below</option>
         </select></div>
       <div class="row"><label>Voice</label>
+        <select id="ttsLinuxLang" style="flex:0 0 230px" title="Show the voices of one language"></select>
         <select id="ttsLinuxVoice" style="flex:1"></select>
+        <button id="ttsLinuxPreview" type="button" title="Hear this voice (downloads it first if needed)">▶ Preview</button>
         <button id="ttsLinuxInstall" type="button" title="Download this voice and the speech engine">Set up</button>
         <button id="ttsLinuxRemove" type="button" title="Delete this voice from this computer">Remove</button></div>
+      <p class="hint">30 languages. Preview speaks a line in the selected voice once it is downloaded — to compare voices <i>before</i> downloading, <a href="#" id="ttsLinuxSamples">listen to the samples</a> for all of them.</p>
       <div class="row"><label>Listening</label>
         <select id="ttsLinuxStt" style="flex:1"></select>
         <button id="ttsLinuxSttInstall" type="button" title="Download this recognition model and the listening engine">Set up</button>
@@ -5306,14 +5309,36 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
         voiceSel.onchange = e => saveVoice('linuxVoice', e.target.value);
         let busy = false;
         const mb = n => Math.round(n / 1048576) + ' MB';
+        const langSel = document.getElementById('ttsLinuxLang');
+        const previewBtn = document.getElementById('ttsLinuxPreview');
+        let catalog = [];
+        const fillVoices = (installed, chosen) => {
+          // Languages first, so 82 voices are a choice rather than a wall. The filter starts on the
+          // chosen voice's language, and the chosen voice always stays selectable.
+          const langs = [...new Map(catalog.map(v => [v.lang, v])).values()]
+            .sort((a, b) => a.langName.localeCompare(b.langName) || a.country.localeCompare(b.country));
+          const chosenVoice = catalog.find(v => v.id === chosen);
+          const wantLang = langSel.value || (chosenVoice && chosenVoice.lang) || 'en_US';
+          langSel.innerHTML = langs.map(l =>
+            `<option value="${l.lang}" ${l.lang === wantLang ? 'selected' : ''}>${l.langName}`
+            + `${l.country && l.country !== l.langName ? ' (' + l.country + ')' : ''}</option>`).join('');
+          const shown = catalog.filter(v => v.lang === langSel.value || v.id === chosen);
+          voiceSel.innerHTML = shown.map(v =>
+            `<option value="${v.id}" ${v.id === chosen ? 'selected' : ''}>${v.name} — ${v.quality}, ${v.license}`
+            + `${installed.includes(v.id) ? ' — installed' : ' — ' + mb(v.bytes) + ' to download'}</option>`).join('');
+        };
+        let lastInstalled = [];
+        langSel.onchange = () => renderLinuxSpeech();
         const renderLinuxSpeech = () => configApi.getLinuxSpeechStatus().then(st => {
           if (!st || !st.supported || busy) return;
           const installed = st.installedVoices || [];
+          lastInstalled = installed;
           const chosen = st.selectedVoice || '';
-          voiceSel.innerHTML = (st.catalog || []).map(v =>
-            `<option value="${v.id}" ${v.id === chosen ? 'selected' : ''}>${v.label} — ${v.license}`
-            + `${installed.includes(v.id) ? ' — installed' : ' — ' + mb(v.bytes) + ' to download'}</option>`).join('');
+          catalog = st.catalog || [];
+          fillVoices(installed, chosen);
           const here = installed.includes(voiceSel.value);
+          previewBtn.disabled = !here;
+          previewBtn.title = here ? 'Hear this voice' : 'Download this voice first';
           installBtn.textContent = here ? 'Re-download' : 'Set up';
           removeBtn.disabled = !here;
           const sttHave = st.installedSttModels || [];
@@ -5337,6 +5362,26 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
             : 'Not installed. Pick a voice or a language and press Set up.';
         }).catch(() => {});
         voiceSel.addEventListener('change', () => renderLinuxSpeech());
+        document.getElementById('ttsLinuxSamples').onclick = e => {
+          e.preventDefault();
+          configApi.openExternal('https://rhasspy.github.io/piper-samples/');
+        };
+        let previewAudio = null;
+        previewBtn.onclick = async () => {
+          const id = voiceSel.value;
+          if (!id || busy) return;
+          previewBtn.disabled = true;
+          statusEl.textContent = 'Speaking…';
+          const r = await configApi.previewLinuxVoice(id);
+          previewBtn.disabled = false;
+          if (!r || !r.ok) { statusEl.textContent = 'Could not preview: ' + ((r && r.error) || 'unknown error'); return; }
+          try {
+            if (previewAudio) previewAudio.pause();
+            previewAudio = new Audio('data:audio/wav;base64,' + r.wav);
+            previewAudio.play();
+          } catch (err) { statusEl.textContent = 'Could not play the sample: ' + err.message; return; }
+          renderLinuxSpeech();
+        };
         const sttSel = document.getElementById('ttsLinuxStt');
         const sttInstallBtn = document.getElementById('ttsLinuxSttInstall');
         const sttRemoveBtn = document.getElementById('ttsLinuxSttRemove');

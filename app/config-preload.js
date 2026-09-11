@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   renameLinuxSpeaker(from, to) { return ipcRenderer.invoke('renameLinuxSpeaker', from, to); },
   removeLinuxSpeaker(name) { return ipcRenderer.invoke('removeLinuxSpeaker', name); },
   pickEnrollmentClip() { return ipcRenderer.invoke('pickEnrollmentClip'); },
+  previewLinuxVoice(id) { return ipcRenderer.invoke('previewLinuxVoice', id); },
   onLinuxSpeechProgress(cb) { ipcRenderer.on('linuxSpeechProgress', (_e, p) => cb(p)); },            // macOS: re-read the installed voices   // macOS built-in speech engine: running / ready / permission / voices
   getAppVersion() { return ipcRenderer.invoke('getAppVersion'); },
   getApps() { return ipcRenderer.invoke('getApps'); },

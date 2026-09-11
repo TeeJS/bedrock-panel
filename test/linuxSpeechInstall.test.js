@@ -24,11 +24,34 @@ function fakeGet(files) {
 
 // ---- the catalogue ------------------------------------------------------------------------
 
-test('every shipped voice is public domain, because Piper voices inherit their dataset licence', () => {
-  const allowed = ['Public domain', 'CC0'];
+test('every shipped voice carries a licence that may actually ship', () => {
+  // Piper voices inherit their training data's terms. Non-commercial and share-alike ones sound
+  // just as good and cannot go in a product, so the list is curated rather than mirrored.
+  const allowed = ['Public domain', 'CC0', 'CC BY 4.0', 'MIT', 'Apache-2.0'];
   for (const v of catalog.voices()) {
     assert.ok(allowed.includes(v.license), v.id + ' has licence "' + v.license + '", which cannot ship');
+    assert.ok(!/NC|ShareAlike|SA\b/i.test(v.license), v.id + ' looks restricted: ' + v.license);
   }
+});
+
+test('the voice list is wide enough for people who do not speak English', () => {
+  const langs = catalog.voiceLanguages();
+  assert.ok(langs.length >= 25, 'only ' + langs.length + ' languages on offer');
+  const names = new Set(langs.map(l => l.name));
+  for (const expected of ['German', 'French', 'Spanish', 'Italian', 'Russian', 'Chinese', 'Polish']) {
+    assert.ok(names.has(expected), expected + ' has no voice');
+  }
+  for (const l of langs) assert.ok(l.voices.length > 0, l.name + ' is listed with no voices');
+});
+
+test('every voice is listed with what a person needs to choose one', () => {
+  for (const v of catalog.voices()) {
+    assert.ok(v.name && v.langName, v.id + ' is missing its display fields');
+    assert.ok(['x_low', 'low', 'medium', 'high'].includes(v.quality), v.id + ' quality: ' + v.quality);
+    assert.match(catalog.voiceLabel(v), /—/, 'a label says who and how big, not a filename');
+  }
+  assert.equal(catalog.defaultVoice().lang, 'en_US', 'a fresh install speaks the app\'s own language');
+  assert.match(catalog.VOICE_SAMPLES_URL, /^https:\/\//, 'somewhere to hear a voice before downloading it');
 });
 
 test('every voice is pinned well enough to verify: a full digest and a real byte count', () => {
