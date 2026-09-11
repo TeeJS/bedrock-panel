@@ -1,6 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const { ensureShellPath, augmentPath, loginShellPath, wellKnownDirs } = require('../app/shellPath');
 
 test('loginShellPath asks the login shell and extracts the marked PATH; failures and garbage give null', () => {
@@ -42,5 +43,9 @@ test('ensureShellPath is a no-op on Windows and logs what it added elsewhere', (
 
 test('wellKnownDirs covers Homebrew, ~/.local/bin (the claude CLI), npm/volta/bun, and nvm node bins newest first', () => {
   const dirs = wellKnownDirs('/Users/t');
-  for (const d of ['/opt/homebrew/bin', '/usr/local/bin', '/Users/t/.local/bin', '/Users/t/.npm-global/bin', '/Users/t/.volta/bin', '/Users/t/.bun/bin']) assert.ok(dirs.includes(d), d);
+  // The home-relative entries are path.join'd by wellKnownDirs, so join them here too: on Windows
+  // they come back backslashed and a forward-slash literal would never match. The absolute ones
+  // are literals in the implementation, so they stay literals here.
+  const home = (...p) => path.join('/Users/t', ...p);
+  for (const d of ['/opt/homebrew/bin', '/usr/local/bin', home('.local', 'bin'), home('.npm-global', 'bin'), home('.volta', 'bin'), home('.bun', 'bin')]) assert.ok(dirs.includes(d), d);
 });
