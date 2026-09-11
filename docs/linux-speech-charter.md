@@ -91,6 +91,12 @@ no hosts configured, the built-in engine wins.
   model's memory on a small machine. The two halves install, run and fail independently, and either
   can be replaced by the user's own server on its own port. Verified by speaking a sentence with the
   built-in voice and transcribing it back word for word through the app's own Wyoming client.
+- **Phase 2b — the other consumers. Done.** Listening is not only the voice apps: LucidType dictation
+  resolves its endpoint through the same path and needed only to be told the built-in state, and
+  meeting transcription gained a Linux "local" engine to match the macOS one. Meetings are recorded
+  as stereo with the operator's mic on the left and system audio on the right, so speakers come from
+  CHANNELS and no diarization is needed; Silero VAD splits each channel into utterances, which is
+  where the timestamps come from. Named attendees still require a diarizer server.
 - **Phase 3 — languages.** The picker offers more than English, which decides which model is fetched.
 
 ## Open questions

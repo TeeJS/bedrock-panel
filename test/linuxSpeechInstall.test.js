@@ -154,26 +154,37 @@ test('every recognition model is permissively licensed and fully pinned', () => 
   assert.match(catalog.STT_ENGINE.sha256, /^[0-9a-f]{64}$/);
 });
 
-test('a first listening install fetches its own engine, which is not the speaking one', () => {
+test('a first listening install fetches its own engine and the VAD, not the speaking engine', () => {
   const m = catalog.defaultSttModel();
-  assert.equal(catalog.sttDownloadBytes(m, false), catalog.STT_ENGINE.bytes + m.bytes);
-  assert.equal(catalog.sttDownloadBytes(m, true), m.bytes);
+  // The VAD is always counted: it is tiny, and without it a meeting recording cannot be split into
+  // timestamped utterances at all.
+  assert.equal(catalog.sttDownloadBytes(m, false), catalog.STT_ENGINE.bytes + m.bytes + catalog.VAD_MODEL.bytes);
+  assert.equal(catalog.sttDownloadBytes(m, true), m.bytes + catalog.VAD_MODEL.bytes);
   assert.notEqual(catalog.STT_ENGINE.url, catalog.ENGINE.url, 'two engines, two downloads');
+  assert.match(catalog.VAD_MODEL.sha256, /^[0-9a-f]{64}$/);
 });
 
 function sttInstallerFor(base, { corrupt = false } = {}) {
   const model = catalog.sttModelById('moonshine-tiny-en');
   const engine = Buffer.from('fake sherpa tarball');
   const bundle = Buffer.from('fake model tarball');
+  const vad = Buffer.from('fake silero vad');
   const files = {};
   files[catalog.STT_ENGINE.url] = engine;
   files[model.url] = bundle;
+  files[catalog.VAD_MODEL.url] = vad;
   const realSha = model.sha256, realBytes = model.bytes, engineSha = catalog.STT_ENGINE.sha256;
+  const vadSha = catalog.VAD_MODEL.sha256, vadBytes = catalog.VAD_MODEL.bytes;
   const sha = b => crypto.createHash('sha256').update(b).digest('hex');
   model.sha256 = corrupt ? sha(Buffer.from('other')) : sha(bundle);
   model.bytes = bundle.length;
   catalog.STT_ENGINE.sha256 = sha(engine);
-  const restore = () => { model.sha256 = realSha; model.bytes = realBytes; catalog.STT_ENGINE.sha256 = engineSha; };
+  catalog.VAD_MODEL.sha256 = sha(vad);
+  catalog.VAD_MODEL.bytes = vad.length;
+  const restore = () => {
+    model.sha256 = realSha; model.bytes = realBytes; catalog.STT_ENGINE.sha256 = engineSha;
+    catalog.VAD_MODEL.sha256 = vadSha; catalog.VAD_MODEL.bytes = vadBytes;
+  };
   const inst = createSpeechInstaller({
     baseDir: base, log: () => {}, get: fakeGet(files),
     execFile: (bin, args, cb) => {
@@ -201,6 +212,7 @@ test('listening installs its engine and model, and reports progress that adds up
     assert.equal(result.model, 'moonshine-tiny-en');
     assert.equal(inst.sttEngineInstalled(), true);
     assert.deepEqual(inst.installedSttModels(), ['moonshine-tiny-en']);
+    assert.ok(fs.existsSync(path.join(base, 'speech', 'sherpa', 'silero_vad.onnx')), 'the VAD came too');
     const done = seen[seen.length - 1];
     assert.equal(done.phase, 'done');
     assert.equal(done.received, done.total);

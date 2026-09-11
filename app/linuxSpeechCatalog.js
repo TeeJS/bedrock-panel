@@ -45,6 +45,17 @@ const STT_ENGINE = {
   stripComponents: 1,
 };
 
+// Voice activity detection: what splits a long recording into utterances so each gets a timestamp.
+// Downloaded with the recognition model rather than separately -- listening without it can still
+// transcribe one utterance handed to it, but meeting transcription cannot work at all.
+const VAD_MODEL = {
+  url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',
+  name: 'silero_vad.onnx',
+  bytes: 643854,
+  sha256: '9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6',
+  license: 'MIT',
+};
+
 // Recognition models. Moonshine is built for short utterances on a CPU, which is exactly dictation
 // and voice commands: it transcribed 3.85 s of speech in 0.086 s on an i5-10210U laptop. The English
 // models are MIT. Whisper tiny is the multilingual fallback when more languages are wanted, and is
@@ -93,8 +104,8 @@ function downloadBytes(voice, engineInstalled) {
 
 /** The same, for listening: the recognition engine plus the model. */
 function sttDownloadBytes(model, engineInstalled) {
-  return (engineInstalled ? 0 : STT_ENGINE.bytes) + ((model && model.bytes) || 0);
+  return (engineInstalled ? 0 : STT_ENGINE.bytes) + ((model && model.bytes) || 0) + VAD_MODEL.bytes;
 }
 
-module.exports = { ENGINE, STT_ENGINE, VOICES_BASE, voices, voiceById, defaultVoice, voiceFiles, downloadBytes,
+module.exports = { ENGINE, STT_ENGINE, VAD_MODEL, VOICES_BASE, voices, voiceById, defaultVoice, voiceFiles, downloadBytes,
   sttModels, sttModelById, defaultSttModel, sttDownloadBytes };

@@ -3981,12 +3981,13 @@ ${IS_MAC ? `
       <p class="hint">This must be the same mic you use with Teams</p>
 
       <p class="sectitle">Transcription</p>
-      ${IS_MAC ? `<div class="row"><label>Engine</label>
+      ${IS_MAC || IS_LINUX ? `<div class="row"><label>Engine</label>
         <select id="meTransEngine" style="flex:1">
-          <option value="local" ${me.transcribeEngine !== 'server' ? 'selected' : ''}>Built-in macOS speech on this Mac — you (mic) vs. everyone else (system audio)</option>
+          <option value="local" ${me.transcribeEngine !== 'server' ? 'selected' : ''}>${IS_MAC ? 'Built-in macOS speech on this Mac' : 'Built-in speech on this computer'} — you (mic) vs. everyone else (system audio)</option>
           <option value="server" ${me.transcribeEngine === 'server' ? 'selected' : ''}>Diarizer server (tts-sst / meeting-diarizer) at the URL below — named speakers</option>
         </select></div>
-      <details class="hint"><summary>The built-in engine transcribes on this Mac with Apple's on-device speech (macOS 26: SpeechAnalyzer; 14/15: SFSpeechRecognizer), no server and nothing leaves the Mac. It cannot tell voices apart: the recording's mic channel is labelled with <b>Your name</b> below (or "Me"), the system-audio channel "Others".</summary> For per-attendee names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>` : ''}
+      ${IS_MAC ? `<details class="hint"><summary>The built-in engine transcribes on this Mac with Apple's on-device speech (macOS 26: SpeechAnalyzer; 14/15: SFSpeechRecognizer), no server and nothing leaves the Mac. It cannot tell voices apart: the recording's mic channel is labelled with <b>Your name</b> below (or "Me"), the system-audio channel "Others".</summary> For per-attendee names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>`
+      : `<details class="hint"><summary>The built-in engine transcribes on this computer using the listening model from <b>Settings → TTS/STT</b> — set that up first. No server, and nothing leaves the machine.</summary> It cannot tell voices apart, and does not need to: the recording's mic channel is labelled with <b>Your name</b> below (or "Me") and the system-audio channel "Others", so who spoke is known rather than guessed. For per-attendee names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>`}` : ''}
       <div class="row"><label>Server URL</label>
         <input id="meTransUrl" value="${esc(me.transcribeUrl || 'http://127.0.0.1:10301/transcribe')}" style="flex:1"></div>
       <details class="hint"><summary>The tts-sst or meeting-diarizer endpoint that turns recordings into speaker-labeled transcripts.</summary> Edit the host/port to match your server; the panel checks its /health before sending. Remember to Save.</details>
@@ -5596,7 +5597,7 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
         }
       };
       document.getElementById('meTransUrl').oninput = e => saveMe({ transcribeUrl: e.target.value.trim() });
-      const meEngine = document.getElementById('meTransEngine');   // macOS only
+      const meEngine = document.getElementById('meTransEngine');   // macOS and Linux: the built-in engine
       if (meEngine) meEngine.onchange = e => saveMe({ transcribeEngine: e.target.value });
       document.getElementById('meAnalysisAi').onchange = e => saveMe({ analysisAi: e.target.value });
       // --- Busy status ---

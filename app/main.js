@@ -457,6 +457,16 @@ const linuxSpeech = require('./linuxSpeech').createLinuxSpeech({
   baseDir: process.platform === 'linux' ? app.getPath('userData') : '',
 });
 let linuxSpeechInstaller = null;
+let linuxMeetingTx = null;
+function linuxMeetingTranscriber() {
+  if (process.platform !== 'linux') return { available: () => false, transcribe: () => Promise.reject(new Error('not on this platform')) };
+  if (!linuxMeetingTx) {
+    linuxMeetingTx = require('./linuxMeetingTranscribe').createLinuxMeetingTranscriber({
+      baseDir: app.getPath('userData'), log: m => console.log('[meeting] ' + m),
+    });
+  }
+  return linuxMeetingTx;
+}
 function speechInstaller() {
   if (!linuxSpeechInstaller) {
     linuxSpeechInstaller = require('./linuxSpeechInstall').createSpeechInstaller({
@@ -2253,7 +2263,7 @@ function lucidtypeGrid() { return (config.grids || []).find(x => x && x.kind ===
 function lucidtypeSettings() { const g = lucidtypeGrid(); return Object.assign({}, LUCIDTYPE_DEFAULTS, (g && g.options) || {}); }
 // STT/TTS endpoints for dictation: the lucidtype page's per-page override (Advanced settings) over the
 // global config.settings.voice.
-function lucidtypeVoiceEndpoints() { return voiceConfig.resolveLucidEndpoints(config.settings, config.grids); }
+function lucidtypeVoiceEndpoints() { return voiceConfig.resolveLucidEndpoints(config.settings, config.grids, process.platform, builtInSpeechInstalled()); }
 // Panel poller/SSE payload: dictation state + review state + the resolved STT endpoint + mic label.
 function lucidStateForPanel() {
   const st = lucidDictation ? lucidDictation.state() : { dictating: false, transcript: '', seq: 0, review: { active: false } };
@@ -4069,8 +4079,14 @@ app.whenReady().then(async () => {
         // macOS: transcribe on this Mac (native/mac/speech-server transcribe-file — Apple's on-device
         // speech, the operator's mic channel labelled with their name, system audio "Others") when the
         // Meeting settings say so; the diarizer server otherwise.
-        resolveEngine: () => (meetingSettings().transcribeEngine === 'local' && helperPath('speechServer')) ? 'local' : 'server',
-        localTranscribe: (wavPath, { myName, log: say }) => new Promise((resolve, reject) => {
+        // Both platforms transcribe the operator's mic channel and the system-audio channel
+        // separately, which is why neither needs speaker diarization. macOS uses Apple's on-device
+        // speech; Linux uses the built-in engine from Settings -> TTS/STT.
+        resolveEngine: () => (meetingSettings().transcribeEngine === 'local'
+          && (helperPath('speechServer') || linuxMeetingTranscriber().available())) ? 'local' : 'server',
+        localTranscribe: (wavPath, { myName, log: say }) => (process.platform === 'linux'
+          ? linuxMeetingTranscriber().transcribe(wavPath, { myName })
+          : new Promise((resolve, reject) => {
           const args = ['transcribe-file', wavPath, '--language', 'en-US', '--me', myName || 'Me', '--others', 'Others'];
           require('child_process').execFile(helperPath('speechServer'), args, { maxBuffer: 64 * 1024 * 1024, timeout: 3600000 }, (err, stdout, stderr) => {
             String(stderr || '').split('\n').filter(Boolean).forEach(l => say(l));
@@ -4080,7 +4096,7 @@ app.whenReady().then(async () => {
             if (out && out.error) return reject(new Error(out.error));
             resolve(out);
           });
-        }),
+        })),
         organizeByDate: () => !!meetingSettings().processedByDate,
         resolveThreshold: () => meetingSettings().transcribeThreshold,
         resolveMyName: () => meetingSettings().myName,

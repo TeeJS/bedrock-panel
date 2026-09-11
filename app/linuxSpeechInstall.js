@@ -176,6 +176,13 @@ function createSpeechInstaller(options) {
       log('listening engine installed');
     }
 
+    if (!fs.existsSync(paths.vadModel)) {
+      await fetchTo(catalog.VAD_MODEL.url, paths.vadModel,
+        { algo: 'sha256', value: catalog.VAD_MODEL.sha256 }, tick);
+    } else {
+      received += catalog.VAD_MODEL.bytes;
+    }
+
     const modelDir = path.join(paths.sttDir, model.id);
     if (!fs.existsSync(path.join(modelDir, 'tokens.txt'))) {
       const archive = path.join(paths.root, model.id + '.tar.bz2');

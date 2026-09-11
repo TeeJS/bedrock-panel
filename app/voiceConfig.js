@@ -174,9 +174,11 @@ function migrateVoiceConfig(config) {
 // Endpoints for LucidType dictation: the first lucidtype grid's own options (honoring its per-page
 // override) over the global default. Pure so it's testable without electron — dictation runs in the
 // background, so it can't use activeServedAppConfig (which only returns the ACTIVE grid).
-function resolveLucidEndpoints(settings, grids) {
+function resolveLucidEndpoints(settings, grids, platform = process.platform, builtInInstalled = null) {
   const g = (grids || []).find(x => x && x.kind === 'app' && x.app === 'lucidtype');
-  return resolveVoiceEndpoints(settings, (g && g.options) || {});
+  // The built-in state has to be carried through, or LucidType would be the one voice path that
+  // cannot see the engine every other one uses.
+  return resolveVoiceEndpoints(settings, (g && g.options) || {}, platform, builtInInstalled);
 }
 
 // ---- AI Profiles (Smart Profiles) ----

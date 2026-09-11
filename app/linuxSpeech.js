@@ -47,6 +47,10 @@ function layout(baseDir) {
     sttBinary: path.join(root, 'sherpa', 'bin', 'sherpa-onnx-offline'),
     sttLibDir: path.join(root, 'sherpa', 'lib'),
     sttDir: path.join(root, 'stt'),
+    vadModel: path.join(root, 'sherpa', 'silero_vad.onnx'),
+    // The VAD+ASR binary is what turns a whole recording into timestamped utterances; the plain
+    // offline one handles a single utterance handed to it over Wyoming.
+    sttVadBinary: path.join(root, 'sherpa', 'bin', 'sherpa-onnx-vad-with-offline-asr'),
   };
 }
 
