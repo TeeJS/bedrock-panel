@@ -3856,9 +3856,10 @@
 
       <p class="sectitle">Desktop focus</p>
       <div class="row"><label>Auto-follow</label>
-        <input type="checkbox" id="sFocus" style="width:auto;flex:none"><span class="hint" style="margin:0 0 0 8px">switch the panel to a page when its mapped app becomes focused on the PC</span></div>
+        <input type="checkbox" id="sFocus" style="width:auto;flex:none"${IS_LINUX ? ' disabled' : ''}><span class="hint" style="margin:0 0 0 8px">switch the panel to a page when its mapped app becomes focused on the PC</span></div>
       <div class="row"><label>While focused</label>
-        <label class="iconopt" style="width:auto"><input type="checkbox" id="sFocusPauseRot" ${focusFollow.enabled ? '' : 'disabled'}> Pause auto-rotation</label></div>
+        <label class="iconopt" style="width:auto"><input type="checkbox" id="sFocusPauseRot" ${IS_LINUX || !focusFollow.enabled ? 'disabled' : ''}> Pause auto-rotation</label></div>${IS_LINUX ? `
+      <p class="hint">Not available on Linux. Knowing which application is in front means asking the desktop about another application's windows, which Wayland deliberately does not allow. The setting is inert on this platform rather than switched off silently.</p>` : ''}
       <details class="hint"><summary>Map apps to a page under that page's Advanced settings → “Focus trigger app(s)”.</summary> Detection polls in the background and only switches once the newly-focused app has held focus for a couple seconds, so quick alt-tabbing won't cause flicker — and manually navigating the panel away is never overridden; it only re-triggers on the next focus change. With <b>Pause auto-rotation</b> on, rotation holds off the moment a mapped app takes focus and picks back up the moment it loses focus.</details>
 
       <p class="sectitle">Setup &amp; troubleshooting</p>
@@ -4136,7 +4137,7 @@ ${IS_MAC ? `
       <div class="row" style="margin-top:10px"><label class="iconopt" style="width:auto"><input type="checkbox" id="meOutlook" ${me.outlookEnabled ? 'checked' : ''}> Pull meeting information from my calendar</label></div>
       <details class="hint"><summary>When a recording starts, saves the matching appointment (subject, attendees, organizer, body…) as <b>&lt;recording&gt;.json</b> beside the WAV.</summary> The file travels through transcription, where its attendee list improves speaker identification. Ad-hoc calls with nothing scheduled save nothing.</details>
       <div class="row"><label>Calendar source</label>
-        <select id="meInfoSource" style="flex:1"><option value="classic" ${me.meetingInfoSource === 'microsoft365' ? '' : 'selected'}>${IS_MAC ? 'macOS Calendar (this Mac)' : 'Classic Outlook (this PC)'}</option><option value="microsoft365" ${me.meetingInfoSource === 'microsoft365' ? 'selected' : ''}>Microsoft 365 (Graph)</option></select>
+        <select id="meInfoSource" style="flex:1"><option value="classic" ${me.meetingInfoSource === 'microsoft365' ? '' : 'selected'}${IS_LINUX ? ' disabled' : ''}>${IS_MAC ? 'macOS Calendar (this Mac)' : IS_LINUX ? 'A calendar on this computer — not available on Linux' : 'Classic Outlook (this PC)'}</option><option value="microsoft365" ${IS_LINUX || me.meetingInfoSource === 'microsoft365' ? 'selected' : ''}>Microsoft 365 (Graph)</option></select>
         <button id="meOutCheck" type="button">Check Connection</button></div>
       <p class="hint" id="meOutMsg"></p>
       <div id="meClassicSettings">

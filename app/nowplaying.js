@@ -128,6 +128,9 @@ function onMonitorLine(line) {
   try { o = JSON.parse(line); } catch (e) { return; }
   if (!o || !o.title) { snapshot = null; snapTs = 0; return; }        // "{}" -> no media session
   snapshot = { title: o.title || null, artist: o.artist || null, album: o.album || null, status: o.status || null, app: o.app || null, position: +o.position || 0, duration: +o.duration || 0 };
+  // A helper that already knows the art URL says so on the line (MPRIS carries it in the track
+  // metadata), which saves the whole second-helper-plus-cache dance Windows needs to get a thumbnail.
+  if (o.art) artCache[trackKey(snapshot)] = o.art;
   if (o.bundleId) snapshot.bundleId = String(o.bundleId);   // macOS: the player's bundle id (transport targets it)
   if (o.trackId) snapshot.trackId = String(o.trackId);      // macOS: Spotify track URI (art lookup)
   if ('art' in o) artCache[trackKey(snapshot)] = o.art || null;   // a helper that supplies art skips the lookups

@@ -225,7 +225,24 @@ Once listening is set up, two other things start working on this machine with no
 Both live in `~/.config/bedrock-panel/speech` and upgrading Bedrock Panel never touches them.
 Removing either is a button in the same tab.
 
-## 8. Secrets
+## 8. Music, volume and call detection
+
+These work through the interfaces the Linux desktop already publishes, so there is nothing to install
+and nothing to configure.
+
+- **The Music page** shows whatever is playing, with album art, and its buttons control that player.
+  It reads MPRIS over D-Bus — the same thing your desktop's own media applet reads — so Firefox,
+  Chromium, VLC, Spotify, Elisa and anything else that publishes a player all appear. With two
+  players open, the panel follows the one actually playing and its buttons drive *that* one rather
+  than whichever application happens to own the media keys.
+- **The meeting console's output rail** shows the real system volume, following whichever output you
+  have selected.
+- **Auto-record and the busy light** know when an application is holding the microphone, which is how
+  a call starts a recording on its own. Set the app names under **Settings → Meetings**; on Linux
+  these are program names like `zoom` or `chromium` rather than Windows `.exe` names, and the panel
+  matches an application's name, its binary and its process name, so a short obvious entry works.
+
+## 9. Secrets
 
 Saved passwords and tokens are encrypted with Electron `safeStorage`, backed by KWallet or
 GNOME Keyring.
@@ -240,7 +257,7 @@ still decrypt normally, so nothing is lost in the meantime.
 A `config.json` copied from Windows keeps its DPAPI-encrypted secrets, which Linux cannot read.
 Re-enter those in the editor.
 
-## 9. Starter pages
+## 10. Starter pages
 
 A fresh install starts with the **Linux starter pages** — Default, Media, and Dev — mirroring
 the Windows and macOS ones page for page.
@@ -253,9 +270,12 @@ that names a real binary is used exactly as typed, so `dolphin` or `firefox` kee
 A config copied from Windows or a Mac is translated the same way: Windows program names map to
 their Linux equivalents, and `start <url>` becomes `xdg-open`.
 
-## 10. What is not available on Linux
+## 11. What is not available on Linux
 
 These features report themselves unavailable rather than failing quietly:
+
+These three are greyed out in the editor with the reason beside them, rather than accepting a setting
+and quietly doing nothing with it.
 
 - **Reserved Display.** Moving another application's window off the panel display requires
   enumerating and repositioning foreign windows, which Wayland deliberately does not allow.
@@ -266,13 +286,15 @@ These features report themselves unavailable rather than failing quietly:
 - **Touchscreen setup wizard.** A Windows-only fix for a Windows-only problem. Linux binds a
   digitizer to the output its USB device reports, and Bedrock Panel reads the panel's touch
   reports over HID itself.
-- **Outlook meeting info.** Use the Microsoft 365 source instead, which works everywhere.
+- **Meeting info from a calendar on this computer.** Windows reads classic Outlook and macOS reads
+  Calendar; Linux has no single desktop calendar to read. The Microsoft 365 source works everywhere
+  and is preselected here, with the local option greyed out.
 - **Built-in listening is English only for now.** Other languages mean pointing STT at your own
   Wyoming server, such as faster-whisper. Speaking has English voices in US and UK accents.
 - **A voice has to be enrolled before it can be named.** Until then participants are told apart and
   numbered. Enrollment is on the Meetings tab and takes one recording per person.
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 **The knob and touchscreen are not detected.** Install the udev rule above and replug. Device
 Diagnostics names the cause on the Touchscreen and Knob rows.
@@ -281,7 +303,7 @@ Diagnostics names the cause on the Touchscreen and Knob rows.
 binding has to match Electron's ABI rather than your system Node: `npm run rebuild`. The app
 still starts and Software mode is unaffected.
 
-**Saving a secret fails.** See section 8. Install and unlock a keyring, then restart.
+**Saving a secret fails.** See section 9. Install and unlock a keyring, then restart.
 
 **Tiles launch nothing.** The program is not installed under any of the names Bedrock Panel
 tries. The log says which candidates it looked for.

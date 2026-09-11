@@ -14,7 +14,11 @@ test('helperPath resolves the platform binary next to app/native and rewrites th
 test('helperPath is null where a platform has no helper for the feature', () => {
   assert.equal(helperPath('outlookMeeting', 'linux'), null);   // macOS has calendar-meeting for it since 2026-09
   assert.equal(helperPath('nowplayingArt', 'darwin'), null);
-  assert.equal(helperPath('sysvolume', 'linux'), null);
+  // Linux gained sysvolume with the PipeWire helper; what it still has nothing for is anything that
+  // needs to see or move another application's windows.
+  assert.equal(helperPath('reservedDisplay', 'linux'), null);
+  assert.equal(helperPath('foregroundWatch', 'linux'), null);
+  assert.equal(helperPath('nowplayingArt', 'linux'), null);   // MPRIS carries the art URL itself
   assert.equal(helperPath('no-such-helper', 'win32'), null);
 });
 
