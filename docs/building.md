@@ -275,6 +275,149 @@ dialog appears once more and then never again (a Team ID gives the item a stable
 privacy grants (Input Monitoring, Accessibility, Calendars, Automation) are tied to the signing
 certificate, so the first Developer ID build asks for them one final time.
 
+## Build & run (Linux)
+
+> End-user setup — installing the `.deb` or AppImage, the udev rule, what Linux cannot do — is in
+> [linux.md](linux.md). This section is the developer side. Verified on Ubuntu 26.04 / KDE Plasma 6.6
+> (Wayland) with Node 22.
+
+**Software mode** — the resizable desktop window, the editor, and every platform-neutral app — plus
+the knob and touchscreen work today. There is deliberately **no `native/linux/` helper tree**: on
+Linux the equivalents of the Windows C# and macOS Swift helpers are reachable from JavaScript
+(MPRIS over D-Bus for now-playing, PipeWire for volume and capture-session detection), so
+`app/nativeHelpers.js` returns `null` for every Linux entry and nothing needs a compiler.
+
+```bash
+npm install --ignore-scripts            # packages on disk, no native build
+node node_modules/electron/install.js   # fetch the Electron 44 binary
+npm test                                 # node:test suite (the DPAPI tests skip off Windows)
+npm start
+```
+
+`node-hid` ships a linux-x64 N-API prebuild that loads under Electron 44 as-is, so no rebuild is
+normally needed. Check it with
+`ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron -e "console.log(require('node-hid').devices().length)"`;
+only if that fails, run `npm run rebuild` (needs `build-essential`, `libudev-dev`, and Python).
+If the binding cannot load at all the app still starts — `app/main.js` falls back to a stub that
+enumerates nothing, and Device Diagnostics says the module is the reason rather than blaming a cable.
+
+`npm start` still runs `build-dpapi.js`, `build-smtc.js`, and `build-mac-helpers.js` first; all three
+exit immediately off their platform. User data lives in `~/.config/bedrock-panel`.
+
+What to expect on Linux:
+
+- **The app relaunches itself onto the X11 backend** in a Wayland session (`app/linuxSession.js`),
+  so it runs through XWayland. A Wayland client cannot place itself in global screen coordinates and
+  Panel mode is nothing but placement: with the panel display in landscape at 1920,0 1920x480, the
+  page ends up 1952x522 at 1904,-10 under wayland and exactly 1920x480 at 1920,0 under x11. X11 also
+  keeps `globalShortcut` and robotjs working, neither of which has a native Wayland path.
+  `BEDROCK_LINUX_OZONE=wayland` opts out, Panel mode included.
+- **A relaunch is the only way to do that, and this is a trap worth remembering.**
+  `app.commandLine.appendSwitch('ozone-platform', 'x11')` does NOT work: Chromium picks the platform
+  before the main script runs, so the switch reaches only child processes. Their argv then reads
+  `--ozone-platform=x11` while the browser process is still Wayland, which looks fixed and is not —
+  a crash dump showing the flag is not evidence. `ELECTRON_OZONE_PLATFORM_HINT` does not work either.
+  `test/linuxSession.test.js` asserts `appendSwitch` never comes back to `app/main.js`.
+- **Raw HID is root-only** until `packaging/linux/70-bedrock-panel.rules` is installed. The deb does
+  that in its postinst; a checkout or an AppImage has no installer, so the editor's Settings →
+  Hardware → Device access resolves the rule's path for that install and prints the command. Until
+  the rule is in place every open is refused with EACCES, and `src/hidPlatform.js` decorates that
+  error with the fix, the same way it decorates the macOS Input Monitoring refusal.
+- **Secrets** use Electron `safeStorage` (KWallet or GNOME Keyring). With no keyring, Chromium
+  silently selects a backend that "encrypts" under a hardcoded key — `app/secretStore.js` detects it
+  and refuses to write, rather than storing tokens that only look encrypted.
+- **The first-run config** is `app/config.default.linux.json`. Its app tiles name a job, not a
+  program, because Linux has no single calculator or file manager; `app/actionRunner.js` resolves
+  each against `PATH` from a candidate list.
+- **Reserved Display and follow-the-focused-app are not possible** and report themselves
+  unavailable. Both need foreign-window enumeration and movement, which Wayland does not offer.
+- **Keystrokes do not use robotjs on Linux.** It drives XTEST, which does not deliver under
+  XWayland — it loads, reports success, and nothing arrives (measured by typing into the app's own
+  focused window and reading back an empty field). `app/linuxInput.js` instead drives a uinput
+  virtual keyboard through `app/linux/uinput-helper.py`, which the kernel presents as real hardware,
+  so the compositor routes it like any other keyboard on both X11 and Wayland.
+  - The helper is Python because creating a uinput device needs `ioctl` (UI_SET_EVBIT, UI_DEV_SETUP,
+    UI_DEV_CREATE) and Node has none. Writing the events afterwards is an ordinary `write`. Python
+    keeps the Linux port free of a build toolchain; the deb depends on `python3`.
+  - It speaks the same stdin-line contract as the C# and Swift helpers and exits on EOF, and
+    `app/linux/**` is asarUnpack'd because python3 cannot open a script inside `app.asar`.
+  - `app/linuxKeymap.js` holds the name and character tables, and is pure, so the mapping is unit
+    tested without a device. Key codes mean the layout decides what typed text prints; combos are
+    unaffected.
+  - **Monitor mode drives a second uinput device**, an absolute pointer created when the mode is
+    entered rather than at startup, since most sessions never enter it. Two devices rather than one
+    because libinput classifies a device by what it declares, and nothing real is both a keyboard and
+    an absolute pointer. The shape is the QEMU USB tablet's — buttons, absolute X/Y, a wheel — which
+    libinput has always handled as an absolute pointer.
+    - The compositor stretches the device's 0..65535 scale across the whole desktop, so
+      `app/linuxPointer.js` maps a global screen pixel through the bounding box of every display;
+      `app/main.js` injects that box and it is re-read per move, never cached, because the QUAKE
+      arriving is exactly when the mode is used.
+    - Plain proportional rounding, which was measured rather than assumed: both that formula and a
+      half-pixel-offset one were driven against KWin's own cursor position over a spread of pixels on
+      both displays. This one lands on the intended pixel every time; the offset one overshoots by
+      one. The unit test asserts the round trip rather than the constants.
+    - Verified end to end on KDE Plasma 6.6 (Wayland) through the real backend: the cursor lands on
+      the requested pixel, and a window under it receives left and right press/release, the wheel in
+      both directions, and a drag. Electron's own display list under the X11 backend agrees with the
+      compositor's geometry, which is what makes the mapping correct.
+    - Untested: a display with a scale factor other than 1, the only arrangement available here. Both
+      Electron and KWin work in logical pixels, so it should hold, but nobody has measured it.
+- **Global hotkeys go through the XDG GlobalShortcuts portal**, not Electron. `globalShortcut.register`
+  returns true on this platform and the shortcut never fires — verified by pressing the combination
+  with this project's own uinput keyboard, so it is not a synthetic-input artefact. `app/linuxShortcuts.js`
+  is a globalShortcut-shaped shim over `app/linux/portal-shortcuts.py`, and `app/main.js` routes every
+  registration through it; `test/linuxShortcuts.test.js` fails if a bare `globalShortcut` call returns.
+  - The portal changes the feature's shape: the app registers NAMED ACTIONS and proposes triggers, and
+    the desktop decides. Plasma 6.6 honours the proposal after one consent step — a "Global Shortcuts
+    Requested" dialog listing the actions with the proposed keys filled in, and OK binds them. Verified
+    end to end by pressing them with this project's own uinput keyboard.
+  - `BindShortcuts` does not answer until that dialog is dealt with, and dismissing it leaves the
+    actions registered with NO key. An earlier reading of this code said Plasma binds nothing and the
+    person must visit System Settings; that was the dismissed-dialog state mistaken for the platform's
+    behaviour. An empty `trigger_description` means "not bound yet", never "this desktop refuses".
+  - The dialog names the app from its systemd scope, so it reads "Bedrock Panel" when launched from the
+    desktop entry and names the terminal when launched from one. Test runs from a shell are misleading
+    twice over: wrong name, and the shortcuts land under the terminal's component in
+    `kglobalshortcutsrc`. xdg-desktop-portal's `Registry.Register` would let a non-sandboxed app state
+    its own id, but Ubuntu 26.04 ships no such service, so the scope is all there is.
+  - `triggers()` reports what was actually granted, so the editor need not imply the typed combination
+    is live.
+  - Registrations are batched because the portal binds a set in one call: `register()` collects,
+    `apply()` performs the handshake, and `applyShortcuts()` calls it last.
+  - Python again, and for a sharper reason than uinput: the portal answers a request with a signal
+    addressed to the connection that made the call. Command-line tools cannot be used at all, because
+    each `gdbus call` is its own short-lived connection and the reply lands nowhere. PyGObject gives a
+    persistent connection; the deb depends on `python3-gi`.
+- Transcription pre/post hooks run through `/bin/sh`, as on macOS.
+
+### Packaging (Linux)
+
+```bash
+npm run dist:linux    # dist/bedrock-panel-x86_64.AppImage + dist/bedrock-panel_amd64.deb
+```
+
+No signing and no notarization: Linux has no equivalent gatekeeper. `afterpack.js` returns early for
+a non-Windows target, and `sign.js` is never reached.
+
+Prefer the **`.deb`** when testing on Ubuntu or Debian. AppImages need FUSE 2, which Ubuntu 24.04 and
+newer no longer ship, so the AppImage exits with *"dlopen(): error loading libfuse.so.2"* on a stock
+26.04 box until `libfuse2t64` is installed.
+
+Two packaging rules worth keeping:
+
+- **Never add `build.linux.files`** — same trap as `build.mac.files`; a platform list replaces the
+  global one instead of extending it. All exclusions stay in the global `build.files`.
+- `packaging/**` is excluded from the bundle, with `packaging/linux/70-bedrock-panel.rules`
+  re-included after it so the udev rule ships inside the app. A later pattern wins, so order matters.
+  `linux.extraFiles` also drops the rule beside the executable as a real file, because a path inside
+  `app.asar` is not something a person can point `install` at.
+- **`deb.afterInstall` and `deb.afterRemove` REPLACE electron-builder's postinst/postrm, they do not
+  append.** `packaging/linux/after-install.sh` therefore reproduces the stock template verbatim before
+  adding the udev step; dropping it costs the `/usr/bin` symlink, the chrome-sandbox mode fix, and the
+  AppArmor profile. If you upgrade electron-builder, diff those two scripts against
+  `node_modules/app-builder-lib/templates/linux/after-{install,remove}.tpl`.
+
 ## Code layout
 
 ```

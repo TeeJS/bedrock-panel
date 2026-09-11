@@ -3,7 +3,7 @@
 ## Project Overview
 
 Bedrock Panel is a Windows-first Electron launcher and editor for the DK-QUAKE / ARIS-68
-touchscreen-and-knob device and the open Bedrock RP2040 knob, with a macOS port in progress
+touchscreen-and-knob device and the open Bedrock RP2040 knob, with macOS and Linux ports in progress
 (Software mode ships; hardware and the native helpers are pending — see `docs/building.md`). It renders grids, dashboards,
 and bundled or user-installed apps on a 1920x480 display, then maps touch, knob, desktop,
 media, meeting, and Home Assistant events to actions.
@@ -118,7 +118,7 @@ are managed by `src/auth/token-storage.js`, and the authorization flow is in
 
 ## Development Commands
 
-Use Windows or macOS with the Node release pinned by `.nvmrc` (26).
+Use Windows, macOS, or Linux with the Node release pinned by `.nvmrc` (26).
 
 ```powershell
 npm install --ignore-scripts

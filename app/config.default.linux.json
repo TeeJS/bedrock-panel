@@ -1,0 +1,451 @@
+{
+  "activeGridId": "default",
+  "settings": {
+    "discord": {
+      "enabled": true,
+      "applicationIdOverride": "",
+      "customVoiceScopes": false,
+      "customMessageScopes": false,
+      "customNotificationScopes": false,
+      "defaultView": "voice",
+      "autoReconnect": true,
+      "showUnavailable": true,
+      "richPresence": false
+    },
+    "github": {
+      "repository": "",
+      "branch": ""
+    }
+  },
+  "grids": [
+    {
+      "id": "default",
+      "name": "Default",
+      "cols": 8,
+      "rows": 2,
+      "tiles": [
+        {
+          "label": "Browser",
+          "icon": "🌐",
+          "type": "app",
+          "value": "browser"
+        },
+        {
+          "label": "Images",
+          "icon": "🖼️",
+          "type": "app",
+          "value": "images"
+        },
+        {
+          "label": "Files",
+          "icon": "📁",
+          "type": "app",
+          "value": "files"
+        },
+        {
+          "label": "Editor",
+          "icon": "📝",
+          "type": "app",
+          "value": "editor"
+        },
+        {
+          "label": "Calc",
+          "icon": "🧮",
+          "type": "app",
+          "value": "calculator"
+        },
+        {
+          "label": "Tasks",
+          "icon": "📊",
+          "type": "app",
+          "value": "monitor"
+        },
+        {
+          "label": "Terminal",
+          "icon": "🖥️",
+          "type": "app",
+          "value": "terminal"
+        },
+        {
+          "label": "Settings",
+          "icon": "⚙️",
+          "type": "app",
+          "value": "settings"
+        },
+        {
+          "label": "GitHub",
+          "icon": "🐙",
+          "type": "url",
+          "value": "https://github.com"
+        },
+        {
+          "label": "Screenshot",
+          "icon": "✂️",
+          "type": "app",
+          "value": "screenshot"
+        },
+        {
+          "label": "Lock",
+          "icon": "🔒",
+          "type": "system",
+          "value": "lock"
+        },
+        {
+          "label": "Documents",
+          "icon": "📄",
+          "type": "app",
+          "value": "documents"
+        },
+        {
+          "label": "Software",
+          "icon": "📦",
+          "type": "app",
+          "value": "software"
+        },
+        {
+          "label": "Sound",
+          "icon": "🔊",
+          "type": "cmd",
+          "value": "pavucontrol || systemsettings kcm_pulseaudio || gnome-control-center sound"
+        },
+        {
+          "label": "Spotify",
+          "icon": "🎵",
+          "type": "url",
+          "value": "https://open.spotify.com"
+        },
+        {
+          "label": "Edit Grids",
+          "icon": "✏️",
+          "type": "system",
+          "value": "config"
+        }
+      ]
+    },
+    {
+      "id": "media",
+      "name": "Media",
+      "cols": 10,
+      "rows": 4,
+      "tiles": [
+        {
+          "label": "Spotify",
+          "icon": "🎵",
+          "type": "url",
+          "value": "https://open.spotify.com",
+          "w": 4,
+          "h": 4
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "label": "YouTube",
+          "icon": "📺",
+          "type": "url",
+          "value": "https://youtube.com",
+          "w": 2,
+          "h": 2
+        },
+        {
+          "cover": 4
+        },
+        {
+          "label": "Netflix",
+          "icon": "🍿",
+          "type": "url",
+          "value": "https://www.netflix.com",
+          "w": 2,
+          "h": 2
+        },
+        {
+          "cover": 6
+        },
+        {
+          "label": "Twitch",
+          "icon": "🎮",
+          "type": "url",
+          "value": "https://twitch.tv"
+        },
+        {
+          "label": "Disney+",
+          "icon": "🏰",
+          "type": "url",
+          "value": "https://www.disneyplus.com"
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 4
+        },
+        {
+          "cover": 4
+        },
+        {
+          "cover": 6
+        },
+        {
+          "cover": 6
+        },
+        {
+          "label": "Prime",
+          "icon": "📦",
+          "type": "url",
+          "value": "https://www.primevideo.com"
+        },
+        {
+          "label": "Plex",
+          "icon": "🎬",
+          "type": "url",
+          "value": "https://app.plex.tv"
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "label": "Video",
+          "icon": "🎬",
+          "type": "app",
+          "value": "video"
+        },
+        {
+          "label": "Music",
+          "icon": "🎵",
+          "type": "app",
+          "value": "music"
+        },
+        {
+          "label": "Volume",
+          "icon": "🎚️",
+          "type": "cmd",
+          "value": "pavucontrol || systemsettings kcm_pulseaudio || gnome-control-center sound"
+        },
+        {
+          "label": "YT Music",
+          "icon": "🎶",
+          "type": "url",
+          "value": "https://music.youtube.com"
+        },
+        {
+          "label": "SoundCloud",
+          "icon": "☁️",
+          "type": "url",
+          "value": "https://soundcloud.com"
+        },
+        {
+          "label": "Apple Music",
+          "icon": "🍎",
+          "type": "url",
+          "value": "https://music.apple.com"
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "cover": 0
+        },
+        {
+          "label": "Pandora",
+          "icon": "📻",
+          "type": "url",
+          "value": "https://www.pandora.com"
+        },
+        {
+          "label": "Bandcamp",
+          "icon": "🎸",
+          "type": "url",
+          "value": "https://bandcamp.com"
+        },
+        {
+          "label": "Last.fm",
+          "icon": "📊",
+          "type": "url",
+          "value": "https://www.last.fm"
+        },
+        {
+          "label": "Tidal",
+          "icon": "🌊",
+          "type": "url",
+          "value": "https://listen.tidal.com"
+        },
+        {
+          "label": "Deezer",
+          "icon": "🟣",
+          "type": "url",
+          "value": "https://www.deezer.com"
+        },
+        {
+          "label": "Edit Grids",
+          "icon": "✏️",
+          "type": "system",
+          "value": "config"
+        }
+      ]
+    },
+    {
+      "id": "dev",
+      "name": "Dev",
+      "cols": 8,
+      "rows": 2,
+      "tiles": [
+        {
+          "label": "Editor",
+          "icon": "📝",
+          "type": "app",
+          "value": "editor"
+        },
+        {
+          "label": "Terminal",
+          "icon": "🖥️",
+          "type": "app",
+          "value": "terminal"
+        },
+        {
+          "label": "GitHub",
+          "icon": "🐙",
+          "type": "url",
+          "value": "https://github.com"
+        },
+        {
+          "label": "localhost",
+          "icon": "🌍",
+          "type": "url",
+          "value": "http://localhost:3000"
+        },
+        {
+          "label": "Tasks",
+          "icon": "📊",
+          "type": "app",
+          "value": "monitor"
+        },
+        {
+          "label": "Disks",
+          "icon": "💽",
+          "type": "app",
+          "value": "disks"
+        },
+        {
+          "label": "Info",
+          "icon": "📋",
+          "type": "app",
+          "value": "sysinfo"
+        },
+        {
+          "label": "Edit Grids",
+          "icon": "✏️",
+          "type": "system",
+          "value": "config"
+        },
+        {
+          "label": "",
+          "icon": "",
+          "type": "",
+          "value": ""
+        },
+        {
+          "label": "",
+          "icon": "",
+          "type": "",
+          "value": ""
+        },
+        {
+          "label": "",
+          "icon": "",
+          "type": "",
+          "value": ""
+        },
+        {
+          "label": "",
+          "icon": "",
+          "type": "",
+          "value": ""
+        },
+        {
+          "label": "",
+          "icon": "",
+          "type": "",
+          "value": ""
+        },
+        {
+          "label": "",
+          "icon": "",
+          "type": "",
+          "value": ""
+        },
+        {
+          "label": "",
+          "icon": "",
+          "type": "",
+          "value": ""
+        },
+        {
+          "label": "",
+          "icon": "",
+          "type": "",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "clock",
+      "name": "Flip Clock",
+      "kind": "app",
+      "app": "clock",
+      "options": {
+        "mode": "12",
+        "theme": "dark",
+        "seconds": false,
+        "date": true
+      }
+    },
+    {
+      "id": "weather",
+      "name": "Weather",
+      "kind": "web",
+      "url": "https://www.windy.com/?39.809,-98.597,4",
+      "auth": {
+        "type": "none"
+      }
+    },
+    {
+      "id": "ha-demo",
+      "name": "Home Assistant",
+      "kind": "web",
+      "url": "https://demo.home-assistant.io/",
+      "auth": {
+        "type": "none"
+      }
+    }
+  ]
+}

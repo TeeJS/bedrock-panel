@@ -29,10 +29,33 @@ const MARKER2 = 'oqenc:v2:';   // Windows: raw DPAPI per-value blobs (app/dpapi.
 function createSecretStore({ safeStorage, dpapi, loadApps, log = () => {} }) {
   const dp = dpapi || null;   // injected on win32 only; null elsewhere keeps the safeStorage path
 
+  // Chromium's Linux "basic_text" backend is the one case where safeStorage lies to us: with no
+  // keyring reachable it encrypts under a HARDCODED key and still reports encryption as available.
+  // Anything written that way is obfuscated, not protected, and the file reads as ciphertext to a
+  // person auditing it — the worst combination. Treat it as no backend at all, so a save fails
+  // loudly (the caller already surfaces that) instead of quietly storing tokens in the clear.
+  const PLAINTEXT_BACKENDS = new Set(['basic_text', 'basic']);
+  let backendWarned = false;
+  function plaintextBackend() {
+    try {
+      if (!safeStorage || typeof safeStorage.getSelectedStorageBackend !== 'function') return false;
+      const backend = String(safeStorage.getSelectedStorageBackend() || '');
+      if (!PLAINTEXT_BACKENDS.has(backend)) return false;
+      if (!backendWarned) {
+        backendWarned = true;
+        log('secret storage unavailable: this session has no keyring (safeStorage backend "' + backend + '" would encrypt with a hardcoded key). Install/unlock gnome-keyring or kwallet, then restart — saved secrets stay readable, but new ones cannot be saved until then.');
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+
   // safeStorage is only usable after the Electron app is ready; treat any throw as "unavailable".
   function available() {
     if (dp) return dp.available();
-    try { return !!(safeStorage && safeStorage.isEncryptionAvailable && safeStorage.isEncryptionAvailable()); }
+    try {
+      if (!(safeStorage && safeStorage.isEncryptionAvailable && safeStorage.isEncryptionAvailable())) return false;
+      return !plaintextBackend();
+    }
     catch { return false; }
   }
 

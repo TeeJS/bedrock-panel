@@ -9,7 +9,7 @@
 
 *A multi-use control platform for your computer.*
 
-**Runs on Windows and macOS** (Apple Silicon) · **Linux coming soon**
+**Runs on Windows, macOS** (Apple Silicon) **and Linux**
 
 ## Your tools. Your space. Your control.
 
@@ -26,7 +26,7 @@ touchscreen. No hardware required to start.
 
 ## Get started
 
-1. **[Download](https://github.com/TeeJS/bedrock-panel/releases/)** the current release for Windows or macOS (Apple Silicon) — or [build from source](docs/building.md).
+1. **[Download](https://github.com/TeeJS/bedrock-panel/releases/)** the current release for Windows, macOS (Apple Silicon), or Linux — or [build from source](docs/building.md).
 2. **Launch Bedrock Panel** — no hardware required. A first-run picker asks how you want to run it (see [Ways to run it](#ways-to-run-it)).
 3. **Build your first page** in the editor — tiles for apps, macros, and desktop actions — then **Save**. Add a compatible touchscreen or the Bedrock knob when you're ready.
 
@@ -142,7 +142,7 @@ and wallpapers.
 
 ## Ways to run it
 
-- **Desktop software** — a Windows PC or an Apple Silicon Mac is all you need. Install, launch, done.
+- **Desktop software** — a Windows PC, an Apple Silicon Mac, or a Linux desktop is all you need. Install, launch, done.
 - **Compatible touchscreen** — run the same software on a touchscreen display with compatible
   dimensions (1920×480 page units) for the full hands-on experience.
 - **DIY Bedrock Console** — a complete DIY build: 1920×480 touchscreen console with an optional
@@ -164,6 +164,13 @@ Grab a build from the **[Releases](https://github.com/TeeJS/bedrock-panel/releas
   through macOS's own speech. First-launch steps and permissions: [docs/macos.md](docs/macos.md);
   what is in the release: [docs/releases/v0.9.5.md](docs/releases/v0.9.5.md).
 - **`bedrock-panel-arm64.zip`** — the same macOS app without the disk image.
+- **`bedrock-panel_amd64.deb`** — Linux x64 for Debian and Ubuntu (**v0.9.6-beta.3, tester beta**):
+  installs a desktop entry, pulls its own dependencies, and sets up device access for the knob and
+  touchscreen itself. First-launch steps and what is not available on Linux:
+  [docs/linux.md](docs/linux.md); what is in the beta:
+  [docs/releases/v0.9.6-beta.3-linux.md](docs/releases/v0.9.6-beta.3-linux.md).
+- **`bedrock-panel-x86_64.AppImage`** — the same Linux beta, portable, no install. Needs FUSE 2,
+  which Ubuntu 24.04 and newer no longer ship — install `libfuse2t64` or use the `.deb`.
 
 The exe is **code-signed** (Azure Trusted Signing, publisher *Thomas Schmitz*) — so you see a
 verified publisher, not "Unknown publisher." Windows SmartScreen may still show a **"Windows
@@ -177,7 +184,7 @@ drag it to Applications and launch it, with no Gatekeeper warning to click throu
 `~/Library/Application Support/bedrock-panel`. The Mac needs a few permissions (touchscreen, keystrokes,
 recording): **[docs/macos.md](docs/macos.md)** lists each one and exactly where to grant it. Upgrading
 from a `v0.9.5-beta` build: the signature changed, so re-add Bedrock Panel under **Input Monitoring**
-and allow the keychain prompt once. Linux is still in progress.
+and allow the keychain prompt once. Linux packages are unsigned; Linux has no equivalent gatekeeper.
 
 ## 📖 Documentation
 
@@ -213,10 +220,11 @@ in the **[issue tracker](https://github.com/TeeJS/bedrock-panel/issues)**.
 
 ## FAQ
 
-- **Can I use it without a touchscreen?** Yes. Software mode runs on a Windows PC or an Apple Silicon
+- **Can I use it without a touchscreen?** Yes. Software mode runs on a Windows PC, a Linux desktop, or an Apple Silicon
   Mac with no hardware at all. A touchscreen or knob adds the hands-on layer.
-- **Which computers does it run on?** Windows, and macOS on Apple Silicon (Software mode; knob and
-  touchscreen support is in progress). Linux is in progress.
+- **Which computers does it run on?** Windows, macOS on Apple Silicon (Software mode; knob and
+  touchscreen support is in progress), and Linux (Software and Panel mode; Reserved Display and
+  follow-the-focused-app are not possible on Wayland — see [docs/linux.md](docs/linux.md)).
 - **Does it need internet?** The core launcher works offline. Some apps — AI voice, translation,
   meeting transcription — need an internet connection.
 - **Is it free?** Yes, it's free and open source. Nearly everything is MIT licensed; the QUAKE

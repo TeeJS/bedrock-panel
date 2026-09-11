@@ -77,3 +77,16 @@ test('openDevice: a refused seize falls back to the shared open and tags the han
   assert.deepEqual(calls.slice(1, 3), [['/dev/touch', { nonExclusive: false }], ['/dev/touch', { nonExclusive: true }]], 'seize first, then the shared open');
   assert.deepEqual(calls.slice(-2), [['/dev/blocked', { nonExclusive: false }], ['/dev/blocked', { nonExclusive: true }]], 'both modes are tried before giving up');
 });
+
+test('openError: a refused open on Linux names the udev rule, not a cable', () => {
+  const e = hp.openError(new Error('cannot open device with path /dev/hidraw1'), 'linux');
+  assert.equal(e.code, 'HID_OPEN_FAILED');
+  assert.match(e.message, /udev rule/);
+  assert.match(e.message, /Settings → Hardware → Device access/, 'points somewhere a packaged user can actually reach');
+  assert.doesNotMatch(e.message, /Input Monitoring/, 'the macOS hint never leaks onto Linux');
+  // EACCES is what the kernel actually returns for a root-only /dev/hidraw node.
+  assert.match(hp.openError(new Error('EACCES: permission denied'), 'linux').message, /udev rule/);
+  // A fault that is not a refusal is passed through bare on every platform.
+  assert.doesNotMatch(hp.openError(new Error('device disconnected'), 'linux').message, /udev rule/);
+  assert.doesNotMatch(hp.openError(new Error('cannot open device'), 'win32').message, /udev rule/);
+});

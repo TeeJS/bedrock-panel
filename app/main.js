@@ -95,6 +95,18 @@ let privacyPaneOpened = false;   // at most one automatic System Settings jump p
 // 14.2+, which the packaged app requires. BEDROCK_MAC_LEGACY_LOOPBACK=1 forces Chromium's older
 // ScreenCaptureKit loopback (Screen Recording permission, purple indicator) for troubleshooting only.
 if (process.platform === 'darwin' && process.env.BEDROCK_MAC_LEGACY_LOOPBACK === '1') app.commandLine.appendSwitch('disable-features', 'MacCatapLoopbackAudioForScreenShare');
+// Linux: run through XWayland rather than as a native Wayland client — a Wayland client cannot place
+// itself in global screen coordinates and Panel mode is nothing but placement. The reasoning, the
+// measurements, and why appendSwitch/ELECTRON_OZONE_PLATFORM_HINT cannot do this are in
+// app/linuxSession.js. Relaunching is the only way to get the flag onto our own argv, and it happens
+// before the single-instance lock below so the relaunched process is the one that takes it.
+const linuxSession = require('./linuxSession');
+const ozoneFlag = linuxSession.ozoneRelaunchFlag();
+if (ozoneFlag) {
+  console.log('[startup] relaunching with ' + ozoneFlag + ' (a Wayland client cannot place the panel window)');
+  app.relaunch({ args: process.argv.slice(1).concat(ozoneFlag) });
+  app.exit(0);
+}
 // Desktop notification that tolerates platforms where it can't be delivered: macOS refuses
 // notifications from unsigned/ad-hoc builds (Electron 42 uses UNNotification) and fires 'failed'
 // instead of throwing. Log that and, on macOS, park the text in the tray tooltip so a boot problem
@@ -222,13 +234,23 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { exec, execFile, spawn } = require('child_process');
 const { pathToFileURL } = require('url');
-const HID = require('node-hid');
+// node-hid is the app's one compiled native module, and the only one that must match Electron's ABI
+// rather than the host Node's. A missing or mismatched binding used to throw here, before any window
+// existed — the whole launcher died over hardware that most Software-mode users do not even own. Fall
+// back to a stub that enumerates nothing: both connectors simply never find a device, every HID path
+// stays on its existing "not detected" branch, and Device Diagnostics says the module is the reason.
+let HID = null;
+try { HID = require('node-hid'); }
+catch (e) { console.log('[startup] node-hid unavailable (' + (e && e.message) + ') — knob and touchscreen are off; Software mode is unaffected'); }
+const HID_UNAVAILABLE = !HID;
+if (HID_UNAVAILABLE) HID = { devices: () => [], HID: function () { throw new Error('node-hid unavailable'); } };
 const emojilib = require('emojilib');   // emoji -> keyword array (MIT, muan/emojilib) — powers the tile editor's emoji search
 const EMOJI_INDEX = Object.entries(emojilib).map(([em, kws]) => [em, kws.join(' ').toLowerCase()]);
 const MultiKnob = require('./multiKnob');                                           // owns Aris68Connector + BedrockConnector; routes to whichever device is plugged in
 const http = require('http');
 const actionRunner = require('./actionRunner');
 const { createMediaKeys } = require('./mediaKeys');
+const linuxPointer = require('./linuxPointer');
 const { createSecretStore } = require('./secretStore');
 const { OAuthHandler } = require('../src/auth/oauth-handler');
 const { TokenStorage } = require('../src/auth/token-storage');
@@ -288,7 +310,12 @@ const USER_DIR = app.getPath('userData');
 const CONFIG_PATH = path.join(USER_DIR, 'config.json');                  // writable — works inside a packaged app too
 // Bundled first-run config (read-only). The macOS file carries the same pages with tiles that work on
 // a Mac (stock apps by their real names, `open`/osascript commands); the Windows one is the original.
-const DEFAULT_CONFIG_PATH = path.join(__dirname, process.platform === 'darwin' ? 'config.default.mac.json' : 'config.default.json');
+// First-run seed, per platform. The Windows file is the fallback for anything unrecognized, as it
+// always was; darwin and linux each get a page-for-page mirror of it whose tiles name programs that
+// platform actually has. Getting this wrong is not cosmetic — a fresh install would open with a grid
+// of tiles that silently launch nothing.
+const DEFAULT_CONFIG_BY_PLATFORM = { darwin: 'config.default.mac.json', linux: 'config.default.linux.json' };
+const DEFAULT_CONFIG_PATH = path.join(__dirname, DEFAULT_CONFIG_BY_PLATFORM[process.platform] || 'config.default.json');
 const LEGACY_CONFIG_PATH = path.join(__dirname, 'config.json');          // pre-userData dev location, migrated once
 const APPS_DIR = path.join(__dirname, '..', 'apps').replace('app.asar', 'app.asar.unpacked'); // unpacked when packaged
 const { helperPath } = require('./nativeHelpers');       // per-platform bundled helper binaries (null = none on this platform)
@@ -310,7 +337,10 @@ const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDis
 // touch-only — click-through and never the key window, the way DK-Suite builds its panel (false).
 function panelInputEnabled() { return appSettings().panelInput !== false; }
 const actionDeps = { fs, shell, exec, execFile, spawn, platform: process.platform, log: message => console.log(message) };
-const mediaKeys = createMediaKeys({ log: message => console.log(message), ensureTrusted: macPermissions.supported ? macPermissions.ensureTrusted : null });
+const mediaKeys = createMediaKeys({ log: message => console.log(message), ensureTrusted: macPermissions.supported ? macPermissions.ensureTrusted : null,
+  // Linux only: its virtual pointer reports an absolute position across the whole desktop, so the
+  // backend has to be told what "the whole desktop" currently is. Read per move, never cached.
+  desktopBounds: () => { try { return linuxPointer.unionBounds(screen.getAllDisplays()); } catch (e) { return null; } } });
 let presenceService = null;   // busy-presence fan-out (Busylight / WLED / HA over MQTT); null until boot
 let firstRun = false;     // set by loadConfig when there was no prior config (fresh install)
 let micState = false;     // current device mic state (LED follows it)
@@ -1481,7 +1511,7 @@ function getDeviceDiagnostics() {
   try { activeName = dev && dev.activeName ? dev.activeName() : null; } catch (e) {}
   let openErrors = null;
   try { openErrors = dev && dev.lastOpenErrors ? dev.lastOpenErrors() : null; } catch (e) {}
-  const snap = deviceDiagnostics.classify({ hidDevices, displays, activeName, firmware: lastDeviceState.firmware || null, openErrors, platform: process.platform });
+  const snap = deviceDiagnostics.classify({ hidDevices, displays, activeName, firmware: lastDeviceState.firmware || null, openErrors, platform: process.platform, hidUnavailable: HID_UNAVAILABLE });
   snap.runMode = runMode();   // panel / software / monitor — the page notes when you're not on the device
   return snap;
 }
@@ -2817,7 +2847,17 @@ function placePanel() {
       applyPanelDisplayMode(dd); nudgePanelOnTop(); showPanelWindow(true);
       pushToPanel();
       console.log('panel display bounds', JSON.stringify(dd.bounds), 'workArea', JSON.stringify(dd.workArea));
-      console.log('panel placed at', JSON.stringify(panelWin.getBounds()), 'fullscreen', panelWin.isFullScreen(), 'simpleFullscreen', panelWin.isSimpleFullScreen && panelWin.isSimpleFullScreen());
+      // Read the bounds once the window manager has actually applied them. Reading synchronously
+      // here returns whatever the request was mid-flight — on Linux/X11 that consistently overstated
+      // the window by the frame insets (a 1920x480 panel logged as 1952x522), which reads like a
+      // placement bug that is not there. The page itself is the ground truth, so log that too.
+      setTimeout(async () => {
+        if (!panelWin || panelWin.isDestroyed()) return;
+        let page = null;
+        try { page = await panelWin.webContents.executeJavaScript('({w:innerWidth,h:innerHeight})'); } catch (e) {}
+        console.log('panel placed at', JSON.stringify(panelWin.getBounds()), 'page', JSON.stringify(page),
+          'fullscreen', panelWin.isFullScreen(), 'simpleFullscreen', panelWin.isSimpleFullScreen && panelWin.isSimpleFullScreen());
+      }, 600);
       refreshReservedDisplay('panel placed', 350);
     });
   } else { applyPanelDisplayMode(d); showPanelWindow(false); pushToPanel(); refreshReservedDisplay('panel placed', 350); }
@@ -2989,9 +3029,10 @@ function applyRunModeLive() {
 }
 
 // ---- monitor mode: use the device as a normal monitor ----
-// Hide the launcher window so the Windows desktop shows on the device; the driver keep-alive keeps the
+// Hide the launcher window so the desktop shows on the device; the driver keep-alive keeps the
 // backlight lit. Touch drives the OS cursor and the knob does a configurable action — both via the trusted
-// device input only (mediaKeys / robotjs), never web content. The tray (or a System->monitor tile) toggles it.
+// device input only (mediaKeys: robotjs on Windows and macOS, a uinput pointer on Linux), never web
+// content. The tray (or a System->monitor tile) toggles it.
 function enterMonitorMode() {
   if (monitorMode || !panelWin || panelWin.isDestroyed()) return;
   monitorMode = true;
@@ -3001,6 +3042,7 @@ function enterMonitorMode() {
   panelWin.hide();
   syncPollers(null);                                                // nothing on the panel is visible -> idle the page pollers
   try { dev.screenOn(); } catch (e) {}                              // keep the backlight on as the desktop takes over
+  mediaKeys.warmUpPointer();                                        // Linux: make the virtual pointer now, so the first touch is not lost to device settle time
   refreshTray();
   console.log('monitor mode: ON (panel hidden, desktop visible)');
 }
@@ -3252,15 +3294,26 @@ function modifiersInAccelerator(accel) {
   return out;
 }
 
+// Global hotkeys go through Electron on Windows and macOS, and through the XDG GlobalShortcuts portal
+// on Linux. Electron's own globalShortcut is not merely unsupported on Linux — register() returns true
+// and the shortcut never fires, even for a key pressed by real hardware, so the failure is invisible.
+// The portal changes the shape of the feature: the app registers named actions and PROPOSES triggers,
+// and the desktop decides. See app/linuxShortcuts.js. `shortcuts.apply()` is a no-op off Linux, where
+// each register() takes effect on its own.
+const linuxShortcuts = process.platform === 'linux'
+  ? require('./linuxShortcuts').createLinuxShortcuts({ log: m => console.log('[shortcuts] ' + m) })
+  : null;
+const shortcuts = linuxShortcuts || Object.assign(Object.create(globalShortcut), { apply() { return true; } });
+
 // Per-page global hotkeys: register each page's `shortcut` so pressing it (system-wide) jumps the panel
 // to that page. Re-applied on launch and after every editor save; a combo another app owns just fails to
 // register (logged). Requires app-ready.
 function applyShortcuts() {
-  try { globalShortcut.unregisterAll(); } catch (e) {}
+  try { shortcuts.unregisterAll(); } catch (e) {}
   for (const g of (config.grids || [])) {
     if (!g.shortcut) continue;
     try {
-      const ok = globalShortcut.register(g.shortcut, () => {
+      const ok = shortcuts.register(g.shortcut, () => {
         // Release any held modifiers BEFORE the gotoGrid work so the OS sees them released
         // immediately, not after async window/IPC churn. See modifiersInAccelerator above.
         if (process.platform === 'win32') modifiersInAccelerator(g.shortcut).forEach(m => mediaKeys.keyUp(m));
@@ -3279,7 +3332,7 @@ function applyShortcuts() {
   for (const p of (config.panes || [])) {
     if (!p.shortcut) continue;
     try {
-      const ok = globalShortcut.register(p.shortcut, () => {
+      const ok = shortcuts.register(p.shortcut, () => {
         if (process.platform === 'win32') modifiersInAccelerator(p.shortcut).forEach(m => mediaKeys.keyUp(m));
         gotoPane(p.id, true);
         if (p.shortcutStopsRotation) setRotation(false);
@@ -3293,7 +3346,7 @@ function applyShortcuts() {
   for (const g of (config.grids || [])) {
     if (!(g.kind === 'app' && g.app === 'livetranslate' && g.options && g.options.micHotkey)) continue;
     try {
-      const ok = globalShortcut.register(g.options.micHotkey, () => {
+      const ok = shortcuts.register(g.options.micHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(g.options.micHotkey).forEach(m => mediaKeys.keyUp(m));
         const active = activeGrid();
         if (!(active && active.id === g.id)) gotoGrid(g.id, true);   // bring the page on-screen (loads it)
@@ -3309,7 +3362,7 @@ function applyShortcuts() {
   const rot = rotationCfg();
   if (rot.enabled && rot.hotkey) {
     try {
-      const ok = globalShortcut.register(rot.hotkey, () => {
+      const ok = shortcuts.register(rot.hotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(rot.hotkey).forEach(m => mediaKeys.keyUp(m));
         toggleRotation();
       });
@@ -3320,7 +3373,7 @@ function applyShortcuts() {
   const dashReload = dashboardReloadCfg();
   if (dashReload.hotkey) {
     try {
-      const ok = globalShortcut.register(dashReload.hotkey, () => {
+      const ok = shortcuts.register(dashReload.hotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(dashReload.hotkey).forEach(m => mediaKeys.keyUp(m));
         reloadActiveDashboard();
       });
@@ -3334,7 +3387,7 @@ function applyShortcuts() {
     const combo = pageStep[spec[0]];
     if (!combo) return;
     try {
-      const ok = globalShortcut.register(combo, () => {
+      const ok = shortcuts.register(combo, () => {
         if (process.platform === 'win32') modifiersInAccelerator(combo).forEach(m => mediaKeys.keyUp(m));
         stepPage(spec[1]);
       });
@@ -3346,7 +3399,7 @@ function applyShortcuts() {
   const lt = lucidtypeSettings();
   if (lt.dictationHotkey) {
     try {
-      const ok = globalShortcut.register(lt.dictationHotkey, () => {
+      const ok = shortcuts.register(lt.dictationHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(lt.dictationHotkey).forEach(m => mediaKeys.keyUp(m));
         toggleLucidDictation();
       });
@@ -3355,7 +3408,7 @@ function applyShortcuts() {
   }
   if (lt.applyHotkey) {
     try {
-      const ok = globalShortcut.register(lt.applyHotkey, () => {
+      const ok = shortcuts.register(lt.applyHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(lt.applyHotkey).forEach(m => mediaKeys.keyUp(m));
         lucidApply();
       });
@@ -3364,7 +3417,7 @@ function applyShortcuts() {
   }
   if (lt.cleanupHotkey) {
     try {
-      const ok = globalShortcut.register(lt.cleanupHotkey, () => {
+      const ok = shortcuts.register(lt.cleanupHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(lt.cleanupHotkey).forEach(m => mediaKeys.keyUp(m));
         if (lucidDictation) lucidDictation.runCleanup();
       });
@@ -3373,7 +3426,7 @@ function applyShortcuts() {
   }
   if (lt.rewriteHotkey) {
     try {
-      const ok = globalShortcut.register(lt.rewriteHotkey, () => {
+      const ok = shortcuts.register(lt.rewriteHotkey, () => {
         if (process.platform === 'win32') modifiersInAccelerator(lt.rewriteHotkey).forEach(m => mediaKeys.keyUp(m));
         if (lucidDictation) lucidDictation.runRewrite();
       });
@@ -3381,6 +3434,7 @@ function applyShortcuts() {
     } catch (e) { console.log('shortcut register error:', lt.rewriteHotkey, '-', e.message); }
   }
   registerSlideHotkeys();   // last, after the unregisterAll above, so a settings change re-arms them
+  try { shortcuts.apply(); } catch (e) { console.log('[shortcuts] apply failed: ' + (e && e.message)); }
 }
 // Slide-capture global hotkeys (toggle capture / select window / manual capture). Registered as part
 // of applyShortcuts() so an editor save re-applies them; only while the feature is enabled and a combo
@@ -3397,7 +3451,7 @@ function registerSlideHotkeys() {
   for (const [combo, fn] of binds) {
     if (!combo) continue;
     try {
-      const ok = globalShortcut.register(combo, () => {
+      const ok = shortcuts.register(combo, () => {
         if (process.platform === 'win32') modifiersInAccelerator(combo).forEach(k => mediaKeys.keyUp(k));
         fn();
       });
@@ -3749,6 +3803,9 @@ app.whenReady().then(async () => {
     if (needsMigration) saveConfig();                        // migrate plaintext/legacy config to current at-rest form
   } else if (needsMigration) console.log('secret encryption unavailable — refusing to rewrite config secrets');
   applyDisplayBlocker();   // keep-display-awake only when enabled + in Panel mode; otherwise the screensaver works
+  // Linux: create the uinput virtual keyboard now. The compositor needs a moment to notice a new
+  // input device, and paying that on the first macro tap loses the keystroke. No-op elsewhere.
+  try { mediaKeys.warmUp(); } catch (e) {}
   createTray();
   // SystemView: live local metrics server on 127.0.0.1 (OS-assigned port) + ensure the dashboard page.
   // Lazy-required so a metrics/load failure can never crash the rest of the app.
@@ -4163,6 +4220,22 @@ app.whenReady().then(async () => {
       const grids = (JSON.parse(fs.readFileSync(DEFAULT_CONFIG_PATH, 'utf8')).grids || []).filter(g => g && Array.isArray(g.tiles));
       return grids.map(g => ({ id: g.id, name: g.name, cols: g.cols, rows: g.rows, tiles: g.tiles }));
     } catch (err) { console.log('starter pages unavailable: ' + (err && err.message)); return []; }
+  });
+  // Linux: the udev rule the console needs, resolved for THIS install. The deb installs it for you
+  // (its postinst runs as root), but a source checkout or an AppImage has no installer, so the
+  // editor prints a copy-paste command pointing at wherever the rule actually is — inside a mounted
+  // AppImage that path is a temporary mount, which is exactly why it cannot be hardcoded in a doc.
+  ipcMain.handle('getLinuxDeviceAccess', (e) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return null;
+    const RULE = '70-bedrock-panel.rules';
+    const candidates = app.isPackaged
+      ? [path.join(path.dirname(process.execPath), RULE), path.join(process.resourcesPath, RULE)]
+      : [path.join(__dirname, '..', 'packaging', 'linux', RULE)];
+    const source = candidates.find(p => { try { return fs.existsSync(p); } catch (err) { return false; } }) || null;
+    // Installed by the deb's postinst, or by hand. Either location counts as active.
+    const installed = ['/usr/lib/udev/rules.d/' + RULE, '/etc/udev/rules.d/' + RULE]
+      .find(p => { try { return fs.existsSync(p); } catch (err) { return false; } }) || null;
+    return { source, installed, managed: !!installed && installed.startsWith('/usr/lib/') };
   });
   ipcMain.handle('getAppVersion', (e) => isFrom(e, configWin) ? app.getVersion() : null);
   ipcMain.handle('listOAuthProviders', (e) => isFrom(e, configWin) ? oauthProviderPayload() : []);
@@ -4787,6 +4860,7 @@ app.on('before-quit', () => {
   try { owuiVoiceHost.shutdown(); } catch (e) {}         // abort any in-flight OWUI stream
   try { apiVoiceHost.shutdown(); } catch (e) {}          // abort any in-flight API-endpoint stream
   try { claudeVoiceApprovals.ensureHookRemoved(claudeVoiceLog); } catch (e) {}    // belt-and-braces: never leave our entry behind in the user's global Claude settings
+  try { mediaKeys.stop(); } catch (e) {}        // Linux: destroy the uinput virtual keyboard (no-op elsewhere)
   try { dev.stop(); } catch (e) {}                       // close HID devices + clear keep-alive/rescan timers — an open node-hid handle blocks process exit (Cmd+Q would hang -> force-quit)
   try { oauthHandler.stop(); } catch (e) {}              // stop OAuth callback server + background refresh timers
   try { stopMicMonitor(); } catch (e) {}                 // terminate the native mic-in-use monitor child
@@ -4795,5 +4869,5 @@ app.on('before-quit', () => {
   try { if (slideCapture) slideCapture.dispose(); } catch (e) {}         // destroy the hidden slide-capture window
   try { if (sysserver) sysserver.stop(); } catch (e) {}  // stop metrics timers + close the local server
   try { if (dashSession) dashSession.cookies.flushStore(); } catch (e) {}   // commit a fresh webview login to disk before exit
-  try { globalShortcut.unregisterAll(); } catch (e) {}   // drop per-page hotkeys
+  try { shortcuts.unregisterAll(); } catch (e) {}   // drop per-page hotkeys (Linux: also ends the portal session)
 });
