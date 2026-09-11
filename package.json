@@ -1,8 +1,8 @@
 {
   "name": "bedrock-panel",
-  "version": "0.9.6-beta.3",
+  "version": "0.9.6-beta.18",
   "private": true,
-  "description": "A multi-use launcher and control platform for Windows, macOS, and Linux \u2014 your apps, media, dashboards, and smart home on your computer or a touchscreen.",
+  "description": "A multi-use launcher and control platform for Windows, macOS, and Linux — your apps, media, dashboards, and smart home on your computer or a touchscreen.",
   "main": "app/main.js",
   "desktopName": "bedrock-panel.desktop",
   "author": "TeeJS",
@@ -33,6 +33,7 @@
   "dependencies": {
     "@jitsi/robotjs": "^0.6.22",
     "adm-zip": "^0.6.0",
+    "dbus-next": "^0.10.2",
     "emojilib": "^4.0.3",
     "mqtt": "^5.15.2",
     "node-hid": "^3.3.0",

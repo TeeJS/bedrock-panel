@@ -3856,9 +3856,10 @@
 
       <p class="sectitle">Desktop focus</p>
       <div class="row"><label>Auto-follow</label>
-        <input type="checkbox" id="sFocus" style="width:auto;flex:none"><span class="hint" style="margin:0 0 0 8px">switch the panel to a page when its mapped app becomes focused on the PC</span></div>
+        <input type="checkbox" id="sFocus" style="width:auto;flex:none"${IS_LINUX ? ' disabled' : ''}><span class="hint" style="margin:0 0 0 8px">switch the panel to a page when its mapped app becomes focused on the PC</span></div>
       <div class="row"><label>While focused</label>
-        <label class="iconopt" style="width:auto"><input type="checkbox" id="sFocusPauseRot" ${focusFollow.enabled ? '' : 'disabled'}> Pause auto-rotation</label></div>
+        <label class="iconopt" style="width:auto"><input type="checkbox" id="sFocusPauseRot" ${IS_LINUX || !focusFollow.enabled ? 'disabled' : ''}> Pause auto-rotation</label></div>${IS_LINUX ? `
+      <p class="hint">Not available on Linux. Knowing which application is in front means asking the desktop about another application's windows, which Wayland deliberately does not allow. The setting is inert on this platform rather than switched off silently.</p>` : ''}
       <details class="hint"><summary>Map apps to a page under that page's Advanced settings → “Focus trigger app(s)”.</summary> Detection polls in the background and only switches once the newly-focused app has held focus for a couple seconds, so quick alt-tabbing won't cause flicker — and manually navigating the panel away is never overridden; it only re-triggers on the next focus change. With <b>Pause auto-rotation</b> on, rotation holds off the moment a mapped app takes focus and picks back up the moment it loses focus.</details>
 
       <p class="sectitle">Setup &amp; troubleshooting</p>
@@ -3981,12 +3982,20 @@ ${IS_MAC ? `
       <p class="hint">This must be the same mic you use with Teams</p>
 
       <p class="sectitle">Transcription</p>
-      ${IS_MAC ? `<div class="row"><label>Engine</label>
+      ${IS_MAC || IS_LINUX ? `<div class="row"><label>Engine</label>
         <select id="meTransEngine" style="flex:1">
-          <option value="local" ${me.transcribeEngine !== 'server' ? 'selected' : ''}>Built-in macOS speech on this Mac — you (mic) vs. everyone else (system audio)</option>
+          <option value="local" ${me.transcribeEngine !== 'server' ? 'selected' : ''}>${IS_MAC ? 'Built-in macOS speech on this Mac' : 'Built-in speech on this computer'} — you (mic) vs. everyone else (system audio)</option>
           <option value="server" ${me.transcribeEngine === 'server' ? 'selected' : ''}>Diarizer server (tts-sst / meeting-diarizer) at the URL below — named speakers</option>
         </select></div>
-      <details class="hint"><summary>The built-in engine transcribes on this Mac with Apple's on-device speech (macOS 26: SpeechAnalyzer; 14/15: SFSpeechRecognizer), no server and nothing leaves the Mac. It cannot tell voices apart: the recording's mic channel is labelled with <b>Your name</b> below (or "Me"), the system-audio channel "Others".</summary> For per-attendee names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>` : ''}
+      ${IS_MAC ? `<details class="hint"><summary>The built-in engine transcribes on this Mac with Apple's on-device speech (macOS 26: SpeechAnalyzer; 14/15: SFSpeechRecognizer), no server and nothing leaves the Mac. It cannot tell voices apart: the recording's mic channel is labelled with <b>Your name</b> below (or "Me"), the system-audio channel "Others".</summary> For per-attendee names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>`
+      : `<details class="hint"><summary>The built-in engine transcribes on this computer using the listening setup from <b>Settings → TTS/STT</b> — set that up first. No server, and nothing leaves the machine.</summary> Your own lines come from the recording's mic channel and are labelled with <b>Your name</b> below (or "Me"), so that half is known rather than guessed. Everyone on the call is separated by voice into <b>Speaker 1</b>, <b>Speaker 2</b> and so on, numbered in the order they first talk. For their real names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>`}` : ''}
+      ${IS_LINUX ? `<div class="row"><label>Known voices</label>
+        <select id="meSpeakers" style="flex:1"></select>
+        <button id="meSpeakerAdd" type="button" title="Add a person from a recording of them speaking">+ Enroll…</button>
+        <button id="meSpeakerRename" type="button" title="Change this person's name">Rename</button>
+        <button id="meSpeakerRemove" type="button" title="Forget this voice">Remove</button></div>
+      <div class="row"><label></label><span id="meSpeakerMsg" class="hint" style="margin:0"></span></div>
+      <details class="hint"><summary>Enroll someone once and their name appears in every later transcript instead of "Speaker A".</summary> Choose a <b>WAV of that person talking</b> — 45 seconds or more, recorded the way your meetings actually are, since a voice learned from a headset sounds different through a conference speaker. Profiles are ordinary <code>.npy</code> files named after the person, the same format the Windows helper and the Python diarizer use, so the folder can be copied between machines. Nobody is required: unenrolled voices are still told apart, just numbered.</details>` : ''}
       <div class="row"><label>Server URL</label>
         <input id="meTransUrl" value="${esc(me.transcribeUrl || 'http://127.0.0.1:10301/transcribe')}" style="flex:1"></div>
       <details class="hint"><summary>The tts-sst or meeting-diarizer endpoint that turns recordings into speaker-labeled transcripts.</summary> Edit the host/port to match your server; the panel checks its /health before sending. Remember to Save.</details>
@@ -4128,7 +4137,7 @@ ${IS_MAC ? `
       <div class="row" style="margin-top:10px"><label class="iconopt" style="width:auto"><input type="checkbox" id="meOutlook" ${me.outlookEnabled ? 'checked' : ''}> Pull meeting information from my calendar</label></div>
       <details class="hint"><summary>When a recording starts, saves the matching appointment (subject, attendees, organizer, body…) as <b>&lt;recording&gt;.json</b> beside the WAV.</summary> The file travels through transcription, where its attendee list improves speaker identification. Ad-hoc calls with nothing scheduled save nothing.</details>
       <div class="row"><label>Calendar source</label>
-        <select id="meInfoSource" style="flex:1"><option value="classic" ${me.meetingInfoSource === 'microsoft365' ? '' : 'selected'}>${IS_MAC ? 'macOS Calendar (this Mac)' : 'Classic Outlook (this PC)'}</option><option value="microsoft365" ${me.meetingInfoSource === 'microsoft365' ? 'selected' : ''}>Microsoft 365 (Graph)</option></select>
+        <select id="meInfoSource" style="flex:1"><option value="classic" ${me.meetingInfoSource === 'microsoft365' ? '' : 'selected'}${IS_LINUX ? ' disabled' : ''}>${IS_MAC ? 'macOS Calendar (this Mac)' : IS_LINUX ? 'A calendar on this computer — not available on Linux' : 'Classic Outlook (this PC)'}</option><option value="microsoft365" ${IS_LINUX || me.meetingInfoSource === 'microsoft365' ? 'selected' : ''}>Microsoft 365 (Graph)</option></select>
         <button id="meOutCheck" type="button">Check Connection</button></div>
       <p class="hint" id="meOutMsg"></p>
       <div id="meClassicSettings">
@@ -4289,7 +4298,28 @@ ${IS_MAC ? `
       <div id="diMsg" class="hint" style="margin:0 0 10px;min-height:16px"></div>
       <div id="diPane"></div>`;
 
-    const ttsHtml = `${IS_MAC ? `
+    const ttsHtml = `${IS_LINUX ? `
+      <p class="sectitle">Speech engine</p>
+      <div class="row"><label>Engine</label>
+        <select id="ttsEngine" style="flex:1">
+          <option value="" ${!voice.engine ? 'selected' : ''}>Built-in speech when no server is set below (default)</option>
+          <option value="linux" ${voice.engine === 'linux' ? 'selected' : ''}>Built-in speech on this computer — nothing to install, no GPU needed</option>
+          <option value="wyoming" ${voice.engine === 'wyoming' ? 'selected' : ''}>Speech servers (Whisper / Piper) at the hosts below</option>
+        </select></div>
+      <div class="row"><label>Voice</label>
+        <select id="ttsLinuxLang" style="flex:0 0 230px" title="Show the voices of one language"></select>
+        <select id="ttsLinuxVoice" style="flex:1"></select>
+        <button id="ttsLinuxPreview" type="button" title="Hear this voice (downloads it first if needed)">▶ Preview</button>
+        <button id="ttsLinuxInstall" type="button" title="Download this voice and the speech engine">Set up</button>
+        <button id="ttsLinuxRemove" type="button" title="Delete this voice from this computer">Remove</button></div>
+      <p class="hint">30 languages. <b>Preview works before you download</b> — an installed voice speaks a line, any other plays the recording published with it. <a href="#" id="ttsLinuxSamples">Browse every Piper voice</a>, including the ones whose licence keeps them off this list.</p>
+      <div class="row"><label>Listening</label>
+        <select id="ttsLinuxStt" style="flex:1"></select>
+        <button id="ttsLinuxSttInstall" type="button" title="Download this recognition model and the listening engine">Set up</button>
+        <button id="ttsLinuxSttRemove" type="button" title="Delete this model from this computer">Remove</button></div>
+      <div class="row"><label>Status</label><span id="ttsLinuxStatus" class="hint" style="margin:0">checking…</span></div>
+      <details class="hint"><summary>The built-in engine speaks and listens on this computer with nothing to install and no GPU — pick a voice and a language, press Set up on each, and it downloads about 140 MB in total the first time.</summary> It runs as local speech servers on 127.0.0.1:10200 (speaking) and :10300 (listening), the Wyoming protocol, so anything else on this machine that speaks Wyoming (Home Assistant, for one) can use it too. Every voice offered is public domain, CC0, CC BY or MIT, and so are the recognition models. The two halves are separate downloads: take one, the other, or both. <b>Pick the many-languages model if you listen to anything but English</b> — <b>Live Translate needs it</b>, because an English-only model does not fail on foreign speech, it invents English from the sounds. If you already run your own Piper or Whisper on those ports, yours is used and this engine stays out of its way.</details>
+` : ''}${IS_MAC ? `
       <p class="sectitle">Speech engine</p>
       <div class="row"><label>Engine</label>
         <select id="ttsEngine" style="flex:1">
@@ -5268,8 +5298,159 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       document.getElementById('ttsTtsPort').oninput = e => saveVoice('ttsPort', e.target.value.trim());
       const helper = document.getElementById('ttsHelperLink');
       if (helper) helper.onclick = e => { e.preventDefault(); configApi.openExternal('https://github.com/TeeJS/tts-stt-windows/releases'); };
+      // Linux built-in engine: the same Engine selector, a catalogue of voices to download, and a
+      // status line that is also the progress bar during a download.
+      const engineSelLinux = IS_LINUX ? document.getElementById('ttsEngine') : null;
+      if (engineSelLinux && configApi.getLinuxSpeechStatus) {
+        const voiceSel = document.getElementById('ttsLinuxVoice');
+        const statusEl = document.getElementById('ttsLinuxStatus');
+        const installBtn = document.getElementById('ttsLinuxInstall');
+        const removeBtn = document.getElementById('ttsLinuxRemove');
+        engineSelLinux.onchange = e => saveVoice('engine', e.target.value);
+        let busy = false;
+        const mb = n => Math.round(n / 1048576) + ' MB';
+        const langSel = document.getElementById('ttsLinuxLang');
+        const previewBtn = document.getElementById('ttsLinuxPreview');
+        let catalog = [];
+        let installedVoices = [];
+        // The chosen voice comes from the EDITOR's config, not from the main process. A pick is not
+        // saved until Save is pressed, so asking main what the voice is would answer with the old
+        // one and silently undo the pick the moment anything re-rendered — which is exactly what it
+        // did. The macOS picker beside this one reads its own config for the same reason.
+        const chosenVoice = () => ((config.settings || {}).voice || {}).linuxVoice || '';
+        const fillVoices = () => {
+          // Languages first, so 82 voices are a choice rather than a wall. The filter starts on the
+          // chosen voice's language, and the chosen voice always stays selectable.
+          const chosen = chosenVoice();
+          const langs = [...new Map(catalog.map(v => [v.lang, v])).values()]
+            .sort((a, b) => a.langName.localeCompare(b.langName) || a.country.localeCompare(b.country));
+          const current = catalog.find(v => v.id === chosen);
+          const wantLang = langSel.value || (current && current.lang) || 'en_US';
+          langSel.innerHTML = langs.map(l =>
+            `<option value="${l.lang}" ${l.lang === wantLang ? 'selected' : ''}>${l.langName}`
+            + `${l.country && l.country !== l.langName ? ' (' + l.country + ')' : ''}</option>`).join('');
+          const shown = catalog.filter(v => v.lang === langSel.value || v.id === chosen);
+          voiceSel.innerHTML = shown.map(v =>
+            `<option value="${v.id}" ${v.id === chosen ? 'selected' : ''}>${v.name} — ${v.quality}, ${v.license}`
+            + `${installedVoices.includes(v.id) ? ' — installed' : ' — ' + mb(v.bytes) + ' to download'}</option>`).join('');
+          updateVoiceButtons();
+        };
+        const updateVoiceButtons = () => {
+          const here = installedVoices.includes(voiceSel.value);
+          // Preview always works: installed voices speak locally, the rest play the sample published
+          // beside them, so a voice can be heard before deciding to download it.
+          previewBtn.disabled = false;
+          previewBtn.title = here ? 'Hear this voice' : 'Hear a sample of this voice';
+          installBtn.textContent = here ? 'Re-download' : 'Set up';
+          removeBtn.disabled = !here;
+        };
+        voiceSel.onchange = e => { saveVoice('linuxVoice', e.target.value); updateVoiceButtons(); };
+        langSel.onchange = () => {
+          // Changing language means changing voice: the old one is not in this language, so pick its
+          // first voice rather than leaving a selection the list cannot show as selected.
+          const first = catalog.find(v => v.lang === langSel.value);
+          if (first) saveVoice('linuxVoice', first.id);
+          fillVoices();
+        };
+        const renderLinuxSpeech = () => configApi.getLinuxSpeechStatus().then(st => {
+          if (!st || !st.supported || busy) return;
+          const installed = st.installedVoices || [];
+          installedVoices = installed;
+          catalog = st.catalog || [];
+          fillVoices();
+          const sttHave = st.installedSttModels || [];
+          const sttChosen = st.selectedSttModel || '';
+          const sttSelEl = document.getElementById('ttsLinuxStt');
+          sttSelEl.innerHTML = (st.sttCatalog || []).map(m =>
+            `<option value="${m.id}" ${m.id === sttChosen ? 'selected' : ''}>${m.label} — ${m.license}`
+            + `${sttHave.includes(m.id) ? ' — installed' : ' — ' + mb(m.bytes) + ' to download'}</option>`).join('');
+          const sttHere = sttHave.includes(sttSelEl.value);
+          document.getElementById('ttsLinuxSttInstall').textContent = sttHere ? 'Re-download' : 'Set up';
+          document.getElementById('ttsLinuxSttRemove').disabled = !sttHere;
+          // One line for both halves, because they run in one process and fail in related ways.
+          const serving = st.serving || [];
+          const what = serving.length
+            ? serving.map(h => h === 'tts' ? 'speaking on ' + st.endpoint.port : 'listening on ' + st.sttEndpoint.port).join(' and ')
+            : '';
+          statusEl.textContent = st.failure ? 'Not working: ' + st.failure
+            : st.usingExistingServer ? 'Using the Wyoming server already running on this computer.'
+            : st.running ? 'Running — ' + what + '.'
+            : (installed.length || sttHave.length) ? 'Installed, not running. It starts when the engine above is set to use it.'
+            : 'Not installed. Pick a voice or a language and press Set up.';
+        }).catch(() => {});
+        document.getElementById('ttsLinuxSamples').onclick = e => {
+          e.preventDefault();
+          configApi.openExternal('https://rhasspy.github.io/piper-samples/');
+        };
+        let previewAudio = null;
+        previewBtn.onclick = async () => {
+          const id = voiceSel.value;
+          if (!id || busy) return;
+          previewBtn.disabled = true;
+          statusEl.textContent = 'Speaking…';
+          const r = await configApi.previewLinuxVoice(id);
+          previewBtn.disabled = false;
+          if (!r || !r.ok) { statusEl.textContent = 'Could not preview: ' + ((r && r.error) || 'unknown error'); return; }
+          try {
+            if (previewAudio) previewAudio.pause();
+            previewAudio = new Audio('data:' + (r.mime || 'audio/wav') + ';base64,' + r.wav);
+            previewAudio.play();
+            statusEl.textContent = r.sample ? 'Playing a sample of this voice — Set up to install it.' : 'Speaking…';
+          } catch (err) { statusEl.textContent = 'Could not play the sample: ' + err.message; return; }
+          if (!r.sample) renderLinuxSpeech();
+        };
+        const sttSel = document.getElementById('ttsLinuxStt');
+        const sttInstallBtn = document.getElementById('ttsLinuxSttInstall');
+        const sttRemoveBtn = document.getElementById('ttsLinuxSttRemove');
+        sttSel.onchange = e => { saveVoice('linuxSttModel', e.target.value); renderLinuxSpeech(); };
+        sttInstallBtn.onclick = () => {
+          const id = sttSel.value;
+          if (!id || busy) return;
+          busy = true;
+          sttInstallBtn.disabled = sttRemoveBtn.disabled = true;
+          statusEl.textContent = 'Starting…';
+          configApi.installLinuxSttModel(id).then(r => {
+            busy = false;
+            sttInstallBtn.disabled = false;
+            statusEl.textContent = r && r.ok ? 'Ready.' : 'Could not set up listening: ' + ((r && r.error) || 'unknown error');
+            renderLinuxSpeech();
+          });
+        };
+        sttRemoveBtn.onclick = () => {
+          const id = sttSel.value;
+          if (!id || busy) return;
+          configApi.removeLinuxSttModel(id).then(() => renderLinuxSpeech());
+        };
+        installBtn.onclick = () => {
+          const id = voiceSel.value;
+          if (!id || busy) return;
+          busy = true;
+          installBtn.disabled = removeBtn.disabled = true;
+          statusEl.textContent = 'Starting…';
+          configApi.installLinuxSpeechVoice(id).then(r => {
+            busy = false;
+            installBtn.disabled = false;
+            statusEl.textContent = r && r.ok ? 'Ready.' : 'Could not set up speech: ' + ((r && r.error) || 'unknown error');
+            renderLinuxSpeech();
+          });
+        };
+        removeBtn.onclick = () => {
+          const id = voiceSel.value;
+          if (!id || busy) return;
+          configApi.removeLinuxSpeechVoice(id).then(() => renderLinuxSpeech());
+        };
+        if (configApi.onLinuxSpeechProgress) configApi.onLinuxSpeechProgress(p => {
+          if (!p) return;
+          if (p.phase === 'download' && p.total) {
+            statusEl.textContent = 'Downloading… ' + Math.floor(p.received / p.total * 100) + '% of ' + mb(p.total);
+          } else if (p.phase === 'extract') statusEl.textContent = 'Unpacking the speech engine…';
+          else if (p.phase === 'error') statusEl.textContent = 'Download failed: ' + p.message;
+        });
+        renderLinuxSpeech();
+        window.addEventListener('focus', renderLinuxSpeech);
+      }
       // macOS built-in engine: selector, voice list from the helper, live status (re-read on focus).
-      const engineSel = document.getElementById('ttsEngine');
+      const engineSel = IS_MAC ? document.getElementById('ttsEngine') : null;
       if (engineSel && configApi.getMacSpeechStatus) {
         const voiceSel = document.getElementById('ttsMacVoice'), statusEl = document.getElementById('ttsMacStatus');
         engineSel.onchange = e => saveVoice('engine', e.target.value);
@@ -5485,8 +5666,54 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
         }
       };
       document.getElementById('meTransUrl').oninput = e => saveMe({ transcribeUrl: e.target.value.trim() });
-      const meEngine = document.getElementById('meTransEngine');   // macOS only
+      const meEngine = document.getElementById('meTransEngine');   // macOS and Linux: the built-in engine
       if (meEngine) meEngine.onchange = e => saveMe({ transcribeEngine: e.target.value });
+      // Linux: the enrolled voices behind named speakers in transcripts.
+      const meSpeakers = document.getElementById('meSpeakers');
+      if (meSpeakers && configApi.listLinuxSpeakers) {
+        const msg = document.getElementById('meSpeakerMsg');
+        const addBtn = document.getElementById('meSpeakerAdd');
+        const renameBtn = document.getElementById('meSpeakerRename');
+        const removeBtn = document.getElementById('meSpeakerRemove');
+        const renderSpeakers = () => configApi.listLinuxSpeakers().then(st => {
+          if (!st || !st.supported) return;
+          const names = st.speakers || [];
+          meSpeakers.innerHTML = names.length
+            ? names.map(n => `<option value="${n}">${n}</option>`).join('')
+            : '<option value="">Nobody enrolled yet</option>';
+          renameBtn.disabled = removeBtn.disabled = !names.length;
+          addBtn.disabled = !st.canName;
+          if (!st.canName) msg.textContent = 'Set up listening on the TTS/STT tab first — enrolling needs its voice models.';
+          else if (!names.length) msg.textContent = 'Unenrolled voices are still told apart, just numbered.';
+          else msg.textContent = names.length + ' voice(s) known. Transcripts use these names.';
+        }).catch(() => {});
+        addBtn.onclick = async () => {
+          const wav = await configApi.pickEnrollmentClip();
+          if (!wav) return;
+          const name = (prompt('Who is speaking in that recording?') || '').trim();
+          if (!name) return;
+          msg.textContent = 'Learning that voice…';
+          const r = await configApi.enrollLinuxSpeaker(name, wav);
+          msg.textContent = r && r.ok ? 'Enrolled ' + r.name + '.' : 'Could not enroll: ' + ((r && r.error) || 'unknown error');
+          renderSpeakers();
+        };
+        renameBtn.onclick = async () => {
+          const from = meSpeakers.value;
+          if (!from) return;
+          const to = (prompt('New name for ' + from + ':', from) || '').trim();
+          if (!to || to === from) return;
+          const ok = await configApi.renameLinuxSpeaker(from, to);
+          msg.textContent = ok ? 'Renamed to ' + to + '.' : 'That name is already taken, or cannot be used.';
+          renderSpeakers();
+        };
+        removeBtn.onclick = async () => {
+          const name = meSpeakers.value;
+          if (!name || !confirm('Forget ' + name + "'s voice? Their name will stop appearing in new transcripts.")) return;
+          await configApi.removeLinuxSpeaker(name);
+          renderSpeakers();
+        };
+        renderSpeakers();
+      }
       document.getElementById('meAnalysisAi').onchange = e => saveMe({ analysisAi: e.target.value });
       // --- Busy status ---
       const busyDeps = document.getElementById('meBusyDeps');

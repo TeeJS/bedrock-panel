@@ -15,6 +15,9 @@
  * Album art: the SMTC thumbnail is read by a second one-shot helper (native/smtc-art.cs ->
  * app/native/smtc-art.exe), run once per track and cached. Transport control is in main.js.
  *
+ * Linux: MPRIS is read directly on the session bus by linuxNowPlaying.js, in this process — no
+ * helper, no pipe, no python3. Same snapshots, delivered by callback instead of by line.
+ *
  * macOS: the same stream comes from native/mac/nowplaying-monitor.swift (Spotify + Music.app via their
  * distributed notifications; lines add bundleId/trackId), and art comes from Spotify's oEmbed endpoint
  * (by track id) or the iTunes lookup — there is no thumbnail helper.
@@ -24,13 +27,19 @@ const { net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const { helperPath } = require('./nativeHelpers');
-const MONITOR_EXE = helperPath('nowplayingMonitor');   // smtc-monitor.exe on Windows, nowplaying-monitor on macOS, null elsewhere
+const { helperPath, helperCommand } = require('./nativeHelpers');
+const linuxMpris = require('./linuxNowPlaying');
+const MONITOR_EXE = helperPath('nowplayingMonitor');
+const MONITOR_CMD = helperCommand('nowplayingMonitor');   // smtc-monitor.exe on Windows, nowplaying-monitor on macOS, null elsewhere
 
 const STALE_MS = 12000;   // provider path only: if no provider refresh for this long, report null
 const RESPAWN_MS = 5000;  // helper crash -> retry delay (only while running)
 let snapshot = null, snapTs = 0, timer = null, running = false, busy = false;
 let proc = null, respawnTimer = null, warned = false;
+// Diagnostics state: enough to tell "no helper", "helper says nothing is playing" and "helper says a
+// track is playing" apart in a log, without a line per second while it works.
+let sawLine = false, lastLogged = null;
+function say(message) { console.log('[nowplaying] ' + message); }
 
 // Optional async now-playing provider (e.g. the Spotify Web API client on macOS). When set, it REPLACES
 // the win32 SMTC poll: macOS-with-Spotify -> provider; win32 -> SMTC; otherwise null. A provider result
@@ -123,15 +132,32 @@ async function tick() {
 
 // ---- Windows path: consume the persistent smtc-monitor.exe stream ----
 function onMonitorLine(line) {
+  // Logged BEFORE the running check on purpose: a line arriving while this module thinks it is
+  // stopped is the one failure that leaves no trace anywhere else.
+  if (!sawLine) { sawLine = true; say('helper is reporting (running=' + running + '); first line: ' + line.slice(0, 110)); }
   if (!running) return;
   let o;
-  try { o = JSON.parse(line); } catch (e) { return; }
-  if (!o || !o.title) { snapshot = null; snapTs = 0; return; }        // "{}" -> no media session
+  try { o = JSON.parse(line); } catch (e) { say('unreadable line from the helper: ' + line.slice(0, 120)); return; }
+  applySnapshot(o);
+}
+
+// One track, from whichever source found it: a helper's JSON line, or the D-Bus reader on Linux.
+// A falsy object, or one with no title, means nothing is playing.
+function applySnapshot(o) {
+  if (!running) return;
+  if (!o || !o.title) {
+    if (lastLogged !== 'nothing') { lastLogged = 'nothing'; say('nothing is playing'); }
+    snapshot = null; snapTs = 0; return;
+  }
   snapshot = { title: o.title || null, artist: o.artist || null, album: o.album || null, status: o.status || null, app: o.app || null, position: +o.position || 0, duration: +o.duration || 0 };
   if (o.bundleId) snapshot.bundleId = String(o.bundleId);   // macOS: the player's bundle id (transport targets it)
-  if (o.trackId) snapshot.trackId = String(o.trackId);      // macOS: Spotify track URI (art lookup)
-  if ('art' in o) artCache[trackKey(snapshot)] = o.art || null;   // a helper that supplies art skips the lookups
+  if (o.trackId) snapshot.trackId = String(o.trackId);      // Spotify track URI, for the cover lookup
+  // A source that already knows the cover says so (MPRIS carries it in the track metadata, and macOS
+  // supplies a URL), which skips the second-helper-plus-cache dance Windows needs for a thumbnail.
+  // A source that has no cover is left alone so the online lookups below can still find one.
+  if (o.art) artCache[trackKey(snapshot)] = o.art;
   snapTs = Date.now();
+  if (lastLogged !== o.title) { lastLogged = o.title; say('now playing: ' + JSON.stringify(o.title) + ' via ' + (o.app || '?')); }
   fetchArt(trackKey(snapshot), snapshot);
 }
 
@@ -142,10 +168,16 @@ function spawnMonitor() {
     return;
   }
   // stdin stays open (piped): the helper exits on stdin EOF, so it can never outlive us.
-  try { proc = spawn(MONITOR_EXE, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); }
-  catch (e) { proc = null; return; }
+  // stderr is piped rather than ignored: a helper complaining is worth a line in the log, and the
+  // helpers in this app that work are all spawned this way.
+  try { proc = spawn(MONITOR_CMD.command, MONITOR_CMD.args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }); }
+  catch (e) { say('could not start the helper: ' + (e && e.message)); proc = null; return; }
+  if (proc.stderr) proc.stderr.on('data', d => say('helper: ' + String(d).trim().slice(0, 200)));
   let buf = '';
+  let sawBytes = false;
+  if (!proc.stdout) { say('the helper was started with no readable output'); return; }
   proc.stdout.on('data', d => {
+    if (!sawBytes) { sawBytes = true; say('receiving output from the helper (' + d.length + ' bytes)'); }
     buf += d.toString('utf8');
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
@@ -155,7 +187,8 @@ function spawnMonitor() {
     }
   });
   proc.on('error', () => {});
-  proc.on('close', () => {
+  proc.on('close', code => {
+    say('helper exited (' + code + ')' + (running ? '; retrying shortly' : ''));
     proc = null;
     snapshot = null; snapTs = 0;                                       // dead helper -> honest "nothing playing"
     if (running && !respawnTimer) respawnTimer = setTimeout(() => { respawnTimer = null; spawnMonitor(); }, RESPAWN_MS);
@@ -165,11 +198,15 @@ function spawnMonitor() {
 function start() {
   if (running) return;
   running = true;
-  if (provider) { tick(); timer = setInterval(tick, 2500); }
-  else if (MONITOR_EXE) spawnMonitor();
+  sawLine = false; lastLogged = null;
+  if (provider) { say('started, reading from the configured provider'); tick(); timer = setInterval(tick, 2500); }
+  else if (linuxMpris.start(applySnapshot)) { /* Linux: read on the session bus, in this process */ }
+  else if (MONITOR_EXE) { say('started, helper: ' + MONITOR_EXE); spawnMonitor(); }
+  else say('started, but this platform has no way to see what is playing');
 }
 function stop() {
   running = false;
+  linuxMpris.stop();
   if (timer) clearInterval(timer);
   timer = null;
   if (respawnTimer) { clearTimeout(respawnTimer); respawnTimer = null; }

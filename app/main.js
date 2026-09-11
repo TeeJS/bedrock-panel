@@ -258,6 +258,7 @@ const { providers: oauthProviders, providerFor: oauthProviderFor, registerAppPro
 const { GitHubService, GITHUB_ACCESS_SCOPES, normalizeClientId: normalizeGitHubClientId, normalizeSettings: normalizeGitHubSettings, parseRepository: parseGitHubRepository, validRef: validGitHubRef } = require('./githubService');
 const { configForRenderer } = require('./oauthConfigBoundary');
 const nowplaying = require('./nowplaying');   // same singleton sysserver polls — read its snapshot to target transport
+const linuxNowPlaying = require('./linuxNowPlaying');   // Linux transport: MPRIS on the session bus, in this process
 const haClient = require('./haClient');       // Global HA cache (registries + dashboards); per-entity states fetched lazily
 const touchSetup = require('./touchSetup');   // Bind a touchscreen to its physical display via tabcal.exe (Windows)
 const meetingControl = require('./meetingControl');   // Zoom/Teams call-control keystrokes (Meeting app page)
@@ -318,8 +319,9 @@ const DEFAULT_CONFIG_BY_PLATFORM = { darwin: 'config.default.mac.json', linux: '
 const DEFAULT_CONFIG_PATH = path.join(__dirname, DEFAULT_CONFIG_BY_PLATFORM[process.platform] || 'config.default.json');
 const LEGACY_CONFIG_PATH = path.join(__dirname, 'config.json');          // pre-userData dev location, migrated once
 const APPS_DIR = path.join(__dirname, '..', 'apps').replace('app.asar', 'app.asar.unpacked'); // unpacked when packaged
-const { helperPath } = require('./nativeHelpers');       // per-platform bundled helper binaries (null = none on this platform)
-const SMTC_CTL_EXE = helperPath('nowplayingControl');      // media transport helper (SMTC on Windows, AppleScript on macOS)
+const { helperPath, helperCommand } = require('./nativeHelpers');   // per-platform bundled helpers (null = none here)
+const SMTC_CTL_EXE = helperPath('nowplayingControl');      // media transport helper (SMTC on Windows, AppleScript on macOS, MPRIS on Linux)
+const SMTC_CTL_CMD = helperCommand('nowplayingControl');   // how to run it: an executable, or python3 + script
 const MIC_MONITOR_EXE = helperPath('micSessionMonitor');   // app-scoped mic-in-use monitor (WASAPI sessions / Core Audio process objects)
 const SYSVOL_EXE = helperPath('sysvolume');                // reads the real system volume for the meeting rail
 // Meeting info for the recording sidecar: classic Outlook over COM on Windows (native/outlook-meeting.cs),
@@ -447,6 +449,48 @@ function applyMacSpeech() {
   if (process.platform !== 'darwin') return;
   const v = voiceConfig.voiceSettings(config.settings);
   macSpeech.apply(voiceConfig.macSpeechWanted(config.settings), { host: voiceConfig.MAC_SPEECH.host, sttPort: Number(voiceConfig.MAC_SPEECH.sttPort), ttsPort: Number(voiceConfig.MAC_SPEECH.ttsPort), voice: v.macVoice });
+}
+
+// The Linux equivalent: a resident Piper voice served as Wyoming on the same loopback ports. Unlike
+// the Mac engine it is a download, so `installed()` gates everything -- an empty config cannot imply
+// an engine that is not there. It SPEAKS only for now; listening still needs a server.
+const linuxSpeech = require('./linuxSpeech').createLinuxSpeech({
+  log: m => console.log('[linux-speech] ' + m),
+  baseDir: process.platform === 'linux' ? app.getPath('userData') : '',
+});
+let linuxSpeechInstaller = null;
+let linuxMeetingTx = null;
+function linuxMeetingTranscriber() {
+  if (process.platform !== 'linux') return { available: () => false, transcribe: () => Promise.reject(new Error('not on this platform')) };
+  if (!linuxMeetingTx) {
+    linuxMeetingTx = require('./linuxMeetingTranscribe').createLinuxMeetingTranscriber({
+      baseDir: app.getPath('userData'), log: m => console.log('[meeting] ' + m),
+    });
+  }
+  return linuxMeetingTx;
+}
+function speechInstaller() {
+  if (!linuxSpeechInstaller) {
+    linuxSpeechInstaller = require('./linuxSpeechInstall').createSpeechInstaller({
+      baseDir: app.getPath('userData'), log: m => console.log('[linux-speech] ' + m),
+    });
+  }
+  return linuxSpeechInstaller;
+}
+function builtInSpeechInstalled() {
+  if (process.platform !== 'linux') return { tts: false, stt: false };
+  const v = voiceConfig.voiceSettings(config.settings);
+  return { tts: linuxSpeech.installed(v.linuxVoice), stt: linuxSpeech.sttInstalled(v.linuxSttModel) };
+}
+function applyLinuxSpeech() {
+  if (process.platform !== 'linux') return;
+  const v = voiceConfig.voiceSettings(config.settings);
+  const have = builtInSpeechInstalled();
+  // Either half on its own is reason to run: they are separate downloads and separate ports.
+  const speaks = voiceConfig.linuxSpeechWanted(config.settings, 'linux', have.tts);
+  const hears = voiceConfig.linuxSttWanted(config.settings, 'linux', have.stt);
+  if (speaks || hears) linuxSpeech.start({ voice: v.linuxVoice, sttModel: v.linuxSttModel, speak: speaks, hear: hears });
+  else linuxSpeech.stop();
 }
 // The AI Voice app = ONE app id ('ai-voice') with a per-page backend option, served by one generic
 // voice-panel host instance PER BACKEND (state/transcript/SSE/speech/STT-TTS, see
@@ -587,7 +631,8 @@ const screensaverHost = createScreensaverHost({
 // config.settings.voice unless that page overrides it (grid.options.voiceOverride). Returns blank
 // hosts when the app isn't the active served page, so a backgrounded app never dials out.
 function resolveVoiceEndpoints(appId) {
-  return voiceConfig.resolveVoiceEndpoints(config.settings, (activeServedAppConfig(appId) || {}).options || null);
+  return voiceConfig.resolveVoiceEndpoints(config.settings, (activeServedAppConfig(appId) || {}).options || null,
+    process.platform, builtInSpeechInstalled());
 }
 function voicePanelDeps(appId) {
   return {
@@ -612,7 +657,8 @@ function voiceBackendDeps(backend) {
   return {
     activeServedAppConfig: () => (owns(activeGrid()) ? activeServedAppConfig('ai-voice') : null),
     voiceEndpoints: () => voiceConfig.resolveVoiceEndpoints(config.settings,
-      owns(activeGrid()) ? ((activeServedAppConfig('ai-voice') || {}).options || null) : null),
+      owns(activeGrid()) ? ((activeServedAppConfig('ai-voice') || {}).options || null) : null,
+      process.platform, builtInSpeechInstalled()),
     activeGrid: () => activeGrid(),
     getConfig: () => config,
     saveConfig: () => saveConfig(),
@@ -2104,12 +2150,21 @@ function pasteText(value) {
 // back to the media-key tap if the helper can't act (no session, helper missing) or off-Windows.
 const SMTC_CTL_CMDS = { playpause: 1, next: 1, prev: 1 };
 function mediaKey(cmd) {
+  // Linux drives MPRIS on the session bus from this process, so there is no helper to run: same
+  // targeting, same fallback to a media-key tap when no player will take the call.
+  if (SMTC_CTL_CMDS[cmd] && linuxNowPlaying.available()) {
+    const snap = nowplaying.getSnapshot();
+    linuxNowPlaying.control(cmd, snap && snap.app)
+      .then(ok => { if (!ok) mediaKeys.transport(cmd); })
+      .catch(() => mediaKeys.transport(cmd));
+    return true;
+  }
   if (SMTC_CTL_EXE && SMTC_CTL_CMDS[cmd] && fs.existsSync(SMTC_CTL_EXE)) {
     const snap = nowplaying.getSnapshot();
     const target = snap && (snap.bundleId || snap.app);
     const args = target ? [cmd, target] : [cmd];   // target the displayed session (SMTC app id on Windows, bundle id on macOS)
     try {
-      execFile(SMTC_CTL_EXE, args, { windowsHide: true, timeout: 4000 }, (err, stdout) => {
+      execFile(SMTC_CTL_CMD.command, SMTC_CTL_CMD.args.concat(args), { windowsHide: true, timeout: 4000 }, (err, stdout) => {
         if (err || String(stdout || '').trim() !== 'ok') mediaKeys.transport(cmd);   // helper miss -> media key
       });
       return true;
@@ -2219,7 +2274,7 @@ function lucidtypeGrid() { return (config.grids || []).find(x => x && x.kind ===
 function lucidtypeSettings() { const g = lucidtypeGrid(); return Object.assign({}, LUCIDTYPE_DEFAULTS, (g && g.options) || {}); }
 // STT/TTS endpoints for dictation: the lucidtype page's per-page override (Advanced settings) over the
 // global config.settings.voice.
-function lucidtypeVoiceEndpoints() { return voiceConfig.resolveLucidEndpoints(config.settings, config.grids); }
+function lucidtypeVoiceEndpoints() { return voiceConfig.resolveLucidEndpoints(config.settings, config.grids, process.platform, builtInSpeechInstalled()); }
 // Panel poller/SSE payload: dictation state + review state + the resolved STT endpoint + mic label.
 function lucidStateForPanel() {
   const st = lucidDictation ? lucidDictation.state() : { dictating: false, transcript: '', seq: 0, review: { active: false } };
@@ -2426,7 +2481,8 @@ function ensureVolumeWatcher() {
   sysVolIdleTimer = setTimeout(stopVolumeWatcher, 10000);
   if (sysVolProc || !fs.existsSync(SYSVOL_EXE)) return;
   // stdin stays open (piped): the helper exits on stdin EOF, so it can never outlive the app.
-  try { sysVolProc = spawn(SYSVOL_EXE, ['watch'], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); }
+  const volCmd = helperCommand('sysvolume');
+  try { sysVolProc = spawn(volCmd.command, volCmd.args.concat(['watch']), { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); }
   catch (e) { sysVolProc = null; return; }
   let buf = '';
   sysVolProc.stdout.on('data', d => {
@@ -2673,7 +2729,8 @@ function startMicMonitor() {
   const recordSet = parseAppList(recordApps);
   const busySet = parseAppList(busyOn ? mset.busyApps : '');
   try {
-    micMonitorProc = spawn(MIC_MONITOR_EXE, [allow], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const micCmd = helperCommand('micSessionMonitor');
+    micMonitorProc = spawn(micCmd.command, micCmd.args.concat([allow]), { stdio: ['ignore', 'pipe', 'ignore'] });
   } catch (e) { console.log('[meeting] mic monitor spawn failed:', e.message); micMonitorProc = null; return; }
   let buf = '';
   let firstLine = true;   // a freshly spawned monitor announces its initial state before polling
@@ -3003,7 +3060,8 @@ function placeUiForMode() {
 function applyRunModeAndLaunch() {
   placeUiForMode();
   reservedDisplay.start();
-  applyMacSpeech();                                       // macOS: start the built-in speech engine when the voice settings want it
+  applyMacSpeech();
+  applyLinuxSpeech();                                     // start the built-in speech engine when the voice settings want it
   if (rotationCfg().enabled) setRotation(true);          // auto-start cycling on launch when enabled
   applyFocusFollowSettings();                             // auto-start foreground-app polling on launch when enabled
   applyShortcuts();                                       // register per-page global hotkeys
@@ -4034,8 +4092,14 @@ app.whenReady().then(async () => {
         // macOS: transcribe on this Mac (native/mac/speech-server transcribe-file — Apple's on-device
         // speech, the operator's mic channel labelled with their name, system audio "Others") when the
         // Meeting settings say so; the diarizer server otherwise.
-        resolveEngine: () => (meetingSettings().transcribeEngine === 'local' && helperPath('speechServer')) ? 'local' : 'server',
-        localTranscribe: (wavPath, { myName, log: say }) => new Promise((resolve, reject) => {
+        // Both platforms transcribe the operator's mic channel and the system-audio channel
+        // separately, which is why neither needs speaker diarization. macOS uses Apple's on-device
+        // speech; Linux uses the built-in engine from Settings -> TTS/STT.
+        resolveEngine: () => (meetingSettings().transcribeEngine === 'local'
+          && (helperPath('speechServer') || linuxMeetingTranscriber().available())) ? 'local' : 'server',
+        localTranscribe: (wavPath, { myName, log: say }) => (process.platform === 'linux'
+          ? linuxMeetingTranscriber().transcribe(wavPath, { myName, threshold: Number(meetingSettings().transcribeThreshold) || undefined })
+          : new Promise((resolve, reject) => {
           const args = ['transcribe-file', wavPath, '--language', 'en-US', '--me', myName || 'Me', '--others', 'Others'];
           require('child_process').execFile(helperPath('speechServer'), args, { maxBuffer: 64 * 1024 * 1024, timeout: 3600000 }, (err, stdout, stderr) => {
             String(stderr || '').split('\n').filter(Boolean).forEach(l => say(l));
@@ -4045,7 +4109,7 @@ app.whenReady().then(async () => {
             if (out && out.error) return reject(new Error(out.error));
             resolve(out);
           });
-        }),
+        })),
         organizeByDate: () => !!meetingSettings().processedByDate,
         resolveThreshold: () => meetingSettings().transcribeThreshold,
         resolveMyName: () => meetingSettings().myName,
@@ -4194,6 +4258,161 @@ app.whenReady().then(async () => {
   ipcMain.on('ringState', (e, state) => { if (!isFromPanel(e)) return; setRingState(state); });
   ipcMain.handle('getConfig', (e) => isFrom(e, configWin) ? configForRenderer(config) : null);
   ipcMain.handle('getMacSpeechStatus', (e) => isFrom(e, configWin) ? macSpeech.status() : null);
+  // The Linux built-in engine: what is installed, what could be, and what it is doing. `catalog` is
+  // the pinned list, sent whole so the editor never invents a voice the installer cannot verify.
+  ipcMain.handle('getLinuxSpeechStatus', (e) => {
+    if (!isFrom(e, configWin)) return null;
+    if (process.platform !== 'linux') return { supported: false };
+    const installer = speechInstaller();
+    const v = voiceConfig.voiceSettings(config.settings);
+    const cat = require('./linuxSpeechCatalog');
+    return {
+      supported: true,
+      engineInstalled: installer.engineInstalled(),
+      installedVoices: installer.installedVoices(),
+      selectedVoice: v.linuxVoice || (installer.installedVoices()[0] || ''),
+      catalog: cat.voices(),
+      sttEngineInstalled: installer.sttEngineInstalled(),
+      installedSttModels: installer.installedSttModels(),
+      selectedSttModel: v.linuxSttModel || (installer.installedSttModels()[0] || ''),
+      sttCatalog: cat.sttModels(),
+      running: linuxSpeech.isReady(),
+      serving: linuxSpeech.servingHalves(),
+      usingExistingServer: linuxSpeech.deferredToExisting(),
+      failure: linuxSpeech.failure(),
+      endpoint: linuxSpeech.endpoint(),
+      sttEndpoint: linuxSpeech.sttEndpoint(),
+    };
+  });
+  // Downloads the engine (once) and the chosen voice, reporting progress to the editor as it goes.
+  ipcMain.handle('installLinuxSpeechVoice', async (e, voiceId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
+    const send = p => { try { if (configWin && !configWin.isDestroyed()) configWin.webContents.send('linuxSpeechProgress', p); } catch (err) {} };
+    try {
+      const result = await speechInstaller().install(String(voiceId || ''), send);
+      // Installing IS choosing: a person who just downloaded a voice means to use it.
+      if (!config.settings) config.settings = {};
+      if (!config.settings.voice) config.settings.voice = {};
+      config.settings.voice.linuxVoice = result.voice;
+      saveConfig();
+      linuxSpeech.stop();
+      applyLinuxSpeech();
+      return { ok: true, voice: result.voice };
+    } catch (err) {
+      send({ phase: 'error', message: String(err && err.message) });
+      return { ok: false, error: String(err && err.message) };
+    }
+  });
+  // Listening is its own download and its own button: someone who only wants a voice should not be
+  // made to fetch a recognition model, or the reverse.
+  ipcMain.handle('installLinuxSttModel', async (e, modelId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
+    const send = p => { try { if (configWin && !configWin.isDestroyed()) configWin.webContents.send('linuxSpeechProgress', p); } catch (err) {} };
+    try {
+      const result = await speechInstaller().installStt(String(modelId || ''), send);
+      if (!config.settings) config.settings = {};
+      if (!config.settings.voice) config.settings.voice = {};
+      config.settings.voice.linuxSttModel = result.model;
+      saveConfig();
+      linuxSpeech.stop();
+      applyLinuxSpeech();
+      return { ok: true, model: result.model };
+    } catch (err) {
+      send({ phase: 'error', message: String(err && err.message) });
+      return { ok: false, error: String(err && err.message) };
+    }
+  });
+  ipcMain.handle('removeLinuxSttModel', (e, modelId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return false;
+    linuxSpeech.stop();
+    const ok = speechInstaller().removeSttModel(String(modelId || ''));
+    applyLinuxSpeech();
+    return ok;
+  });
+  // Enrolled voices for meeting transcripts. Profiles are .npy files named after the person, the
+  // same layout the Windows helper writes, so a folder of them can be carried between machines.
+  ipcMain.handle('listLinuxSpeakers', (e) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return null;
+    const tx = linuxMeetingTranscriber();
+    return { supported: true, canName: tx.canDiarize(), speakers: tx.profiles().list(), dir: tx.profiles().dir };
+  });
+  ipcMain.handle('enrollLinuxSpeaker', async (e, name, wavPath) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
+    try {
+      const r = await linuxMeetingTranscriber().enroll(String(name || ''), String(wavPath || ''));
+      return { ok: true, name: r.name };
+    } catch (err) { return { ok: false, error: String(err && err.message) }; }
+  });
+  ipcMain.handle('renameLinuxSpeaker', (e, from, to) => (isFrom(e, configWin) && process.platform === 'linux')
+    ? linuxMeetingTranscriber().profiles().rename(String(from || ''), String(to || '')) : false);
+  ipcMain.handle('removeLinuxSpeaker', (e, name) => (isFrom(e, configWin) && process.platform === 'linux')
+    ? linuxMeetingTranscriber().profiles().remove(String(name || '')) : false);
+  // Enrolling needs a clip of one person talking; the file picker is the main process's job.
+  ipcMain.handle('pickEnrollmentClip', async (e) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return '';
+    const r = await dialog.showOpenDialog(configWin, {
+      title: 'Choose a recording of one person speaking',
+      filters: [{ name: 'Audio', extensions: ['wav'] }],
+      properties: ['openFile'],
+    });
+    return (r && !r.canceled && r.filePaths && r.filePaths[0]) || '';
+  });
+  // Hear an installed voice. The engine holds one voice at a time, so previewing is: make this the
+  // chosen voice, restart the engine on it, and speak a line. Choosing is what the person wanted
+  // anyway -- nobody previews a voice they are not considering.
+  ipcMain.handle('previewLinuxVoice', async (e, voiceId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
+    const id = String(voiceId || '');
+    const cat = require('./linuxSpeechCatalog');
+    // Not downloaded: play the recording published beside the model. Choosing between 82 voices by
+    // installing them one at a time is not choosing, and every voice here has a sample.
+    if (!linuxSpeech.installed(id)) {
+      const voice = cat.voiceById(id);
+      if (!voice) return { ok: false, error: 'Unknown voice.' };
+      try {
+        const { httpsGet } = require('./linuxSpeechInstall');
+        const res = await httpsGet(cat.voiceSampleUrl(voice));
+        const chunks = [];
+        await new Promise((resolve, reject) => {
+          res.on('data', c => chunks.push(c));
+          res.on('end', resolve);
+          res.on('error', reject);
+        });
+        return { ok: true, mime: 'audio/mpeg', sample: true, wav: Buffer.concat(chunks).toString('base64') };
+      } catch (err) {
+        return { ok: false, error: 'Could not fetch a sample of that voice: ' + String(err && err.message) };
+      }
+    }
+    if (!config.settings) config.settings = {};
+    if (!config.settings.voice) config.settings.voice = {};
+    if (config.settings.voice.linuxVoice !== id) {
+      config.settings.voice.linuxVoice = id;
+      saveConfig();
+      linuxSpeech.stop();
+    }
+    applyLinuxSpeech();
+    const { host, port } = linuxSpeech.endpoint();
+    const deadline = Date.now() + 15000;
+    while (!linuxSpeech.isReady() && Date.now() < deadline) await new Promise(r => setTimeout(r, 200));
+    if (!linuxSpeech.isReady()) return { ok: false, error: 'The speech engine did not start.' };
+    try {
+      const { synthesize, wavHeader } = require('./claudevoice-wyoming');
+      const chunks = [];
+      let format = null;
+      await synthesize({ host, port, text: 'This is the voice Bedrock Panel will speak with.',
+        onFormat: f => { format = f; }, onChunk: c => chunks.push(c), timeoutMs: 20000 });
+      const wav = Buffer.concat([wavHeader(format || {}), Buffer.concat(chunks)]);
+      return { ok: true, mime: 'audio/wav', wav: wav.toString('base64') };
+    } catch (err) { return { ok: false, error: String(err && err.message) }; }
+  });
+  ipcMain.handle('cancelLinuxSpeechInstall', (e) => { if (isFrom(e, configWin) && process.platform === 'linux') speechInstaller().cancel(); return true; });
+  ipcMain.handle('removeLinuxSpeechVoice', (e, voiceId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return false;
+    linuxSpeech.stop();
+    const ok = speechInstaller().removeVoice(String(voiceId || ''));
+    applyLinuxSpeech();
+    return ok;
+  });
   ipcMain.handle('rescanMacVoices', (e) => isFrom(e, configWin) ? macSpeech.rescan() : false);   // after a voice download in Spoken Content
   // Voice preview: macOS's own `say` speaks a sample with the chosen voice through the default output.
   // The running helper is not involved, so it works whichever engine is selected; a new preview
@@ -4518,7 +4737,8 @@ app.whenReady().then(async () => {
     if (!monitorMode) { displayArrange.setEnabled(panelFarRightEnabled(appSettings())); displayArrange.request('settings saved'); }   // macOS: (re)check the arrangement when the toggle is on
     // macOS: focusable is a window-creation option, so a changed "mouse and keyboard on the panel" toggle rebuilds the panel window.
     if (process.platform === 'darwin' && runMode() !== 'software' && ((previousConfig.settings || {}).panelInput !== false) !== panelInputEnabled()) applyRunModeLive();
-    applyMacSpeech();                                                    // macOS: engine / voice changes take effect at once
+    applyMacSpeech();
+    applyLinuxSpeech();                                                  // engine / voice changes take effect at once
     applyDisplayBlocker();                                               // keep-display-awake: only Panel mode + when enabled
     const discordSettings = normalizeDiscordSettings((config.settings || {}).discord);
     discordAppHost.updateSettings(discordSettings);
@@ -4851,6 +5071,7 @@ app.on('before-quit', () => {
   try { reservedDisplay.stop(); } catch (e) {}                // release WinEvent hooks and terminate the native helper
   try { displayArrange.stop(); } catch (e) {}                 // drop any pending arrangement check
   try { macSpeech.stop(); } catch (e) {}                      // terminate the built-in speech engine helper
+  try { linuxSpeech.stop(); } catch (e) {}                    // and the Linux one
   // The kiosk panel is torn down here, not by the close pass that follows: a window that refuses to
   // close (a sheet, a cancelled close) cancels the quit itself, and the panel has nothing to save.
   try { if (panelWin && !panelWin.isDestroyed()) panelWin.destroy(); } catch (e) {}

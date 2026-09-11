@@ -9,7 +9,22 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   getLinuxDeviceAccess() { return ipcRenderer.invoke('getLinuxDeviceAccess'); },   // Linux: where the udev rule lives on THIS install, and whether it is already active
   getMacSpeechStatus() { return ipcRenderer.invoke('getMacSpeechStatus'); },
   previewMacVoice(name) { return ipcRenderer.invoke('previewMacVoice', name); },   // macOS: speak a sample with a system voice
-  rescanMacVoices() { return ipcRenderer.invoke('rescanMacVoices'); },            // macOS: re-read the installed voices   // macOS built-in speech engine: running / ready / permission / voices
+  rescanMacVoices() { return ipcRenderer.invoke('rescanMacVoices'); },
+  // Linux built-in speech engine: what is installed, downloading a voice, and progress while it runs
+  getLinuxSpeechStatus() { return ipcRenderer.invoke('getLinuxSpeechStatus'); },
+  installLinuxSpeechVoice(id) { return ipcRenderer.invoke('installLinuxSpeechVoice', id); },
+  cancelLinuxSpeechInstall() { return ipcRenderer.invoke('cancelLinuxSpeechInstall'); },
+  removeLinuxSpeechVoice(id) { return ipcRenderer.invoke('removeLinuxSpeechVoice', id); },
+  installLinuxSttModel(id) { return ipcRenderer.invoke('installLinuxSttModel', id); },
+  removeLinuxSttModel(id) { return ipcRenderer.invoke('removeLinuxSttModel', id); },
+  // Enrolled voices, so meeting transcripts carry names instead of "Speaker A"
+  listLinuxSpeakers() { return ipcRenderer.invoke('listLinuxSpeakers'); },
+  enrollLinuxSpeaker(name, wav) { return ipcRenderer.invoke('enrollLinuxSpeaker', name, wav); },
+  renameLinuxSpeaker(from, to) { return ipcRenderer.invoke('renameLinuxSpeaker', from, to); },
+  removeLinuxSpeaker(name) { return ipcRenderer.invoke('removeLinuxSpeaker', name); },
+  pickEnrollmentClip() { return ipcRenderer.invoke('pickEnrollmentClip'); },
+  previewLinuxVoice(id) { return ipcRenderer.invoke('previewLinuxVoice', id); },
+  onLinuxSpeechProgress(cb) { ipcRenderer.on('linuxSpeechProgress', (_e, p) => cb(p)); },            // macOS: re-read the installed voices   // macOS built-in speech engine: running / ready / permission / voices
   getAppVersion() { return ipcRenderer.invoke('getAppVersion'); },
   getApps() { return ipcRenderer.invoke('getApps'); },
   getMacPermissions() { return ipcRenderer.invoke('getMacPermissions'); },

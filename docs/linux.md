@@ -159,7 +159,90 @@ Two things follow from it:
 - **The editor shows what the desktop actually granted**, not what you typed, so an unbound hotkey is
   visible rather than silently dead.
 
-## 7. Secrets
+## 7. Speech
+
+Bedrock Panel can speak **and listen** on this computer with nothing to install and no GPU. In the
+editor, open **Settings → TTS/STT**, pick a voice and a listening language, and press **Set up** on
+each. Together they download about 140 MB the first time and work from then on, offline.
+
+That is the whole setup. There is no server to run, no port to enter, and no account.
+
+- **The two halves are separate.** Take speaking, listening, or both. Neither needs the other, and
+  each can be replaced by your own server independently — your own Whisper for listening with the
+  built-in voice for speaking is a perfectly normal arrangement.
+- **90 voices across 36 languages**, picked by language first so the list is a choice rather than a
+  wall. **Preview** speaks a line in a voice you have downloaded; to compare voices *before*
+  downloading, the hint links to upstream samples of every one of them.
+- **Everything offered is free of restrictions.** Piper's voices inherit their training data's
+  licence and many of the good-sounding ones are non-commercial or share-alike, so this list is only
+  the ones that are public domain, CC BY, Apache or MIT. The licence is shown next to each voice.
+- **Listening offers a ladder of models**, because accuracy and speed pull opposite ways and only you
+  know which matters:
+
+  | model | download | on a 2019 laptop |
+  |---|---|---|
+  | English only | 28 MB | fastest; English dictation and English meetings |
+  | Many languages, fastest | 111 MB | rough: loses a word here and there, mangles compound words |
+  | Many languages, a step up | 198 MB | better |
+  | Many languages, most accurate | 610 MB | word-perfect, around 0.7× real time |
+
+  **Anything but English needs a "many languages" model, Live Translate above all.** An English-only
+  model does not fail on foreign speech, it invents English out of the sounds, and whatever
+  translates that downstream faithfully translates the nonsense.
+
+  If captions or transcripts read as fluent-but-wrong, that is the model being too small: move up the
+  ladder. The largest is the accuracy answer and is still comfortable for meetings and dictation; for
+  live captions it will run a beat behind on a modest CPU.
+- **They are real speech servers.** Speaking answers on 127.0.0.1:10200 and listening on
+  127.0.0.1:10300, both speaking the Wyoming protocol, so anything else on this machine that speaks
+  Wyoming — Home Assistant, for one — can use them too. Same arrangement as the macOS build and the
+  Windows helper.
+- **If you already run your own Piper or Whisper on those ports, yours wins.** Bedrock Panel notices
+  a port is taken, leaves it alone, and uses what is already there.
+- **Listening is built for short speech** — dictation and voice commands — rather than transcribing
+  long recordings. It is quick about it: a few seconds of speech comes back in well under a second on
+  an ordinary laptop.
+
+Once listening is set up, two other things start working on this machine with no server at all:
+
+- **LucidType dictation** uses it automatically.
+- **Meeting transcription** can too. In **Settings → Meetings**, set Engine to *Built-in speech on
+  this computer*. Your lines are labelled with **Your name**, and everyone on the call is separated
+  into **Speaker 1**, **Speaker 2** and so on, numbered in the order they first talk.
+
+  It works two ways at once, because a meeting has two different problems in it. You are separated
+  from the call by audio channel — recordings are stereo with your microphone on one side and the
+  call on the other — so that half can never be got wrong. The people on the call are separated by
+  voice, which is what tells two remote participants apart.
+
+  **Enroll someone and their name replaces "Speaker A" in every later transcript.** In
+  **Settings → Meetings**, under Known voices, choose a WAV of that person talking — 45 seconds or
+  more, recorded the way your meetings actually are. Profiles are ordinary `.npy` files named after
+  the person, exactly what the Windows helper and the Python diarizer write, so the folder copies
+  between machines and nothing has to be enrolled twice. Enrolling is optional: unenrolled voices
+  are still told apart, just numbered.
+
+Both live in `~/.config/bedrock-panel/speech` and upgrading Bedrock Panel never touches them.
+Removing either is a button in the same tab.
+
+## 8. Music, volume and call detection
+
+These work through the interfaces the Linux desktop already publishes, so there is nothing to install
+and nothing to configure.
+
+- **The Music page** shows whatever is playing, with album art, and its buttons control that player.
+  It reads MPRIS over D-Bus — the same thing your desktop's own media applet reads — so Firefox,
+  Chromium, VLC, Spotify, Elisa and anything else that publishes a player all appear. With two
+  players open, the panel follows the one actually playing and its buttons drive *that* one rather
+  than whichever application happens to own the media keys.
+- **The meeting console's output rail** shows the real system volume, following whichever output you
+  have selected.
+- **Auto-record and the busy light** know when an application is holding the microphone, which is how
+  a call starts a recording on its own. Set the app names under **Settings → Meetings**; on Linux
+  these are program names like `zoom` or `chromium` rather than Windows `.exe` names, and the panel
+  matches an application's name, its binary and its process name, so a short obvious entry works.
+
+## 9. Secrets
 
 Saved passwords and tokens are encrypted with Electron `safeStorage`, backed by KWallet or
 GNOME Keyring.
@@ -174,7 +257,7 @@ still decrypt normally, so nothing is lost in the meantime.
 A `config.json` copied from Windows keeps its DPAPI-encrypted secrets, which Linux cannot read.
 Re-enter those in the editor.
 
-## 8. Starter pages
+## 10. Starter pages
 
 A fresh install starts with the **Linux starter pages** — Default, Media, and Dev — mirroring
 the Windows and macOS ones page for page.
@@ -187,9 +270,12 @@ that names a real binary is used exactly as typed, so `dolphin` or `firefox` kee
 A config copied from Windows or a Mac is translated the same way: Windows program names map to
 their Linux equivalents, and `start <url>` becomes `xdg-open`.
 
-## 9. What is not available on Linux
+## 11. What is not available on Linux
 
 These features report themselves unavailable rather than failing quietly:
+
+These three are greyed out in the editor with the reason beside them, rather than accepting a setting
+and quietly doing nothing with it.
 
 - **Reserved Display.** Moving another application's window off the panel display requires
   enumerating and repositioning foreign windows, which Wayland deliberately does not allow.
@@ -200,11 +286,15 @@ These features report themselves unavailable rather than failing quietly:
 - **Touchscreen setup wizard.** A Windows-only fix for a Windows-only problem. Linux binds a
   digitizer to the output its USB device reports, and Bedrock Panel reads the panel's touch
   reports over HID itself.
-- **Outlook meeting info.** Use the Microsoft 365 source instead, which works everywhere.
-- **Built-in speech.** Point the voice apps at a Wyoming server such as faster-whisper or
-  piper; Bedrock Panel already speaks that protocol.
+- **Meeting info from a calendar on this computer.** Windows reads classic Outlook and macOS reads
+  Calendar; Linux has no single desktop calendar to read. The Microsoft 365 source works everywhere
+  and is preselected here, with the local option greyed out.
+- **Built-in listening is English only for now.** Other languages mean pointing STT at your own
+  Wyoming server, such as faster-whisper. Speaking has English voices in US and UK accents.
+- **A voice has to be enrolled before it can be named.** Until then participants are told apart and
+  numbered. Enrollment is on the Meetings tab and takes one recording per person.
 
-## 10. Troubleshooting
+## 12. Troubleshooting
 
 **The knob and touchscreen are not detected.** Install the udev rule above and replug. Device
 Diagnostics names the cause on the Touchscreen and Knob rows.
@@ -213,7 +303,7 @@ Diagnostics names the cause on the Touchscreen and Knob rows.
 binding has to match Electron's ABI rather than your system Node: `npm run rebuild`. The app
 still starts and Software mode is unaffected.
 
-**Saving a secret fails.** See section 7. Install and unlock a keyring, then restart.
+**Saving a secret fails.** See section 9. Install and unlock a keyring, then restart.
 
 **Tiles launch nothing.** The program is not installed under any of the names Bedrock Panel
 tries. The log says which candidates it looked for.
@@ -221,6 +311,12 @@ tries. The log says which candidates it looked for.
 **Macros or media keys do nothing.** The log says why. *permission denied on /dev/uinput* is the
 group problem in section 4. *cannot start python3* means `python3` is missing, which the `.deb`
 depends on but a source checkout does not enforce.
+
+**Nothing speaks, or nothing is heard.** Settings → TTS/STT says what the built-in engine is doing,
+and names which halves are running. *Not installed* means press Set up. *Using the Wyoming server
+already running on this computer* means something else holds port 10200 or 10300 and Bedrock Panel is
+using it rather than fighting it. If that server is not actually working, stop it and restart
+Bedrock Panel.
 
 **A global hotkey never fires.** The consent dialog in section 6 was probably dismissed, which
 registers the hotkeys with no key attached. Restart Bedrock Panel to be asked again, or open System
