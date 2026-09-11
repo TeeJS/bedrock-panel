@@ -31,6 +31,10 @@ const STALE_MS = 12000;   // provider path only: if no provider refresh for this
 const RESPAWN_MS = 5000;  // helper crash -> retry delay (only while running)
 let snapshot = null, snapTs = 0, timer = null, running = false, busy = false;
 let proc = null, respawnTimer = null, warned = false;
+// Diagnostics state: enough to tell "no helper", "helper says nothing is playing" and "helper says a
+// track is playing" apart in a log, without a line per second while it works.
+let sawLine = false, lastLogged = null;
+function say(message) { console.log('[nowplaying] ' + message); }
 
 // Optional async now-playing provider (e.g. the Spotify Web API client on macOS). When set, it REPLACES
 // the win32 SMTC poll: macOS-with-Spotify -> provider; win32 -> SMTC; otherwise null. A provider result
@@ -124,9 +128,13 @@ async function tick() {
 // ---- Windows path: consume the persistent smtc-monitor.exe stream ----
 function onMonitorLine(line) {
   if (!running) return;
+  if (!sawLine) { sawLine = true; say('helper is reporting; first line: ' + line.slice(0, 120)); }
   let o;
-  try { o = JSON.parse(line); } catch (e) { return; }
-  if (!o || !o.title) { snapshot = null; snapTs = 0; return; }        // "{}" -> no media session
+  try { o = JSON.parse(line); } catch (e) { say('unreadable line from the helper: ' + line.slice(0, 120)); return; }
+  if (!o || !o.title) {
+    if (lastLogged !== 'nothing') { lastLogged = 'nothing'; say('nothing is playing'); }
+    snapshot = null; snapTs = 0; return;        // "{}" -> no media session
+  }
   snapshot = { title: o.title || null, artist: o.artist || null, album: o.album || null, status: o.status || null, app: o.app || null, position: +o.position || 0, duration: +o.duration || 0 };
   // A helper that already knows the art URL says so on the line (MPRIS carries it in the track
   // metadata), which saves the whole second-helper-plus-cache dance Windows needs to get a thumbnail.
@@ -135,6 +143,7 @@ function onMonitorLine(line) {
   if (o.trackId) snapshot.trackId = String(o.trackId);      // macOS: Spotify track URI (art lookup)
   if ('art' in o) artCache[trackKey(snapshot)] = o.art || null;   // a helper that supplies art skips the lookups
   snapTs = Date.now();
+  if (lastLogged !== o.title) { lastLogged = o.title; say('now playing: ' + JSON.stringify(o.title) + ' via ' + (o.app || '?')); }
   fetchArt(trackKey(snapshot), snapshot);
 }
 
@@ -158,7 +167,8 @@ function spawnMonitor() {
     }
   });
   proc.on('error', () => {});
-  proc.on('close', () => {
+  proc.on('close', code => {
+    say('helper exited (' + code + ')' + (running ? '; retrying shortly' : ''));
     proc = null;
     snapshot = null; snapTs = 0;                                       // dead helper -> honest "nothing playing"
     if (running && !respawnTimer) respawnTimer = setTimeout(() => { respawnTimer = null; spawnMonitor(); }, RESPAWN_MS);
@@ -168,8 +178,10 @@ function spawnMonitor() {
 function start() {
   if (running) return;
   running = true;
-  if (provider) { tick(); timer = setInterval(tick, 2500); }
-  else if (MONITOR_EXE) spawnMonitor();
+  sawLine = false; lastLogged = null;
+  if (provider) { say('started, reading from the configured provider'); tick(); timer = setInterval(tick, 2500); }
+  else if (MONITOR_EXE) { say('started, helper: ' + MONITOR_EXE); spawnMonitor(); }
+  else say('started, but this platform has no now-playing helper');
 }
 function stop() {
   running = false;
