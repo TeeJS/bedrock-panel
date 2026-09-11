@@ -141,7 +141,25 @@ If the cursor does not move, the log says why. *cannot create pointer* is a perm
 section 4 has the fix; the mode is otherwise unaffected, and macros and media keys keep working even
 when the pointer cannot be made.
 
-## 6. Secrets
+## 6. Global hotkeys
+
+Hotkeys work, with one consent step the other platforms do not have. The first time Bedrock Panel
+registers them, KDE shows a **Global Shortcuts Requested** dialog listing each one with the key you
+chose already filled in. Click **OK** and they are live. You can change a key in that dialog before
+accepting, or later in System Settings → Shortcuts under Bedrock Panel.
+
+This is Wayland's design, not a Bedrock Panel limitation: no application is allowed to take a key
+combination for itself, so it asks the desktop and the desktop asks you. Chromium and Electron's own
+hotkey support goes through the same portal and needs the same consent.
+
+Two things follow from it:
+
+- **If you dismiss the dialog, the hotkeys are registered with no key.** Nothing breaks and nothing
+  fires. Assign them in System Settings → Shortcuts, or restart Bedrock Panel to be asked again.
+- **The editor shows what the desktop actually granted**, not what you typed, so an unbound hotkey is
+  visible rather than silently dead.
+
+## 7. Secrets
 
 Saved passwords and tokens are encrypted with Electron `safeStorage`, backed by KWallet or
 GNOME Keyring.
@@ -156,7 +174,7 @@ still decrypt normally, so nothing is lost in the meantime.
 A `config.json` copied from Windows keeps its DPAPI-encrypted secrets, which Linux cannot read.
 Re-enter those in the editor.
 
-## 7. Starter pages
+## 8. Starter pages
 
 A fresh install starts with the **Linux starter pages** — Default, Media, and Dev — mirroring
 the Windows and macOS ones page for page.
@@ -169,15 +187,10 @@ that names a real binary is used exactly as typed, so `dolphin` or `firefox` kee
 A config copied from Windows or a Mac is translated the same way: Windows program names map to
 their Linux equivalents, and `start <url>` becomes `xdg-open`.
 
-## 8. What is not available on Linux
+## 9. What is not available on Linux
 
 These features report themselves unavailable rather than failing quietly:
 
-- **Global hotkeys work differently.** They are not unavailable, but the app cannot simply take the
-  combination you typed. It registers a named action and proposes a trigger through the desktop's
-  shortcuts portal, and the desktop decides. KDE Plasma accepts the action and assigns no key, so you
-  bind it once in System Settings → Shortcuts. Electron's own hotkey support is not used: it reports
-  success on this platform and never fires.
 - **Reserved Display.** Moving another application's window off the panel display requires
   enumerating and repositioning foreign windows, which Wayland deliberately does not allow.
 - **Follow the focused app.** Same reason: there is no cross-desktop way to be told which
@@ -191,7 +204,7 @@ These features report themselves unavailable rather than failing quietly:
 - **Built-in speech.** Point the voice apps at a Wyoming server such as faster-whisper or
   piper; Bedrock Panel already speaks that protocol.
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 **The knob and touchscreen are not detected.** Install the udev rule above and replug. Device
 Diagnostics names the cause on the Touchscreen and Knob rows.
@@ -200,7 +213,7 @@ Diagnostics names the cause on the Touchscreen and Knob rows.
 binding has to match Electron's ABI rather than your system Node: `npm run rebuild`. The app
 still starts and Software mode is unaffected.
 
-**Saving a secret fails.** See section 6. Install and unlock a keyring, then restart.
+**Saving a secret fails.** See section 7. Install and unlock a keyring, then restart.
 
 **Tiles launch nothing.** The program is not installed under any of the names Bedrock Panel
 tries. The log says which candidates it looked for.
@@ -209,7 +222,7 @@ tries. The log says which candidates it looked for.
 group problem in section 4. *cannot start python3* means `python3` is missing, which the `.deb`
 depends on but a source checkout does not enforce.
 
-**A global hotkey never fires.** On Linux the app registers a named action and the desktop assigns
-the key. Open your desktop's keyboard-shortcuts settings, find Bedrock Panel, and give the action a
-key. Until then it is registered with no key, and the log says how many of the app's shortcuts the
-desktop actually bound.
+**A global hotkey never fires.** The consent dialog in section 6 was probably dismissed, which
+registers the hotkeys with no key attached. Restart Bedrock Panel to be asked again, or open System
+Settings → Shortcuts, find Bedrock Panel, and give the action a key. The log says how many of the
+app's shortcuts the desktop actually bound.

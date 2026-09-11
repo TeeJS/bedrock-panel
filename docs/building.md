@@ -369,9 +369,20 @@ What to expect on Linux:
   is a globalShortcut-shaped shim over `app/linux/portal-shortcuts.py`, and `app/main.js` routes every
   registration through it; `test/linuxShortcuts.test.js` fails if a bare `globalShortcut` call returns.
   - The portal changes the feature's shape: the app registers NAMED ACTIONS and proposes triggers, and
-    the desktop decides. Plasma 6.6 accepts the action and binds no key, so the person assigns it in
-    System Settings. `triggers()` reports what was actually granted, so the editor need not imply the
-    typed combination is live.
+    the desktop decides. Plasma 6.6 honours the proposal after one consent step — a "Global Shortcuts
+    Requested" dialog listing the actions with the proposed keys filled in, and OK binds them. Verified
+    end to end by pressing them with this project's own uinput keyboard.
+  - `BindShortcuts` does not answer until that dialog is dealt with, and dismissing it leaves the
+    actions registered with NO key. An earlier reading of this code said Plasma binds nothing and the
+    person must visit System Settings; that was the dismissed-dialog state mistaken for the platform's
+    behaviour. An empty `trigger_description` means "not bound yet", never "this desktop refuses".
+  - The dialog names the app from its systemd scope, so it reads "Bedrock Panel" when launched from the
+    desktop entry and names the terminal when launched from one. Test runs from a shell are misleading
+    twice over: wrong name, and the shortcuts land under the terminal's component in
+    `kglobalshortcutsrc`. xdg-desktop-portal's `Registry.Register` would let a non-sandboxed app state
+    its own id, but Ubuntu 26.04 ships no such service, so the scope is all there is.
+  - `triggers()` reports what was actually granted, so the editor need not imply the typed combination
+    is live.
   - Registrations are batched because the portal binds a set in one call: `register()` collects,
     `apply()` performs the handshake, and `applyShortcuts()` calls it last.
   - Python again, and for a sharper reason than uinput: the portal answers a request with a signal

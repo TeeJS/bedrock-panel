@@ -9,9 +9,15 @@
  *
  * The shape of the feature changes, and callers should not pretend otherwise. On Windows and macOS
  * the app takes the key combination the user typed. Here the app registers a NAMED ACTION and
- * proposes a trigger; the desktop decides. KDE Plasma 6.6 accepts the action and binds no key, so
- * the person assigns it once in System Settings -> Shortcuts. `triggers()` reports what the desktop
- * actually granted, so the editor can show it instead of implying the typed combo is live.
+ * proposes a trigger; the desktop decides. KDE Plasma 6.6 shows one dialog listing the actions with
+ * the proposed keys already filled in, and a click on OK binds them -- the keys the user typed do
+ * become live, after one consent step, measured by pressing them with this project's own uinput
+ * keyboard. Nobody has to visit System Settings.
+ *
+ * The dialog is modal to nothing: BindShortcuts does not answer until it is dealt with, and ignoring
+ * or cancelling it leaves the actions registered with NO key. That is indistinguishable, from here,
+ * from a desktop that binds nothing -- so `triggers()` reporting an empty string means "not bound
+ * yet", not "this desktop cannot". The editor shows what was actually granted either way.
  *
  * Registrations are batched: the portal binds a whole set in one call, so register() collects and
  * apply() performs the handshake. main.js already rebuilds its whole shortcut set at once.

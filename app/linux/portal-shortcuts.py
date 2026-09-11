@@ -13,10 +13,18 @@ short-lived connection, so the reply lands nowhere — and Node has no D-Bus cli
 dependency. PyGObject gives a real persistent connection, and python3 is already required for the
 keyboard helper.
 
-What the desktop does with it: the app registers NAMED ACTIONS and proposes a trigger. The desktop
-decides whether to honour the proposal. KDE Plasma 6.6 accepts the registration and assigns no key
-(`trigger_description` comes back empty), so the person binds it once in System Settings ->
-Shortcuts. That is the flow on this platform, and the editor says so.
+What the desktop does with it: the app registers NAMED ACTIONS and proposes a trigger, and the
+desktop decides whether to honour the proposal. KDE Plasma 6.6 honours it. It shows one "Global
+Shortcuts Requested" dialog listing the actions with the proposed keys filled in; OK binds them and
+they fire (measured by pressing them with this project's own uinput keyboard). The name in that
+dialog comes from the process's systemd scope, so it reads "Bedrock Panel" when launched from the
+desktop entry -- and something else entirely when launched from a terminal, which is worth knowing
+before believing a test run.
+
+BindShortcuts does not answer until the dialog is dealt with. Ignore it or cancel it and the actions
+stay registered with no key, `trigger_description` comes back empty, and the keys can still be
+assigned by hand in System Settings -> Shortcuts. An empty trigger therefore means "not bound yet",
+never "this desktop refuses to bind".
 
 Protocol:
     argv[1]  JSON array of {"id": "...", "description": "...", "trigger": "CTRL+ALT+s"}
