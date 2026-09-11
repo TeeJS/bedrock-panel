@@ -164,11 +164,11 @@ Grab a build from the **[Releases](https://github.com/TeeJS/bedrock-panel/releas
   through macOS's own speech. First-launch steps and permissions: [docs/macos.md](docs/macos.md);
   what is in the release: [docs/releases/v0.9.5.md](docs/releases/v0.9.5.md).
 - **`bedrock-panel-arm64.zip`** — the same macOS app without the disk image.
-- **`bedrock-panel_amd64.deb`** — Linux x64 for Debian and Ubuntu (**v0.9.6-beta.2, tester beta**):
+- **`bedrock-panel_amd64.deb`** — Linux x64 for Debian and Ubuntu (**v0.9.6-beta.3, tester beta**):
   installs a desktop entry, pulls its own dependencies, and sets up device access for the knob and
   touchscreen itself. First-launch steps and what is not available on Linux:
   [docs/linux.md](docs/linux.md); what is in the beta:
-  [docs/releases/v0.9.6-beta.2-linux.md](docs/releases/v0.9.6-beta.2-linux.md).
+  [docs/releases/v0.9.6-beta.3-linux.md](docs/releases/v0.9.6-beta.3-linux.md).
 - **`bedrock-panel-x86_64.AppImage`** — the same Linux beta, portable, no install. Needs FUSE 2,
   which Ubuntu 24.04 and newer no longer ship — install `libfuse2t64` or use the `.deb`.
 
