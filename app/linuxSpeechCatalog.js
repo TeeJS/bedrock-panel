@@ -122,7 +122,7 @@ const STT_MODELS = [
     // English. "Guten Morgen, wir beginnen die Besprechung" came back as "Good morning, we begin the
     // vascation with incorrect answer", and a translator downstream faithfully translates that.
     id: 'whisper-tiny-multilingual',
-    label: 'Many languages — needed for Live Translate',
+    label: 'Many languages — fastest, roughest',
     family: 'whisper',
     license: 'MIT',
     languages: ['multilingual'],
@@ -131,6 +131,35 @@ const STT_MODELS = [
     url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2',
     stripComponents: 1,
   },
+  {
+    id: 'whisper-base-multilingual',
+    label: 'Many languages — a step up',
+    family: 'whisper',
+    license: 'MIT',
+    languages: ['multilingual'],
+    bytes: 207557382,
+    sha256: '911b2083efd7c0dca2ac3b358b75222660dc09fb716d64fbfc417ba6c99ff3de',
+    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2',
+    stripComponents: 1,
+  },
+  {
+    // The accuracy answer. On the reference laptop (i5-10210U, no GPU) a 13-second German passage
+    // came back word-perfect where tiny lost a word and mangled every compound, at roughly 0.7x real
+    // time -- fine for meetings and for dictation, noticeably behind for live captions.
+    id: 'whisper-small-multilingual',
+    label: 'Many languages — most accurate, slower',
+    family: 'whisper',
+    license: 'MIT',
+    languages: ['multilingual'],
+    bytes: 639387718,
+    sha256: '486a46afbb7ba798507190ffe02fea2dd726049af212e774537efac6afb210a6',
+    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.tar.bz2',
+    stripComponents: 1,
+  },
+  // Whisper turbo and the large models are deliberately absent. Turbo matched small's accuracy
+  // exactly on the same audio while being larger and SLOWER on a CPU (11.2 s against 9.4 s) -- it
+  // pays off on a GPU, which this port does not assume anyone has. Anyone who wants one can run it
+  // on their own Wyoming server, which still takes precedence over the built-in engine.
 ];
 
 function voices() { return VOICES.slice(); }

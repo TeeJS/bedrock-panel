@@ -35,7 +35,14 @@ function speechWith(extra) {
     spawn: (...a) => { spawned.push(a); return child; },
     log: m => logs.push(m),
     exists: p => onDisk.includes(p),
-    readdir: dir => (String(dir).endsWith('stt') ? dirs.stt : dirs.voices),
+    // readdir answers per directory now: the stt root lists models, a model directory lists its
+    // files, because "is this model complete" is a question about the files inside it.
+    readdir: dir => {
+      const d = String(dir);
+      if (d.endsWith(path.join('speech', 'stt'))) return dirs.stt;
+      if (d.includes(path.join('speech', 'stt'))) return ['tokens.txt', 'encoder_model.ort'];
+      return dirs.voices;
+    },
   }, extra));
   return { speech, child, logs, spawned };
 }
@@ -139,10 +146,15 @@ test('the speech helper answers the two Wyoming events the app and Home Assistan
 // ---- listening, which installs and runs independently of speaking -----------------------------
 
 test('a recognition model is found by its folder, and only when it is complete', () => {
-  const readdir = () => ['moonshine-tiny-en'];
-  assert.equal(sttModelDir(BASE, '', readdir, p => p === STT_TOKENS),
-    path.join(BASE, 'speech', 'stt', 'moonshine-tiny-en'));
-  assert.equal(sttModelDir(BASE, '', readdir, () => false), null, 'a folder without tokens is half a download');
+  const sttRoot = path.join(BASE, 'speech', 'stt');
+  const listing = files => dir => (String(dir) === sttRoot ? ['moonshine-tiny-en'] : files);
+  assert.equal(sttModelDir(BASE, '', listing(['tokens.txt']), () => true),
+    path.join(sttRoot, 'moonshine-tiny-en'));
+  // Whisper names its token file after the model, which is a packaging detail, not a difference.
+  assert.equal(sttModelDir(BASE, '', listing(['small-tokens.txt']), () => true),
+    path.join(sttRoot, 'moonshine-tiny-en'));
+  assert.equal(sttModelDir(BASE, '', listing(['encoder_model.ort']), () => true), null,
+    'a folder without tokens is half a download');
   assert.equal(sttModelDir(BASE, '', () => { throw new Error('ENOENT'); }, () => true), null);
 });
 

@@ -58,9 +58,13 @@ function layout(baseDir) {
   };
 }
 
-// A model directory is complete when its token list is there. The two families name that file
-// differently, which is a packaging detail rather than a difference worth configuring.
-const TOKEN_FILES = ['tokens.txt', 'tiny-tokens.txt', 'base-tokens.txt'];
+// A model directory is complete when its token list is there. Moonshine calls it tokens.txt and
+// every whisper release names it after the model (tiny-, base-, small-, turbo-), so the check is on
+// the shape of the name rather than a list that would need editing for each new model.
+const TOKENS_SUFFIX = 'tokens.txt';
+const hasTokens = (dir, exists, readdir) => {
+  try { return readdir(dir).some(f => f.endsWith(TOKENS_SUFFIX)); } catch (e) { return false; }
+};
 
 /** The directory of the named recognition model, or of the only one installed. */
 function sttModelDir(baseDir, name, readdir = fs.readdirSync, exists = fs.existsSync) {
@@ -70,7 +74,7 @@ function sttModelDir(baseDir, name, readdir = fs.readdirSync, exists = fs.exists
   const wanted = name && names.includes(name) ? [name] : names;
   for (const dir of wanted) {
     const full = path.join(sttDir, dir);
-    if (TOKEN_FILES.some(f => exists(path.join(full, f)))) return full;
+    if (hasTokens(full, exists, readdir)) return full;
   }
   return null;
 }
@@ -207,4 +211,4 @@ function createLinuxSpeech(options) {
   };
 }
 
-module.exports = { createLinuxSpeech, helperScript, layout, voiceModel, sttModelDir, TOKEN_FILES, TTS_PORT, STT_PORT, HOST };
+module.exports = { createLinuxSpeech, helperScript, layout, voiceModel, sttModelDir, hasTokens, TTS_PORT, STT_PORT, HOST };

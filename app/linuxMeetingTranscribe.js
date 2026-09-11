@@ -173,11 +173,18 @@ function createLinuxMeetingTranscriber(options) {
     let dirs;
     try { dirs = fs.readdirSync(paths.sttDir); } catch (e) { return null; }
     const at = (dir, name) => { const p = path.join(dir, name); return fs.existsSync(p) ? p : null; };
+    // Whisper names its files after the model, so match the shape rather than the model.
+    const ending = (dir, suffix) => {
+      let names;
+      try { names = fs.readdirSync(dir).sort(); } catch (e) { return null; }
+      const hit = names.find(n => n.endsWith(suffix));
+      return hit ? path.join(dir, hit) : null;
+    };
     for (const id of dirs) {
       const dir = path.join(paths.sttDir, id);
-      const wEnc = at(dir, 'tiny-encoder.int8.onnx') || at(dir, 'tiny-encoder.onnx');
-      const wDec = at(dir, 'tiny-decoder.int8.onnx') || at(dir, 'tiny-decoder.onnx');
-      const wTok = at(dir, 'tiny-tokens.txt');
+      const wEnc = ending(dir, '-encoder.int8.onnx') || ending(dir, '-encoder.onnx');
+      const wDec = ending(dir, '-decoder.int8.onnx') || ending(dir, '-decoder.onnx');
+      const wTok = ending(dir, '-tokens.txt');
       if (wEnc && wDec && wTok) {
         return ['--whisper-encoder=' + wEnc, '--whisper-decoder=' + wDec, '--tokens=' + wTok,
                 '--model-type=whisper', '--num-threads=4'];

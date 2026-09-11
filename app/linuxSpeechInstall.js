@@ -23,7 +23,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { execFile: execFileDefault } = require('child_process');
 const catalog = require('./linuxSpeechCatalog');
-const { layout, TOKEN_FILES } = require('./linuxSpeech');
+const { layout, hasTokens } = require('./linuxSpeech');
 
 // Follows redirects, because the voice host answers with one and a plain GET would store the
 // redirect page as a 60 MB model and fail the digest with a confusing message.
@@ -63,7 +63,7 @@ function createSpeechInstaller(options) {
   function installedSttModels() {
     try {
       return fs.readdirSync(paths.sttDir)
-        .filter(id => TOKEN_FILES.some(f => fs.existsSync(path.join(paths.sttDir, id, f))));
+        .filter(id => hasTokens(path.join(paths.sttDir, id), fs.existsSync, fs.readdirSync));
     } catch (e) { return []; }
   }
 
@@ -202,7 +202,7 @@ function createSpeechInstaller(options) {
     }
 
     const modelDir = path.join(paths.sttDir, model.id);
-    if (!TOKEN_FILES.some(f => fs.existsSync(path.join(modelDir, f)))) {
+    if (!hasTokens(modelDir, fs.existsSync, fs.readdirSync)) {
       const archive = path.join(paths.root, model.id + '.tar.bz2');
       await fetchTo(model.url, archive, { algo: 'sha256', value: model.sha256 }, tick);
       if (onProgress) onProgress({ phase: 'extract', received, total });

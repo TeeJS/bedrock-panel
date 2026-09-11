@@ -176,11 +176,23 @@ That is the whole setup. There is no server to run, no port to enter, and no acc
 - **Everything offered is free of restrictions.** Piper's voices inherit their training data's
   licence and many of the good-sounding ones are non-commercial or share-alike, so this list is only
   the ones that are public domain, CC0, CC BY or MIT. The licence is shown next to each voice.
-- **Listening offers two models.** *English only* is the fastest. *Many languages* is a multilingual
-  Whisper, roughly four times the download and a little slower, and it is what you want if you listen
-  to anything but English. **Live Translate requires it**: an English-only model does not fail on
-  foreign speech, it invents English out of the sounds, and whatever translates that downstream
-  faithfully translates nonsense.
+- **Listening offers a ladder of models**, because accuracy and speed pull opposite ways and only you
+  know which matters:
+
+  | model | download | on a 2019 laptop |
+  |---|---|---|
+  | English only | 28 MB | fastest; English dictation and English meetings |
+  | Many languages, fastest | 111 MB | rough: loses a word here and there, mangles compound words |
+  | Many languages, a step up | 198 MB | better |
+  | Many languages, most accurate | 610 MB | word-perfect, around 0.7× real time |
+
+  **Anything but English needs a "many languages" model, Live Translate above all.** An English-only
+  model does not fail on foreign speech, it invents English out of the sounds, and whatever
+  translates that downstream faithfully translates the nonsense.
+
+  If captions or transcripts read as fluent-but-wrong, that is the model being too small: move up the
+  ladder. The largest is the accuracy answer and is still comfortable for meetings and dictation; for
+  live captions it will run a beat behind on a modest CPU.
 - **They are real speech servers.** Speaking answers on 127.0.0.1:10200 and listening on
   127.0.0.1:10300, both speaking the Wyoming protocol, so anything else on this machine that speaks
   Wyoming — Home Assistant, for one — can use them too. Same arrangement as the macOS build and the

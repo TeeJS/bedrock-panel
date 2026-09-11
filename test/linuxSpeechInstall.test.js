@@ -175,7 +175,13 @@ test('listening offers a multilingual model, because an English one invents Engl
   const multi = models.find(m => m.languages.includes('multilingual'));
   assert.ok(multi, 'nothing for anyone who does not speak English');
   assert.equal(multi.family, 'whisper', 'multilingual means whisper here');
-  assert.match(multi.label, /Live Translate/, 'the label has to say what it is for');
+  // More than one, because accuracy and speed pull opposite ways and only the user knows which
+  // matters: the fastest multilingual model is visibly rougher than the most accurate one.
+  const all = models.filter(m => m.languages.includes('multilingual'));
+  assert.ok(all.length >= 3, 'only ' + all.length + ' multilingual model(s) -- no room to trade');
+  assert.ok(all.every(m => /many languages/i.test(m.label)), 'each has to say it is multilingual');
+  const sizes = all.map(m => m.bytes);
+  assert.deepEqual(sizes, [...sizes].sort((a, b) => a - b), 'listed smallest first, cheapest choice first');
 });
 
 test('the helper honours the spoken language the client declares', () => {

@@ -147,9 +147,13 @@ class Recognizer:
         return self._whisper_args(language) or self._moonshine_args()
 
     def _whisper_args(self, language=''):
-        enc = self._first('tiny-encoder.int8.onnx', 'tiny-encoder.onnx', 'base-encoder.int8.onnx', 'base-encoder.onnx')
-        dec = self._first('tiny-decoder.int8.onnx', 'tiny-decoder.onnx', 'base-decoder.int8.onnx', 'base-decoder.onnx')
-        tokens = self._first('tiny-tokens.txt', 'base-tokens.txt')
+        # Matched by shape rather than by name: every whisper release names its files after the model
+        # (tiny-, base-, small-, turbo-), so listing them would mean editing this for each new one.
+        # int8 first, which is what the other implementations prefer too: much faster on a CPU for a
+        # difference dictation does not notice.
+        enc = self._match('-encoder.int8.onnx') or self._match('-encoder.onnx')
+        dec = self._match('-decoder.int8.onnx') or self._match('-decoder.onnx')
+        tokens = self._match('-tokens.txt')
         if not (enc and dec and tokens):
             return None
         args = ['--whisper-encoder=' + enc, '--whisper-decoder=' + dec, '--tokens=' + tokens,
@@ -181,6 +185,16 @@ class Recognizer:
             p = os.path.join(self.model_dir, n)
             if os.path.exists(p):
                 return p
+        return None
+
+    def _match(self, suffix):
+        try:
+            names = sorted(os.listdir(self.model_dir))
+        except OSError:
+            return None
+        for n in names:
+            if n.endswith(suffix):
+                return os.path.join(self.model_dir, n)
         return None
 
     def usable(self):
