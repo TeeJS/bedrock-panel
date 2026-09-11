@@ -344,8 +344,25 @@ What to expect on Linux:
   - `app/linuxKeymap.js` holds the name and character tables, and is pure, so the mapping is unit
     tested without a device. Key codes mean the layout decides what typed text prints; combos are
     unaffected.
-  - The pointer half is not implemented, so Monitor mode reports itself unavailable rather than
-    moving a cursor that never moves.
+  - **Monitor mode drives a second uinput device**, an absolute pointer created when the mode is
+    entered rather than at startup, since most sessions never enter it. Two devices rather than one
+    because libinput classifies a device by what it declares, and nothing real is both a keyboard and
+    an absolute pointer. The shape is the QEMU USB tablet's — buttons, absolute X/Y, a wheel — which
+    libinput has always handled as an absolute pointer.
+    - The compositor stretches the device's 0..65535 scale across the whole desktop, so
+      `app/linuxPointer.js` maps a global screen pixel through the bounding box of every display;
+      `app/main.js` injects that box and it is re-read per move, never cached, because the QUAKE
+      arriving is exactly when the mode is used.
+    - Plain proportional rounding, which was measured rather than assumed: both that formula and a
+      half-pixel-offset one were driven against KWin's own cursor position over a spread of pixels on
+      both displays. This one lands on the intended pixel every time; the offset one overshoots by
+      one. The unit test asserts the round trip rather than the constants.
+    - Verified end to end on KDE Plasma 6.6 (Wayland) through the real backend: the cursor lands on
+      the requested pixel, and a window under it receives left and right press/release, the wheel in
+      both directions, and a drag. Electron's own display list under the X11 backend agrees with the
+      compositor's geometry, which is what makes the mapping correct.
+    - Untested: a display with a scale factor other than 1, the only arrangement available here. Both
+      Electron and KWin work in logical pixels, so it should hold, but nobody has measured it.
 - **Global hotkeys go through the XDG GlobalShortcuts portal**, not Electron. `globalShortcut.register`
   returns true on this platform and the shortcut never fires — verified by pressing the combination
   with this project's own uinput keyboard, so it is not a synthetic-input artefact. `app/linuxShortcuts.js`

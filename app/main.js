@@ -250,6 +250,7 @@ const MultiKnob = require('./multiKnob');                                       
 const http = require('http');
 const actionRunner = require('./actionRunner');
 const { createMediaKeys } = require('./mediaKeys');
+const linuxPointer = require('./linuxPointer');
 const { createSecretStore } = require('./secretStore');
 const { OAuthHandler } = require('../src/auth/oauth-handler');
 const { TokenStorage } = require('../src/auth/token-storage');
@@ -336,7 +337,10 @@ const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDis
 // touch-only — click-through and never the key window, the way DK-Suite builds its panel (false).
 function panelInputEnabled() { return appSettings().panelInput !== false; }
 const actionDeps = { fs, shell, exec, execFile, spawn, platform: process.platform, log: message => console.log(message) };
-const mediaKeys = createMediaKeys({ log: message => console.log(message), ensureTrusted: macPermissions.supported ? macPermissions.ensureTrusted : null });
+const mediaKeys = createMediaKeys({ log: message => console.log(message), ensureTrusted: macPermissions.supported ? macPermissions.ensureTrusted : null,
+  // Linux only: its virtual pointer reports an absolute position across the whole desktop, so the
+  // backend has to be told what "the whole desktop" currently is. Read per move, never cached.
+  desktopBounds: () => { try { return linuxPointer.unionBounds(screen.getAllDisplays()); } catch (e) { return null; } } });
 let presenceService = null;   // busy-presence fan-out (Busylight / WLED / HA over MQTT); null until boot
 let firstRun = false;     // set by loadConfig when there was no prior config (fresh install)
 let micState = false;     // current device mic state (LED follows it)
@@ -3025,9 +3029,10 @@ function applyRunModeLive() {
 }
 
 // ---- monitor mode: use the device as a normal monitor ----
-// Hide the launcher window so the Windows desktop shows on the device; the driver keep-alive keeps the
+// Hide the launcher window so the desktop shows on the device; the driver keep-alive keeps the
 // backlight lit. Touch drives the OS cursor and the knob does a configurable action — both via the trusted
-// device input only (mediaKeys / robotjs), never web content. The tray (or a System->monitor tile) toggles it.
+// device input only (mediaKeys: robotjs on Windows and macOS, a uinput pointer on Linux), never web
+// content. The tray (or a System->monitor tile) toggles it.
 function enterMonitorMode() {
   if (monitorMode || !panelWin || panelWin.isDestroyed()) return;
   monitorMode = true;
@@ -3037,6 +3042,7 @@ function enterMonitorMode() {
   panelWin.hide();
   syncPollers(null);                                                // nothing on the panel is visible -> idle the page pollers
   try { dev.screenOn(); } catch (e) {}                              // keep the backlight on as the desktop takes over
+  mediaKeys.warmUpPointer();                                        // Linux: make the virtual pointer now, so the first touch is not lost to device settle time
   refreshTray();
   console.log('monitor mode: ON (panel hidden, desktop visible)');
 }

@@ -5,9 +5,11 @@
 //
 // Linux: robotjs is NOT used. It drives XTEST, which does not deliver under XWayland — it loads,
 // reports success, and the keystroke arrives nowhere (measured: typing into this app's own focused
-// window produced an empty field). app/linuxInput.js creates a uinput device instead, which the
-// kernel presents as a real keyboard, so the compositor routes it like any other. The mouse half of
-// this interface has no uinput path yet, so Monitor mode is unavailable on Linux.
+// window produced an empty field). app/linuxInput.js creates uinput devices instead, which the
+// kernel presents as a real keyboard and a real pointer, so the compositor routes them like any
+// other. The pointer reports an absolute position across the whole desktop, so this backend needs
+// to be told the desktop's bounding box — `desktopBounds`, injected by main.js from Electron's
+// display list, since only the main process knows the current arrangement.
 //
 // macOS: robotjs posts CGEvents, which the OS silently drops until the app has the Accessibility
 // permission — robotjs itself never throws. `ensureTrusted` (injected by main.js on darwin) says
@@ -30,19 +32,26 @@ function parseCombo(combo) {
   return { mods, key };
 }
 
-// Linux backend. Same surface as the robotjs one; the pointer methods report unavailable rather than
-// pretending, because Monitor mode driving a dead cursor is worse than Monitor mode being off.
-function createLinuxMediaKeys({ log, linuxInput }) {
+// Linux backend. Same surface as the robotjs one.
+function createLinuxMediaKeys({ log, linuxInput, desktopBounds }) {
   const input = linuxInput || require('./linuxInput').createLinuxInput({ log: m => log('[input] ' + m) });
   const TRANSPORT = { playpause: 'audio_play', next: 'audio_next', prev: 'audio_prev', stop: 'audio_stop' };
-  const noPointer = () => { log('Monitor mode needs pointer control, which the Linux backend does not have yet'); };
+  // Asked for on every move rather than cached: displays come and go, and the QUAKE arriving is
+  // exactly the moment Monitor mode is used, so a stale box would aim at the wrong screen.
+  const bounds = typeof desktopBounds === 'function' ? desktopBounds : () => null;
   return {
     warmUp() { input.warmUp(); },
     transport(cmd) { const k = TRANSPORT[cmd]; return k ? input.tap(k) : false; },
     volume(v) { input.tap(v === 'mute' ? 'audio_mute' : (v > 0 ? 'audio_vol_up' : 'audio_vol_down')); },
     pasteShortcut() { return input.tap('v', ['control']); },
     available() { return input.available(); },
-    moveMouse: noPointer, mouseToggle: noPointer, click: noPointer, scroll: noPointer,
+    // ---- monitor mode. The pointer device is made on demand, so entering the mode warms it up and
+    // the first touch is not swallowed by device settle time.
+    warmUpPointer() { input.warmUpPointer(); },
+    moveMouse(x, y) { input.movePointer(x, y, bounds()); },
+    mouseToggle(down, button) { input.pointerButton(button || 'left', !!down); },
+    click(button) { input.pointerButton(button || 'left', true); input.pointerButton(button || 'left', false); },
+    scroll(dy) { input.scroll(dy); },
     tapKey(name) { input.tap(name); },
     keyUp(name) { input.keyUp(name); },
     tapCombo(combo) {
@@ -55,8 +64,8 @@ function createLinuxMediaKeys({ log, linuxInput }) {
   };
 }
 
-function createMediaKeys({ log = () => {}, ensureTrusted = null, platform = process.platform, linuxInput = null } = {}) {
-  if (platform === 'linux') return createLinuxMediaKeys({ log, linuxInput });
+function createMediaKeys({ log = () => {}, ensureTrusted = null, platform = process.platform, linuxInput = null, desktopBounds = null } = {}) {
+  if (platform === 'linux') return createLinuxMediaKeys({ log, linuxInput, desktopBounds });
   let robot = null;
   try { robot = require('@jitsi/robotjs'); }
   catch (e) {
@@ -71,6 +80,7 @@ function createMediaKeys({ log = () => {}, ensureTrusted = null, platform = proc
     // No-ops on the robotjs backend: it has no device to create and nothing to tear down. They exist
     // so main.js can call them without knowing which backend it got.
     warmUp() {},
+    warmUpPointer() {},
     stop() {},
     transport(cmd) {
       const r = bot(); if (!r) return false;

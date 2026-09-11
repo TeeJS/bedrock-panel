@@ -62,7 +62,8 @@ SUBSYSTEM=="hidraw", ATTRS{idVendor}=="5012", ATTRS{idProduct}=="6817", TAG+="ua
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0712", ATTRS{idProduct}=="0010", TAG+="uaccess", MODE="0660", GROUP="plugdev"
 # open Bedrock RP2040 knob
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="bed0", TAG+="uaccess", MODE="0660", GROUP="plugdev"
-# uinput — the virtual keyboard behind macros, media keys, and the paste shortcut
+# uinput — the virtual keyboard behind macros, media keys and the paste shortcut, and the
+# virtual pointer behind Monitor mode
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"
 ```
 
@@ -120,10 +121,27 @@ Two consequences worth knowing:
 Node cannot do, so a small bundled Python script owns the device and nothing else. It exits with the
 app.
 
-**Monitor mode is not available yet** — pointing the knob and touchscreen at the desktop cursor needs
-pointer emulation, which this backend does not do. It says so rather than moving a dead cursor.
+Monitor mode adds a **virtual pointer** alongside the keyboard, covered in the next section.
 
-## 5. Secrets
+## 5. Monitor mode
+
+Monitor mode hands the QUAKE to your desktop: the panel hides, the display becomes an ordinary
+screen, touch moves the cursor, and the knob scrolls or clicks. On Linux the cursor is driven by a
+second virtual device, an absolute pointer, created the moment you enter the mode rather than at
+startup — most sessions never need one.
+
+It needs the same `/dev/uinput` access as the keyboard, so if macros work, this works.
+
+One consequence worth knowing: **the pointer is positioned across your whole desktop**, because that
+is the area the compositor gives an absolute device. Bedrock Panel therefore re-reads your display
+arrangement on every move, and a screen you plug in mid-session is accounted for immediately. Nothing
+to configure.
+
+If the cursor does not move, the log says why. *cannot create pointer* is a permissions problem and
+section 4 has the fix; the mode is otherwise unaffected, and macros and media keys keep working even
+when the pointer cannot be made.
+
+## 6. Secrets
 
 Saved passwords and tokens are encrypted with Electron `safeStorage`, backed by KWallet or
 GNOME Keyring.
@@ -138,7 +156,7 @@ still decrypt normally, so nothing is lost in the meantime.
 A `config.json` copied from Windows keeps its DPAPI-encrypted secrets, which Linux cannot read.
 Re-enter those in the editor.
 
-## 6. Starter pages
+## 7. Starter pages
 
 A fresh install starts with the **Linux starter pages** — Default, Media, and Dev — mirroring
 the Windows and macOS ones page for page.
@@ -151,12 +169,10 @@ that names a real binary is used exactly as typed, so `dolphin` or `firefox` kee
 A config copied from Windows or a Mac is translated the same way: Windows program names map to
 their Linux equivalents, and `start <url>` becomes `xdg-open`.
 
-## 7. What is not available on Linux
+## 8. What is not available on Linux
 
 These features report themselves unavailable rather than failing quietly:
 
-- **Monitor mode.** Driving the desktop cursor from the knob and touchscreen needs pointer
-  emulation, which the input backend does not do yet. Keystrokes work; the pointer does not.
 - **Global hotkeys work differently.** They are not unavailable, but the app cannot simply take the
   combination you typed. It registers a named action and proposes a trigger through the desktop's
   shortcuts portal, and the desktop decides. KDE Plasma accepts the action and assigns no key, so you
@@ -175,7 +191,7 @@ These features report themselves unavailable rather than failing quietly:
 - **Built-in speech.** Point the voice apps at a Wyoming server such as faster-whisper or
   piper; Bedrock Panel already speaks that protocol.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 **The knob and touchscreen are not detected.** Install the udev rule above and replug. Device
 Diagnostics names the cause on the Touchscreen and Knob rows.
@@ -184,7 +200,7 @@ Diagnostics names the cause on the Touchscreen and Knob rows.
 binding has to match Electron's ABI rather than your system Node: `npm run rebuild`. The app
 still starts and Software mode is unaffected.
 
-**Saving a secret fails.** See section 5. Install and unlock a keyring, then restart.
+**Saving a secret fails.** See section 6. Install and unlock a keyring, then restart.
 
 **Tiles launch nothing.** The program is not installed under any of the names Bedrock Panel
 tries. The log says which candidates it looked for.

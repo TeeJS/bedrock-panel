@@ -28,9 +28,11 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="0712", ATTRS{idProduct}=="0010", TAG+="uacce
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="bed0", TAG+="uaccess", MODE="0660", GROUP="plugdev"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="bed0", TAG+="uaccess", MODE="0660", GROUP="plugdev"
 
-# --- uinput: the virtual keyboard used for macros, media keys, and the paste shortcut ---
-# Compositor-agnostic, so macros work the same on Wayland and X11. Without this the input backend
-# reports itself unavailable and every macro/media-key tile is a no-op.
+# --- uinput: the virtual keyboard behind macros, media keys and the paste shortcut, and the virtual
+# --- pointer behind Monitor mode ---
+# Compositor-agnostic, so both work the same on Wayland and X11. Without this the input backend
+# reports itself unavailable, every macro/media-key tile is a no-op, and Monitor mode cannot move
+# the cursor.
 #
 # Both mechanisms are here on purpose. uaccess is the modern one and hands the device to whoever is
 # logged in, but it is applied by logind when a device is ADDED to a seat, and /dev/uinput is a static
