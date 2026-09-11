@@ -48,3 +48,10 @@ docs/current-state.md
 community-apps/if-player/saves/
 X/
 .busy-shots/
+
+# Windows-shaped paths a test run can drop in the repository root when the suite is exercised with
+# win32 path rules on Linux: os.tmpdir() with no TEMP set resolves to "undefined\temp", and joining
+# "/tmp" the Windows way gives "\tmp\...". Neither contains a separator here, so both land as files
+# whose NAMES contain backslashes — and a tree holding them cannot be checked out on Windows at all.
+/undefined\\*
+/\\tmp\\*
