@@ -51,10 +51,26 @@ function library() {
   return dbus || null;
 }
 
+/**
+ * Where the session bus is.
+ *
+ * Normally the desktop says so in the environment. When it does not, the well-known socket under the
+ * runtime directory is the same answer every desktop would have given -- and saying it explicitly
+ * avoids dbus-next's last-resort path, which reads the machine id and an X11 property and then
+ * autolaunches a *private* bus with no media players on it. A fresh empty bus is worse than no bus:
+ * it would look like nothing is ever playing.
+ */
+function busAddress(env = process.env) {
+  if (env.DBUS_SESSION_BUS_ADDRESS) return env.DBUS_SESSION_BUS_ADDRESS;
+  if (!env.XDG_RUNTIME_DIR) return null;
+  const socket = env.XDG_RUNTIME_DIR + '/bus';
+  return fs.existsSync(socket) ? 'unix:path=' + socket : null;
+}
+
 /** Whether this machine can be asked at all: Linux, with a session bus and the library present. */
 function available(platform = process.platform, env = process.env) {
   if (platform !== 'linux') return false;
-  if (!env.DBUS_SESSION_BUS_ADDRESS && !env.XDG_RUNTIME_DIR) return false;
+  if (!busAddress(env)) return false;
   return !!library();
 }
 
@@ -224,7 +240,7 @@ function start(callback) {
   if (running) return true;
   if (!available()) return false;
   const lib = library();
-  try { bus = lib.sessionBus(); }
+  try { bus = lib.sessionBus({ busAddress: busAddress() }); }
   catch (e) { log('could not reach the session bus — ' + (e && e.message)); bus = null; return false; }
   bus.on('error', e => log('session bus error — ' + (e && e.message)));
   running = true;
@@ -257,7 +273,7 @@ async function control(command, target) {
   if (!member || !available()) return false;
   const own = !bus;
   const lib = library();
-  if (own) { try { bus = lib.sessionBus(); } catch (e) { return false; } }
+  if (own) { try { bus = lib.sessionBus({ busAddress: busAddress() }); } catch (e) { return false; } }
   try {
     const names = await players();
     let wanted = names.filter(n => target && n.slice(PREFIX.length) === target);
@@ -283,4 +299,4 @@ async function control(command, target) {
   }
 }
 
-module.exports = { available, start, stop, control, artUrl, spotifyTrack, plain, tooSmall, snapshotFrom, pick, _internals: { snapshotOf, choose } };
+module.exports = { available, busAddress, start, stop, control, artUrl, spotifyTrack, plain, tooSmall, snapshotFrom, pick, _internals: { snapshotOf, choose } };

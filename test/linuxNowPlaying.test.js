@@ -115,6 +115,15 @@ test('nothing is attempted off Linux or without a session bus', () => {
   assert.equal(np.available('linux', {}), false, 'no session bus means no MPRIS');
 });
 
+test('the session bus is named outright rather than left to be guessed', () => {
+  // Left to find the bus itself, dbus-next falls back to reading the machine id and an X11 property
+  // and then autolaunching a PRIVATE bus. That bus has no media players on it, so it would look
+  // like nothing is ever playing — worse than reporting the feature unavailable.
+  assert.equal(np.busAddress({ DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/7/bus' }), 'unix:path=/run/user/7/bus');
+  assert.equal(np.busAddress({}), null, 'nowhere to look is an answer, not a reason to autolaunch');
+  assert.equal(np.busAddress({ XDG_RUNTIME_DIR: '/run/user/no-such-dir-here' }), null, 'a socket that is not there is not an address');
+});
+
 // A PNG states its size in the IHDR chunk that always starts the file.
 function png(width, height) {
   const buf = Buffer.alloc(24);
