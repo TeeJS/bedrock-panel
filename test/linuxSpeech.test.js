@@ -54,14 +54,35 @@ test('the engine and voices live outside the app, so an upgrade never touches th
   assert.equal(l.voicesDir, path.join(BASE, 'speech', 'voices'));
 });
 
-test('a voice is found by name, or falls back to the only one installed', () => {
+test('a named voice is that voice, and a voice nobody installed is nobody', () => {
+  // This fell back to "whichever voice is on disk" once, which made installed(name) true for every
+  // name in the catalogue: previewing a French voice then took the already-installed path and spoke
+  // German. A question about a specific voice gets an answer about that voice.
   const readdir = () => ['en_US-amy-low', 'en_GB-alan-low'];
   const exists = p => p.endsWith('en_US-amy-low.onnx');
   assert.equal(voiceModel(BASE, 'en_US-amy-low', readdir, exists), VOICE);
-  assert.equal(voiceModel(BASE, '', readdir, exists), VOICE, 'no name given -> the installed one');
-  assert.equal(voiceModel(BASE, 'de_DE-nobody', readdir, exists), VOICE, 'unknown name -> still finds one');
+  assert.equal(voiceModel(BASE, '', readdir, exists), VOICE, 'no name given -> any installed one');
+  assert.equal(voiceModel(BASE, 'de_DE-nobody', readdir, exists), null, 'not installed is not installed');
+  assert.equal(voiceModel(BASE, 'en_GB-alan-low', readdir, exists), null, 'listed but the file is missing');
   assert.equal(voiceModel(BASE, '', () => [], exists), null, 'nothing installed');
   assert.equal(voiceModel(BASE, '', () => { throw new Error('ENOENT'); }, exists), null, 'no speech folder yet');
+});
+
+test('installed() answers about the voice it was asked about', () => {
+  const { speech } = speechWith();
+  assert.equal(speech.installed('en_US-amy-low'), true);
+  assert.equal(speech.installed('fr_FR-nobody'), false, 'this is what preview depends on');
+  assert.equal(speech.installed(''), true, 'no name means "is there any voice at all"');
+});
+
+test('a configured voice that has been removed falls back, and says so', () => {
+  // Silence would be a worse answer than a different voice — but a silent swap is how the wrong
+  // voice speaks for months without anyone knowing why.
+  const { speech, spawned, logs } = speechWith();
+  speech.start({ voice: 'fr_FR-nobody', hear: false });
+  assert.equal(spawned.length, 1, 'it still speaks');
+  assert.equal(spawned[0][1][spawned[0][1].indexOf('--model') + 1], VOICE);
+  assert.match(logs.join(' '), /not installed; speaking with en_US-amy-low/);
 });
 
 test('nothing is installed on a fresh machine, and nothing is spawned', () => {

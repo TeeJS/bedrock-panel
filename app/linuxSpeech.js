@@ -66,12 +66,12 @@ const hasTokens = (dir, exists, readdir) => {
   try { return readdir(dir).some(f => f.endsWith(TOKENS_SUFFIX)); } catch (e) { return false; }
 };
 
-/** The directory of the named recognition model, or of the only one installed. */
+/** The directory of the NAMED recognition model, or of any installed one when no name is given. */
 function sttModelDir(baseDir, name, readdir = fs.readdirSync, exists = fs.existsSync) {
   const { sttDir } = layout(baseDir);
   let names;
   try { names = readdir(sttDir); } catch (e) { return null; }
-  const wanted = name && names.includes(name) ? [name] : names;
+  const wanted = name ? (names.includes(name) ? [name] : []) : names;
   for (const dir of wanted) {
     const full = path.join(sttDir, dir);
     if (hasTokens(full, exists, readdir)) return full;
@@ -79,12 +79,21 @@ function sttModelDir(baseDir, name, readdir = fs.readdirSync, exists = fs.exists
   return null;
 }
 
-/** The .onnx of the named voice, or of the only installed voice when no name is given. */
+/**
+ * The .onnx of the NAMED voice, or of any installed voice when no name is given.
+ *
+ * A named voice that is not installed returns null, and that strictness is the whole point. This
+ * used to fall back to whichever other voice happened to be on disk, which made `installed(name)`
+ * answer true for every name in the catalogue: previewing a French voice took the "already
+ * installed" path, rewrote the chosen voice to one that did not exist, restarted the engine, and
+ * spoke German -- the first voice in the folder. Callers that genuinely want any voice ask for any
+ * voice, by passing no name.
+ */
 function voiceModel(baseDir, name, readdir = fs.readdirSync, exists = fs.existsSync) {
   const { voicesDir } = layout(baseDir);
   let names;
   try { names = readdir(voicesDir); } catch (e) { return null; }
-  const wanted = name && names.includes(name) ? [name] : names;
+  const wanted = name ? (names.includes(name) ? [name] : []) : names;
   for (const dir of wanted) {
     const model = path.join(voicesDir, dir, dir + '.onnx');
     if (exists(model)) return model;
@@ -139,9 +148,19 @@ function createLinuxSpeech(options) {
     const o = options || {};
     const speak = o.speak !== false;
     const hear = o.hear !== false;
-    const model = speak ? voiceModel(baseDir, o.voice, readdir, exists) : null;
+    // The configured voice, or any installed one when that voice has been removed since -- silence
+    // would be a worse answer than a different voice, as long as the swap is said out loud.
+    let model = speak ? voiceModel(baseDir, o.voice, readdir, exists) : null;
+    if (speak && !model && o.voice) {
+      model = voiceModel(baseDir, '', readdir, exists);
+      if (model) log('the chosen voice "' + o.voice + '" is not installed; speaking with ' + path.basename(model, '.onnx'));
+    }
     const speaks = !!(speak && exists(paths.piperBinary) && model);
-    const sttPath = (hear && exists(paths.sttBinary)) ? sttModelDir(baseDir, o.sttModel, readdir, exists) : null;
+    let sttPath = (hear && exists(paths.sttBinary)) ? sttModelDir(baseDir, o.sttModel, readdir, exists) : null;
+    if (hear && !sttPath && o.sttModel && exists(paths.sttBinary)) {
+      sttPath = sttModelDir(baseDir, '', readdir, exists);
+      if (sttPath) log('the chosen listening model "' + o.sttModel + '" is not installed; using ' + path.basename(sttPath));
+    }
     if (!speaks && !sttPath) { log('built-in speech is not installed yet'); return; }
     let proc = null;
     // Whichever halves are installed; the helper serves what it is given and says what it served.
