@@ -24,7 +24,7 @@ const LEGACY_VOICE_APPS = { 'claude-voice': 'claude', 'codex-voice': 'codex', 'c
 const LEGACY_CHAT_APP = 'chat';
 // Host blank by default (voice stays off until pointed at a server; the editor placeholder is
 // 127.0.0.1 for the tts-stt-windows helper). Ports are the standard Wyoming faster-whisper / piper.
-const VOICE_DEFAULTS = { sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200', engine: '', macVoice: '', linuxVoice: '' };
+const VOICE_DEFAULTS = { sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200', engine: '', macVoice: '', linuxVoice: '', linuxSttModel: '' };
 // The built-in engines serve loopback on the standard Wyoming ports, so every Wyoming consumer dials
 // them unchanged -- the same convention the Windows helper uses. macOS: native/mac/speech-server
 // (Apple recognition + the system voices). Linux: app/linux/speech-server.py (a resident Piper),
@@ -48,6 +48,7 @@ function voiceSettings(settings) {
     engine: ['macos', 'linux', 'wyoming'].includes(engine) ? engine : '',
     macVoice: str(v.macVoice),
     linuxVoice: str(v.linuxVoice),
+    linuxSttModel: str(v.linuxSttModel),
   };
 }
 
@@ -69,17 +70,26 @@ function linuxSpeechWanted(settings, platform = process.platform, installed = fa
   const v = voiceSettings(settings);
   if (v.engine === 'wyoming') return false;
   if (v.engine === 'linux') return installed;
-  // Keyed on the TTS host alone, not on both the way the Mac rule is: this engine only speaks, so
-  // someone who has pointed STT at their own Whisper and left TTS blank wants the built-in voice.
-  // Requiring both to be empty would silently mute a machine whose owner configured only listening.
+  // Keyed on the TTS host alone, not on both the way the Mac rule is: the two halves of this engine
+  // install separately, so someone who has pointed STT at their own Whisper and left TTS blank wants
+  // the built-in voice. Requiring both to be empty would silently mute that machine.
   return installed && !v.ttsHost;
+}
+
+// The listening half, by the same rule and the same reasoning, keyed on the STT host.
+function linuxSttWanted(settings, platform = process.platform, installed = false) {
+  if (platform !== 'linux') return false;
+  const v = voiceSettings(settings);
+  if (v.engine === 'wyoming') return false;
+  if (v.engine === 'linux') return installed;
+  return installed && !v.sttHost;
 }
 
 // Effective endpoints for a served voice page. `pageOptions` is grid.options, or null when no such
 // page is active — then the endpoints are blank so nothing gets dialed (mirrors the old behavior
 // where an inactive app returned an empty host). A page with voiceOverride uses its own values;
 // otherwise the built-in macOS engine's loopback endpoints when that engine is in use.
-function resolveVoiceEndpoints(settings, pageOptions, platform = process.platform, builtInInstalled = false) {
+function resolveVoiceEndpoints(settings, pageOptions, platform = process.platform, builtInInstalled = null) {
   if (!pageOptions) return { sttHost: '', sttPort: '', ttsHost: '', ttsPort: '' };
   if (pageOptions.voiceOverride) {
     return {
@@ -89,12 +99,19 @@ function resolveVoiceEndpoints(settings, pageOptions, platform = process.platfor
   }
   if (macSpeechWanted(settings, platform)) return { sttHost: MAC_SPEECH.host, sttPort: MAC_SPEECH.sttPort, ttsHost: MAC_SPEECH.host, ttsPort: MAC_SPEECH.ttsPort };
   const v = voiceSettings(settings);
-  // The Linux engine SPEAKS only, so it supplies the TTS pair and leaves listening to whatever is
-  // configured — blank stays blank, which is honestly "cannot listen yet" rather than a dead host.
-  if (linuxSpeechWanted(settings, platform, builtInInstalled)) {
-    return { sttHost: v.sttHost, sttPort: v.sttPort, ttsHost: LINUX_SPEECH.host, ttsPort: LINUX_SPEECH.ttsPort };
-  }
-  return { sttHost: v.sttHost, sttPort: v.sttPort, ttsHost: v.ttsHost, ttsPort: v.ttsPort };
+  // The Linux engine's halves are separate downloads, so each is filled in only when it is actually
+  // there. Blank stays blank rather than advertising a loopback port with nothing behind it, which
+  // would fail later as a timeout instead of now as "not installed".
+  const builtIn = builtInInstalled && typeof builtInInstalled === 'object' ? builtInInstalled
+    : { tts: !!builtInInstalled, stt: false };
+  const speaks = linuxSpeechWanted(settings, platform, !!builtIn.tts);
+  const hears = linuxSttWanted(settings, platform, !!builtIn.stt);
+  return {
+    sttHost: hears ? LINUX_SPEECH.host : v.sttHost,
+    sttPort: hears ? LINUX_SPEECH.sttPort : v.sttPort,
+    ttsHost: speaks ? LINUX_SPEECH.host : v.ttsHost,
+    ttsPort: speaks ? LINUX_SPEECH.ttsPort : v.ttsPort,
+  };
 }
 
 // One-time migration of the legacy per-page keys (wyomingHost / wyomingSttPort / wyomingTtsPort, one
@@ -232,4 +249,4 @@ function isSttNoisePhrase(text) {
 }
 
 module.exports = {
-  VOICE_APPS, LEGACY_VOICE_APPS, VOICE_DEFAULTS, MAC_SPEECH, LINUX_SPEECH, macSpeechWanted, linuxSpeechWanted, DEFAULT_AI_PROFILES, ensureAiProfiles, ensurePanelProfile, ensureRoutines, resolveAiProfile, voiceSettings, resolveVoiceEndpoints, resolveLucidEndpoints, migrateVoiceConfig, isSttNoisePhrase };
+  VOICE_APPS, LEGACY_VOICE_APPS, VOICE_DEFAULTS, MAC_SPEECH, LINUX_SPEECH, macSpeechWanted, linuxSpeechWanted, linuxSttWanted, DEFAULT_AI_PROFILES, ensureAiProfiles, ensurePanelProfile, ensureRoutines, resolveAiProfile, voiceSettings, resolveVoiceEndpoints, resolveLucidEndpoints, migrateVoiceConfig, isSttNoisePhrase };

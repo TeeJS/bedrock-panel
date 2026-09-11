@@ -6,12 +6,12 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { VOICE_DEFAULTS, voiceSettings, resolveVoiceEndpoints, migrateVoiceConfig, linuxSpeechWanted } = require('../app/voiceConfig');
+const { VOICE_DEFAULTS, voiceSettings, resolveVoiceEndpoints, migrateVoiceConfig, linuxSpeechWanted, linuxSttWanted } = require('../app/voiceConfig');
 
 test('voiceSettings fills defaults and trims', () => {
   assert.deepEqual(voiceSettings(undefined), VOICE_DEFAULTS);
   assert.deepEqual(voiceSettings({ voice: { sttHost: ' 10.0.0.5 ', sttPort: ' 1 ' } }),
-    { sttHost: '10.0.0.5', sttPort: '1', ttsHost: '', ttsPort: '10200', engine: '', macVoice: '', linuxVoice: '' });
+    { sttHost: '10.0.0.5', sttPort: '1', ttsHost: '', ttsPort: '10200', engine: '', macVoice: '', linuxVoice: '', linuxSttModel: '' });
 });
 
 test('resolveVoiceEndpoints returns blanks when no page is active', () => {
@@ -182,20 +182,34 @@ test('the Linux engine is only implied once it is actually installed', () => {
   assert.equal(linuxSpeechWanted({ voice: { ttsHost: '10.0.0.5' } }, 'linux', true), false, 'a configured host wins by default');
 });
 
-test('the Linux engine supplies speaking only, and leaves listening as configured', () => {
-  // It is a Piper voice: it speaks. Reporting a loopback STT host it does not serve would be a lie
-  // that fails later as a timeout rather than now as "not built yet".
-  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, {}, 'linux', true),
-    { sttHost: '', sttPort: '10300', ttsHost: '127.0.0.1', ttsPort: '10200' });
-  assert.deepEqual(resolveVoiceEndpoints({ voice: { sttHost: '10.0.0.5' } }, {}, 'linux', true),
+test('each half of the Linux engine is only dialed once it is actually installed', () => {
+  // The two halves are separate downloads. Reporting a loopback host for a half that is not there
+  // would be a lie that fails later as a timeout rather than now as "not installed".
+  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, {}, 'linux', { tts: true, stt: true }),
+    { sttHost: '127.0.0.1', sttPort: '10300', ttsHost: '127.0.0.1', ttsPort: '10200' });
+  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, {}, 'linux', { tts: true, stt: false }),
+    { sttHost: '', sttPort: '10300', ttsHost: '127.0.0.1', ttsPort: '10200' }, 'speaking only');
+  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, {}, 'linux', { tts: false, stt: true }),
+    { sttHost: '127.0.0.1', sttPort: '10300', ttsHost: '', ttsPort: '10200' }, 'listening only');
+  assert.deepEqual(resolveVoiceEndpoints({ voice: { sttHost: '10.0.0.5' } }, {}, 'linux', { tts: true, stt: true }),
     { sttHost: '10.0.0.5', sttPort: '10300', ttsHost: '127.0.0.1', ttsPort: '10200' },
     'their own Whisper for listening, the built-in voice for speaking');
-  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, {}, 'linux', false),
+  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, {}, 'linux', { tts: false, stt: false }),
     { sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200' }, 'nothing installed -> nothing dialed');
+});
+
+test('listening follows the same rule as speaking, on its own host', () => {
+  assert.equal(linuxSttWanted({ voice: {} }, 'linux', false), false);
+  assert.equal(linuxSttWanted({ voice: {} }, 'linux', true), true);
+  assert.equal(linuxSttWanted({ voice: { sttHost: '10.0.0.5' } }, 'linux', true), false, 'their server wins');
+  assert.equal(linuxSttWanted({ voice: { ttsHost: '10.0.0.5' } }, 'linux', true), true,
+    'a configured SPEAKING host must not disable listening');
+  assert.equal(linuxSttWanted({ voice: { engine: 'wyoming' } }, 'linux', true), false);
+  assert.equal(linuxSttWanted({ voice: {} }, 'win32', true), false);
 });
 
 test('a page override still beats the built-in Linux engine', () => {
   const page = { voiceOverride: true, voiceSttHost: 'a', voiceSttPort: '1', voiceTtsHost: 'b', voiceTtsPort: '2' };
-  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, page, 'linux', true),
+  assert.deepEqual(resolveVoiceEndpoints({ voice: {} }, page, 'linux', { tts: true, stt: true }),
     { sttHost: 'a', sttPort: '1', ttsHost: 'b', ttsPort: '2' });
 });

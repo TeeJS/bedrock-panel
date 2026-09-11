@@ -161,26 +161,30 @@ Two things follow from it:
 
 ## 7. Speech
 
-Bedrock Panel can speak on this computer with nothing to install and no GPU. In the editor, open
-**Settings → TTS/STT**, pick a voice, and press **Set up**. It downloads about 85 MB the first time
-and works from then on, offline.
+Bedrock Panel can speak **and listen** on this computer with nothing to install and no GPU. In the
+editor, open **Settings → TTS/STT**, pick a voice and a listening language, and press **Set up** on
+each. Together they download about 140 MB the first time and work from then on, offline.
 
 That is the whole setup. There is no server to run, no port to enter, and no account.
 
-- **Every voice offered is public domain or CC0.** Piper's voices inherit their training data's
-  licence and most of the good ones are non-commercial, so the list here is only the ones that are
-  free of restrictions. The licence is shown next to each voice.
-- **It is a real speech server.** It listens on 127.0.0.1:10200 speaking the Wyoming protocol, so
-  anything else on this machine that speaks Wyoming — Home Assistant, for one — can use it too. That
-  is the same arrangement the macOS build and the Windows helper use.
-- **If you already run your own Piper on port 10200, yours wins.** Bedrock Panel notices the port is
-  taken, leaves it alone, and uses your server.
-- **Listening is not built in yet.** Set an STT host in the same tab for that, such as a
-  faster-whisper server. Speaking and listening are configured independently, so the built-in voice
-  keeps working alongside your own Whisper.
+- **The two halves are separate.** Take speaking, listening, or both. Neither needs the other, and
+  each can be replaced by your own server independently — your own Whisper for listening with the
+  built-in voice for speaking is a perfectly normal arrangement.
+- **Everything offered is free of restrictions.** Piper's voices inherit their training data's
+  licence and most of the good-sounding ones are non-commercial, so the list here is only the ones
+  that are public domain or CC0. The recognition models are MIT. The licence is shown next to each.
+- **They are real speech servers.** Speaking answers on 127.0.0.1:10200 and listening on
+  127.0.0.1:10300, both speaking the Wyoming protocol, so anything else on this machine that speaks
+  Wyoming — Home Assistant, for one — can use them too. Same arrangement as the macOS build and the
+  Windows helper.
+- **If you already run your own Piper or Whisper on those ports, yours wins.** Bedrock Panel notices
+  a port is taken, leaves it alone, and uses what is already there.
+- **Listening is built for short speech** — dictation and voice commands — rather than transcribing
+  long recordings. It is quick about it: a few seconds of speech comes back in well under a second on
+  an ordinary laptop.
 
-The voice lives in `~/.config/bedrock-panel/speech` and upgrading Bedrock Panel never touches it.
-Removing a voice is a button in the same tab.
+Both live in `~/.config/bedrock-panel/speech` and upgrading Bedrock Panel never touches them.
+Removing either is a button in the same tab.
 
 ## 8. Secrets
 
@@ -224,8 +228,8 @@ These features report themselves unavailable rather than failing quietly:
   digitizer to the output its USB device reports, and Bedrock Panel reads the panel's touch
   reports over HID itself.
 - **Outlook meeting info.** Use the Microsoft 365 source instead, which works everywhere.
-- **Listening (speech-to-text) is not built in yet.** Speaking is — see section 7. For dictation and
-  the voice apps' microphone, point STT at a Wyoming server such as faster-whisper.
+- **Built-in listening is English only for now.** Other languages mean pointing STT at your own
+  Wyoming server, such as faster-whisper. Speaking has English voices in US and UK accents.
 
 ## 11. Troubleshooting
 
@@ -245,10 +249,11 @@ tries. The log says which candidates it looked for.
 group problem in section 4. *cannot start python3* means `python3` is missing, which the `.deb`
 depends on but a source checkout does not enforce.
 
-**Nothing speaks.** Settings → TTS/STT says what the built-in engine is doing. *Not installed* means
-press Set up. *Using the Wyoming server already running on this computer* means something else holds
-port 10200 and Bedrock Panel is using it rather than fighting it. If that server is not actually
-working, stop it and restart Bedrock Panel.
+**Nothing speaks, or nothing is heard.** Settings → TTS/STT says what the built-in engine is doing,
+and names which halves are running. *Not installed* means press Set up. *Using the Wyoming server
+already running on this computer* means something else holds port 10200 or 10300 and Bedrock Panel is
+using it rather than fighting it. If that server is not actually working, stop it and restart
+Bedrock Panel.
 
 **A global hotkey never fires.** The consent dialog in section 6 was probably dismissed, which
 registers the hotkeys with no key attached. Restart Bedrock Panel to be asked again, or open System

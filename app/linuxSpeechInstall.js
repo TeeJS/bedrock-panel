@@ -58,6 +58,15 @@ function createSpeechInstaller(options) {
 
   function engineInstalled() { return fs.existsSync(paths.piperBinary); }
 
+  function sttEngineInstalled() { return fs.existsSync(paths.sttBinary); }
+
+  function installedSttModels() {
+    try {
+      return fs.readdirSync(paths.sttDir)
+        .filter(id => fs.existsSync(path.join(paths.sttDir, id, 'tokens.txt')));
+    } catch (e) { return []; }
+  }
+
   function installedVoices() {
     try {
       return fs.readdirSync(paths.voicesDir)
@@ -99,7 +108,9 @@ function createSpeechInstaller(options) {
   function untar(archive, dest, stripComponents) {
     return new Promise((resolve, reject) => {
       mkdirp(dest);
-      const args = ['-xzf', archive, '-C', dest];
+      // -xf, not -xzf: the voice engine ships gzip and the listening engine ships bzip2, and tar
+      // detects which rather than being told wrongly.
+      const args = ['-xf', archive, '-C', dest];
       if (stripComponents) args.push('--strip-components=' + stripComponents);
       execFile('tar', args, err => err ? reject(err) : resolve());
     });
@@ -140,6 +151,52 @@ function createSpeechInstaller(options) {
     return { voice: voice.id, engineInstalled: true };
   }
 
+  /**
+   * Install the listening engine (once) and one recognition model. Deliberately a separate call from
+   * install(): the two halves are separate downloads, and someone who only wants a voice should not
+   * be made to fetch a recognition model, or the reverse.
+   */
+  async function installStt(modelId, onProgress) {
+    cancelled = false;
+    const model = catalog.sttModelById(modelId) || catalog.defaultSttModel();
+    const needEngine = !sttEngineInstalled();
+    const total = catalog.sttDownloadBytes(model, !needEngine);
+    let received = 0;
+    const tick = n => { received += n; if (onProgress) onProgress({ phase: 'download', received, total }); };
+    if (onProgress) onProgress({ phase: 'start', received: 0, total });
+
+    if (needEngine) {
+      const archive = path.join(paths.root, 'sherpa.tar.bz2');
+      log('downloading the listening engine (' + Math.round(catalog.STT_ENGINE.bytes / 1048576) + ' MB)');
+      await fetchTo(catalog.STT_ENGINE.url, archive, { algo: 'sha256', value: catalog.STT_ENGINE.sha256 }, tick);
+      if (onProgress) onProgress({ phase: 'extract', received, total });
+      await untar(archive, paths.sherpaDir, catalog.STT_ENGINE.stripComponents);
+      try { fs.unlinkSync(archive); } catch (e) {}
+      try { fs.chmodSync(paths.sttBinary, 0o755); } catch (e) {}
+      log('listening engine installed');
+    }
+
+    const modelDir = path.join(paths.sttDir, model.id);
+    if (!fs.existsSync(path.join(modelDir, 'tokens.txt'))) {
+      const archive = path.join(paths.root, model.id + '.tar.bz2');
+      await fetchTo(model.url, archive, { algo: 'sha256', value: model.sha256 }, tick);
+      if (onProgress) onProgress({ phase: 'extract', received, total });
+      await untar(archive, modelDir, model.stripComponents);
+      try { fs.unlinkSync(archive); } catch (e) {}
+    } else {
+      received += model.bytes;
+    }
+    log('recognition model installed: ' + model.id + ' (' + model.license + ')');
+    if (onProgress) onProgress({ phase: 'done', received: total, total });
+    return { model: model.id, engineInstalled: true };
+  }
+
+  /** Remove one recognition model. The engine stays, in case another model still uses it. */
+  function removeSttModel(id) {
+    const dir = path.join(paths.sttDir, id);
+    try { fs.rmSync(dir, { recursive: true, force: true }); return true; } catch (e) { return false; }
+  }
+
   function cancel() { cancelled = true; }
 
   /** Remove one voice. The engine stays, because another voice may still be using it. */
@@ -148,7 +205,8 @@ function createSpeechInstaller(options) {
     try { fs.rmSync(dir, { recursive: true, force: true }); return true; } catch (e) { return false; }
   }
 
-  return { paths, install, cancel, engineInstalled, installedVoices, removeVoice };
+  return { paths, install, installStt, cancel, engineInstalled, installedVoices, removeVoice,
+    sttEngineInstalled, installedSttModels, removeSttModel };
 }
 
 module.exports = { createSpeechInstaller, httpsGet };

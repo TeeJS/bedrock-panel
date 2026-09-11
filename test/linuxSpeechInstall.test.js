@@ -141,3 +141,91 @@ test('removing a voice leaves the engine, since another voice may still need it'
     assert.equal(inst.engineInstalled(), true);
   } finally { restore(); fs.rmSync(base, { recursive: true, force: true }); }
 });
+
+// ---- listening, a separate download from speaking ---------------------------------------------
+
+test('every recognition model is permissively licensed and fully pinned', () => {
+  for (const m of catalog.sttModels()) {
+    assert.ok(['MIT', 'Apache-2.0', 'CC0', 'Public domain'].includes(m.license), m.id + ' licence: ' + m.license);
+    assert.match(m.sha256, /^[0-9a-f]{64}$/, m.id + ' needs a full sha256');
+    assert.ok(m.bytes > 1000000, m.id + ' byte count looks wrong');
+    assert.ok(Array.isArray(m.languages) && m.languages.length, m.id + ' must say what it understands');
+  }
+  assert.match(catalog.STT_ENGINE.sha256, /^[0-9a-f]{64}$/);
+});
+
+test('a first listening install fetches its own engine, which is not the speaking one', () => {
+  const m = catalog.defaultSttModel();
+  assert.equal(catalog.sttDownloadBytes(m, false), catalog.STT_ENGINE.bytes + m.bytes);
+  assert.equal(catalog.sttDownloadBytes(m, true), m.bytes);
+  assert.notEqual(catalog.STT_ENGINE.url, catalog.ENGINE.url, 'two engines, two downloads');
+});
+
+function sttInstallerFor(base, { corrupt = false } = {}) {
+  const model = catalog.sttModelById('moonshine-tiny-en');
+  const engine = Buffer.from('fake sherpa tarball');
+  const bundle = Buffer.from('fake model tarball');
+  const files = {};
+  files[catalog.STT_ENGINE.url] = engine;
+  files[model.url] = bundle;
+  const realSha = model.sha256, realBytes = model.bytes, engineSha = catalog.STT_ENGINE.sha256;
+  const sha = b => crypto.createHash('sha256').update(b).digest('hex');
+  model.sha256 = corrupt ? sha(Buffer.from('other')) : sha(bundle);
+  model.bytes = bundle.length;
+  catalog.STT_ENGINE.sha256 = sha(engine);
+  const restore = () => { model.sha256 = realSha; model.bytes = realBytes; catalog.STT_ENGINE.sha256 = engineSha; };
+  const inst = createSpeechInstaller({
+    baseDir: base, log: () => {}, get: fakeGet(files),
+    execFile: (bin, args, cb) => {
+      const dest = args[args.indexOf('-C') + 1];
+      fs.mkdirSync(dest, { recursive: true });
+      // Stand in for tar: produce whichever artifact that destination is supposed to hold.
+      if (dest.endsWith('sherpa')) {
+        fs.mkdirSync(path.join(dest, 'bin'), { recursive: true });
+        fs.writeFileSync(path.join(dest, 'bin', 'sherpa-onnx-offline'), 'binary');
+      } else {
+        fs.writeFileSync(path.join(dest, 'tokens.txt'), 'tokens');
+      }
+      cb(null, '', '');
+    },
+  });
+  return { inst, restore };
+}
+
+test('listening installs its engine and model, and reports progress that adds up', async () => {
+  const base = tempBase();
+  const { inst, restore } = sttInstallerFor(base);
+  try {
+    const seen = [];
+    const result = await inst.installStt('moonshine-tiny-en', p => seen.push(p));
+    assert.equal(result.model, 'moonshine-tiny-en');
+    assert.equal(inst.sttEngineInstalled(), true);
+    assert.deepEqual(inst.installedSttModels(), ['moonshine-tiny-en']);
+    const done = seen[seen.length - 1];
+    assert.equal(done.phase, 'done');
+    assert.equal(done.received, done.total);
+  } finally { restore(); fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('a recognition model that fails its checksum installs nothing', async () => {
+  const base = tempBase();
+  const { inst, restore } = sttInstallerFor(base, { corrupt: true });
+  try {
+    await assert.rejects(() => inst.installStt('moonshine-tiny-en'), /checksum mismatch/);
+    assert.deepEqual(inst.installedSttModels(), []);
+  } finally { restore(); fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('the two halves are independent: removing one leaves the other alone', async () => {
+  const base = tempBase();
+  const speak = installerFor(base);
+  const hear = sttInstallerFor(base);
+  try {
+    await speak.inst.install('en_US-joe-medium');
+    await hear.inst.installStt('moonshine-tiny-en');
+    assert.equal(hear.inst.removeSttModel('moonshine-tiny-en'), true);
+    assert.deepEqual(hear.inst.installedSttModels(), []);
+    assert.deepEqual(speak.inst.installedVoices(), ['en_US-joe-medium'], 'the voice is untouched');
+    assert.equal(speak.inst.engineInstalled(), true);
+  } finally { speak.restore(); hear.restore(); fs.rmSync(base, { recursive: true, force: true }); }
+});

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-speech-server.py — the built-in speech engine on Linux: a Wyoming TTS server over a resident Piper.
+speech-server.py — the built-in speech engine on Linux: Wyoming speech and listening, locally.
 
 Why this exists: Linux is the only platform where a fresh install can neither speak nor listen.
 macOS has a built-in engine (native/mac/speech-server) and Windows has the tts-stt-windows helper;
@@ -24,11 +24,25 @@ prints the finished file's path on stdout when the WAV is complete. Raw-stdout m
 marker -- its per-utterance log line reports a CUMULATIVE audio length that does not match the bytes
 written, so framing an utterance from it is guesswork. A finished file is not.
 
+Listening is sherpa-onnx rather than Piper, run per utterance rather than kept resident, and that is
+a measured choice too: the tiny model loads in about half a second and transcribes 3.85 s of speech
+in 0.086 s on the same laptop, so a whole utterance costs about 0.6 s from spawn to transcript.
+Holding a second model resident to save half a second of a pause the person is already taking is not
+worth the memory on a small machine.
+
 Protocol on the socket (Wyoming, framed as <header-json>\n[data block][payload block]):
+  speaking, on the TTS port:
     describe      -> info          what this server is, for clients that discover before using
     synthesize    -> audio-start, audio-chunk*, audio-stop
+  listening, on the STT port:
+    describe      -> info
+    transcribe, audio-start, audio-chunk*, audio-stop  -> transcript
 Anything else is ignored rather than answered, because a Wyoming client treats silence as "not
 supported" and an error reply as a fault.
+
+Either half runs without the other: pass the Piper arguments, the sherpa-onnx arguments, or both.
+A half whose port is already served is skipped rather than fought over -- that is someone else's
+Wyoming server and it wins. Exit 3 means neither half could be served.
 
 Exits on stdin EOF, the parent-death guard every helper in this project uses.
 """
@@ -111,6 +125,75 @@ class Piper:
                 pass
 
 
+class Recognizer:
+    """sherpa-onnx, run once per utterance. No lock and no resident model: each call is its own
+    process, so two utterances at once simply do not interfere."""
+
+    def __init__(self, binary, lib_dir, model_dir):
+        self.binary, self.lib_dir, self.model_dir = binary, lib_dir, model_dir
+        self.tmp = tempfile.mkdtemp(prefix='bedrock-stt-')
+
+    def model_args(self):
+        """Moonshine's four-file layout, or the merged-decoder packaging of the same model. The
+        quantized release ships the merged form, so both spellings are accepted rather than assuming
+        whichever one happened to be downloaded."""
+        enc = os.path.join(self.model_dir, 'encoder_model.ort')
+        merged = os.path.join(self.model_dir, 'decoder_model_merged.ort')
+        tokens = os.path.join(self.model_dir, 'tokens.txt')
+        if not (os.path.exists(enc) and os.path.exists(tokens)):
+            return None
+        if os.path.exists(merged):
+            return ['--moonshine-encoder=' + enc, '--moonshine-merged-decoder=' + merged, '--tokens=' + tokens]
+        parts = [os.path.join(self.model_dir, n) for n in
+                 ('preprocess.ort', 'uncached_decode.ort', 'cached_decode.ort')]
+        if not all(os.path.exists(p) for p in parts):
+            return None
+        return ['--moonshine-preprocessor=' + parts[0], '--moonshine-encoder=' + enc,
+                '--moonshine-uncached-decoder=' + parts[1], '--moonshine-cached-decoder=' + parts[2],
+                '--tokens=' + tokens]
+
+    def usable(self):
+        return os.path.exists(self.binary) and self.model_args() is not None
+
+    def transcribe(self, pcm, rate, width, channels):
+        """16-bit PCM in, text out. Empty string when nothing could be recognized, which a client
+        reads as silence rather than as a fault."""
+        args = self.model_args()
+        if not args or not pcm:
+            return ''
+        path = os.path.join(self.tmp, 'utt%d.wav' % threading.get_ident())
+        try:
+            with wave.open(path, 'wb') as wav:
+                wav.setnchannels(channels or 1)
+                wav.setsampwidth(width or 2)
+                wav.setframerate(rate or 16000)
+                wav.writeframes(pcm)
+            env = dict(os.environ)
+            if self.lib_dir:
+                env['LD_LIBRARY_PATH'] = self.lib_dir + os.pathsep + env.get('LD_LIBRARY_PATH', '')
+            out = subprocess.run([self.binary] + args + [path], capture_output=True, text=True,
+                                 env=env, timeout=120)
+        except (OSError, wave.Error, subprocess.TimeoutExpired) as exc:
+            log('recognition failed: %s' % exc)
+            return ''
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        # The binary prints its configuration and then one JSON object per file. Only the JSON is
+        # wanted, and only its text: everything else on that stream is diagnostics.
+        for line in reversed(out.stdout.splitlines()):
+            line = line.strip()
+            if line.startswith('{'):
+                try:
+                    return str(json.loads(line).get('text') or '').strip()
+                except ValueError:
+                    continue
+        log('no transcript in recognizer output')
+        return ''
+
+
 def write_event(conn, event_type, data=None, payload=None):
     header = {'type': event_type}
     if data is not None:
@@ -143,6 +226,24 @@ def read_event(reader):
     return {'type': header.get('type', ''), 'data': data, 'payload': payload}
 
 
+def asr_info(model_name, languages):
+    return {
+        'tts': [], 'wake': [], 'handle': [], 'intent': [], 'satellite': None,
+        'asr': [{
+            'name': 'bedrock-panel',
+            'description': 'Bedrock Panel built-in listening (sherpa-onnx)',
+            'attribution': {'name': 'sherpa-onnx', 'url': 'https://github.com/k2-fsa/sherpa-onnx'},
+            'installed': True, 'version': None,
+            'models': [{
+                'name': model_name,
+                'description': model_name,
+                'attribution': {'name': 'sherpa-onnx', 'url': 'https://github.com/k2-fsa/sherpa-onnx'},
+                'installed': True, 'version': None, 'languages': languages,
+            }],
+        }],
+    }
+
+
 def info_event(voice_name, languages):
     return {
         'asr': [], 'wake': [], 'handle': [], 'intent': [], 'satellite': None,
@@ -161,7 +262,7 @@ def info_event(voice_name, languages):
     }
 
 
-class Handler(socketserver.StreamRequestHandler):
+class TtsHandler(socketserver.StreamRequestHandler):
     def handle(self):
         while True:
             event = read_event(self.rfile)
@@ -201,64 +302,134 @@ class Handler(socketserver.StreamRequestHandler):
                 pass
 
 
+class SttHandler(socketserver.StreamRequestHandler):
+    """Collects one utterance and answers with its transcript. Wyoming sends the audio as a run of
+    chunks between audio-start and audio-stop; the format comes from audio-start rather than being
+    assumed, because a client that resamples is entitled to tell us so."""
+
+    def handle(self):
+        pcm = bytearray()
+        fmt = {'rate': 16000, 'width': 2, 'channels': 1}
+        while True:
+            event = read_event(self.rfile)
+            if event is None:
+                return
+            kind = event['type']
+            if kind == 'describe':
+                write_event(self.request, 'info', asr_info(self.server.model_name, self.server.languages))
+            elif kind == 'audio-start':
+                pcm = bytearray()
+                for key in ('rate', 'width', 'channels'):
+                    if event['data'].get(key):
+                        fmt[key] = int(event['data'][key])
+            elif kind == 'audio-chunk':
+                pcm.extend(event['payload'])
+            elif kind == 'audio-stop':
+                text = self.server.recognizer.transcribe(bytes(pcm), fmt['rate'], fmt['width'], fmt['channels'])
+                write_event(self.request, 'transcript', {'text': text})
+                pcm = bytearray()
+
+
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = False   # a bind failure must be visible: something else owns the port
     daemon_threads = True
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
-    ap.add_argument('--piper', required=True, help='the piper binary')
-    ap.add_argument('--model', required=True, help='the voice .onnx')
+    ap = argparse.ArgumentParser(description='Bedrock Panel built-in speech (Wyoming)')
+    ap.add_argument('--piper', default='', help='the piper binary (omit to serve listening only)')
+    ap.add_argument('--model', default='', help='the voice .onnx')
     ap.add_argument('--config', default='', help='the voice .onnx.json (default: model + .json)')
-    ap.add_argument('--lib-dir', default='', help='directory holding piper\'s own shared libraries')
+    ap.add_argument('--lib-dir', default='', help="directory holding piper's own shared libraries")
+    ap.add_argument('--stt-binary', default='', help='the sherpa-onnx-offline binary (omit to serve speaking only)')
+    ap.add_argument('--stt-lib-dir', default='', help="directory holding sherpa-onnx's shared libraries")
+    ap.add_argument('--stt-model-dir', default='', help='the recognition model directory')
     ap.add_argument('--host', default='127.0.0.1')
-    ap.add_argument('--port', type=int, default=10200)
+    ap.add_argument('--port', type=int, default=10200, help='the TTS port')
+    ap.add_argument('--stt-port', type=int, default=10300)
     args = ap.parse_args()
 
-    for path in (args.piper, args.model):
-        if not os.path.exists(path):
-            log('missing: ' + path)
-            return 2
+    servers = []
+    served = []
 
-    piper = Piper(args.piper, args.model, args.config or (args.model + '.json'), args.lib_dir or None)
-    try:
-        piper.start()
-    except OSError as exc:
-        log('cannot start piper: %s' % exc)
-        return 2
+    def listen(port, handler, attrs):
+        """Bind one half, or report that someone else already serves it. A taken port is not an
+        error: it is another Wyoming server doing this job, and it wins."""
+        try:
+            server = Server((args.host, port), handler)
+        except OSError as exc:
+            log('port %d is already in use, leaving it alone: %s' % (port, exc))
+            return None
+        for key, value in attrs.items():
+            setattr(server, key, value)
+        servers.append(server)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server
 
-    try:
-        server = Server((args.host, args.port), Handler)
-    except OSError as exc:
-        # Something already serves this port. The caller decides what that means -- the rule is to
-        # use the existing server rather than fight it -- so say it plainly and exit distinctly.
-        log('port %d is already in use: %s' % (args.port, exc))
-        piper.stop()
+    piper = None
+    if args.piper and args.model:
+        if not (os.path.exists(args.piper) and os.path.exists(args.model)):
+            log('the voice is not where it should be; speaking is off')
+        else:
+            piper = Piper(args.piper, args.model, args.config or (args.model + '.json'), args.lib_dir or None)
+            try:
+                piper.start()
+            except OSError as exc:
+                log('cannot start piper: %s' % exc)
+                piper = None
+    if piper:
+        name = os.path.splitext(os.path.basename(args.model))[0]
+        if listen(args.port, TtsHandler, {
+                'piper': piper, 'voice_name': name,
+                'languages': [name.split('-')[0]] if '-' in name else []}):
+            served.append('tts')
+        else:
+            piper.stop()
+            piper = None
+
+    recognizer = None
+    if args.stt_binary and args.stt_model_dir:
+        recognizer = Recognizer(args.stt_binary, args.stt_lib_dir, args.stt_model_dir)
+        if not recognizer.usable():
+            log('the recognition model is incomplete; listening is off')
+            recognizer = None
+    if recognizer:
+        name = os.path.basename(args.stt_model_dir.rstrip(os.sep))
+        if listen(args.stt_port, SttHandler, {
+                'recognizer': recognizer, 'model_name': name,
+                'languages': ['en'] if '-en' in name or '.en' in name else []}):
+            served.append('stt')
+
+    if not served:
+        log('nothing could be served')
+        if piper:
+            piper.stop()
         return 3
 
-    server.piper = piper
-    server.voice_name = os.path.splitext(os.path.basename(args.model))[0]
-    server.languages = [server.voice_name.split('-')[0]] if '-' in server.voice_name else []
-    log('ready on %s:%d' % (args.host, args.port))
-    sys.stdout.write('ready\n')
+    log('ready on %s (%s)' % (args.host, ', '.join(served)))
+    sys.stdout.write('ready ' + ' '.join(served) + '\n')
     sys.stdout.flush()
 
     # Parent-death guard: the app closes our stdin when it goes away.
+    done = threading.Event()
+
     def wait_for_parent():
         try:
             for _ in sys.stdin:
                 pass
         except (OSError, ValueError):
             pass
-        server.shutdown()
+        done.set()
 
     threading.Thread(target=wait_for_parent, daemon=True).start()
     try:
-        server.serve_forever()
+        done.wait()
     finally:
-        piper.stop()
-        server.server_close()
+        for server in servers:
+            server.shutdown()
+            server.server_close()
+        if piper:
+            piper.stop()
     return 0
 
 

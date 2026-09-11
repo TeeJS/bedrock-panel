@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   installLinuxSpeechVoice(id) { return ipcRenderer.invoke('installLinuxSpeechVoice', id); },
   cancelLinuxSpeechInstall() { return ipcRenderer.invoke('cancelLinuxSpeechInstall'); },
   removeLinuxSpeechVoice(id) { return ipcRenderer.invoke('removeLinuxSpeechVoice', id); },
+  installLinuxSttModel(id) { return ipcRenderer.invoke('installLinuxSttModel', id); },
+  removeLinuxSttModel(id) { return ipcRenderer.invoke('removeLinuxSttModel', id); },
   onLinuxSpeechProgress(cb) { ipcRenderer.on('linuxSpeechProgress', (_e, p) => cb(p)); },            // macOS: re-read the installed voices   // macOS built-in speech engine: running / ready / permission / voices
   getAppVersion() { return ipcRenderer.invoke('getAppVersion'); },
   getApps() { return ipcRenderer.invoke('getApps'); },

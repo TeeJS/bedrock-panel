@@ -36,7 +36,39 @@ const VOICES = [
   { id: 'en_US-kristin-medium',  label: 'English (US) — female 2', quality: 'medium', bytes: 63531379, md5: '5fed42d2296baca042e2bf74785db725', license: 'Public domain', path: 'en/en_US/kristin/medium' },
 ];
 
+// The listening engine: sherpa-onnx's prebuilt Linux x64 release (Apache-2.0). Same reasoning as
+// Piper -- prebuilt, no compiler, no pip, which is what rules out whisper.cpp and faster-whisper.
+const STT_ENGINE = {
+  url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-linux-x64-shared.tar.bz2',
+  bytes: 28156791,
+  sha256: 'c0bdb7907d3a74bba1d55d22bf4d9fa75586cf1530614ebe88a27b9118e015c4',
+  stripComponents: 1,
+};
+
+// Recognition models. Moonshine is built for short utterances on a CPU, which is exactly dictation
+// and voice commands: it transcribed 3.85 s of speech in 0.086 s on an i5-10210U laptop. The English
+// models are MIT. Whisper tiny is the multilingual fallback when more languages are wanted, and is
+// not in this list until someone has measured it.
+const STT_MODELS = [
+  {
+    id: 'moonshine-tiny-en',
+    label: 'English — fast, for dictation and commands',
+    license: 'MIT',
+    languages: ['en'],
+    bytes: 29858559,
+    sha256: '9ec31b342d8fa3240c3b81b8f82e1cf7e3ac467c93ca5a999b741d5887164f8d',
+    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27.tar.bz2',
+    stripComponents: 1,
+  },
+];
+
 function voices() { return VOICES.slice(); }
+
+function sttModels() { return STT_MODELS.slice(); }
+
+function sttModelById(id) { return STT_MODELS.find(m => m.id === id) || null; }
+
+function defaultSttModel() { return STT_MODELS[0]; }
 
 function voiceById(id) {
   return VOICES.find(v => v.id === id) || null;
@@ -59,4 +91,10 @@ function downloadBytes(voice, engineInstalled) {
   return (engineInstalled ? 0 : ENGINE.bytes) + ((voice && voice.bytes) || 0);
 }
 
-module.exports = { ENGINE, VOICES_BASE, voices, voiceById, defaultVoice, voiceFiles, downloadBytes };
+/** The same, for listening: the recognition engine plus the model. */
+function sttDownloadBytes(model, engineInstalled) {
+  return (engineInstalled ? 0 : STT_ENGINE.bytes) + ((model && model.bytes) || 0);
+}
+
+module.exports = { ENGINE, STT_ENGINE, VOICES_BASE, voices, voiceById, defaultVoice, voiceFiles, downloadBytes,
+  sttModels, sttModelById, defaultSttModel, sttDownloadBytes };

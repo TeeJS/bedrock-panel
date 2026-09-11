@@ -85,7 +85,12 @@ no hosts configured, the built-in engine wins.
   Piper's raw-stdout mode has no usable end-of-utterance marker (its log line undercounts the audio
   it wrote), and the built-in engine must key off the TTS host alone rather than both hosts, or
   configuring only a Whisper server silently mutes the machine.
-- **Phase 2 — STT.** Dictation and the voice apps listen. Reuses Phase 1's downloader and server.
+- **Phase 2 — STT. Done.** Dictation and the voice apps listen, through sherpa-onnx running a
+  Moonshine tiny model per utterance rather than resident: the model loads in about half a second and
+  a whole utterance costs about 0.6 s from spawn to transcript, which is not worth a second resident
+  model's memory on a small machine. The two halves install, run and fail independently, and either
+  can be replaced by the user's own server on its own port. Verified by speaking a sentence with the
+  built-in voice and transcribing it back word for word through the app's own Wyoming client.
 - **Phase 3 — languages.** The picker offers more than English, which decides which model is fetched.
 
 ## Open questions

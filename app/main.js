@@ -466,15 +466,19 @@ function speechInstaller() {
   return linuxSpeechInstaller;
 }
 function builtInSpeechInstalled() {
-  if (process.platform !== 'linux') return false;
+  if (process.platform !== 'linux') return { tts: false, stt: false };
   const v = voiceConfig.voiceSettings(config.settings);
-  return linuxSpeech.installed(v.linuxVoice);
+  return { tts: linuxSpeech.installed(v.linuxVoice), stt: linuxSpeech.sttInstalled(v.linuxSttModel) };
 }
 function applyLinuxSpeech() {
   if (process.platform !== 'linux') return;
   const v = voiceConfig.voiceSettings(config.settings);
-  const wanted = voiceConfig.linuxSpeechWanted(config.settings, 'linux', linuxSpeech.installed(v.linuxVoice));
-  if (wanted) linuxSpeech.start(v.linuxVoice); else linuxSpeech.stop();
+  const have = builtInSpeechInstalled();
+  // Either half on its own is reason to run: they are separate downloads and separate ports.
+  const speaks = voiceConfig.linuxSpeechWanted(config.settings, 'linux', have.tts);
+  const hears = voiceConfig.linuxSttWanted(config.settings, 'linux', have.stt);
+  if (speaks || hears) linuxSpeech.start({ voice: v.linuxVoice, sttModel: v.linuxSttModel, speak: speaks, hear: hears });
+  else linuxSpeech.stop();
 }
 // The AI Voice app = ONE app id ('ai-voice') with a per-page backend option, served by one generic
 // voice-panel host instance PER BACKEND (state/transcript/SSE/speech/STT-TTS, see
@@ -4232,16 +4236,23 @@ app.whenReady().then(async () => {
     if (process.platform !== 'linux') return { supported: false };
     const installer = speechInstaller();
     const v = voiceConfig.voiceSettings(config.settings);
+    const cat = require('./linuxSpeechCatalog');
     return {
       supported: true,
       engineInstalled: installer.engineInstalled(),
       installedVoices: installer.installedVoices(),
       selectedVoice: v.linuxVoice || (installer.installedVoices()[0] || ''),
-      catalog: require('./linuxSpeechCatalog').voices(),
+      catalog: cat.voices(),
+      sttEngineInstalled: installer.sttEngineInstalled(),
+      installedSttModels: installer.installedSttModels(),
+      selectedSttModel: v.linuxSttModel || (installer.installedSttModels()[0] || ''),
+      sttCatalog: cat.sttModels(),
       running: linuxSpeech.isReady(),
+      serving: linuxSpeech.servingHalves(),
       usingExistingServer: linuxSpeech.deferredToExisting(),
       failure: linuxSpeech.failure(),
       endpoint: linuxSpeech.endpoint(),
+      sttEndpoint: linuxSpeech.sttEndpoint(),
     };
   });
   // Downloads the engine (once) and the chosen voice, reporting progress to the editor as it goes.
@@ -4262,6 +4273,32 @@ app.whenReady().then(async () => {
       send({ phase: 'error', message: String(err && err.message) });
       return { ok: false, error: String(err && err.message) };
     }
+  });
+  // Listening is its own download and its own button: someone who only wants a voice should not be
+  // made to fetch a recognition model, or the reverse.
+  ipcMain.handle('installLinuxSttModel', async (e, modelId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
+    const send = p => { try { if (configWin && !configWin.isDestroyed()) configWin.webContents.send('linuxSpeechProgress', p); } catch (err) {} };
+    try {
+      const result = await speechInstaller().installStt(String(modelId || ''), send);
+      if (!config.settings) config.settings = {};
+      if (!config.settings.voice) config.settings.voice = {};
+      config.settings.voice.linuxSttModel = result.model;
+      saveConfig();
+      linuxSpeech.stop();
+      applyLinuxSpeech();
+      return { ok: true, model: result.model };
+    } catch (err) {
+      send({ phase: 'error', message: String(err && err.message) });
+      return { ok: false, error: String(err && err.message) };
+    }
+  });
+  ipcMain.handle('removeLinuxSttModel', (e, modelId) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return false;
+    linuxSpeech.stop();
+    const ok = speechInstaller().removeSttModel(String(modelId || ''));
+    applyLinuxSpeech();
+    return ok;
   });
   ipcMain.handle('cancelLinuxSpeechInstall', (e) => { if (isFrom(e, configWin) && process.platform === 'linux') speechInstaller().cancel(); return true; });
   ipcMain.handle('removeLinuxSpeechVoice', (e, voiceId) => {

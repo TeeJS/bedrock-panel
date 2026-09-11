@@ -26,6 +26,7 @@ const childProcess = require('child_process');
 
 // The loopback ports every Wyoming consumer already expects. Piper is TTS; STT is phase two.
 const TTS_PORT = 10200;
+const STT_PORT = 10300;
 const HOST = '127.0.0.1';
 
 function helperScript(dir = __dirname) {
@@ -40,7 +41,26 @@ function layout(baseDir) {
     piperDir: path.join(root, 'piper'),
     piperBinary: path.join(root, 'piper', 'piper'),
     voicesDir: path.join(root, 'voices'),
+    // Listening is a different engine from speaking, so it gets its own tree: one can be installed
+    // without the other, and removing one must not disturb the other.
+    sherpaDir: path.join(root, 'sherpa'),
+    sttBinary: path.join(root, 'sherpa', 'bin', 'sherpa-onnx-offline'),
+    sttLibDir: path.join(root, 'sherpa', 'lib'),
+    sttDir: path.join(root, 'stt'),
   };
+}
+
+/** The directory of the named recognition model, or of the only one installed. */
+function sttModelDir(baseDir, name, readdir = fs.readdirSync, exists = fs.existsSync) {
+  const { sttDir } = layout(baseDir);
+  let names;
+  try { names = readdir(sttDir); } catch (e) { return null; }
+  const wanted = name && names.includes(name) ? [name] : names;
+  for (const dir of wanted) {
+    const full = path.join(sttDir, dir);
+    if (exists(path.join(full, 'tokens.txt'))) return full;
+  }
+  return null;
 }
 
 /** The .onnx of the named voice, or of the only installed voice when no name is given. */
@@ -66,34 +86,52 @@ function createLinuxSpeech(options) {
   const exists = opts.exists || fs.existsSync;
   const readdir = opts.readdir || fs.readdirSync;
   const port = opts.port || TTS_PORT;
+  const sttPort = opts.sttPort || STT_PORT;
 
   let child = null;
-  let ready = false;
+  let ready = false;      // at least one half is being served by us
+  let serving = [];       // which halves: 'tts', 'stt'
   let deferred = false;   // something else already serves the port, and it wins
   let failed = null;
 
   const paths = layout(baseDir);
 
-  /** Is there an engine and a voice on disk to run? Asked before anything else. */
+  /** Is there an engine and a voice on disk to speak with? Asked before anything else. */
   function installed(voice) {
     return !!(exists(paths.piperBinary) && voiceModel(baseDir, voice, readdir, exists));
+  }
+
+  /** The same question for listening, which is a separate download. */
+  function sttInstalled(model) {
+    return !!(exists(paths.sttBinary) && sttModelDir(baseDir, model, readdir, exists));
   }
 
   function stop() {
     if (!child) return;
     try { child.stdin.end(); } catch (e) {}
     try { child.kill(); } catch (e) {}
-    child = null; ready = false;
+    child = null; ready = false; serving = [];
   }
 
-  function start(voice) {
+  /**
+   * Serve whichever halves are installed and asked for. `speak` and `hear` default to true, so a
+   * caller that just wants everything available says nothing; main.js turns one off when the user
+   * has pointed that half at their own server.
+   */
+  function start(options) {
     if (child || failed) return;
-    const model = voiceModel(baseDir, voice, readdir, exists);
-    if (!exists(paths.piperBinary) || !model) { log('built-in speech is not installed yet'); return; }
+    const o = options || {};
+    const speak = o.speak !== false;
+    const hear = o.hear !== false;
+    const model = speak ? voiceModel(baseDir, o.voice, readdir, exists) : null;
+    const speaks = !!(speak && exists(paths.piperBinary) && model);
+    const sttPath = (hear && exists(paths.sttBinary)) ? sttModelDir(baseDir, o.sttModel, readdir, exists) : null;
+    if (!speaks && !sttPath) { log('built-in speech is not installed yet'); return; }
     let proc = null;
-    const args = [script, '--piper', paths.piperBinary, '--model', model,
-                  '--config', model + '.json', '--lib-dir', paths.piperDir,
-                  '--host', HOST, '--port', String(port)];
+    // Whichever halves are installed; the helper serves what it is given and says what it served.
+    const args = [script, '--host', HOST, '--port', String(port), '--stt-port', String(sttPort)];
+    if (speaks) args.push('--piper', paths.piperBinary, '--model', model, '--config', model + '.json', '--lib-dir', paths.piperDir);
+    if (sttPath) args.push('--stt-binary', paths.sttBinary, '--stt-lib-dir', paths.sttLibDir, '--stt-model-dir', sttPath);
     try {
       proc = spawn(python, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
@@ -111,18 +149,24 @@ function createLinuxSpeech(options) {
       while ((i = out.indexOf('\n')) >= 0) {
         const line = out.slice(0, i).trim();
         out = out.slice(i + 1);
-        if (line === 'ready') { ready = true; log('built-in speech ready on ' + HOST + ':' + port); }
+        // 'ready tts stt' — the helper reports which halves it actually got, since a port it could
+        // not take is skipped rather than fatal.
+        if (line === 'ready' || line.startsWith('ready ')) {
+          ready = true;
+          serving = line.split(/\s+/).slice(1);
+          log('built-in speech ready on ' + HOST + ' (' + (serving.join(', ') || 'tts') + ')');
+        }
       }
     });
     if (proc.stderr) proc.stderr.on('data', buf => log('speech: ' + String(buf).trim()));
-    proc.on('error', e => { failed = String(e && e.message); log('built-in speech unavailable — ' + failed); child = null; ready = false; });
+    proc.on('error', e => { failed = String(e && e.message); log('built-in speech unavailable — ' + failed); child = null; ready = false; serving = []; });
     proc.on('exit', code => {
-      child = null; ready = false;
+      child = null; ready = false; serving = [];
       // 3 is the helper finding the port already served. That is someone's own Wyoming server and it
       // wins — the app points at the same host and port regardless, so speech still works.
       if (code === 3) {
         deferred = true;
-        log('another Wyoming server already serves ' + HOST + ':' + port + ' — using it instead of starting ours');
+        log('another Wyoming server already serves these ports on ' + HOST + ' — using it instead of starting ours');
       } else if (code === 2) {
         failed = 'the speech helper refused to start (exit 2)';
         log('built-in speech unavailable — ' + failed);
@@ -135,10 +179,14 @@ function createLinuxSpeech(options) {
   return {
     paths,
     installed,
+    sttInstalled,
     start,
     stop,
     /** Where a Wyoming client should dial for the built-in engine. */
     endpoint() { return { host: HOST, port }; },
+    sttEndpoint() { return { host: HOST, port: sttPort }; },
+    /** Which halves we are actually serving right now. */
+    servingHalves() { return serving.slice(); },
     /** Serving now, either because we started it or because someone else's server already was. */
     available() { return (ready || deferred) && !failed; },
     isReady() { return ready; },
@@ -147,4 +195,4 @@ function createLinuxSpeech(options) {
   };
 }
 
-module.exports = { createLinuxSpeech, helperScript, layout, voiceModel, TTS_PORT, HOST };
+module.exports = { createLinuxSpeech, helperScript, layout, voiceModel, sttModelDir, TTS_PORT, STT_PORT, HOST };

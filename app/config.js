@@ -4301,8 +4301,12 @@ ${IS_MAC ? `
         <select id="ttsLinuxVoice" style="flex:1"></select>
         <button id="ttsLinuxInstall" type="button" title="Download this voice and the speech engine">Set up</button>
         <button id="ttsLinuxRemove" type="button" title="Delete this voice from this computer">Remove</button></div>
+      <div class="row"><label>Listening</label>
+        <select id="ttsLinuxStt" style="flex:1"></select>
+        <button id="ttsLinuxSttInstall" type="button" title="Download this recognition model and the listening engine">Set up</button>
+        <button id="ttsLinuxSttRemove" type="button" title="Delete this model from this computer">Remove</button></div>
       <div class="row"><label>Status</label><span id="ttsLinuxStatus" class="hint" style="margin:0">checking…</span></div>
-      <details class="hint"><summary>The built-in engine speaks on this computer with nothing to install and no GPU — pick a voice and press Set up, and it downloads about 85 MB the first time.</summary> It runs as a local speech server on 127.0.0.1:10200, the Wyoming protocol, so anything else on this machine that speaks Wyoming (Home Assistant, for one) can use it too. Every voice offered here is public domain or CC0. <b>Listening is not built in yet</b> — set an STT host below for that. If you already run your own Piper on port 10200, that one is used and this engine stays out of its way.</details>
+      <details class="hint"><summary>The built-in engine speaks and listens on this computer with nothing to install and no GPU — pick a voice and a language, press Set up on each, and it downloads about 140 MB in total the first time.</summary> It runs as local speech servers on 127.0.0.1:10200 (speaking) and :10300 (listening), the Wyoming protocol, so anything else on this machine that speaks Wyoming (Home Assistant, for one) can use it too. Every voice offered is public domain or CC0, and the recognition models are MIT. The two halves are separate downloads: take one, the other, or both. If you already run your own Piper or Whisper on those ports, yours is used and this engine stays out of its way.</details>
 ` : ''}${IS_MAC ? `
       <p class="sectitle">Speech engine</p>
       <div class="row"><label>Engine</label>
@@ -5304,13 +5308,49 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
           const here = installed.includes(voiceSel.value);
           installBtn.textContent = here ? 'Re-download' : 'Set up';
           removeBtn.disabled = !here;
+          const sttHave = st.installedSttModels || [];
+          const sttChosen = st.selectedSttModel || '';
+          const sttSelEl = document.getElementById('ttsLinuxStt');
+          sttSelEl.innerHTML = (st.sttCatalog || []).map(m =>
+            `<option value="${m.id}" ${m.id === sttChosen ? 'selected' : ''}>${m.label} — ${m.license}`
+            + `${sttHave.includes(m.id) ? ' — installed' : ' — ' + mb(m.bytes) + ' to download'}</option>`).join('');
+          const sttHere = sttHave.includes(sttSelEl.value);
+          document.getElementById('ttsLinuxSttInstall').textContent = sttHere ? 'Re-download' : 'Set up';
+          document.getElementById('ttsLinuxSttRemove').disabled = !sttHere;
+          // One line for both halves, because they run in one process and fail in related ways.
+          const serving = st.serving || [];
+          const what = serving.length
+            ? serving.map(h => h === 'tts' ? 'speaking on ' + st.endpoint.port : 'listening on ' + st.sttEndpoint.port).join(' and ')
+            : '';
           statusEl.textContent = st.failure ? 'Not working: ' + st.failure
             : st.usingExistingServer ? 'Using the Wyoming server already running on this computer.'
-            : st.running ? 'Running — speaking on ' + st.endpoint.host + ':' + st.endpoint.port + '. Listening still needs a server below.'
-            : installed.length ? 'Installed, not running. It starts when the engine above is set to use it.'
-            : 'Not installed. Pick a voice and press Set up.';
+            : st.running ? 'Running — ' + what + '.'
+            : (installed.length || sttHave.length) ? 'Installed, not running. It starts when the engine above is set to use it.'
+            : 'Not installed. Pick a voice or a language and press Set up.';
         }).catch(() => {});
         voiceSel.addEventListener('change', () => renderLinuxSpeech());
+        const sttSel = document.getElementById('ttsLinuxStt');
+        const sttInstallBtn = document.getElementById('ttsLinuxSttInstall');
+        const sttRemoveBtn = document.getElementById('ttsLinuxSttRemove');
+        sttSel.onchange = e => { saveVoice('linuxSttModel', e.target.value); renderLinuxSpeech(); };
+        sttInstallBtn.onclick = () => {
+          const id = sttSel.value;
+          if (!id || busy) return;
+          busy = true;
+          sttInstallBtn.disabled = sttRemoveBtn.disabled = true;
+          statusEl.textContent = 'Starting…';
+          configApi.installLinuxSttModel(id).then(r => {
+            busy = false;
+            sttInstallBtn.disabled = false;
+            statusEl.textContent = r && r.ok ? 'Ready.' : 'Could not set up listening: ' + ((r && r.error) || 'unknown error');
+            renderLinuxSpeech();
+          });
+        };
+        sttRemoveBtn.onclick = () => {
+          const id = sttSel.value;
+          if (!id || busy) return;
+          configApi.removeLinuxSttModel(id).then(() => renderLinuxSpeech());
+        };
         installBtn.onclick = () => {
           const id = voiceSel.value;
           if (!id || busy) return;
