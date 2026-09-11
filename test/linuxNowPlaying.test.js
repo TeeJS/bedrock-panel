@@ -115,6 +115,33 @@ test('nothing is attempted off Linux or without a session bus', () => {
   assert.equal(np.available('linux', {}), false, 'no session bus means no MPRIS');
 });
 
+test('an AppArmor label is recognised, and its absence is not mistaken for one', () => {
+  // The label reads as a name and a mode: "bedrock-panel (unconfined)". snapd's mpris rule matches
+  // the NAME against {plasmashell,unconfined}, so the mode in brackets does not save us — anything
+  // else is turned away by every snap-packaged player.
+  assert.equal(np.confined('bedrock-panel (unconfined)'), true);
+  assert.equal(np.confined('snap.spotify.spotify (enforce)'), true);
+  assert.equal(np.confined('unconfined'), false);
+  assert.equal(np.confined('plasmashell (enforce)'), false, 'the other label snaps accept');
+  assert.equal(np.confined(''), false, 'no AppArmor at all needs no workaround');
+  assert.equal(np.label(() => { throw new Error('no such file'); }), '', 'a kernel without AppArmor is not an error');
+  assert.equal(np.label(() => ' bedrock-panel (unconfined)\n'), 'bedrock-panel (unconfined)');
+});
+
+test('the unconfined reader is started by shedding the label across an exec', () => {
+  // A process cannot drop its AppArmor label except across an exec, and Node gives no hook between
+  // fork and exec — so a shell does the write and then execs. The child is the app's own binary in
+  // Node mode running this same file, which is why there is no second runtime to install.
+  const cmd = np.bridgeCommand('/opt/App/app', '/opt/App/resources/app.asar/app/linuxNowPlaying.js');
+  assert.equal(cmd.command, 'sh');
+  assert.match(cmd.args[1], /exec unconfined" > \/proc\/self\/attr\/exec/, 'the transition has to be requested');
+  assert.match(cmd.args[1], /exec "\$0" "\$@"/, 'and the shell must not stay in the way');
+  assert.deepEqual(cmd.args.slice(2), ['/opt/App/app', '/opt/App/resources/app.asar/app/linuxNowPlaying.js']);
+  // A kernel with no AppArmor has no such file; the write fails, the exec still happens, and the
+  // child simply reads the bus as itself.
+  assert.match(cmd.args[1], /2>\/dev\/null/);
+});
+
 test('the session bus is named outright rather than left to be guessed', () => {
   // Left to find the bus itself, dbus-next falls back to reading the machine id and an X11 property
   // and then autolaunching a PRIVATE bus. That bus has no media players on it, so it would look
