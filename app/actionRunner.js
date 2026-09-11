@@ -48,6 +48,14 @@ const LINUX_APP_ALIASES = {
   browser: L_BROWSER, files: L_FILES, editor: L_EDITOR,
   monitor: L_MONITOR, 'system monitor': L_MONITOR, settings: L_SETTINGS,
   paint: ['krita', 'gimp', 'kolourpaint', 'pinta'],
+  archive: ['ark', 'file-roller', 'xarchiver', 'engrampa'],
+  images: ['gwenview', 'loupe', 'eog', 'gthumb', 'nomacs', 'shotwell'],
+  documents: ['okular', 'evince', 'papers', 'atril', 'qpdfview'],
+  video: ['haruna', 'vlc', 'mpv', 'celluloid', 'totem', 'dragonplayer'],
+  music: ['elisa', 'rhythmbox', 'amberol', 'strawberry', 'audacious', 'clementine'],
+  software: ['plasma-discover', 'gnome-software'],
+  disks: ['partitionmanager', 'gnome-disks', 'gparted'],
+  sysinfo: ['kinfocenter', 'hardinfo', 'cpu-x'],
 };
 function linuxAppCandidates(value) {
   const bare = String(value).trim().replace(/\.exe$/i, '');

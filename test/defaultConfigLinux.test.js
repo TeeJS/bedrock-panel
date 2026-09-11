@@ -88,7 +88,9 @@ test('every app tile resolves to at least one real candidate binary', () => {
 // The generic tiles are the whole point of the Linux grid: they must be alias keys, or they would be
 // taken literally and launch nothing on a machine with no program called "files".
 test('the generic starter tiles are backed by candidate lists, not taken literally', () => {
-  for (const name of ['browser', 'files', 'editor', 'calculator', 'monitor', 'terminal', 'settings', 'screenshot', 'paint']) {
+  for (const name of ['browser', 'files', 'editor', 'calculator', 'monitor', 'terminal', 'settings',
+                      'screenshot', 'paint', 'images', 'documents', 'video', 'music', 'software',
+                      'disks', 'sysinfo', 'archive']) {
     const candidates = linuxAppCandidates(name);
     assert.ok(candidates.length > 1, name + ' must expand to a candidate list, got ' + JSON.stringify(candidates));
     assert.ok(!candidates.includes(name) || candidates.length > 1, name + ' resolves to itself only');
@@ -104,8 +106,10 @@ test('the app tiles name programs this machine really has (checked when running 
       if (!linuxAppCandidates(t.value).some(has)) missing.push(g.id + '/' + t.label + ' (' + linuxAppCandidates(t.value).join(', ') + ')');
     }
   }
-  // Third-party programs a starter tile may name even though a stock desktop does not ship them.
-  const OPTIONAL = /VS Code|OBS|Discord|Spotify|Paint|Browser|Firefox/;
-  const hard = missing.filter(m => !OPTIONAL.test(m));
-  assert.deepEqual(hard, [], 'starter tiles with no installed candidate on this machine');
+  // No exceptions any more. The shipped grid used to name third-party software (Firefox, VS Code,
+  // OBS, Discord, a paint program) that a stock desktop does not have, so those tiles did nothing on
+  // a fresh install. Every tile now names a category with a broad candidate list. A failure here
+  // means a desktop spells one of these differently — extend the list in app/actionRunner.js rather
+  // than adding an exception.
+  assert.deepEqual(missing, [], 'starter tiles with no installed candidate on this machine');
 });

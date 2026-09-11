@@ -31,10 +31,10 @@
           "value": "browser"
         },
         {
-          "label": "Firefox",
-          "icon": "🦊",
+          "label": "Images",
+          "icon": "🖼️",
           "type": "app",
-          "value": "firefox"
+          "value": "images"
         },
         {
           "label": "Files",
@@ -91,16 +91,16 @@
           "value": "lock"
         },
         {
-          "label": "Paint",
-          "icon": "🎨",
+          "label": "Documents",
+          "icon": "📄",
           "type": "app",
-          "value": "paint"
+          "value": "documents"
         },
         {
-          "label": "VS Code",
-          "icon": "🧩",
+          "label": "Software",
+          "icon": "📦",
           "type": "app",
-          "value": "code"
+          "value": "software"
         },
         {
           "label": "Sound",
@@ -228,16 +228,16 @@
           "cover": 0
         },
         {
-          "label": "OBS",
-          "icon": "🎥",
+          "label": "Video",
+          "icon": "🎬",
           "type": "app",
-          "value": "obs"
+          "value": "video"
         },
         {
-          "label": "Discord",
-          "icon": "💬",
+          "label": "Music",
+          "icon": "🎵",
           "type": "app",
-          "value": "discord"
+          "value": "music"
         },
         {
           "label": "Volume",
@@ -320,10 +320,10 @@
       "rows": 2,
       "tiles": [
         {
-          "label": "VS Code",
-          "icon": "🧩",
+          "label": "Editor",
+          "icon": "📝",
           "type": "app",
-          "value": "code"
+          "value": "editor"
         },
         {
           "label": "Terminal",
@@ -350,16 +350,16 @@
           "value": "monitor"
         },
         {
-          "label": "",
-          "icon": "",
-          "type": "",
-          "value": ""
+          "label": "Disks",
+          "icon": "💽",
+          "type": "app",
+          "value": "disks"
         },
         {
-          "label": "",
-          "icon": "",
-          "type": "",
-          "value": ""
+          "label": "Info",
+          "icon": "📋",
+          "type": "app",
+          "value": "sysinfo"
         },
         {
           "label": "Edit Grids",
