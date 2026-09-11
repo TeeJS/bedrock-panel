@@ -84,3 +84,13 @@ test('every Linux helper dies with the app', () => {
     assert.match(read(name), /sys\.stdin/, name + ' has no parent-death guard');
   }
 });
+
+test('a player that cannot be read this instant is not reported as silence', () => {
+  // "{}" is defined as "no media session", and the app clears the display when it sees one. Reading
+  // a player is three D-Bus round trips into another application, any of which can time out while
+  // that application is busy — answering "{}" then tells the app the music stopped.
+  const src = read('mpris.py');
+  assert.match(src, /return None, True/, 'no players on the bus is the only certain "nothing"');
+  assert.match(src, /if not snap and not certain/, 'an unreadable player must leave the last line standing');
+  assert.match(src, /certain/, 'choose has to say whether "nothing" is a fact or a guess');
+});

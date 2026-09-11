@@ -99,17 +99,29 @@ def snapshot_of(conn, name):
 
 
 def choose(conn):
-    """The player the panel should show: whoever is playing, else whoever has a track."""
+    """
+    The player the panel should show, and whether "nothing" is a fact or a guess.
+
+    Returns (snapshot, certain). `certain` is what stops a transient D-Bus hiccup from being
+    reported as silence: reading a player takes three round trips to another process, any of which
+    can time out while that application is busy, and a helper that answers "{}" on a slow read tells
+    the app the music stopped. The app believes it -- "{}" is defined as no media session -- and
+    clears the display. With a player on the bus but unreadable this instant, the honest answer is
+    to say nothing and let the last line stand.
+    """
+    names = players(conn)
+    if not names:
+        return None, True            # no player on the bus at all: genuinely nothing playing
     best = None
-    for name in players(conn):
+    for name in names:
         snap = snapshot_of(conn, name)
         if not snap:
             continue
         if snap['status'] == 'Playing':
-            return snap
+            return snap, True
         if best is None:
             best = snap
-    return best
+    return best, best is not None
 
 
 def monitor():
@@ -118,7 +130,9 @@ def monitor():
     loop = GLib.MainLoop()
 
     def emit():
-        snap = choose(conn)
+        snap, certain = choose(conn)
+        if not snap and not certain:
+            return True              # players exist but could not be read: keep the last line
         line = json.dumps(snap, sort_keys=True) if snap else '{}'
         if line != last['line']:
             last['line'] = line
