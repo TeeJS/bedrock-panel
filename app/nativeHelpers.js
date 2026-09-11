@@ -38,4 +38,21 @@ function helperPath(name, platform = process.platform, dir = path.join(__dirname
   return path.join(dir, file).replace('app.asar', 'app.asar.unpacked');
 }
 
-module.exports = { helperPath, HELPERS };
+/**
+ * How to actually run a helper: `{ command, args }` to put in front of the caller's own arguments.
+ *
+ * The Windows and macOS helpers are executables and run themselves. The Linux ones are Python, and
+ * they are run as `python3 <script>` rather than executed through their shebang -- which is how every
+ * other Linux helper in this app is already launched, and those work. The now-playing helper was the
+ * one exception: executed directly, it ran and wrote continuously while the app's stream for it
+ * reported readable, flowing, one listener, and bytesRead=0 forever. Same script, same app, and the
+ * only difference from its working siblings was this. Running it the same way as the rest also drops
+ * the dependency on an executable bit surviving packaging.
+ */
+function helperCommand(name, platform = process.platform, dir = path.join(__dirname, 'native')) {
+  const file = helperPath(name, platform, dir);
+  if (!file) return null;
+  return file.endsWith('.py') ? { command: 'python3', args: [file] } : { command: file, args: [] };
+}
+
+module.exports = { helperPath, helperCommand, HELPERS };

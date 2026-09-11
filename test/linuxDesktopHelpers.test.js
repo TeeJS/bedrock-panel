@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { helperPath, HELPERS } = require('../app/nativeHelpers');
+const { helperPath, helperCommand, HELPERS } = require('../app/nativeHelpers');
 
 const read = name => fs.readFileSync(path.join(__dirname, '..', 'app', 'linux', name), 'utf8');
 
@@ -93,4 +93,21 @@ test('a player that cannot be read this instant is not reported as silence', () 
   assert.match(src, /return None, True/, 'no players on the bus is the only certain "nothing"');
   assert.match(src, /if not snap and not certain/, 'an unreadable player must leave the last line standing');
   assert.match(src, /certain/, 'choose has to say whether "nothing" is a fact or a guess');
+});
+
+test('a Python helper is run as python3 <script>, like every one that works', () => {
+  // Executed through its shebang instead, the now-playing helper ran and wrote continuously while
+  // the app's stream for it reported readable, flowing, one listener and bytesRead=0 forever. Its
+  // siblings, all launched this way in the same process, deliver fine. This also means a lost
+  // executable bit cannot break a helper.
+  for (const feature of ['nowplayingMonitor', 'nowplayingControl', 'sysvolume', 'micSessionMonitor']) {
+    const cmd = helperCommand(feature, 'linux');
+    assert.equal(cmd.command, 'python3', feature + ' should be run by the interpreter');
+    assert.equal(cmd.args.length, 1);
+    assert.match(cmd.args[0], /\.py$/);
+  }
+  // Windows and macOS helpers are executables and run themselves.
+  assert.deepEqual(helperCommand('nowplayingMonitor', 'win32').args, []);
+  assert.match(helperCommand('nowplayingMonitor', 'win32').command, /smtc-monitor\.exe$/);
+  assert.equal(helperCommand('foregroundWatch', 'linux'), null, 'no helper means no command');
 });

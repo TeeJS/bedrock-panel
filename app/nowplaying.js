@@ -24,8 +24,9 @@ const { net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const { helperPath } = require('./nativeHelpers');
-const MONITOR_EXE = helperPath('nowplayingMonitor');   // smtc-monitor.exe on Windows, nowplaying-monitor on macOS, null elsewhere
+const { helperPath, helperCommand } = require('./nativeHelpers');
+const MONITOR_EXE = helperPath('nowplayingMonitor');
+const MONITOR_CMD = helperCommand('nowplayingMonitor');   // smtc-monitor.exe on Windows, nowplaying-monitor on macOS, null elsewhere
 
 const STALE_MS = 12000;   // provider path only: if no provider refresh for this long, report null
 const STALL_MS = 6000;    // a live helper that has sent nothing for this long is restarted
@@ -157,8 +158,11 @@ function spawnMonitor() {
     return;
   }
   // stdin stays open (piped): the helper exits on stdin EOF, so it can never outlive us.
-  try { proc = spawn(MONITOR_EXE, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); }
-  catch (e) { proc = null; return; }
+  // stderr is piped rather than ignored: a helper complaining is worth a line in the log, and the
+  // helpers in this app that work are all spawned this way.
+  try { proc = spawn(MONITOR_CMD.command, MONITOR_CMD.args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }); }
+  catch (e) { say('could not start the helper: ' + (e && e.message)); proc = null; return; }
+  if (proc.stderr) proc.stderr.on('data', d => say('helper: ' + String(d).trim().slice(0, 200)));
   let buf = '';
   let sawBytes = false;
   if (!proc.stdout) { say('the helper was started with no readable output'); return; }

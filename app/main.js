@@ -318,8 +318,9 @@ const DEFAULT_CONFIG_BY_PLATFORM = { darwin: 'config.default.mac.json', linux: '
 const DEFAULT_CONFIG_PATH = path.join(__dirname, DEFAULT_CONFIG_BY_PLATFORM[process.platform] || 'config.default.json');
 const LEGACY_CONFIG_PATH = path.join(__dirname, 'config.json');          // pre-userData dev location, migrated once
 const APPS_DIR = path.join(__dirname, '..', 'apps').replace('app.asar', 'app.asar.unpacked'); // unpacked when packaged
-const { helperPath } = require('./nativeHelpers');       // per-platform bundled helper binaries (null = none on this platform)
-const SMTC_CTL_EXE = helperPath('nowplayingControl');      // media transport helper (SMTC on Windows, AppleScript on macOS)
+const { helperPath, helperCommand } = require('./nativeHelpers');   // per-platform bundled helpers (null = none here)
+const SMTC_CTL_EXE = helperPath('nowplayingControl');      // media transport helper (SMTC on Windows, AppleScript on macOS, MPRIS on Linux)
+const SMTC_CTL_CMD = helperCommand('nowplayingControl');   // how to run it: an executable, or python3 + script
 const MIC_MONITOR_EXE = helperPath('micSessionMonitor');   // app-scoped mic-in-use monitor (WASAPI sessions / Core Audio process objects)
 const SYSVOL_EXE = helperPath('sysvolume');                // reads the real system volume for the meeting rail
 // Meeting info for the recording sidecar: classic Outlook over COM on Windows (native/outlook-meeting.cs),
@@ -2153,7 +2154,7 @@ function mediaKey(cmd) {
     const target = snap && (snap.bundleId || snap.app);
     const args = target ? [cmd, target] : [cmd];   // target the displayed session (SMTC app id on Windows, bundle id on macOS)
     try {
-      execFile(SMTC_CTL_EXE, args, { windowsHide: true, timeout: 4000 }, (err, stdout) => {
+      execFile(SMTC_CTL_CMD.command, SMTC_CTL_CMD.args.concat(args), { windowsHide: true, timeout: 4000 }, (err, stdout) => {
         if (err || String(stdout || '').trim() !== 'ok') mediaKeys.transport(cmd);   // helper miss -> media key
       });
       return true;
@@ -2470,7 +2471,8 @@ function ensureVolumeWatcher() {
   sysVolIdleTimer = setTimeout(stopVolumeWatcher, 10000);
   if (sysVolProc || !fs.existsSync(SYSVOL_EXE)) return;
   // stdin stays open (piped): the helper exits on stdin EOF, so it can never outlive the app.
-  try { sysVolProc = spawn(SYSVOL_EXE, ['watch'], { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); }
+  const volCmd = helperCommand('sysvolume');
+  try { sysVolProc = spawn(volCmd.command, volCmd.args.concat(['watch']), { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] }); }
   catch (e) { sysVolProc = null; return; }
   let buf = '';
   sysVolProc.stdout.on('data', d => {
@@ -2717,7 +2719,8 @@ function startMicMonitor() {
   const recordSet = parseAppList(recordApps);
   const busySet = parseAppList(busyOn ? mset.busyApps : '');
   try {
-    micMonitorProc = spawn(MIC_MONITOR_EXE, [allow], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const micCmd = helperCommand('micSessionMonitor');
+    micMonitorProc = spawn(micCmd.command, micCmd.args.concat([allow]), { stdio: ['ignore', 'pipe', 'ignore'] });
   } catch (e) { console.log('[meeting] mic monitor spawn failed:', e.message); micMonitorProc = null; return; }
   let buf = '';
   let firstLine = true;   // a freshly spawned monitor announces its initial state before polling
