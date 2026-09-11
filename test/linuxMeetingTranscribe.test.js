@@ -4,6 +4,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
+
+// A base directory and a scratch directory, named once: every path below is built from them with
+// path.join so the fixtures match what the transcriber builds on whatever machine runs the suite.
+const BASE = path.join(path.sep + 'base');
+const TMP = path.join(path.sep + 'tmp', 'x');
 const {
   createLinuxMeetingTranscriber, readHeader, extractChannel, parseSegments, parseTurns, attribute,
   overlap, monoHeader,
@@ -79,17 +84,21 @@ test('segments are read from the recognizer\'s lines and everything else is igno
 function transcriberWith({ onDisk = true, outputs = {}, diarize = true } = {}) {
   const written = {};
   const calls = [];
+  // Keyed with path.join, not with written-out paths: the transcriber builds these with path.join,
+  // and off Linux that is backslashed. A map keyed the other way answers "not installed" to every
+  // question and the whole job stops before it starts, which is a fault in the test, not the code.
+  const onDiskPath = (...parts) => path.join(BASE, ...parts);
   const files = {
-    '/base/speech/sherpa/bin/sherpa-onnx-vad-with-offline-asr': true,
-    '/base/speech/sherpa/silero_vad.onnx': true,
-    '/base/speech/stt/moonshine-tiny-en/encoder_model.ort': true,
-    '/base/speech/stt/moonshine-tiny-en/decoder_model_merged.ort': true,
-    '/base/speech/stt/moonshine-tiny-en/tokens.txt': true,
+    [onDiskPath('speech', 'sherpa', 'bin', 'sherpa-onnx-vad-with-offline-asr')]: true,
+    [onDiskPath('speech', 'sherpa', 'silero_vad.onnx')]: true,
+    [onDiskPath('speech', 'stt', 'moonshine-tiny-en', 'encoder_model.ort')]: true,
+    [onDiskPath('speech', 'stt', 'moonshine-tiny-en', 'decoder_model_merged.ort')]: true,
+    [onDiskPath('speech', 'stt', 'moonshine-tiny-en', 'tokens.txt')]: true,
   };
   if (diarize) {
-    files['/base/speech/sherpa/bin/sherpa-onnx-offline-speaker-diarization'] = true;
-    files['/base/speech/sherpa/segmentation/model.onnx'] = true;
-    files['/base/speech/sherpa/speaker-embedding.onnx'] = true;
+    files[onDiskPath('speech', 'sherpa', 'bin', 'sherpa-onnx-offline-speaker-diarization')] = true;
+    files[onDiskPath('speech', 'sherpa', 'segmentation', 'model.onnx')] = true;
+    files[onDiskPath('speech', 'sherpa', 'speaker-embedding.onnx')] = true;
   }
   const fs = {
     existsSync: p => (onDisk ? !!files[p] : false),
@@ -99,14 +108,14 @@ function transcriberWith({ onDisk = true, outputs = {}, diarize = true } = {}) {
     unlinkSync: p => { delete written[p]; },
   };
   const t = createLinuxMeetingTranscriber({
-    baseDir: '/base', fs, tmpDir: '/tmp/x', log: () => {},
+    baseDir: BASE, fs, tmpDir: TMP, log: () => {},
     execFile: (bin, args, opts, cb) => {
       calls.push({ bin, args, env: opts.env });
       const wav = args[args.length - 1];
       const which = /diarization/.test(bin) ? 'turns' : (wav.includes('mic') ? 'mic' : 'sys');
       cb(null, outputs[which] || '', '');
     },
-    profilesDir: '/base/speech/speakers',
+    profilesDir: path.join(BASE, 'speech', 'speakers'),
     // The voice fingerprinter: a fake that gives every span of one cluster the same vector, so
     // clusters are self-consistent and different clusters are not alike.
     spawn: () => {
@@ -155,7 +164,7 @@ test('both channels are transcribed and merged onto one timeline, the far side t
     [['T.J.', 'left', 2], ['Speaker A', 'right', 1], ['Speaker B', 'right', 1]]);
   assert.equal(r.speaker_report.method, 'channels+diarization');
   assert.equal(calls.length, 3, 'a recognizer run per channel, plus the diarizer on the far side');
-  assert.ok(calls[0].env.LD_LIBRARY_PATH.startsWith(path.join('/base', 'speech', 'sherpa', 'lib')),
+  assert.ok(calls[0].env.LD_LIBRARY_PATH.startsWith(path.join(BASE, 'speech', 'sherpa', 'lib')),
     'the engine finds its own libraries');
   assert.ok(calls[0].args.some(a => a.startsWith('--silero-vad-model=')), 'timestamps need the VAD');
 });
@@ -183,7 +192,7 @@ test('a voice too brief to be a participant is not turned into one', async () =>
 
 test('a recording that is not the recorder\'s format is refused with a reason', async () => {
   const mono = createLinuxMeetingTranscriber({
-    baseDir: '/base', tmpDir: '/tmp/x', log: () => {},
+    baseDir: BASE, tmpDir: TMP, log: () => {},
     fs: { existsSync: () => true, readdirSync: () => ['moonshine-tiny-en'],
           readFileSync: () => Buffer.concat([monoHeader(16000, 4), Buffer.alloc(4)]),
           writeFileSync: () => {}, unlinkSync: () => {} },
@@ -194,7 +203,7 @@ test('a recording that is not the recorder\'s format is refused with a reason', 
 
 test('a recognizer that fails names the channel it failed on', async () => {
   const t = createLinuxMeetingTranscriber({
-    baseDir: '/base', tmpDir: '/tmp/x', log: () => {},
+    baseDir: BASE, tmpDir: TMP, log: () => {},
     fs: { existsSync: () => true, readdirSync: () => ['moonshine-tiny-en'],
           readFileSync: () => stereoWav([[1, 2]]), writeFileSync: () => {}, unlinkSync: () => {} },
     execFile: (b, a, o, cb) => cb(new Error('segfault')),
@@ -256,7 +265,7 @@ test('without the diarization models the far side is one Others, and the job sti
 
 test('a diarizer that fails loses the speakers, never the transcript', async () => {
   const t = createLinuxMeetingTranscriber({
-    baseDir: '/base', tmpDir: '/tmp/x', log: () => {},
+    baseDir: BASE, tmpDir: TMP, log: () => {},
     fs: { existsSync: () => true, readdirSync: () => ['moonshine-tiny-en'],
           readFileSync: () => stereoWav([[1, 2], [3, 4]]), writeFileSync: () => {}, unlinkSync: () => {} },
     execFile: (bin, args, opts, cb) => {

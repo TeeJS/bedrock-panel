@@ -32,13 +32,21 @@ test('the helper table still says nothing for what Linux genuinely cannot do', (
   assert.equal(helperPath('sysvolume', 'freebsd'), null, 'unknown platforms get nothing');
 });
 
-test('the helpers are executable, since the app runs them directly', () => {
-  // Every caller execs the path the table returns. A Python script without the executable bit is a
-  // helper that exists and cannot be run.
+test('the helpers say how to run themselves', () => {
+  for (const feature of ['sysvolume', 'micSessionMonitor']) {
+    const p = helperPath(feature, 'linux');
+    assert.match(fs.readFileSync(p, 'utf8').split('\n')[0], /^#!.*python3/, path.basename(p) + ' has no shebang');
+  }
+});
+
+// Skipped off POSIX rather than rewritten: there is no executable bit on a Windows filesystem, so
+// the question has no answer there. This is the mirror of how the DPAPI tests skip off Windows.
+test('the helpers carry the executable bit', { skip: process.platform === 'win32' ? 'no executable bit on Windows' : false }, () => {
+  // A Python script without it is a helper that exists and cannot be run, and the bit has to survive
+  // packaging as well as the repository.
   for (const feature of ['sysvolume', 'micSessionMonitor']) {
     const p = helperPath(feature, 'linux');
     assert.ok(fs.statSync(p).mode & 0o111, path.basename(p) + ' is not executable');
-    assert.match(fs.readFileSync(p, 'utf8').split('\n')[0], /^#!.*python3/, path.basename(p) + ' has no shebang');
   }
 });
 

@@ -4,6 +4,7 @@
 // so it runs on any platform.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('path');
 const keymap = require('../app/linuxKeymap');
 const pointer = require('../app/linuxPointer');
 const { createLinuxInput, helperScript } = require('../app/linuxInput');
@@ -153,7 +154,12 @@ test('a python3 that is not installed fails once and stays failed', () => {
 });
 
 test('the helper path reaches outside the asar, since python cannot open a file inside it', () => {
-  assert.match(helperScript('/opt/app/resources/app.asar/app'), /app\.asar\.unpacked\/app\/linux\/uinput-helper\.py$/);
+  // Asserted with path.join rather than a written-out path: these tests run on whatever machine the
+  // suite runs on, and a path built by path.join is backslashed off Linux. The claim is about where
+  // the helper lives, not about which character separates the parts of a path.
+  const script = helperScript(path.join('/opt/app/resources/app.asar', 'app'));
+  assert.ok(script.includes('app.asar.unpacked'), 'still inside the archive: ' + script);
+  assert.ok(script.endsWith(path.join('app.asar.unpacked', 'app', 'linux', 'uinput-helper.py')), script);
 });
 
 // ---- mediaKeys on Linux --------------------------------------------------------------------
