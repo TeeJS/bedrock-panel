@@ -331,6 +331,21 @@ What to expect on Linux:
   each against `PATH` from a candidate list.
 - **Reserved Display and follow-the-focused-app are not possible** and report themselves
   unavailable. Both need foreign-window enumeration and movement, which Wayland does not offer.
+- **Keystrokes do not use robotjs on Linux.** It drives XTEST, which does not deliver under
+  XWayland — it loads, reports success, and nothing arrives (measured by typing into the app's own
+  focused window and reading back an empty field). `app/linuxInput.js` instead drives a uinput
+  virtual keyboard through `app/linux/uinput-helper.py`, which the kernel presents as real hardware,
+  so the compositor routes it like any other keyboard on both X11 and Wayland.
+  - The helper is Python because creating a uinput device needs `ioctl` (UI_SET_EVBIT, UI_DEV_SETUP,
+    UI_DEV_CREATE) and Node has none. Writing the events afterwards is an ordinary `write`. Python
+    keeps the Linux port free of a build toolchain; the deb depends on `python3`.
+  - It speaks the same stdin-line contract as the C# and Swift helpers and exits on EOF, and
+    `app/linux/**` is asarUnpack'd because python3 cannot open a script inside `app.asar`.
+  - `app/linuxKeymap.js` holds the name and character tables, and is pure, so the mapping is unit
+    tested without a device. Key codes mean the layout decides what typed text prints; combos are
+    unaffected.
+  - The pointer half is not implemented, so Monitor mode reports itself unavailable rather than
+    moving a cursor that never moves.
 - Transcription pre/post hooks run through `/bin/sh`, as on macOS.
 
 ### Packaging (Linux)

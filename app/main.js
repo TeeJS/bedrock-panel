@@ -3785,6 +3785,9 @@ app.whenReady().then(async () => {
     if (needsMigration) saveConfig();                        // migrate plaintext/legacy config to current at-rest form
   } else if (needsMigration) console.log('secret encryption unavailable — refusing to rewrite config secrets');
   applyDisplayBlocker();   // keep-display-awake only when enabled + in Panel mode; otherwise the screensaver works
+  // Linux: create the uinput virtual keyboard now. The compositor needs a moment to notice a new
+  // input device, and paying that on the first macro tap loses the keystroke. No-op elsewhere.
+  try { mediaKeys.warmUp(); } catch (e) {}
   createTray();
   // SystemView: live local metrics server on 127.0.0.1 (OS-assigned port) + ensure the dashboard page.
   // Lazy-required so a metrics/load failure can never crash the rest of the app.
@@ -4839,6 +4842,7 @@ app.on('before-quit', () => {
   try { owuiVoiceHost.shutdown(); } catch (e) {}         // abort any in-flight OWUI stream
   try { apiVoiceHost.shutdown(); } catch (e) {}          // abort any in-flight API-endpoint stream
   try { claudeVoiceApprovals.ensureHookRemoved(claudeVoiceLog); } catch (e) {}    // belt-and-braces: never leave our entry behind in the user's global Claude settings
+  try { mediaKeys.stop(); } catch (e) {}        // Linux: destroy the uinput virtual keyboard (no-op elsewhere)
   try { dev.stop(); } catch (e) {}                       // close HID devices + clear keep-alive/rescan timers — an open node-hid handle blocks process exit (Cmd+Q would hang -> force-quit)
   try { oauthHandler.stop(); } catch (e) {}              // stop OAuth callback server + background refresh timers
   try { stopMicMonitor(); } catch (e) {}                 // terminate the native mic-in-use monitor child

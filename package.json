@@ -2,7 +2,7 @@
   "name": "bedrock-panel",
   "version": "0.9.6-beta.2",
   "private": true,
-  "description": "A multi-use launcher and control platform for Windows, macOS, and Linux — your apps, media, dashboards, and smart home on your computer or a touchscreen.",
+  "description": "A multi-use launcher and control platform for Windows, macOS, and Linux \u2014 your apps, media, dashboards, and smart home on your computer or a touchscreen.",
   "main": "app/main.js",
   "desktopName": "bedrock-panel.desktop",
   "author": "TeeJS",
@@ -80,6 +80,7 @@
     "asarUnpack": [
       "apps/**/*",
       "app/native/**",
+      "app/linux/**",
       "**/*.node",
       "node_modules/win-ca/**"
     ],
@@ -159,7 +160,19 @@
     "deb": {
       "artifactName": "bedrock-panel_${arch}.${ext}",
       "afterInstall": "packaging/linux/after-install.sh",
-      "afterRemove": "packaging/linux/after-remove.sh"
+      "afterRemove": "packaging/linux/after-remove.sh",
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "python3"
+      ]
     },
     "dmg": {
       "sign": false

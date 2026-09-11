@@ -1,7 +1,13 @@
 'use strict';
-// Media key adapter — @jitsi/robotjs backend (Windows and macOS).
+// Media key adapter — @jitsi/robotjs on Windows and macOS, a uinput virtual keyboard on Linux.
 // Keeps the { transport(cmd), volume(v), pasteShortcut() } interface so main.js
-// doesn't know the backend. Swap this file to add platform backends later.
+// doesn't know the backend.
+//
+// Linux: robotjs is NOT used. It drives XTEST, which does not deliver under XWayland — it loads,
+// reports success, and the keystroke arrives nowhere (measured: typing into this app's own focused
+// window produced an empty field). app/linuxInput.js creates a uinput device instead, which the
+// kernel presents as a real keyboard, so the compositor routes it like any other. The mouse half of
+// this interface has no uinput path yet, so Monitor mode is unavailable on Linux.
 //
 // macOS: robotjs posts CGEvents, which the OS silently drops until the app has the Accessibility
 // permission — robotjs itself never throws. `ensureTrusted` (injected by main.js on darwin) says
@@ -12,7 +18,45 @@
 const MOD_ALIAS = { ctrl: 'control', control: 'control', ctl: 'control', shift: 'shift', alt: 'alt', option: 'alt', opt: 'alt', win: 'command', cmd: 'command', command: 'command', meta: 'command', super: 'command' };
 const KEY_ALIAS = { esc: 'escape', escape: 'escape', del: 'delete', 'delete': 'delete', ins: 'insert', insert: 'insert', 'return': 'enter', enter: 'enter', space: 'space', spacebar: 'space', tab: 'tab', backspace: 'backspace', bksp: 'backspace', up: 'up', down: 'down', left: 'left', right: 'right', pgup: 'pageup', pageup: 'pageup', pgdn: 'pagedown', pagedown: 'pagedown', home: 'home', end: 'end', plus: '+' };
 
-function createMediaKeys({ log = () => {}, ensureTrusted = null } = {}) {
+// Split "control+shift+c" into its modifiers and its one key, using the aliases above. Shared by
+// both backends so a macro means the same thing on every platform.
+function parseCombo(combo) {
+  const toks = String(combo || '').split('+').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const mods = []; let key = null;
+  for (const t of toks) {
+    if (MOD_ALIAS[t]) { if (!mods.includes(MOD_ALIAS[t])) mods.push(MOD_ALIAS[t]); }
+    else key = KEY_ALIAS[t] || t;
+  }
+  return { mods, key };
+}
+
+// Linux backend. Same surface as the robotjs one; the pointer methods report unavailable rather than
+// pretending, because Monitor mode driving a dead cursor is worse than Monitor mode being off.
+function createLinuxMediaKeys({ log, linuxInput }) {
+  const input = linuxInput || require('./linuxInput').createLinuxInput({ log: m => log('[input] ' + m) });
+  const TRANSPORT = { playpause: 'audio_play', next: 'audio_next', prev: 'audio_prev', stop: 'audio_stop' };
+  const noPointer = () => { log('Monitor mode needs pointer control, which the Linux backend does not have yet'); };
+  return {
+    warmUp() { input.warmUp(); },
+    transport(cmd) { const k = TRANSPORT[cmd]; return k ? input.tap(k) : false; },
+    volume(v) { input.tap(v === 'mute' ? 'audio_mute' : (v > 0 ? 'audio_vol_up' : 'audio_vol_down')); },
+    pasteShortcut() { return input.tap('v', ['control']); },
+    available() { return input.available(); },
+    moveMouse: noPointer, mouseToggle: noPointer, click: noPointer, scroll: noPointer,
+    tapKey(name) { input.tap(name); },
+    keyUp(name) { input.keyUp(name); },
+    tapCombo(combo) {
+      const { mods, key } = parseCombo(combo);
+      if (!key) return false;
+      return input.tap(key, mods);
+    },
+    typeString(text) { return (text == null || text === '') ? false : input.typeString(String(text)); },
+    stop() { input.stop(); },
+  };
+}
+
+function createMediaKeys({ log = () => {}, ensureTrusted = null, platform = process.platform, linuxInput = null } = {}) {
+  if (platform === 'linux') return createLinuxMediaKeys({ log, linuxInput });
   let robot = null;
   try { robot = require('@jitsi/robotjs'); }
   catch (e) {
@@ -24,6 +68,10 @@ function createMediaKeys({ log = () => {}, ensureTrusted = null } = {}) {
   const bot = () => (robot && (!ensureTrusted || ensureTrusted())) ? robot : null;
 
   return {
+    // No-ops on the robotjs backend: it has no device to create and nothing to tear down. They exist
+    // so main.js can call them without knowing which backend it got.
+    warmUp() {},
+    stop() {},
     transport(cmd) {
       const r = bot(); if (!r) return false;
       const map = { playpause: 'audio_play', next: 'audio_next', prev: 'audio_prev', stop: 'audio_stop' };
@@ -58,12 +106,7 @@ function createMediaKeys({ log = () => {}, ensureTrusted = null } = {}) {
     // Macro: send a key combo like "control+shift+c". Last non-modifier token is the key.
     tapCombo(combo) {
       const r = bot(); if (!r) return false;
-      const toks = String(combo || '').split('+').map(s => s.trim().toLowerCase()).filter(Boolean);
-      const mods = []; let key = null;
-      for (const t of toks) {
-        if (MOD_ALIAS[t]) { if (!mods.includes(MOD_ALIAS[t])) mods.push(MOD_ALIAS[t]); }
-        else key = KEY_ALIAS[t] || t;
-      }
+      const { mods, key } = parseCombo(combo);
       if (!key) return false;
       try { mods.length ? r.keyTap(key, mods) : r.keyTap(key); return true; }
       catch (e) { log('keyTap failed for "' + combo + '": ' + e.message); return false; }

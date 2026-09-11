@@ -89,7 +89,29 @@ place itself on a chosen screen — it lands slightly off the panel and slightly
 see one line about this in the log. Set `BEDROCK_LINUX_OZONE=wayland` to skip the restart and run
 natively, for example for fractional scaling, and expect Panel mode to be misplaced if you do.
 
-## 4. Secrets
+## 4. Macros, media keys, and typed text
+
+These work through a **virtual keyboard**. Bedrock Panel creates one at startup through
+`/dev/uinput`, so the kernel presents it as an ordinary keyboard and the compositor routes its
+keystrokes like any other — the same on X11 and Wayland, with nothing to approve.
+
+Two consequences worth knowing:
+
+- **It needs the udev rule from section 2**, which covers `/dev/uinput` as well as the console. The
+  `.deb` installs it for you. Without it, macros and media keys report themselves unavailable.
+- **Key combos are layout-independent, typed text is not.** A virtual keyboard sends key *codes* and
+  your layout decides what they print, exactly as for real hardware. Ctrl+C is Ctrl+C everywhere; a
+  macro that types literal text assumes US QWERTY, and characters with no key on your layout are
+  skipped with a line in the log rather than failing the whole macro.
+
+`python3` is required, and the `.deb` depends on it. Creating a uinput device needs `ioctl`, which
+Node cannot do, so a small bundled Python script owns the device and nothing else. It exits with the
+app.
+
+**Monitor mode is not available yet** — pointing the knob and touchscreen at the desktop cursor needs
+pointer emulation, which this backend does not do. It says so rather than moving a dead cursor.
+
+## 5. Secrets
 
 Saved passwords and tokens are encrypted with Electron `safeStorage`, backed by KWallet or
 GNOME Keyring.
@@ -104,7 +126,7 @@ still decrypt normally, so nothing is lost in the meantime.
 A `config.json` copied from Windows keeps its DPAPI-encrypted secrets, which Linux cannot read.
 Re-enter those in the editor.
 
-## 5. Starter pages
+## 6. Starter pages
 
 A fresh install starts with the **Linux starter pages** — Default, Media, and Dev — mirroring
 the Windows and macOS ones page for page.
@@ -117,10 +139,14 @@ that names a real binary is used exactly as typed, so `dolphin` or `firefox` kee
 A config copied from Windows or a Mac is translated the same way: Windows program names map to
 their Linux equivalents, and `start <url>` becomes `xdg-open`.
 
-## 6. What is not available on Linux
+## 7. What is not available on Linux
 
 These features report themselves unavailable rather than failing quietly:
 
+- **Monitor mode.** Driving the desktop cursor from the knob and touchscreen needs pointer
+  emulation, which the input backend does not do yet. Keystrokes work; the pointer does not.
+- **Global hotkeys.** Not wired up. A virtual keyboard sends keys, it cannot listen for them, so
+  these need the desktop's global-shortcuts portal instead.
 - **Reserved Display.** Moving another application's window off the panel display requires
   enumerating and repositioning foreign windows, which Wayland deliberately does not allow.
 - **Follow the focused app.** Same reason: there is no cross-desktop way to be told which
@@ -134,7 +160,7 @@ These features report themselves unavailable rather than failing quietly:
 - **Built-in speech.** Point the voice apps at a Wyoming server such as faster-whisper or
   piper; Bedrock Panel already speaks that protocol.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 **The knob and touchscreen are not detected.** Install the udev rule above and replug. Device
 Diagnostics names the cause on the Touchscreen and Knob rows.
@@ -143,7 +169,7 @@ Diagnostics names the cause on the Touchscreen and Knob rows.
 binding has to match Electron's ABI rather than your system Node: `npm run rebuild`. The app
 still starts and Software mode is unaffected.
 
-**Saving a secret fails.** See section 4. Install and unlock a keyring, then restart.
+**Saving a secret fails.** See section 5. Install and unlock a keyring, then restart.
 
 **Tiles launch nothing.** The program is not installed under any of the names Bedrock Panel
 tries. The log says which candidates it looked for.
