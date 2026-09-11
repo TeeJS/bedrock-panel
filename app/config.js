@@ -4311,7 +4311,7 @@ ${IS_MAC ? `
         <button id="ttsLinuxPreview" type="button" title="Hear this voice (downloads it first if needed)">▶ Preview</button>
         <button id="ttsLinuxInstall" type="button" title="Download this voice and the speech engine">Set up</button>
         <button id="ttsLinuxRemove" type="button" title="Delete this voice from this computer">Remove</button></div>
-      <p class="hint">30 languages. Preview speaks a line in the selected voice once it is downloaded — to compare voices <i>before</i> downloading, <a href="#" id="ttsLinuxSamples">listen to the samples</a> for all of them.</p>
+      <p class="hint">30 languages. <b>Preview works before you download</b> — an installed voice speaks a line, any other plays the recording published with it. <a href="#" id="ttsLinuxSamples">Browse every Piper voice</a>, including the ones whose licence keeps them off this list.</p>
       <div class="row"><label>Listening</label>
         <select id="ttsLinuxStt" style="flex:1"></select>
         <button id="ttsLinuxSttInstall" type="button" title="Download this recognition model and the listening engine">Set up</button>
@@ -5336,8 +5336,10 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
         };
         const updateVoiceButtons = () => {
           const here = installedVoices.includes(voiceSel.value);
-          previewBtn.disabled = !here;
-          previewBtn.title = here ? 'Hear this voice' : 'Download this voice first';
+          // Preview always works: installed voices speak locally, the rest play the sample published
+          // beside them, so a voice can be heard before deciding to download it.
+          previewBtn.disabled = false;
+          previewBtn.title = here ? 'Hear this voice' : 'Hear a sample of this voice';
           installBtn.textContent = here ? 'Re-download' : 'Set up';
           removeBtn.disabled = !here;
         };
@@ -5390,10 +5392,11 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
           if (!r || !r.ok) { statusEl.textContent = 'Could not preview: ' + ((r && r.error) || 'unknown error'); return; }
           try {
             if (previewAudio) previewAudio.pause();
-            previewAudio = new Audio('data:audio/wav;base64,' + r.wav);
+            previewAudio = new Audio('data:' + (r.mime || 'audio/wav') + ';base64,' + r.wav);
             previewAudio.play();
+            statusEl.textContent = r.sample ? 'Playing a sample of this voice — Set up to install it.' : 'Speaking…';
           } catch (err) { statusEl.textContent = 'Could not play the sample: ' + err.message; return; }
-          renderLinuxSpeech();
+          if (!r.sample) renderLinuxSpeech();
         };
         const sttSel = document.getElementById('ttsLinuxStt');
         const sttInstallBtn = document.getElementById('ttsLinuxSttInstall');

@@ -35,8 +35,7 @@ const ENGINE = {
 // progress. `quality` is Piper's own label and tracks size and naturalness together.
 const VOICES = require('./linuxVoices.json');
 
-// Where someone can listen to any Piper voice before downloading one. A voice cannot be previewed
-// locally until it is installed, so the honest answer for "which should I pick" is upstream.
+// Where someone can browse every Piper voice, ours and the ones we cannot ship.
 const VOICE_SAMPLES_URL = 'https://rhasspy.github.io/piper-samples/';
 
 // The listening engine: sherpa-onnx's prebuilt Linux x64 release (Apache-2.0). Same reasoning as
@@ -198,6 +197,15 @@ function defaultVoice() {
     || VOICES.find(v => v.lang === 'en_US') || VOICES[0];
 }
 
+/**
+ * A recording of this voice, published beside the model. This is what makes "hear it before you
+ * download 60 MB of it" possible at all: a voice cannot be spoken locally until it is installed, and
+ * being told to install four voices to choose one is not a choice.
+ */
+function voiceSampleUrl(voice) {
+  return voice ? VOICES_BASE + '/' + voice.path + '/samples/speaker_0.mp3' : '';
+}
+
 /** The two files a voice is made of: the model and the config Piper reads beside it. */
 function voiceFiles(voice) {
   if (!voice) return [];
@@ -219,5 +227,5 @@ function sttDownloadBytes(model, engineInstalled) {
 }
 
 module.exports = { ENGINE, STT_ENGINE, VAD_MODEL, DIARIZATION, VOICES_BASE, VOICE_SAMPLES_URL,
-  voices, voiceLanguages, voiceLabel, voiceById, defaultVoice, voiceFiles, downloadBytes,
+  voices, voiceLanguages, voiceLabel, voiceById, defaultVoice, voiceFiles, voiceSampleUrl, downloadBytes,
   sttModels, sttModelById, defaultSttModel, sttDownloadBytes };

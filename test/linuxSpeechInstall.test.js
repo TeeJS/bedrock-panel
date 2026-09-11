@@ -51,7 +51,7 @@ test('every voice is listed with what a person needs to choose one', () => {
     assert.match(catalog.voiceLabel(v), /—/, 'a label says who and how big, not a filename');
   }
   assert.equal(catalog.defaultVoice().lang, 'en_US', 'a fresh install speaks the app\'s own language');
-  assert.match(catalog.VOICE_SAMPLES_URL, /^https:\/\//, 'somewhere to hear a voice before downloading it');
+  assert.match(catalog.VOICE_SAMPLES_URL, /^https:\/\//, 'somewhere to browse every voice');
 });
 
 test('every voice is pinned well enough to verify: a full digest and a real byte count', () => {
@@ -315,4 +315,16 @@ test('the diarization models are permissively licensed and fully pinned', () => 
   }
   // Measured, not the tool's default: 0.60 merged two speakers into one.
   assert.ok(catalog.DIARIZATION.clusterThreshold > 0 && catalog.DIARIZATION.clusterThreshold < 0.5);
+});
+
+test('every voice can be heard before it is downloaded', () => {
+  // Choosing between 82 voices by installing them one at a time is not choosing. Each has a
+  // recording published beside the model, at a path derived from the same fields the download uses.
+  for (const v of catalog.voices()) {
+    const url = catalog.voiceSampleUrl(v);
+    assert.match(url, /^https:\/\/huggingface\.co\/rhasspy\/piper-voices\/resolve\/main\//);
+    assert.ok(url.includes('/' + v.path + '/'), v.id + ' sample is not beside its model');
+    assert.match(url, /\/samples\/speaker_0\.mp3$/);
+  }
+  assert.equal(catalog.voiceSampleUrl(null), '');
 });

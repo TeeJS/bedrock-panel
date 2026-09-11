@@ -4350,7 +4350,26 @@ app.whenReady().then(async () => {
   ipcMain.handle('previewLinuxVoice', async (e, voiceId) => {
     if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
     const id = String(voiceId || '');
-    if (!linuxSpeech.installed(id)) return { ok: false, error: 'That voice is not downloaded yet.' };
+    const cat = require('./linuxSpeechCatalog');
+    // Not downloaded: play the recording published beside the model. Choosing between 82 voices by
+    // installing them one at a time is not choosing, and every voice here has a sample.
+    if (!linuxSpeech.installed(id)) {
+      const voice = cat.voiceById(id);
+      if (!voice) return { ok: false, error: 'Unknown voice.' };
+      try {
+        const { httpsGet } = require('./linuxSpeechInstall');
+        const res = await httpsGet(cat.voiceSampleUrl(voice));
+        const chunks = [];
+        await new Promise((resolve, reject) => {
+          res.on('data', c => chunks.push(c));
+          res.on('end', resolve);
+          res.on('error', reject);
+        });
+        return { ok: true, mime: 'audio/mpeg', sample: true, wav: Buffer.concat(chunks).toString('base64') };
+      } catch (err) {
+        return { ok: false, error: 'Could not fetch a sample of that voice: ' + String(err && err.message) };
+      }
+    }
     if (!config.settings) config.settings = {};
     if (!config.settings.voice) config.settings.voice = {};
     if (config.settings.voice.linuxVoice !== id) {
@@ -4370,7 +4389,7 @@ app.whenReady().then(async () => {
       await synthesize({ host, port, text: 'This is the voice Bedrock Panel will speak with.',
         onFormat: f => { format = f; }, onChunk: c => chunks.push(c), timeoutMs: 20000 });
       const wav = Buffer.concat([wavHeader(format || {}), Buffer.concat(chunks)]);
-      return { ok: true, wav: wav.toString('base64') };
+      return { ok: true, mime: 'audio/wav', wav: wav.toString('base64') };
     } catch (err) { return { ok: false, error: String(err && err.message) }; }
   });
   ipcMain.handle('cancelLinuxSpeechInstall', (e) => { if (isFrom(e, configWin) && process.platform === 'linux') speechInstaller().cancel(); return true; });
