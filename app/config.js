@@ -3988,6 +3988,13 @@ ${IS_MAC ? `
         </select></div>
       ${IS_MAC ? `<details class="hint"><summary>The built-in engine transcribes on this Mac with Apple's on-device speech (macOS 26: SpeechAnalyzer; 14/15: SFSpeechRecognizer), no server and nothing leaves the Mac. It cannot tell voices apart: the recording's mic channel is labelled with <b>Your name</b> below (or "Me"), the system-audio channel "Others".</summary> For per-attendee names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>`
       : `<details class="hint"><summary>The built-in engine transcribes on this computer using the listening setup from <b>Settings → TTS/STT</b> — set that up first. No server, and nothing leaves the machine.</summary> Your own lines come from the recording's mic channel and are labelled with <b>Your name</b> below (or "Me"), so that half is known rather than guessed. Everyone on the call is separated by voice into <b>Speaker 1</b>, <b>Speaker 2</b> and so on, numbered in the order they first talk. For their real names, enrolled voices, and the speaker report, use a diarizer server. Pre/post commands and the health check apply to the server only.</details>`}` : ''}
+      ${IS_LINUX ? `<div class="row"><label>Known voices</label>
+        <select id="meSpeakers" style="flex:1"></select>
+        <button id="meSpeakerAdd" type="button" title="Add a person from a recording of them speaking">+ Enroll…</button>
+        <button id="meSpeakerRename" type="button" title="Change this person's name">Rename</button>
+        <button id="meSpeakerRemove" type="button" title="Forget this voice">Remove</button></div>
+      <div class="row"><label></label><span id="meSpeakerMsg" class="hint" style="margin:0"></span></div>
+      <details class="hint"><summary>Enroll someone once and their name appears in every later transcript instead of "Speaker A".</summary> Choose a <b>WAV of that person talking</b> — 45 seconds or more, recorded the way your meetings actually are, since a voice learned from a headset sounds different through a conference speaker. Profiles are ordinary <code>.npy</code> files named after the person, the same format the Windows helper and the Python diarizer use, so the folder can be copied between machines. Nobody is required: unenrolled voices are still told apart, just numbered.</details>` : ''}
       <div class="row"><label>Server URL</label>
         <input id="meTransUrl" value="${esc(me.transcribeUrl || 'http://127.0.0.1:10301/transcribe')}" style="flex:1"></div>
       <details class="hint"><summary>The tts-sst or meeting-diarizer endpoint that turns recordings into speaker-labeled transcripts.</summary> Edit the host/port to match your server; the panel checks its /health before sending. Remember to Save.</details>
@@ -5599,6 +5606,52 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       document.getElementById('meTransUrl').oninput = e => saveMe({ transcribeUrl: e.target.value.trim() });
       const meEngine = document.getElementById('meTransEngine');   // macOS and Linux: the built-in engine
       if (meEngine) meEngine.onchange = e => saveMe({ transcribeEngine: e.target.value });
+      // Linux: the enrolled voices behind named speakers in transcripts.
+      const meSpeakers = document.getElementById('meSpeakers');
+      if (meSpeakers && configApi.listLinuxSpeakers) {
+        const msg = document.getElementById('meSpeakerMsg');
+        const addBtn = document.getElementById('meSpeakerAdd');
+        const renameBtn = document.getElementById('meSpeakerRename');
+        const removeBtn = document.getElementById('meSpeakerRemove');
+        const renderSpeakers = () => configApi.listLinuxSpeakers().then(st => {
+          if (!st || !st.supported) return;
+          const names = st.speakers || [];
+          meSpeakers.innerHTML = names.length
+            ? names.map(n => `<option value="${n}">${n}</option>`).join('')
+            : '<option value="">Nobody enrolled yet</option>';
+          renameBtn.disabled = removeBtn.disabled = !names.length;
+          addBtn.disabled = !st.canName;
+          if (!st.canName) msg.textContent = 'Set up listening on the TTS/STT tab first — enrolling needs its voice models.';
+          else if (!names.length) msg.textContent = 'Unenrolled voices are still told apart, just numbered.';
+          else msg.textContent = names.length + ' voice(s) known. Transcripts use these names.';
+        }).catch(() => {});
+        addBtn.onclick = async () => {
+          const wav = await configApi.pickEnrollmentClip();
+          if (!wav) return;
+          const name = (prompt('Who is speaking in that recording?') || '').trim();
+          if (!name) return;
+          msg.textContent = 'Learning that voice…';
+          const r = await configApi.enrollLinuxSpeaker(name, wav);
+          msg.textContent = r && r.ok ? 'Enrolled ' + r.name + '.' : 'Could not enroll: ' + ((r && r.error) || 'unknown error');
+          renderSpeakers();
+        };
+        renameBtn.onclick = async () => {
+          const from = meSpeakers.value;
+          if (!from) return;
+          const to = (prompt('New name for ' + from + ':', from) || '').trim();
+          if (!to || to === from) return;
+          const ok = await configApi.renameLinuxSpeaker(from, to);
+          msg.textContent = ok ? 'Renamed to ' + to + '.' : 'That name is already taken, or cannot be used.';
+          renderSpeakers();
+        };
+        removeBtn.onclick = async () => {
+          const name = meSpeakers.value;
+          if (!name || !confirm('Forget ' + name + "'s voice? Their name will stop appearing in new transcripts.")) return;
+          await configApi.removeLinuxSpeaker(name);
+          renderSpeakers();
+        };
+        renderSpeakers();
+      }
       document.getElementById('meAnalysisAi').onchange = e => saveMe({ analysisAi: e.target.value });
       // --- Busy status ---
       const busyDeps = document.getElementById('meBusyDeps');

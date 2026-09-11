@@ -4085,7 +4085,7 @@ app.whenReady().then(async () => {
         resolveEngine: () => (meetingSettings().transcribeEngine === 'local'
           && (helperPath('speechServer') || linuxMeetingTranscriber().available())) ? 'local' : 'server',
         localTranscribe: (wavPath, { myName, log: say }) => (process.platform === 'linux'
-          ? linuxMeetingTranscriber().transcribe(wavPath, { myName })
+          ? linuxMeetingTranscriber().transcribe(wavPath, { myName, threshold: Number(meetingSettings().transcribeThreshold) || undefined })
           : new Promise((resolve, reject) => {
           const args = ['transcribe-file', wavPath, '--language', 'en-US', '--me', myName || 'Me', '--others', 'Others'];
           require('child_process').execFile(helperPath('speechServer'), args, { maxBuffer: 64 * 1024 * 1024, timeout: 3600000 }, (err, stdout, stderr) => {
@@ -4315,6 +4315,34 @@ app.whenReady().then(async () => {
     const ok = speechInstaller().removeSttModel(String(modelId || ''));
     applyLinuxSpeech();
     return ok;
+  });
+  // Enrolled voices for meeting transcripts. Profiles are .npy files named after the person, the
+  // same layout the Windows helper writes, so a folder of them can be carried between machines.
+  ipcMain.handle('listLinuxSpeakers', (e) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return null;
+    const tx = linuxMeetingTranscriber();
+    return { supported: true, canName: tx.canDiarize(), speakers: tx.profiles().list(), dir: tx.profiles().dir };
+  });
+  ipcMain.handle('enrollLinuxSpeaker', async (e, name, wavPath) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
+    try {
+      const r = await linuxMeetingTranscriber().enroll(String(name || ''), String(wavPath || ''));
+      return { ok: true, name: r.name };
+    } catch (err) { return { ok: false, error: String(err && err.message) }; }
+  });
+  ipcMain.handle('renameLinuxSpeaker', (e, from, to) => (isFrom(e, configWin) && process.platform === 'linux')
+    ? linuxMeetingTranscriber().profiles().rename(String(from || ''), String(to || '')) : false);
+  ipcMain.handle('removeLinuxSpeaker', (e, name) => (isFrom(e, configWin) && process.platform === 'linux')
+    ? linuxMeetingTranscriber().profiles().remove(String(name || '')) : false);
+  // Enrolling needs a clip of one person talking; the file picker is the main process's job.
+  ipcMain.handle('pickEnrollmentClip', async (e) => {
+    if (!isFrom(e, configWin) || process.platform !== 'linux') return '';
+    const r = await dialog.showOpenDialog(configWin, {
+      title: 'Choose a recording of one person speaking',
+      filters: [{ name: 'Audio', extensions: ['wav'] }],
+      properties: ['openFile'],
+    });
+    return (r && !r.canceled && r.filePaths && r.filePaths[0]) || '';
   });
   ipcMain.handle('cancelLinuxSpeechInstall', (e) => { if (isFrom(e, configWin) && process.platform === 'linux') speechInstaller().cancel(); return true; });
   ipcMain.handle('removeLinuxSpeechVoice', (e, voiceId) => {

@@ -99,7 +99,12 @@ no hosts configured, the built-in engine wins.
   person. Silero VAD splits each channel into utterances, which is where the timestamps come from.
   Measured: two distinct voices separate at a cluster threshold of 0.35 and one voice is never split
   at any threshold down to 0.25, while the tool's own default of 0.60 merged two speakers into one.
-  Real names still require a diarizer server, which matches enrolled voices.
+  Named speakers followed: `app/linuxSpeakerProfiles.js` stores one enrolled voice per `.npy` file
+  and matches by cosine, `app/linuxSpeakerClusters.js` holds the merge/prune/label arithmetic, and
+  `app/linux/speaker-embed.py` fingerprints a span through sherpa-onnx's C API by ctypes, because
+  its speaker identification ships only as live-microphone programs. The model, the profile format
+  and every constant are the Windows helper's rather than ours, so a profile folder and a tuned
+  threshold both carry between platforms.
 - **Phase 3 — languages.** The picker offers more than English, which decides which model is fetched.
 
 ## Open questions

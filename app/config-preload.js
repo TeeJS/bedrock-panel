@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   removeLinuxSpeechVoice(id) { return ipcRenderer.invoke('removeLinuxSpeechVoice', id); },
   installLinuxSttModel(id) { return ipcRenderer.invoke('installLinuxSttModel', id); },
   removeLinuxSttModel(id) { return ipcRenderer.invoke('removeLinuxSttModel', id); },
+  // Enrolled voices, so meeting transcripts carry names instead of "Speaker A"
+  listLinuxSpeakers() { return ipcRenderer.invoke('listLinuxSpeakers'); },
+  enrollLinuxSpeaker(name, wav) { return ipcRenderer.invoke('enrollLinuxSpeaker', name, wav); },
+  renameLinuxSpeaker(from, to) { return ipcRenderer.invoke('renameLinuxSpeaker', from, to); },
+  removeLinuxSpeaker(name) { return ipcRenderer.invoke('removeLinuxSpeaker', name); },
+  pickEnrollmentClip() { return ipcRenderer.invoke('pickEnrollmentClip'); },
   onLinuxSpeechProgress(cb) { ipcRenderer.on('linuxSpeechProgress', (_e, p) => cb(p)); },            // macOS: re-read the installed voices   // macOS built-in speech engine: running / ready / permission / voices
   getAppVersion() { return ipcRenderer.invoke('getAppVersion'); },
   getApps() { return ipcRenderer.invoke('getApps'); },

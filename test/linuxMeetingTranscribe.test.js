@@ -106,6 +106,28 @@ function transcriberWith({ onDisk = true, outputs = {}, diarize = true } = {}) {
       const which = /diarization/.test(bin) ? 'turns' : (wav.includes('mic') ? 'mic' : 'sys');
       cb(null, outputs[which] || '', '');
     },
+    profilesDir: '/base/speech/speakers',
+    // The voice fingerprinter: a fake that gives every span of one cluster the same vector, so
+    // clusters are self-consistent and different clusters are not alike.
+    spawn: () => {
+      const { EventEmitter } = require('events');
+      const proc = new EventEmitter();
+      const stdout = new EventEmitter();
+      let seen = 0;
+      proc.stdout = stdout;
+      proc.stderr = new EventEmitter();
+      proc.stdin = { write: line => {
+        const req = JSON.parse(line);
+        const mid = (req.spans[0][0] + req.spans[0][1]) / 2;
+        // Anything before 10 s is one voice, after it another.
+        const v = mid < 10 ? [1, 0, 0] : [0, 1, 0];
+        seen++;
+        setImmediate(() => stdout.emit('data', JSON.stringify({ embedding: v }) + '\n'));
+      }, end: () => setImmediate(() => proc.emit('exit', 0)) };
+      proc.kill = () => {};
+      setImmediate(() => stdout.emit('data', JSON.stringify({ ready: true, dim: 3 }) + '\n'));
+      return proc;
+    },
   });
   return { t, calls, written };
 }
@@ -116,20 +138,21 @@ test('nothing is attempted until the whole listening install is present', () => 
 });
 
 test('both channels are transcribed and merged onto one timeline, the far side told apart', async () => {
+  // Turns long enough to be participants: a cluster under MinClusterSec is crosstalk, not a person.
   const { t, calls } = transcriberWith({ outputs: {
     mic: '0.30 -- 1.50: Can everyone hear me?\n7.90 -- 9.80: I will send the notes.',
-    sys: '4.00 -- 5.30: Yes we can hear you.\n11.60 -- 12.80: That sounds good.',
-    turns: '4.00 -- 5.30 speaker_00\n11.60 -- 12.80 speaker_01',
+    sys: '2.00 -- 8.00: Yes we can hear you.\n11.60 -- 18.00: That sounds good.',
+    turns: '2.00 -- 8.00 speaker_00\n11.60 -- 18.00 speaker_01',
   } });
   const r = await t.transcribe('/recordings/meeting.wav', { myName: 'T.J.' });
   assert.deepEqual(r.segments.map(s => s.speaker + ': ' + s.text), [
     'T.J.: Can everyone hear me?',
-    'Speaker 1: Yes we can hear you.',
+    'Speaker A: Yes we can hear you.',
     'T.J.: I will send the notes.',
-    'Speaker 2: That sounds good.',
+    'Speaker B: That sounds good.',
   ], 'interleaved in time, and two remote people are two people');
-  assert.deepEqual(r.speaker_report.speakers.map(x => [x.name, x.channel, x.segments]),
-    [['T.J.', 'left', 2], ['Speaker 1', 'right', 1], ['Speaker 2', 'right', 1]]);
+  assert.deepEqual(r.speaker_report.speakers.map(x => [x.label, x.channel, x.segments]),
+    [['T.J.', 'left', 2], ['Speaker A', 'right', 1], ['Speaker B', 'right', 1]]);
   assert.equal(r.speaker_report.method, 'channels+diarization');
   assert.equal(calls.length, 3, 'a recognizer run per channel, plus the diarizer on the far side');
   assert.ok(calls[0].env.LD_LIBRARY_PATH.startsWith(path.join('/base', 'speech', 'sherpa', 'lib')),
@@ -141,7 +164,21 @@ test('an unnamed operator is still labelled, and a silent recording is not an er
   const { t } = transcriberWith({ outputs: {} });
   const r = await t.transcribe('/recordings/meeting.wav', {});
   assert.deepEqual(r.segments, []);
-  assert.equal(r.speaker_report.speakers[0].name, 'Me');
+  assert.equal(r.speaker_report.speakers[0].label, 'Me');
+});
+
+test('a voice too brief to be a participant is not turned into one', async () => {
+  // One long speaker and one two-second interjection: the fragment is dropped and its words fall
+  // back rather than the transcript claiming a third person was in the meeting.
+  const { t } = transcriberWith({ outputs: {
+    mic: '',
+    sys: '2.00 -- 8.00: The main speaker talks at length.\n20.00 -- 22.00: Mm hmm.',
+    turns: '2.00 -- 8.00 speaker_00\n20.00 -- 22.00 speaker_05',
+  } });
+  const r = await t.transcribe('/recordings/meeting.wav', { myName: 'T.J.' });
+  assert.deepEqual(r.segments.map(s => s.speaker),
+    ['Speaker A', 'Others'], 'the fragment keeps the fallback, not a name of its own');
+  assert.equal(r.speaker_report.speakers.filter(x => x.channel === 'right').length, 1);
 });
 
 test('a recording that is not the recorder\'s format is refused with a reason', async () => {
@@ -183,25 +220,26 @@ test('overlap is the time two spans share, and nothing when they do not touch', 
   assert.equal(overlap({ start: 0, end: 10 }, { start: 2, end: 4 }), 2, 'fully contained');
 });
 
-test('speakers are numbered in the order they first speak, so the names mean something', () => {
-  const turns = parseTurns('5.0 -- 6.0 speaker_03\n1.0 -- 2.0 speaker_01');
+test('a line takes the display name already resolved for the turn it belongs to', () => {
+  // Naming happens once, per cluster, before this: attribution only decides WHICH turn a line is in.
+  const turns = [{ start: 1.0, end: 2.0, cluster: 'Dave Brubeck' }, { start: 5.0, end: 6.0, cluster: 'Speaker A' }];
   const segs = [{ start: 1.1, end: 1.9, text: 'first' }, { start: 5.1, end: 5.9, text: 'second' }];
   assert.deepEqual(attribute(segs, turns, 'Others').map(s => s.speaker + ':' + s.text),
-    ['Speaker 1:first', 'Speaker 2:second'], 'cluster numbers are arbitrary; order of speaking is not');
+    ['Dave Brubeck:first', 'Speaker A:second']);
 });
 
 test('a line the diarizer did not cover keeps the fallback rather than being dropped', () => {
   // The recognizer heard words there. Losing the line would be worse than under-labelling it.
-  const turns = parseTurns('1.0 -- 2.0 speaker_00');
+  const turns = [{ start: 1.0, end: 2.0, cluster: 'Speaker A' }];
   const segs = [{ start: 1.1, end: 1.9, text: 'covered' }, { start: 30, end: 31, text: 'not covered' }];
   assert.deepEqual(attribute(segs, turns, 'Others').map(s => s.speaker),
-    ['Speaker 1', 'Others']);
+    ['Speaker A', 'Others']);
 });
 
 test('a line is given the speaker it shares the most time with, not merely the first that touches it', () => {
-  const turns = parseTurns('0.0 -- 1.1 speaker_00\n1.0 -- 5.0 speaker_01');
+  const turns = [{ start: 0.0, end: 1.1, cluster: 'Speaker A' }, { start: 1.0, end: 5.0, cluster: 'Speaker B' }];
   const segs = [{ start: 1.0, end: 4.0, text: 'mostly the second speaker' }];
-  assert.equal(attribute(segs, turns, 'Others')[0].speaker, 'Speaker 2');
+  assert.equal(attribute(segs, turns, 'Others')[0].speaker, 'Speaker B');
 });
 
 test('without the diarization models the far side is one Others, and the job still runs', async () => {

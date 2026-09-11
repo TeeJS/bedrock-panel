@@ -65,22 +65,35 @@ const VAD_MODEL = {
 // checked rather than assumed, the way the voices were.
 const DIARIZATION = {
   license: 'MIT and Apache-2.0',
-  // Measured: two distinct voices separate cleanly at 0.35 and a single voice is never split into
-  // two, at any threshold tried down to 0.25. The tool's own default of 0.60 merged two speakers
-  // into one, which is the failure that matters -- a transcript that silently attributes one
-  // person's words to another.
-  clusterThreshold: 0.35,
+  // These are the tuning constants from the Windows helper's pipeline, which are themselves a port
+  // of the Python meeting-diarizer's, with the empirical history behind each recorded there. They
+  // are copied rather than re-derived on purpose: the same numbers against the same model are what
+  // make a score mean the same thing on every platform, and what makes a threshold someone tuned on
+  // Windows still correct here.
+  clusterThreshold: 0.35,        // what sherpa's own clustering is given, before the merge pass
+  clusterMergeThreshold: 0.60,   // sherpa over-splits; clusters this alike are one person
+  similarityThreshold: 0.70,     // a profile matches its own voice at 0.76-0.99; impostors under 0.46
+  attendeeOffset: 0.15,          // a speaker not on the attendee list is penalised this much
+  ambiguousMargin: 0.05,         // top two scores closer than this is a coin toss, and is flagged
+  minSegmentSec: 0.5,            // shorter than this is a noise, not a voice
+  maxEmbedSegments: 30,          // longest-first, and this many is plenty
+  minClusterSec: 5.0,            // a cluster under this is crosstalk, not a participant
+  enrollCandidatePct: 5.0,       // an unknown voice holding this much of the meeting is worth a name
   segmentation: {
     url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2',
     bytes: 6958444,
     sha256: '24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488',
     stripComponents: 1,
   },
+  // ERes2Net, and specifically this one, because a voice profile is only portable if both ends
+  // fingerprint with the same model: this is the embedder the Windows helper and the Python
+  // meeting-diarizer use, so a folder of enrolled speakers can be copied between the three.
+  // Changing it silently invalidates every profile anyone has ever enrolled.
   embedding: {
-    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx',
+    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx',
     name: 'speaker-embedding.onnx',
-    bytes: 29292684,
-    sha256: 'c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef',
+    bytes: 26485263,
+    sha256: 'c59158379255ad66e161679cca6af8d52d51e389e3224ab7d7a7baae295c2db5',
   },
 };
 

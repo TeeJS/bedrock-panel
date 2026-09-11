@@ -193,9 +193,14 @@ Once listening is set up, two other things start working on this machine with no
   It works two ways at once, because a meeting has two different problems in it. You are separated
   from the call by audio channel — recordings are stereo with your microphone on one side and the
   call on the other — so that half can never be got wrong. The people on the call are separated by
-  voice, which is what tells two remote participants apart. Naming them is still the diarizer
-  server's job: it matches enrolled voices to real names. A nineteen-second call with three people
-  transcribes in about two seconds.
+  voice, which is what tells two remote participants apart.
+
+  **Enroll someone and their name replaces "Speaker A" in every later transcript.** In
+  **Settings → Meetings**, under Known voices, choose a WAV of that person talking — 45 seconds or
+  more, recorded the way your meetings actually are. Profiles are ordinary `.npy` files named after
+  the person, exactly what the Windows helper and the Python diarizer write, so the folder copies
+  between machines and nothing has to be enrolled twice. Enrolling is optional: unenrolled voices
+  are still told apart, just numbered.
 
 Both live in `~/.config/bedrock-panel/speech` and upgrading Bedrock Panel never touches them.
 Removing either is a button in the same tab.
@@ -244,9 +249,8 @@ These features report themselves unavailable rather than failing quietly:
 - **Outlook meeting info.** Use the Microsoft 365 source instead, which works everywhere.
 - **Built-in listening is English only for now.** Other languages mean pointing STT at your own
   Wyoming server, such as faster-whisper. Speaking has English voices in US and UK accents.
-- **Real names in meeting transcripts** need a diarizer server, which matches voices you have
-  enrolled. The built-in engine tells the participants apart and numbers them, but has never been
-  introduced to anyone.
+- **A voice has to be enrolled before it can be named.** Until then participants are told apart and
+  numbered. Enrollment is on the Meetings tab and takes one recording per person.
 
 ## 11. Troubleshooting
 
