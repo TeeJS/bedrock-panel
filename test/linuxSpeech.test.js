@@ -204,3 +204,11 @@ test('turning both halves off starts nothing at all', () => {
   speech.start({ speak: false, hear: false });
   assert.equal(spawned.length, 0);
 });
+
+test('the helper treats a listener hanging up as normal, not as an error', () => {
+  // The voice apps cancel speech by dropping the socket — that IS the barge-in signal — so every
+  // interruption must be silent. A log full of tracebacks hides the ones that mean something.
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'app', 'linux', 'speech-server.py'), 'utf8');
+  assert.match(src, /def handle_error/, 'the server must not print a traceback when a client hangs up');
+  assert.match(src, /BrokenPipeError, ConnectionResetError/);
+});

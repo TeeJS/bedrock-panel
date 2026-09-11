@@ -265,7 +265,10 @@ def info_event(voice_name, languages):
 class TtsHandler(socketserver.StreamRequestHandler):
     def handle(self):
         while True:
-            event = read_event(self.rfile)
+            try:
+                event = read_event(self.rfile)
+            except (BrokenPipeError, ConnectionResetError):
+                return          # the listener interrupted; nothing to clean up
             if event is None:
                 return
             if event['type'] == 'describe':
@@ -311,8 +314,9 @@ class SttHandler(socketserver.StreamRequestHandler):
         pcm = bytearray()
         fmt = {'rate': 16000, 'width': 2, 'channels': 1}
         while True:
-            event = read_event(self.rfile)
-            if event is None:
+            try:
+                event = read_event(self.rfile)
+            except (BrokenPipeError, ConnectionResetError):
                 return
             kind = event['type']
             if kind == 'describe':
@@ -333,6 +337,15 @@ class SttHandler(socketserver.StreamRequestHandler):
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = False   # a bind failure must be visible: something else owns the port
     daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        """A client hanging up mid-sentence is normal, not an error. The voice apps cancel speech by
+        dropping the socket -- that IS the barge-in signal -- so every interruption would otherwise
+        print a traceback, and a log full of tracebacks hides the ones that mean something."""
+        kind = sys.exc_info()[0]
+        if kind is not None and issubclass(kind, (BrokenPipeError, ConnectionResetError)):
+            return
+        socketserver.ThreadingTCPServer.handle_error(self, request, client_address)
 
 
 def main():
