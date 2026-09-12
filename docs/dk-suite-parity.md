@@ -5,8 +5,13 @@ What the commercial package advertises versus what Bedrock Panel ships. Comparis
 plus their [Kickstarter](https://www.kickstarter.com/projects/decokee/decokee-quake-the-ultimate-desktop-ai-copilot)
 and [AI-copilot](https://www.decokee.com/pages/quake-ai-copilot) pages (as advertised 2026-08),
 cross-checked against a teardown of the installed DK-Suite (v0.4.69, unpacked Electron); the
-Bedrock Panel side is the current release (v0.6.5). This is the running list of what they have that we
-don't — update it when either side changes.
+Bedrock Panel side is the current release (**v0.9.6**). This is the running list of what they have
+that we don't — update it when either side changes.
+
+> **What was re-checked, and when.** The Bedrock Panel column was brought up to date at v0.9.6
+> (2026-09-11). The DK-Suite column still reflects the 2026-08 reading of their pages and the
+> v0.4.69 teardown — nobody has re-read their marketing or unpacked a newer build since, so treat
+> their side as "as of 2026-08" rather than current.
 
 > Bedrock Panel is an independent community project, not affiliated with DECOKEE — see the
 > [README disclaimer](../README.md). Feature names in the "theirs" column are their marketing terms.
@@ -36,26 +41,28 @@ don't — update it when either side changes.
 | Wallpapers / screensaver ("Vivid" — teardown: a manually-selected crossfading image/video page, **no idle detection**) | **[Screensaver](screensaver.md)** (PR #24): five built-in live-drawn scenes (Waves, Starfield, Lava lamp, Fireflies, Flurry), your own photos (slideshow or scrapbook **collage**) and videos in separate folders, downloadable loops in [community-wallpapers](../community-wallpapers), and — theirs can't — **idle auto-start** (default 30 min) that wakes back to exactly the page you left. |
 | Weather on the clock page | Flip Clock has an optional **weather widget** (Open-Meteo, off by default): city-or-address lookup, live conditions, temperature, and a readable headline. |
 | Device diagnostics panel | **Device Diagnostics** app: Display / Touch / Knob connection check — confirmed working on real Bedrock + DK-QUAKE hardware. |
+| Multi-OS: Windows, macOS, Linux | **All three ship.** Windows throughout; **macOS** (Apple Silicon, 14.2+) since **v0.9.5**, signed with a Developer ID and notarized; **Linux** (x64, `.deb` and AppImage) since **v0.9.6**. Knob, touchscreen and all three run modes work on each. The Windows C# helpers have Swift counterparts on macOS, and on Linux the same jobs are done by what the desktop already publishes — MPRIS, PipeWire, uinput, XDG portals — so there is no native helper tree at all. Linux also gains **built-in speech**, 90 voices in 36 languages plus a ladder of listening models, with no server, GPU or account. Wayland forbids two things and they are greyed out with the reason: Reserved Display and follow-the-focused-app. See [macos.md](macos.md) and [linux.md](linux.md). |
+| OBS Studio controls (their "coming soon", targeted Sep 5 2026) | **Shipped** as a first-class **OBS** app speaking obs-websocket: scenes, sources, audio, stream/record state on the panel, Studio Mode and a Panic recovery action — state-driven rather than fire-and-forget hotkeys. |
 | Game voice control | **[IF Player](../community-apps/if-player)** (community app): plays Z-machine / Glulx interactive fiction with voice narration (TTS reads each new passage aloud) and voice commands (speak "go north", "take lamp" — STT transcribes and enters automatically), plus a touch compass for directional controls. |
 
 ## ❌ Missing (the actual todo)
 
 | Feature | What they advertise | Lift for Bedrock Panel |
 |---|---|---|
-| **macOS / Linux support** | Multi-OS: Windows, macOS, Linux | **Large.** The launcher/editor are Electron (portable), but launch/volume/media/loopback-audio/reserved-display code is Windows-specific (README already flags this). Realistic only as a scoped "panel + apps, minus Windows-only extras" port. |
-| **System monitor** | Real-time CPU, memory, GPU, disk, network, battery ("SysView" in DK-Suite's page wheel) | **Medium.** Was shipped in Bedrock Panel but retired at v0.5.3 when the `systeminformation` dependency was removed for security (PowerShell churn); needs a replacement implementation. |
-| **Colored iconfont import** | Import colored icon font ZIP files — preserves viewBox, path, and fill attributes; exports as transparent PNGs (shipped DK-Suite v0.4.71) | **Small/Medium.** OQ has emoji search in the tile editor; this would let users bring custom icon sets from iconfont sources. |
+| **System monitor** | Real-time CPU, memory, GPU, disk, network, battery ("SysView" in DK-Suite's page wheel) | **Medium.** Shipped once, then **retired at v0.5.2**: its metrics layer spawned a PowerShell process per reading, hundreds a minute, which endpoint-security tools reasonably flag as malware-like. It needs a replacement collection layer, not a revival — see [system-monitor.md](system-monitor.md). |
+| **Colored iconfont import** | Import colored icon font ZIP files — preserves viewBox, path, and fill attributes; exports as transparent PNGs (shipped DK-Suite v0.4.71) | **Small/Medium.** Bedrock Panel has emoji search in the tile editor; this would let users bring custom icon sets from iconfont sources. |
+| **QUAKE firmware OTA** | Over-the-air firmware updates for the console (their "coming soon", targeted Oct 12 2026) | **Medium**, and only partly ours: updating DECOKEE's own firmware is their business. The open **Bedrock** knob is the part we could serve. Today any firmware update means flashing by hand. |
 
 ## 🔮 Their "coming soon" list
 
 | They promise | Bedrock Panel today |
 |---|---|
 | Discord Game Controls (a Discord panel already exists in DK-Suite's page wheel per teardown; the Kickstarter pitches an always-on overlay) | **Already shipped** (PR #29): OAuth (PKCE) login, Discord desktop RPC integration, and a first-class panel app — Bedrock Panel beat them to it. |
-| OBS Studio Controls (targeting Sep 5, 2026) | Same today via OBS global hotkeys on key tiles. The real version would be a page speaking **obs-websocket** (scene switching, stream/record status on the panel) — moderate lift, natural fit. |
-| Spotify integration (targeting ~Sep 15, 2026) | OQ ships a generic **Music controller** (now-playing, transport, lyrics). Spotify-specific support would need Spotify SDK/OAuth — their version is pending Spotify's commercial review process. |
+| OBS Studio Controls (targeting Sep 5, 2026) | **Already shipped** — a first-class **OBS** app over obs-websocket, with live scene, source, audio and output state on the panel. Moved to Have. |
+| Spotify integration (targeting ~Sep 15, 2026) | Bedrock Panel ships a generic **Music controller** (now-playing, transport, lyrics) that covers Spotify wherever the OS publishes it — the Windows media flyout, Spotify's own notifications on a Mac, MPRIS on Linux. Spotify-specific support would need Spotify SDK/OAuth; their version is pending Spotify's commercial review process. |
 | Profile switching via touchscreen (targeting Sep 26, 2026) | **Already have**: the knob page-selector and the AI Profiles full-screen picker both work from the touchscreen. |
-| Clock & system monitor UI styles (targeting Sep 26, 2026) | OQ already ships multiple clock apps and a System Monitor — cosmetic style additions are incremental. |
-| QUAKE firmware OTA update (targeting Oct 12, 2026) | No OQ equivalent — firmware updates today require manual flashing. |
+| Clock & system monitor UI styles (targeting Sep 26, 2026) | Bedrock Panel ships several clock apps, so the clock half is covered. The system-monitor half is not: ours is retired, which is the open row in Missing above. |
+| QUAKE firmware OTA update (targeting Oct 12, 2026) | No equivalent — firmware updates today require manual flashing. Tracked in Missing above. |
 | Themes | **Already shipped**: light/dark/system + savable accent presets driving the panel, apps, and the knob ring — they're promising what Bedrock Panel has. |
 | "And more" | New items land here as they announce them. |
 
