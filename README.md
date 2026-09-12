@@ -162,14 +162,16 @@ Grab a build from the **[Releases](https://github.com/TeeJS/bedrock-panel/releas
 - **`bedrock-panel-arm64.dmg`** — macOS on Apple Silicon (macOS 14.2+), signed and notarized: knob,
   touchscreen, Panel mode, Reserved Display, meeting recording with on-Mac transcription, and voice
   through macOS's own speech. First-launch steps and permissions: [docs/macos.md](docs/macos.md);
-  what is in the release: [docs/releases/v0.9.5.md](docs/releases/v0.9.5.md).
+  what is in the release: [docs/releases/v0.9.6.md](docs/releases/v0.9.6.md).
 - **`bedrock-panel-arm64.zip`** — the same macOS app without the disk image.
-- **`bedrock-panel_amd64.deb`** — Linux x64 for Debian and Ubuntu (**v0.9.6-beta.4, tester beta**):
-  installs a desktop entry, pulls its own dependencies, and sets up device access for the knob and
-  touchscreen itself. First-launch steps and what is not available on Linux:
-  [docs/linux.md](docs/linux.md); what is in the beta:
-  [docs/releases/v0.9.6-beta.4-linux.md](docs/releases/v0.9.6-beta.4-linux.md).
-- **`bedrock-panel-x86_64.AppImage`** — the same Linux beta, portable, no install. Needs FUSE 2,
+- **`bedrock-panel_amd64.deb`** — Linux x64 for Debian and Ubuntu: knob, touchscreen, Panel mode,
+  and built-in speech that needs no server, no GPU, and no account — 90 voices in 36 languages, and
+  listening for dictation, meeting transcripts and the voice apps. Now playing reads MPRIS, so the
+  player your desktop shows is the one the Music page controls. The package installs a desktop
+  entry, pulls its own dependencies, and sets up device access for the knob and touchscreen itself.
+  First-launch steps and what is not available on Linux: [docs/linux.md](docs/linux.md); what is in
+  the release: [docs/releases/v0.9.6.md](docs/releases/v0.9.6.md).
+- **`bedrock-panel-x86_64.AppImage`** — the same Linux build, portable, no install. Needs FUSE 2,
   which Ubuntu 24.04 and newer no longer ship — install `libfuse2t64` or use the `.deb`.
 
 The exe is **code-signed** (Azure Trusted Signing, publisher *Thomas Schmitz*) — so you see a
@@ -184,7 +186,17 @@ drag it to Applications and launch it, with no Gatekeeper warning to click throu
 `~/Library/Application Support/bedrock-panel`. The Mac needs a few permissions (touchscreen, keystrokes,
 recording): **[docs/macos.md](docs/macos.md)** lists each one and exactly where to grant it. Upgrading
 from a `v0.9.5-beta` build: the signature changed, so re-add Bedrock Panel under **Input Monitoring**
-and allow the keychain prompt once. Linux packages are unsigned; Linux has no equivalent gatekeeper.
+and allow the keychain prompt once.
+
+On **Linux** the packages are unsigned, because Linux has no equivalent gatekeeper to satisfy.
+Config lives in `~/.config/bedrock-panel`. The `.deb` installs the device-access rule for the knob
+and touchscreen itself; with the AppImage the editor walks you through the one command that grants
+it. Panel mode places its window through XWayland, since a Wayland client cannot position a window
+on a chosen display, and the app relaunches itself onto X11 at startup and says so in the log.
+Reserved Display and follow-the-focused-app are the two features Wayland does not permit at all —
+they are greyed out with the reason beside them. Verified on Ubuntu 26.04 with KDE Plasma 6.6;
+other desktops and distributions are expected to work and have not been exercised.
+**[docs/linux.md](docs/linux.md)** covers first launch, device access, and the full list.
 
 ## 📖 Documentation
 
@@ -222,9 +234,10 @@ in the **[issue tracker](https://github.com/TeeJS/bedrock-panel/issues)**.
 
 - **Can I use it without a touchscreen?** Yes. Software mode runs on a Windows PC, a Linux desktop, or an Apple Silicon
   Mac with no hardware at all. A touchscreen or knob adds the hands-on layer.
-- **Which computers does it run on?** Windows, macOS on Apple Silicon (Software mode; knob and
-  touchscreen support is in progress), and Linux (Software and Panel mode; Reserved Display and
-  follow-the-focused-app are not possible on Wayland — see [docs/linux.md](docs/linux.md)).
+- **Which computers does it run on?** Windows, macOS on Apple Silicon (macOS 14.2 or newer), and
+  Linux on x64. All three run the knob, the touchscreen, and all three run modes. Reserved Display
+  and follow-the-focused-app are the exception: they work on Windows and macOS, and Wayland does not
+  permit them on Linux — see [docs/linux.md](docs/linux.md).
 - **Does it need internet?** The core launcher works offline. Some apps — AI voice, translation,
   meeting transcription — need an internet connection.
 - **Is it free?** Yes, it's free and open source. Nearly everything is MIT licensed; the QUAKE

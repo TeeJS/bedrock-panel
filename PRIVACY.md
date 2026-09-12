@@ -3,8 +3,8 @@
 _Last updated: 2026-09-07_
 
 Bedrock Panel (formerly open-quake) is a free, open-source launcher and control platform for
-Windows — on a compatible PC, a touchscreen, or with optional controllers. This policy explains
-what data the app does and does not handle.
+Windows, macOS, and Linux — on a compatible computer, a touchscreen, or with optional controllers.
+This policy explains what data the app does and does not handle.
 
 ## The short version
 
