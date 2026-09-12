@@ -289,8 +289,6 @@ and quietly doing nothing with it.
 - **Meeting info from a calendar on this computer.** Windows reads classic Outlook and macOS reads
   Calendar; Linux has no single desktop calendar to read. The Microsoft 365 source works everywhere
   and is preselected here, with the local option greyed out.
-- **Built-in listening is English only for now.** Other languages mean pointing STT at your own
-  Wyoming server, such as faster-whisper. Speaking has English voices in US and UK accents.
 - **A voice has to be enrolled before it can be named.** Until then participants are told apart and
   numbered. Enrollment is on the Meetings tab and takes one recording per person.
 

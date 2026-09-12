@@ -150,6 +150,11 @@ services, configured once under **Settings → TTS/STT** (override per page in A
   supports it, and the system voices (pick one in the Voice list; better voices are downloaded under
   System Settings → Accessibility → Spoken Content). macOS asks for the Speech Recognition permission
   the first time something is transcribed. Details in [macos.md](macos.md).
+- **On Linux, nothing to install either:** the built-in engine speaks and listens on this computer
+  with no server, no GPU and no account. Set it up once in **Settings → TTS/STT** — pick a voice from
+  90 across 36 languages, and a listening model from the ladder — and the voice apps, dictation and
+  meeting transcripts all use it. Anything other than English needs one of the multilingual listening
+  models. Details in [linux.md](linux.md).
 - **No servers of your own (Windows default):** install [tts-sst](https://github.com/TeeJS/tts-stt-windows),
   a small Windows tray app serving Whisper STT and a Piper voice locally on 127.0.0.1:10300 / 10200.
 - **Your own homelab services:** point the host/port fields at your `wyoming-faster-whisper` and

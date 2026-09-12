@@ -34,5 +34,8 @@ editor, so editing never changes what's live.
 Default, Media, and Dev — and adds the one you pick (or all three) as new pages, without touching the
 pages you already have. They are the bundled defaults for the platform you are on: on a Mac the tiles
 name Mac apps (Safari, Finder, Activity Monitor, System Settings, Screenshot, …) and use `open` /
-osascript commands; on Windows they are the original Windows pages. Handy after copying a config from
+osascript commands; on Linux the tiles name the *job* — files, editor, calculator, terminal, monitor,
+settings — and Bedrock Panel launches whichever program that machine actually has, checked against
+`PATH`, while a tile naming a real binary such as `dolphin` is used exactly as typed; on Windows they
+are the original Windows pages. Handy after copying a config from
 the other platform, or to get a known-good page back after editing one into a corner.

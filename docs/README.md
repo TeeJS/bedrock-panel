@@ -16,8 +16,7 @@ Detailed guides for Bedrock Panel. Back to the [project README](../README.md).
 - **[Microsoft 365 drop-in](apps.md)** — installable profile, presence, and calendar panel with its own OAuth connection, configurable app shortcuts, and one-tap Join meeting
 - **[Settings & knob](settings.md)** — launch mode, rotation, RGB ring, knob behavior, mic
 - **[Reserved Display](reserved-display.md)** — keep other apps' windows off the panel display (Windows and macOS)
-- **[Bedrock Panel on macOS](macos.md)** — install the unsigned build, every macOS permission and exactly where to grant it, Reserved Display on a Mac
-- **[Linux beta release notes](releases/v0.9.6-beta.4-linux.md)** — what is in v0.9.6-beta.4, what to try, and what is not built yet
+- **[Bedrock Panel on macOS](macos.md)** — installing the signed and notarized build, every macOS permission and exactly where to grant it, Reserved Display on a Mac
 - **[Bedrock Panel on Linux](linux.md)** — install the deb or AppImage, the one udev rule the console needs, the starter pages, and what Wayland makes impossible
 
 ## Under the hood

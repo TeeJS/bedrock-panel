@@ -20,7 +20,9 @@ Open **Settings → Auth** and:
 The status line shows what loaded — e.g. *"12 dashboards, 487 entities, 24 areas, 38 devices, 5 floors, 9 labels (3 s ago)"*. Click Refresh any time after changes to your HA setup (added an area, renamed an entity, etc.) to re-pull.
 
 The token is encrypted at rest — on Windows via per-value DPAPI, no key file to lose
-across restarts; macOS uses Keychain-backed Electron `safeStorage` (same place
+across restarts; Linux uses Electron `safeStorage` backed by KWallet or GNOME Keyring, and
+refuses to save a secret when no keyring is reachable rather than writing something that only
+looks encrypted; macOS uses Keychain-backed Electron `safeStorage` (same place
 per-dashboard HA tokens live either way). It never leaves the main process except for
 requests to your HA URL.
 

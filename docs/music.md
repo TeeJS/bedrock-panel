@@ -36,6 +36,15 @@ AppleScript — the first press asks for the **Automation** permission — and f
 (Accessibility) otherwise. Music.app doesn't report a playback position, so its progress sits at 0 for
 now. Album art comes from Spotify's public oEmbed lookup or the iTunes search.
 
+**Linux:** now-playing comes from **MPRIS** over D-Bus, the same thing your desktop's own media
+applet reads, so Firefox, Chromium, Spotify, VLC, Plex and Elisa all appear with cover art, and the
+transport buttons drive whichever player is being shown. **mpv** publishes no MPRIS unless the
+`mpv-mpris` plugin is installed, so the page stays blank for it. One packaging note, in case a
+player refuses to answer: since Ubuntu 24.04 an application needs an AppArmor profile before its
+sandbox may create user namespaces, and that profile gives the process a name — snap-packaged
+players accept media traffic only from senders labelled `unconfined` or `plasmashell`. Where
+Bedrock Panel finds itself labelled, it reads the bus from a child that sheds the label first.
+
 **Volume note:** the knob's *System volume* controls the OS master volume. Windows exposes no per-tab
 volume for browser-based players, and the media API carries no volume control, so there's no way to set
 a specific web player's volume from here.

@@ -5,6 +5,12 @@ using it as the panel. Enable it under **Settings → Monitor → Reserved Displ
 off by default and does not change the USB HID screen-on/keepalive behavior. Windows and
 macOS have their own helper; the macOS notes are at the end.
 
+**Linux cannot do this.** Moving another application's window off a display means enumerating and
+repositioning foreign windows, which Wayland deliberately does not allow any client to do. The
+setting is greyed out in the editor with that reason beside it, rather than accepting a value and
+quietly doing nothing. Follow-the-focused-app is unavailable for the same reason. See
+[linux.md](linux.md).
+
 Electron identifies the reserved display from the panel window's current bounds and
 sends replaceable topology snapshots to a persistent, per-user C# helper. The helper
 uses documented Win32 event hooks plus a low-frequency reconciliation scan. It filters

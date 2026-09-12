@@ -53,9 +53,15 @@ protection and what the knob does in monitor mode):
   meeting recording), with a status pill, **Request** (fires the system prompt where macOS allows
   it) and **Open System Settings** (jumps to the matching Privacy & Security pane). Nothing is
   requested at startup — each feature asks the first time it needs a permission; this block is
-  where to check and repair. Grants attach to
-  the app build, so an update may ask again until builds are notarized. See
+  where to check and repair. Grants attach to the app's code signature, so released builds keep
+  their permissions across updates; a build signed with a different certificate asks once more. See
   [building.md](building.md#build--run-macos) for the full list.
+- **Device access** (Hardware tab, Linux only) — says whether the udev rule that makes the knob,
+  the touchscreen and `/dev/uinput` reachable by your user is active, and gives you the one command
+  to install it when it is not. The `.deb` installs the rule itself, so this row is for AppImage and
+  source-checkout users. Reserved Display and follow-the-focused-app are greyed out on Linux with
+  the reason beside them, because Wayland does not allow moving or watching other applications'
+  windows. See [linux.md](linux.md).
 - **Knob behavior** (under the ring controls) — what **turning** and **clicking** the knob
   does, set per page **kind** (grid / dashboard / app):
   - **Turn** — *Scroll pages* (default: previous/next page), *System volume*, *Scroll in

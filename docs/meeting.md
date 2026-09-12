@@ -97,6 +97,18 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   Settings → Internet Accounts with Calendars on; the first Check Connection asks for Calendar
   access) or from the **Microsoft 365** source — Outlook for Mac itself shares no calendar. The hotkeys, manual recording, transcription, and analysis work as on Windows;
   pre/post transcription commands run through `/bin/sh`.
+- **On Linux** recording, transcription and analysis work as they do elsewhere, and transcripts can
+  be made on this computer: set Engine to *Built-in speech on this computer* in Settings → Meetings,
+  which uses the same built-in engine as dictation and the voice apps. You are separated from the
+  call by audio channel, and the people on the call are separated by voice, so anyone enrolled once
+  under **Known voices** is named in every later transcript and everyone else is numbered. Profiles
+  are ordinary `.npy` files, the same ones the Windows helper writes, so the folder copies between
+  machines. **Auto-record** watches which application has taken the microphone, but the names to
+  list are program names such as `zoom` or `chromium` rather than Windows `.exe` names. Two things
+  do not work: **meeting info from a calendar on this computer**, since Linux has no single desktop
+  calendar to read, so the **Microsoft 365** source is preselected and the local option is greyed
+  out; and the **Teams** tiles that focus the Teams window first, because Wayland does not allow
+  focusing another application's window. Zoom is unaffected — its shortcuts need no focus.
 
 ## Slide capture
 

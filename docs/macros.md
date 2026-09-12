@@ -42,6 +42,12 @@ Example — open Notepad and write a note: `App: notepad` → `Delay: 2000` →
 > take focus before you type. Cold starts are slowest (Windows 11's Notepad is a slow-to-launch
 > Store app — give it ~2000–2500 ms); a snappier app needs less.
 
+**On Linux** keystrokes, media keys and typed text go through a uinput virtual keyboard, which needs
+access to `/dev/uinput`. The `.deb` sets that up when it installs; with the AppImage or a source
+checkout the editor shows the one command that grants it. If a macro does nothing, the log says why,
+and *permission denied on /dev/uinput* is that missing access rather than a broken macro. See
+[linux.md](linux.md).
+
 ## AutoHotkey steps (optional, Windows)
 
 For automation beyond keystrokes (window targeting, remapping, logic), an **AutoHotkey**
