@@ -51,7 +51,6 @@ that we don't — update it when either side changes.
 |---|---|---|
 | **System monitor** | Real-time CPU, memory, GPU, disk, network, battery ("SysView" in DK-Suite's page wheel) | **Medium.** Shipped once, then **retired at v0.5.2**: its metrics layer spawned a PowerShell process per reading, hundreds a minute, which endpoint-security tools reasonably flag as malware-like. It needs a replacement collection layer, not a revival — see [system-monitor.md](system-monitor.md). |
 | **Colored iconfont import** | Import colored icon font ZIP files — preserves viewBox, path, and fill attributes; exports as transparent PNGs (shipped DK-Suite v0.4.71) | **Small/Medium.** Bedrock Panel has emoji search in the tile editor; this would let users bring custom icon sets from iconfont sources. |
-| **QUAKE firmware OTA** | Over-the-air firmware updates for the console (their "coming soon", targeted Oct 12 2026) | **Medium**, and only partly ours: updating DECOKEE's own firmware is their business. The open **Bedrock** knob is the part we could serve. Today any firmware update means flashing by hand. |
 
 ## 🔮 Their "coming soon" list
 
@@ -62,7 +61,7 @@ that we don't — update it when either side changes.
 | Spotify integration (targeting ~Sep 15, 2026) | Bedrock Panel ships a generic **Music controller** (now-playing, transport, lyrics) that covers Spotify wherever the OS publishes it — the Windows media flyout, Spotify's own notifications on a Mac, MPRIS on Linux. Spotify-specific support would need Spotify SDK/OAuth; their version is pending Spotify's commercial review process. |
 | Profile switching via touchscreen (targeting Sep 26, 2026) | **Already have**: the knob page-selector and the AI Profiles full-screen picker both work from the touchscreen. |
 | Clock & system monitor UI styles (targeting Sep 26, 2026) | Bedrock Panel ships several clock apps, so the clock half is covered. The system-monitor half is not: ours is retired, which is the open row in Missing above. |
-| QUAKE firmware OTA update (targeting Oct 12, 2026) | No equivalent — firmware updates today require manual flashing. Tracked in Missing above. |
+| QUAKE firmware OTA update (targeting Oct 12, 2026) | Neither side ships this. Checked 2026-09-11: their download page offers DK-Suite installers only, with no firmware file and no updater, so they have never shipped a firmware update either — this is a promise, not a feature we are behind on. The console reports firmware 1.0.19 over the control interface and the protocol carries a DFU opcode (`0x2F`) that DK-Suite has never been seen to use. Updating DECOKEE's own firmware is their business in any case; the open **Bedrock** knob is the part an update path could realistically serve. |
 | Themes | **Already shipped**: light/dark/system + savable accent presets driving the panel, apps, and the knob ring — they're promising what Bedrock Panel has. |
 | "And more" | New items land here as they announce them. |
 
