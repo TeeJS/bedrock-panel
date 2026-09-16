@@ -1,0 +1,31 @@
+{
+  "id": "macro-deck-surface",
+  "name": "Macro Deck Surface",
+  "version": "1.0.0",
+  "description": "Turn the panel into a Macro Deck surface: renders a Macro Deck host's live button page and sends taps, long-presses and releases back over its client WebSocket.",
+  "entry": "index.html",
+  "served": true,
+  "options": [
+    {
+      "key": "host",
+      "label": "Macro Deck host",
+      "type": "text",
+      "default": "127.0.0.1:8191",
+      "help": "Address of the Macro Deck host, e.g. 127.0.0.1:8191 or 192.168.1.50:8191. Macro Deck must be running; the first time you connect, accept this device on the host."
+    },
+    {
+      "key": "clientId",
+      "label": "Device name",
+      "type": "text",
+      "default": "Bedrock Panel",
+      "help": "Name this surface shows as on the Macro Deck host when you accept it."
+    },
+    {
+      "key": "longPressMs",
+      "label": "Long-press (ms)",
+      "type": "text",
+      "default": "1000",
+      "help": "How long a key must be held before a long-press action is sent."
+    }
+  ]
+}
