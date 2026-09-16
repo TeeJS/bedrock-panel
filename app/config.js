@@ -532,6 +532,15 @@
   // stream/recorder/animation registers a teardown in micTestTeardowns so a re-render stops the mic.
   const micTestTeardowns = new Set();
   function stopAllMicTests() { micTestTeardowns.forEach(fn => { try { fn(); } catch (e) {} }); micTestTeardowns.clear(); }
+  // Warn (accurately) when a playback/speaker-test may be inaudible. We can only read the master LEVEL
+  // (0-100) via the main process; Windows mute is a separate flag we don't read yet, so the copy never
+  // claims "muted" — only "0 or unreadable". Returns '' when the level looks fine.
+  function inaudibleWarning(vol) {
+    if (vol === 0) return 'System volume is at 0 — turn it up to hear this.';
+    if (vol == null) return 'Could not read system volume — if you hear nothing, check it is not muted or at 0.';
+    return '';
+  }
+  function checkVolume() { try { return Promise.resolve(configApi.getSystemVolume ? configApi.getSystemVolume() : null); } catch (e) { return Promise.resolve(null); } }
   function micTestHtml(p) {
     return `<div class="row" style="margin-top:6px"><button id="${p}Show" type="button" aria-pressed="false">Show levels</button>
         <div id="${p}MeterWrap" role="meter" aria-label="Microphone input level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 percent" style="display:none;flex:1;height:14px;border-radius:7px;background:#0e1822;border:1px solid #1b2838;overflow:hidden;margin-left:10px"><div id="${p}Meter" style="height:100%;width:0%;background:#7CFFB2;transition:width .06s"></div></div></div>
@@ -555,7 +564,8 @@
     const showBtn = $id('Show'), testBtn = $id('Test'), playBtn = $id('Play'), redoBtn = $id('Redo');
     const wrap = $id('MeterWrap'), bar = $id('Meter'), msg = $id('Msg');
     if (!showBtn || !testBtn) return;
-    let stream = null, ctx = null, raf = 0, rec = null, chunks = [], blobUrl = '', countdown = 0, mode = '', maxPeak = 0;   // mode: '' | 'levels' | 'recording'
+    let stream = null, ctx = null, raf = 0, rec = null, chunks = [], blobUrl = '', countdown = 0, mode = '', maxPeak = 0, player = null;   // mode: '' | 'levels' | 'recording'
+    function stopPlayback() { if (player) { try { player.pause(); } catch (e) {} try { player.src = ''; } catch (e) {} player = null; } }
     function setMeter(pct) { if (bar) bar.style.width = pct + '%'; if (wrap) { wrap.setAttribute('aria-valuenow', String(pct)); wrap.setAttribute('aria-valuetext', pct + ' percent'); } }
     function animate() {
       const an = ctx.createAnalyser(); an.fftSize = 512;
@@ -576,7 +586,7 @@
       testBtn.textContent = 'Test microphone';
       mode = '';
     }
-    function teardown() { stopStream(); if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} blobUrl = ''; } if (playBtn) playBtn.style.display = 'none'; if (redoBtn) redoBtn.style.display = 'none'; micTestTeardowns.delete(teardown); }
+    function teardown() { stopPlayback(); stopStream(); if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} blobUrl = ''; } if (playBtn) playBtn.style.display = 'none'; if (redoBtn) redoBtn.style.display = 'none'; micTestTeardowns.delete(teardown); }
     micTestTeardowns.add(teardown);
 
     showBtn.onclick = () => {
@@ -591,6 +601,7 @@
     testBtn.onclick = () => {
       if (mode === 'recording') { stopStream(); return; }   // clicking again stops early
       if (mode === 'levels') stopStream();
+      stopPlayback();   // a Re-record while the previous sample is playing should silence it first
       if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} blobUrl = ''; }
       if (playBtn) playBtn.style.display = 'none'; if (redoBtn) redoBtn.style.display = 'none';
       micStreamForLabel(getMicLabel()).then(s => {
@@ -615,18 +626,23 @@
         };
         rec.start();
         mode = 'recording'; testBtn.textContent = 'Stop';
-        let left = 3; if (msg) msg.textContent = 'Recording… ' + left;
+        let left = 5; if (msg) msg.textContent = 'Recording… ' + left;
         countdown = setInterval(() => { left -= 1; if (left > 0) { if (msg) msg.textContent = 'Recording… ' + left; } else { clearInterval(countdown); countdown = 0; if (rec && rec.state !== 'inactive') rec.stop(); } }, 1000);
       }).catch(() => { if (msg) msg.textContent = 'Could not open the microphone.'; });
     };
     if (playBtn) playBtn.onclick = () => {
       if (!blobUrl) return;
+      stopPlayback();   // restart cleanly if Play is tapped again mid-playback
       const label = getSpkLabel();
       (label ? navigator.mediaDevices.enumerateDevices() : Promise.resolve([])).then(devs => {
         const d = (devs || []).find(x => x.kind === 'audiooutput' && x.label === label);
         const a = new Audio(blobUrl);
-        a.onended = () => { if (msg) msg.textContent = 'Playback finished.'; };
-        const go = () => { a.play().catch(() => {}); if (msg) msg.textContent = 'Playing…'; };
+        player = a;
+        a.onended = () => { if (player === a) player = null; if (msg) msg.textContent = 'Playback finished.'; };
+        const go = () => {
+          a.play().catch(() => {});
+          checkVolume().then(v => { const w = inaudibleWarning(v); if (msg) msg.textContent = w ? ('Playing… ' + w) : 'Playing…'; });
+        };
         if (d && a.setSinkId) a.setSinkId(d.deviceId).then(go).catch(go); else go();
       }).catch(() => { if (msg) msg.textContent = 'Could not play the sample.'; });
     };
@@ -4481,7 +4497,7 @@ ${IS_MAC ? `
       <div class="row"><label for="audMic">Microphone</label>
         <select id="audMic" style="flex:1"><option value="">System default</option></select></div>
       ${micTestHtml('aud')}
-      <p class="hint">The mic every app uses unless a page overrides it in its <b>Advanced settings</b>. <b>Show levels</b> watches the input live; <b>Test microphone</b> records a 3-second sample and plays it back on the default speaker.</p>
+      <p class="hint">The mic every app uses unless a page overrides it in its <b>Advanced settings</b>. <b>Show levels</b> watches the input live; <b>Test microphone</b> records a 5-second sample and plays it back on the default speaker.</p>
 
       <p class="sectitle" style="margin-top:16px">Default speaker</p>
       <div class="row"><label for="audSpk">Speaker</label>
@@ -5434,7 +5450,11 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
           osc.type = 'sine'; osc.frequency.value = 440; gain.gain.value = 0.15;
           osc.connect(gain); gain.connect(dest);
           const a = new Audio(); a.srcObject = dest.stream;
-          const play = () => { a.play().catch(() => {}); try { osc.start(); } catch (e) {} if (msg) msg.textContent = 'Playing test tone…'; setTimeout(() => { try { osc.stop(); } catch (e) {} try { ctx.close(); } catch (e) {} if (msg) msg.textContent = 'Test tone finished.'; }, 900); };
+          const play = () => {
+            a.play().catch(() => {}); try { osc.start(); } catch (e) {}
+            checkVolume().then(v => { const w = inaudibleWarning(v); if (msg) msg.textContent = w ? ('Playing test tone… ' + w) : 'Playing test tone…'; });
+            setTimeout(() => { try { osc.stop(); } catch (e) {} try { ctx.close(); } catch (e) {} if (msg) msg.textContent = 'Test tone finished.'; }, 900);
+          };
           if (d && a.setSinkId) a.setSinkId(d.deviceId).then(play).catch(play); else play();
         }).catch(() => { if (msg) msg.textContent = 'Could not play a test tone.'; });
       };

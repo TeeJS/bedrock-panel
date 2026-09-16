@@ -2541,6 +2541,24 @@ function ensureVolumeWatcher() {
   sysVolProc.on('error', () => {});
   sysVolProc.on('close', () => { sysVolProc = null; sysVolCache = null; });   // next panel poll respawns it
 }
+// One-shot system-volume read for the Settings editor's mic/speaker test. This is a rare, click-time
+// check (Play / Test speaker), so a one-shot exec is fine — no persistent watcher needed. Returns the
+// master LEVEL 0-100, or null when it can't read. NOTE: level only; Windows mute is a SEPARATE flag the
+// helper doesn't expose yet (a future change would add GetMute), so callers phrase the warning as
+// "volume is 0 or unreadable", never "muted".
+function readSystemVolumeOnce() {
+  return new Promise(resolve => {
+    if (!SYSVOL_EXE || !fs.existsSync(SYSVOL_EXE)) return resolve(null);
+    const c = helperCommand('sysvolume');
+    try {
+      require('child_process').execFile(c.command, c.args, { windowsHide: true, timeout: 4000 }, (err, stdout) => {
+        if (err) return resolve(null);
+        const n = parseInt(String(stdout || '').trim(), 10);
+        resolve(Number.isFinite(n) && n >= 0 ? n : null);
+      });
+    } catch (e) { resolve(null); }
+  });
+}
 
 // State the panel poller reads: recorder runtime state + the configured mic (so the page loads with
 // the editor-chosen mic as its default even when idle) + the auto-record flag.
@@ -4842,6 +4860,10 @@ app.whenReady().then(async () => {
     if (!panelWin || panelWin.isDestroyed()) return { ok: false, error: 'no panel window — Monitor mode needs the device display' };
     enterMonitorMode();
     return { ok: !!monitorMode };
+  });
+  ipcMain.handle('getSystemVolume', (e) => {
+    if (!isFrom(e, configWin)) return null;
+    return readSystemVolumeOnce();   // 0-100 level, or null if unreadable (see readSystemVolumeOnce)
   });
   ipcMain.handle('getLighting', async (e) => {
     if (!isFrom(e, configWin)) return null;
