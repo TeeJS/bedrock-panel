@@ -137,7 +137,8 @@ body {
 }
 /* Non-spinner states: an empty page and an invalid address are steady, not loading. */
 .overlay.state-empty .ov-icon,
-.overlay.state-invalid .ov-icon { display: none; }
+.overlay.state-invalid .ov-icon,
+.overlay.state-loadfail .ov-icon { display: none; }
 
 .ov-host { font-size: 18px; color: var(--muted); opacity: .85; word-break: break-all; }
 

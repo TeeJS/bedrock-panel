@@ -106,6 +106,7 @@
         ovTitle.textContent = 'Loading buttons';
         break;
       case 'empty':
+        outageStart = 0;   // a valid empty page is successful recovery, like ready
         ovTitle.textContent = 'No buttons on this page';
         ovMsg.textContent = 'Add buttons to this page in Macro Deck.';
         break;
@@ -381,7 +382,9 @@
         if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
         renderButtons(msg.Buttons);
         dispatchReady = true;       // a valid (even empty) response completes loading
-        setState(msg.Buttons.length ? 'ready' : 'empty');
+        // Use actually-rendered keys, not raw list length, so an all-invalid /
+        // out-of-grid list can't look ready.
+        setState(countAssigned() > 0 ? 'ready' : 'empty');
         break;
       case 'UPDATE_BUTTON':
         if (!initialConfig) return;
@@ -403,9 +406,17 @@
 
   // ---- connection lifecycle ----------------------------------------------
 
+  // Detach and close a socket so its late callbacks can never touch a new session.
+  function retireSocket() {
+    if (!ws) return;
+    try { ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null; ws.close(); } catch (e) {}
+    ws = null;
+  }
+
   function connect() {
     wantOpen = true;
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    retireSocket();            // never leave an old socket live alongside the new one
     initialConfig = false;
     dispatchReady = false;
     cfg = null;
@@ -417,21 +428,27 @@
     var url = wsUrl(HOST_RAW);
     if (!url) { wantOpen = false; setState('invalid'); return; }   // malformed address: no loop
     if (!reconnecting) setState('connecting');
-    try { ws = new WebSocket(url); }
+    var sock;
+    try { sock = new WebSocket(url); }
     catch (e) { wantOpen = false; setState('invalid'); return; }   // syntactically bad URL
+    ws = sock;
 
-    ws.onopen = function () {
+    // Every handler ignores events unless `sock` is still the current socket, so a
+    // straggling message/close from a retired connection cannot mutate this one.
+    sock.onopen = function () {
+      if (sock !== ws) return;
       backoff = 1000;
       send({ Method: 'CONNECTED', 'Client-Id': CLIENT_ID, 'API': '20', 'Device-Type': 'Web' });
       if (!reconnecting) setState('accept');   // during an outage, wait for GET_CONFIG
     };
-    ws.onmessage = function (ev) {
+    sock.onmessage = function (ev) {
+      if (sock !== ws) return;
       var m = null;
       try { m = JSON.parse(ev.data); } catch (e) {}
       if (m && m.Method) handle(m);
     };
-    ws.onerror = function () { /* onclose drives reconnect */ };
-    ws.onclose = function () { if (wantOpen) scheduleReconnect(); };
+    sock.onerror = function () { /* onclose drives reconnect */ };
+    sock.onclose = function () { if (sock === ws && wantOpen) scheduleReconnect(); };
   }
 
   function scheduleReconnect() {
