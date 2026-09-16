@@ -21,6 +21,14 @@
       "help": "Name this surface shows as on the Macro Deck host when you accept it."
     },
     {
+      "key": "layoutMode",
+      "label": "Key shape",
+      "type": "select",
+      "default": "mirror",
+      "choices": [["mirror", "Square keys (host layout)"], ["wide", "Wide rectangular keys"]],
+      "help": "Square keys match the Macro Deck host and are recommended. Wide changes key shape to fill the panel width; artwork is not stretched."
+    },
+    {
       "key": "longPressMs",
       "label": "Long-press (ms)",
       "type": "text",

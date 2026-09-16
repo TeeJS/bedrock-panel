@@ -26,6 +26,7 @@
   var CLIENT_ID = q.get('clientId') || 'Bedrock Panel';
   var LONG_MS = parseInt(q.get('longPressMs'), 10);
   if (!(LONG_MS > 0)) LONG_MS = 1000;
+  var LAYOUT_MODE = (q.get('layoutMode') === 'wide') ? 'wide' : 'mirror';   // default mirror
 
   var deck = document.getElementById('deck');
   var overlay = document.getElementById('overlay');
@@ -39,6 +40,8 @@
   var cfg = null;              // last GET_CONFIG payload (grid + display config)
   var initialConfig = false;   // host gate: ignore buttons until first GET_CONFIG
   var dispatchReady = false;   // no action dispatch until the first GET_BUTTONS
+  var uiState = '';            // current overlay/readiness state
+  var gridFits = true;         // do usable (>=48px) keys fit? set by layout()
   var tiles = {};              // "row_col" -> { el, icon, label }
   var wantOpen = true;
   var backoff = 1000;
@@ -76,6 +79,7 @@
   // (non-focusable, hidden from AT) so Tab and screen readers never reach keys
   // under the overlay.
   function setState(state) {
+    uiState = state;
     if (reconnectAdviceTimer) { clearTimeout(reconnectAdviceTimer); reconnectAdviceTimer = null; }
     var ready = (state === 'ready');
     deck.inert = !ready;
@@ -116,6 +120,10 @@
         ovHost.textContent = HOST_RAW;
         ovRetry.hidden = false;
         break;
+      case 'toodense':
+        ovTitle.textContent = 'Too many buttons to show';
+        ovMsg.textContent = 'This page has more keys than fit at a usable size. Use fewer rows and columns for this page in Macro Deck.';
+        break;
       case 'reconnect':
         ovTitle.textContent = 'Connection lost';
         ovHost.textContent = HOST_RAW;
@@ -151,18 +159,31 @@
   // added to a previously-empty page becomes usable, and vice versa).
   function reconcileReady() {
     if (!dispatchReady) return;
+    // Only resolve a content state; never override a connection overlay
+    // (connecting / accept / reconnect / loadfail / invalid).
+    if (uiState !== 'loading' && uiState !== 'ready' && uiState !== 'empty' && uiState !== 'toodense') return;
+    if (!gridFits) { setState('toodense'); return; }   // can't show usable keys
     setState(countAssigned() > 0 ? 'ready' : 'empty');
   }
 
   // ---- layout & rendering -------------------------------------------------
 
+  function clampInt(v, lo, hi, dflt) {
+    v = (typeof v === 'number' && isFinite(v)) ? Math.floor(v) : dflt;
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  // Bound malformed/hostile geometry so we never make negative sizes or a huge DOM.
   function gridDims() {
     return {
-      rows: (cfg && cfg.Rows > 0) ? cfg.Rows : 3,
-      cols: (cfg && cfg.Columns > 0) ? cfg.Columns : 5,
-      gap: (cfg && typeof cfg.ButtonSpacing === 'number') ? cfg.ButtonSpacing : 10
+      rows: (cfg && cfg.Rows > 0) ? clampInt(cfg.Rows, 1, 32, 3) : 3,
+      cols: (cfg && cfg.Columns > 0) ? clampInt(cfg.Columns, 1, 32, 5) : 5,
+      gap: (cfg && typeof cfg.ButtonSpacing === 'number' && cfg.ButtonSpacing >= 0)
+        ? Math.min(cfg.ButtonSpacing, 64) : 10
     };
   }
+
+  var MIN_KEY = 48;   // usable touch target
 
   function layout() {
     if (!cfg) return;
@@ -172,15 +193,29 @@
     var W = window.innerWidth, H = window.innerHeight;
     var availW = W - outer * 2 - deckPad * 2 - d.gap * (d.cols - 1);
     var availH = H - outer * 2 - deckPad * 2 - d.gap * (d.rows - 1);
-    var size = Math.max(48, Math.floor(Math.min(availH / d.rows, availW / d.cols)));
 
-    deck.style.gridTemplateColumns = 'repeat(' + d.cols + ', ' + size + 'px)';
-    deck.style.gridTemplateRows = 'repeat(' + d.rows + ', ' + size + 'px)';
+    var cellW, cellH;
+    if (LAYOUT_MODE === 'wide') {
+      // Rectangular cells filling width and height independently. Image layers keep
+      // their proportions via object-fit:contain (letterboxed, never stretched).
+      cellW = Math.floor(availW / d.cols);
+      cellH = Math.floor(availH / d.rows);
+    } else {
+      cellW = cellH = Math.floor(Math.min(availW / d.cols, availH / d.rows));  // square
+    }
+
+    // Record whether usable (>=48px) targets fit; reconcileReady() turns this into
+    // the 'toodense' explanatory state (vs silently clipping). Sizes never go < 48.
+    gridFits = (cellW >= MIN_KEY && cellH >= MIN_KEY);
+    var w = Math.max(MIN_KEY, cellW), h = Math.max(MIN_KEY, cellH);
+    deck.style.gridTemplateColumns = 'repeat(' + d.cols + ', ' + w + 'px)';
+    deck.style.gridTemplateRows = 'repeat(' + d.rows + ', ' + h + 'px)';
     deck.style.gap = d.gap + 'px';
 
-    var radius = (cfg && typeof cfg.ButtonRadius === 'number')
-      ? Math.min(cfg.ButtonRadius, size / 2)
-      : Math.round(size * 0.14);
+    var minDim = Math.min(w, h);
+    var radius = (cfg && typeof cfg.ButtonRadius === 'number' && cfg.ButtonRadius >= 0)
+      ? Math.min(cfg.ButtonRadius, minDim / 2)
+      : Math.round(minDim * 0.14);
     document.documentElement.style.setProperty('--tile-radius', radius + 'px');
   }
 
@@ -382,9 +417,9 @@
         if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
         renderButtons(msg.Buttons);
         dispatchReady = true;       // a valid (even empty) response completes loading
-        // Use actually-rendered keys, not raw list length, so an all-invalid /
-        // out-of-grid list can't look ready.
-        setState(countAssigned() > 0 ? 'ready' : 'empty');
+        // reconcileReady() picks ready / empty / toodense from actually-rendered
+        // keys and whether they fit — not raw list length.
+        reconcileReady();
         break;
       case 'UPDATE_BUTTON':
         if (!initialConfig) return;
@@ -461,7 +496,7 @@
     backoff = Math.min(Math.round(backoff * 1.7), 15000);
   }
 
-  window.addEventListener('resize', function () { if (cfg) layout(); });
+  window.addEventListener('resize', function () { if (cfg) { layout(); reconcileReady(); } });
 
   setupInput();
   connect();

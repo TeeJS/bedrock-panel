@@ -42,6 +42,10 @@ body {
   padding: 18px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .04);
 }
+/* Lighter, less heavy deck shadow in the light theme. */
+body.light #deck {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .16), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
 
 /* Every grid cell is drawn as a key so the surface reads as a deck. */
 .tile {
@@ -142,7 +146,8 @@ body {
 /* Non-spinner states: an empty page and an invalid address are steady, not loading. */
 .overlay.state-empty .ov-icon,
 .overlay.state-invalid .ov-icon,
-.overlay.state-loadfail .ov-icon { display: none; }
+.overlay.state-loadfail .ov-icon,
+.overlay.state-toodense .ov-icon { display: none; }
 
 .ov-host { font-size: 18px; color: var(--muted); opacity: .85; word-break: break-all; }
 
