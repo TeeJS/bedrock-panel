@@ -94,6 +94,13 @@ function httpPostWav(url, filename, buf, timeoutMs, fields) {
 function createMeetingTranscriber(deps) {
   const fsMod = deps.fs || require('fs');
   const fsp = fsMod.promises;
+  // Move a file into place: atomic rename, falling back to copy+unlink across volumes.
+  const moveFile = async (src, dest) => {
+    try { await fsp.rename(src, dest); }
+    catch (e) { await fsp.copyFile(src, dest); await fsp.unlink(src); }
+  };
+  // Record a finished-file entry at the head of `recent`, capped to the most recent RECENT_MAX.
+  const pushRecent = entry => { recent.unshift(entry); if (recent.length > RECENT_MAX) recent.length = RECENT_MAX; };
   const fetchImpl = deps.fetchImpl || fetch;         // health probe only (short, cheap)
   const httpPost = deps.httpPost || httpPostWav;     // the long-running upload
   const resolveFolders = deps.resolveFolders;   // () => { unprocessed, processed }
@@ -180,8 +187,7 @@ function createMeetingTranscriber(deps) {
   }
 
   function finish(name, status, error) {
-    recent.unshift({ name, status, error: error || null, finishedAt: now() });
-    if (recent.length > RECENT_MAX) recent.length = RECENT_MAX;
+    pushRecent({ name, status, error: error || null, finishedAt: now() });
     current = null;
     maybeRunPostHook();
     pump();
@@ -220,9 +226,8 @@ function createMeetingTranscriber(deps) {
           const msg = 'transcription-server start failed: ' + e.message;
           log(msg);
           while (queue.length) {
-            recent.unshift({ name: queue.shift(), status: 'error', error: msg, finishedAt: now() });
+            pushRecent({ name: queue.shift(), status: 'error', error: msg, finishedAt: now() });
           }
-          if (recent.length > RECENT_MAX) recent.length = RECENT_MAX;
         })
         .finally(() => { hookRunning = false; hookPhase = null; pump(); });
       return;
@@ -333,10 +338,8 @@ function createMeetingTranscriber(deps) {
     const sidecar = path.join(folders.unprocessed, base + '.json');
     if (fsMod.existsSync(sidecar)) {
       const sidecarDest = path.join(destDir, finalBase + '.json');
-      try {
-        try { await fsp.rename(sidecar, sidecarDest); }
-        catch (e) { await fsp.copyFile(sidecar, sidecarDest); await fsp.unlink(sidecar); }
-      } catch (e) { log('meeting-info sidecar move failed: ' + e.message); }
+      try { await moveFile(sidecar, sidecarDest); }
+      catch (e) { log('meeting-info sidecar move failed: ' + e.message); }
     }
     // The slide-capture folder (<base>-screenshots\) travels with the recording too. Best-effort;
     // a failed move never fails the transcription job. Cross-volume falls back to recursive copy.
@@ -349,12 +352,7 @@ function createMeetingTranscriber(deps) {
       } catch (e) { log('screenshots folder move failed: ' + e.message); }
     }
     const dest = path.join(destDir, finalBase + '.wav');
-    try {
-      await fsp.rename(src, dest);
-    } catch (e) {   // cross-volume folders — copy+unlink
-      await fsp.copyFile(src, dest);
-      await fsp.unlink(src);
-    }
+    await moveFile(src, dest);
   }
 
   return { enqueue, getState };

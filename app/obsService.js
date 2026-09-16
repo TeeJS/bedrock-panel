@@ -251,10 +251,6 @@ class ObsService extends EventEmitter {
     if (!this.isConnected()) return Promise.reject(Object.assign(new Error('OBS is not connected'), { code: 'OBS_NOT_CONNECTED' }));
     return this.client.call(request, data);
   }
-  callBatch(requests, options) {
-    if (!this.isConnected()) return Promise.reject(Object.assign(new Error('OBS is not connected'), { code: 'OBS_NOT_CONNECTED' }));
-    return this.client.callBatch(requests, options);
-  }
   setProgramScene(sceneName) { return this.call('SetCurrentProgramScene', { sceneName }); }
   setPreviewScene(sceneName) { return this.call('SetCurrentPreviewScene', { sceneName }); }
   triggerStudioTransition() { return this.call('TriggerStudioModeTransition'); }

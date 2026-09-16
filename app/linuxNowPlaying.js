@@ -204,8 +204,8 @@ function snapshotFrom(name, all) {
     album: meta['xesam:album'] || null,
     status: plain(all.PlaybackStatus) || 'Stopped',
     app: name.slice(PREFIX.length),
-    position: Math.round((plain(all.Position) || 0) / 1e5) / 10,
-    duration: Math.round((meta['mpris:length'] || 0) / 1e5) / 10,
+    position: usToSec(plain(all.Position)),
+    duration: usToSec(meta['mpris:length']),
     art: artUrl(meta['mpris:artUrl']),
     trackId: spotifyTrack(meta['xesam:url']),
   };
@@ -335,26 +335,36 @@ function startBridge(callback) {
   }
   bridge = child;
   running = true;
-  let buf = '';
-  child.stdout.on('data', d => {
-    buf += d.toString('utf8');
-    let nl;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (line) onBridgeLine(line);
-    }
-  });
+  readLines(child.stdout, onBridgeLine);
   child.stderr.on('data', d => log('reader: ' + String(d).trim().slice(0, 200)));
   child.on('error', e => log('unconfined reader failed — ' + (e && e.message)));
   child.on('close', () => {
     bridge = null;
-    for (const id of Object.keys(controlWaiting)) { controlWaiting[id](false); delete controlWaiting[id]; }
+    rejectAllWaiting();
     if (running && !bridgeRespawn) bridgeRespawn = setTimeout(() => { bridgeRespawn = null; if (running) startBridge(); }, BRIDGE_RESPAWN_MS);
   });
   return true;
 }
 
+// Microseconds (MPRIS Position / mpris:length) → seconds, rounded to 0.1s.
+function usToSec(v) { return Math.round((v || 0) / 1e5) / 10; }
+// Fail every in-flight control request (bridge closed/stopped); each callback is idempotent.
+function rejectAllWaiting() {
+  for (const id of Object.keys(controlWaiting)) { controlWaiting[id](false); delete controlWaiting[id]; }
+}
+// Buffer a stream and emit each newline-framed, non-empty, trimmed line to onLine.
+function readLines(stream, onLine) {
+  let buf = '';
+  stream.on('data', d => {
+    buf += d.toString('utf8');
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line) onLine(line);
+    }
+  });
+}
 function onBridgeLine(line) {
   let o;
   try { o = JSON.parse(line); } catch (e) { return; }
@@ -371,7 +381,7 @@ function stopBridge() {
   onSnapshot = null;
   if (bridgeRespawn) { clearTimeout(bridgeRespawn); bridgeRespawn = null; }
   if (bridge) { try { bridge.kill(); } catch (e) {} bridge = null; }
-  for (const id of Object.keys(controlWaiting)) { controlWaiting[id](false); delete controlWaiting[id]; }
+  rejectAllWaiting();
 }
 
 function start(callback) {
@@ -458,18 +468,10 @@ function controlThroughBridge(command, target) {
 function runAsBridge() {
   const send = o => { try { process.stdout.write(JSON.stringify(o) + '\n'); } catch (e) {} };
   if (!startReader(snapshot => send({ snapshot }))) process.exit(3);
-  let buf = '';
-  process.stdin.on('data', d => {
-    buf += d.toString('utf8');
-    let nl;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line) continue;
-      let o;
-      try { o = JSON.parse(line); } catch (e) { continue; }
-      control(o.control, o.target).then(ok => send({ id: o.id, ok }));
-    }
+  readLines(process.stdin, line => {
+    let o;
+    try { o = JSON.parse(line); } catch (e) { return; }
+    control(o.control, o.target).then(ok => send({ id: o.id, ok }));
   });
   process.stdin.on('end', () => { stopReader(); process.exit(0); });
   process.stdin.resume();

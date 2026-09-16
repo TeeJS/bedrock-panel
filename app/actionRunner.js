@@ -12,8 +12,10 @@ const MAC_APP_ALIASES = {
   powerpnt: 'Microsoft PowerPoint', onenote: 'Microsoft OneNote', teams: 'Microsoft Teams', 'ms-teams': 'Microsoft Teams',
   zoom: 'zoom.us', discord: 'Discord', slack: 'Slack', spotify: 'Spotify', obs64: 'OBS', obs: 'OBS', steam: 'Steam', vlc: 'VLC',
 };
+// Trimmed value with a trailing ".exe" stripped — the key form the app-alias tables are keyed on.
+function bareName(value) { return String(value).trim().replace(/\.exe$/i, ''); }
 function macAppName(value) {
-  const bare = String(value).trim().replace(/\.exe$/i, '');
+  const bare = bareName(value);
   return MAC_APP_ALIASES[bare.toLowerCase()] || bare;
 }
 
@@ -58,7 +60,7 @@ const LINUX_APP_ALIASES = {
   sysinfo: ['kinfocenter', 'hardinfo', 'cpu-x'],
 };
 function linuxAppCandidates(value) {
-  const bare = String(value).trim().replace(/\.exe$/i, '');
+  const bare = bareName(value);
   return LINUX_APP_ALIASES[bare.toLowerCase()] || [bare];
 }
 
@@ -163,13 +165,19 @@ const MAC_SHELL_ALIASES = {
   'notepad': 'open -a TextEdit',
   'taskmgr': 'open -a "Activity Monitor"',
 };
-function macShellCommand(value) {
-  const key = String(value).trim().replace(/\s+/g, ' ');
-  if (MAC_SHELL_ALIASES[key.toLowerCase()]) return MAC_SHELL_ALIASES[key.toLowerCase()];
-  const m = /^start\s+("?)([a-z][a-z0-9+.-]*:[^\s"]*)\1$/i.exec(key);   // start https://… / start ms-teams:… → open
-  if (m) return 'open "' + m[2] + '"';
-  return value;
+// Translate a Windows shell one-liner: an exact alias-table hit wins, else a generic
+// `start <url-or-scheme>` becomes `<opener> "<target>"`, else the value passes through unchanged.
+function makeShellTranslator(table, opener) {
+  return function (value) {
+    const key = String(value).trim().replace(/\s+/g, ' ');
+    const lk = key.toLowerCase();
+    if (table[lk]) return table[lk];
+    const m = /^start\s+("?)([a-z][a-z0-9+.-]*:[^\s"]*)\1$/i.exec(key);   // start https://… / start ms-teams:… → opener
+    if (m) return opener + ' "' + m[2] + '"';
+    return value;
+  };
 }
+const macShellCommand = makeShellTranslator(MAC_SHELL_ALIASES, 'open');
 
 // The Linux half of the same table. These run through /bin/sh, so a `||` chain is the honest way to
 // cover desktops that ship different programs for the same job — the first one present answers, and
@@ -184,13 +192,7 @@ const LINUX_SHELL_ALIASES = {
   'notepad': 'kate || gnome-text-editor || gedit',
   'taskmgr': 'plasma-systemmonitor || gnome-system-monitor || ksysguard',
 };
-function linuxShellCommand(value) {
-  const key = String(value).trim().replace(/\s+/g, ' ');
-  if (LINUX_SHELL_ALIASES[key.toLowerCase()]) return LINUX_SHELL_ALIASES[key.toLowerCase()];
-  const m = /^start\s+("?)([a-z][a-z0-9+.-]*:[^\s"]*)\1$/i.exec(key);   // start https://… / start ms-teams:… → xdg-open
-  if (m) return 'xdg-open "' + m[2] + '"';
-  return value;
-}
+const linuxShellCommand = makeShellTranslator(LINUX_SHELL_ALIASES, 'xdg-open');
 
 const SHELL_TRANSLATE = { darwin: macShellCommand, linux: linuxShellCommand };
 
