@@ -6,12 +6,15 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="deck" aria-label="Macro Deck"></div>
+  <div id="deck" aria-label="Macro Deck buttons" role="group"></div>
   <div id="overlay" class="overlay state-connecting">
-    <div id="ovIcon" class="ov-icon"></div>
-    <div id="ovTitle" class="ov-title">Connecting…</div>
+    <div id="ovIcon" class="ov-icon" aria-hidden="true"></div>
+    <div id="ovTitle" class="ov-title">Connecting to Macro Deck</div>
     <div id="ovMsg" class="ov-msg"></div>
+    <div id="ovHost" class="ov-host"></div>
+    <button id="ovRetry" class="ov-retry" type="button" hidden>Retry connection</button>
   </div>
+  <div id="live" class="sr-only" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>
 </html>
