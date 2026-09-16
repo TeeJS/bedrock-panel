@@ -88,6 +88,13 @@ body.light #deck {
   outline: none;
   box-shadow: 0 0 0 3px #0b0e13, 0 0 0 6px #f4f7fb;
 }
+/* Knob selection ring: FORCED (not tied to :focus-visible, which programmatic focus won't trigger)
+   and accent-coloured so it reads distinctly from the white keyboard-focus ring. */
+.tile.knobsel {
+  outline: none;
+  box-shadow: 0 0 0 3px #0b0e13, 0 0 0 6px var(--accent), 0 3px 8px rgba(0, 0, 0, .4);
+  z-index: 1;
+}
 /* Empty slots are disabled buttons — reset the UA disabled dimming to our tokens. */
 .tile:disabled { cursor: default; opacity: 1; }
 

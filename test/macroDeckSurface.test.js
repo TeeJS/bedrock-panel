@@ -228,6 +228,90 @@ test('preview: every dispatch path (pointer, keyboard, AT click) is read-only', 
   env.restore();
 });
 
+// --- MD-07 opt-in knob (window.oqKnob) ---
+// A 3x5 page with assigned keys at (0,0),(2,0),(1,1): row-major ids ['0_0','0_2','1_1'].
+const KNOB_BTNS = [
+  { Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' },
+  { Position_X: 2, Position_Y: 0, BackgroundColorHex: '#0f0' },
+  { Position_X: 1, Position_Y: 1, BackgroundColorHex: '#00f' },
+];
+const sel = (env) => { for (const id of ['0_0', '0_2', '1_1', '9_9']) { const t = env.tile(+id.split('_')[1], +id.split('_')[0]); if (t && t._class.has('knobsel')) return id; } return null; };
+const oqKnob = (ev) => global.window.oqKnob(ev);
+
+test('knob off (opt-out): every gesture is declined and nothing is selected', () => {
+  const env = loadApp('');                 // no ?knob=1
+  env.ready(KNOB_BTNS);
+  assert.equal(oqKnob({ type: 'rotate', dir: 1 }), false);
+  assert.equal(oqKnob({ type: 'press', index: 1 }), false);
+  assert.equal(sel(env), null);
+  env.restore();
+});
+
+test('knob rotate: first CW selects first assigned; CCW from fresh selects last; wraps; skips empties', () => {
+  const env = loadApp('?knob=1');
+  env.ready(KNOB_BTNS);
+  assert.equal(oqKnob({ type: 'rotate', dir: 1 }), true); assert.equal(sel(env), '0_0');   // first
+  oqKnob({ type: 'rotate', dir: 1 }); assert.equal(sel(env), '0_2');                         // skips empty (1,0)
+  oqKnob({ type: 'rotate', dir: 1 }); assert.equal(sel(env), '1_1');
+  oqKnob({ type: 'rotate', dir: 1 }); assert.equal(sel(env), '0_0');                         // wrap
+  oqKnob({ type: 'rotate', dir: -1 }); assert.equal(sel(env), '1_1');                        // back-wrap
+  env.restore();
+  const env2 = loadApp('?knob=1');
+  env2.ready(KNOB_BTNS);
+  assert.equal(oqKnob({ type: 'rotate', dir: -1 }), true); assert.equal(sel(env2), '1_1');   // first CCW -> last
+  env2.restore();
+});
+
+test('knob press: no selection reveals the first key WITHOUT firing; next press fires one press/release', () => {
+  const env = loadApp('?knob=1');
+  const ws = env.ready(KNOB_BTNS);
+  assert.equal(oqKnob({ type: 'press', index: 1 }), true);
+  assert.equal(sel(env), '0_0');                                 // revealed
+  assert.equal(presses(ws).length, 0, 'reveal does not fire');
+  assert.equal(oqKnob({ type: 'press', index: 1 }), true);
+  assert.deepEqual(presses(ws).map((m) => m.Method), ['BUTTON_PRESS', 'BUTTON_RELEASE']);
+  assert.deepEqual(presses(ws).map((m) => m.Message), ['0_0', '0_0']);
+  env.restore();
+});
+
+test('knob declines double-click and both hold phases', () => {
+  const env = loadApp('?knob=1');
+  const ws = env.ready(KNOB_BTNS);
+  oqKnob({ type: 'rotate', dir: 1 });                            // select something first
+  assert.equal(oqKnob({ type: 'press', index: 2 }), false);
+  assert.equal(oqKnob({ type: 'hold', phase: 'start' }), false);
+  assert.equal(oqKnob({ type: 'hold', phase: 'end' }), false);
+  assert.equal(presses(ws).length, 0, 'declined gestures never dispatch');
+  env.restore();
+});
+
+test('knob declines when not ready and when the page is empty', () => {
+  const notReady = loadApp('?knob=1');
+  const w = notReady.ws(); w._open();
+  w._emit({ Method: 'GET_CONFIG', Rows: 3, Columns: 5, ButtonSpacing: 10, ButtonRadius: 40 });   // no GET_BUTTONS yet
+  assert.equal(oqKnob({ type: 'rotate', dir: 1 }), false);
+  assert.equal(oqKnob({ type: 'press', index: 1 }), false);
+  notReady.restore();
+  const empty = loadApp('?knob=1');
+  empty.ready([]);                                               // valid empty page
+  assert.equal(oqKnob({ type: 'rotate', dir: 1 }), false);
+  assert.equal(oqKnob({ type: 'press', index: 1 }), false);
+  empty.restore();
+});
+
+test('knob is declined in preview (read-only), even with knob=1', () => {
+  const env = loadApp('?knob=1&_preview=p1');
+  env.ids.ovRetry._fire('click');                               // connect the preview
+  const ws = env.ws(); ws._open();
+  ws._emit({ Method: 'GET_CONFIG', Rows: 3, Columns: 5, ButtonSpacing: 10, ButtonRadius: 40 });
+  ws._emit({ Method: 'GET_BUTTONS', Buttons: KNOB_BTNS });
+  assert.equal(oqKnob({ type: 'rotate', dir: 1 }), false);
+  assert.equal(oqKnob({ type: 'press', index: 1 }), false);
+  assert.equal(sel(env), null);
+  assert.equal(presses(ws).length, 0);
+  env.restore();
+});
+
 test('Enter down then Space up does not release; Enter up releases once', () => {
   const env = loadApp('');
   const ws = env.ready([{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }]);

@@ -5,6 +5,7 @@
   "description": "Turn the panel into a Macro Deck surface: renders a Macro Deck host's live button page and sends taps, long-presses and releases back over its client WebSocket.",
   "entry": "index.html",
   "served": true,
+  "knob": true,
   "preview": {
     "separateDevice": true,
     "note": "This preview connects to the Macro Deck host as a separate device (not your panel), so it won’t disturb it. Click Connect inside the preview, and accept the device on the host the first time; its page may differ from the panel, and taps are disabled here."
@@ -42,6 +43,14 @@
       "default": "1000",
       "advanced": true,
       "help": "How long a key must be held before a long-press action is sent (100–10000)."
+    },
+    {
+      "key": "knob",
+      "label": "Knob key navigation",
+      "type": "bool",
+      "default": false,
+      "advanced": true,
+      "help": "When on, the panel knob moves a highlight across the assigned keys (turn) and presses the highlighted key (click). Double-click and hold keep their normal panel behavior."
     }
   ]
 }

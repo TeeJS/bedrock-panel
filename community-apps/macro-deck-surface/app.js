@@ -57,6 +57,11 @@
     CLIENT_ID = 'Bedrock Panel Preview' + (id ? ' ' + id : '');
   })();
 
+  // MD-07 opt-in knob: manifest declares "knob":true so the panel routes the knob to window.oqKnob,
+  // but behaviour is gated by the advanced per-page option (?knob=1). Opted out (or in preview), the
+  // handler declines every gesture so the panel keeps its default knob behaviour.
+  var KNOB_ON = /^(1|true)$/i.test(q.get('knob') || '');
+
   var deck = document.getElementById('deck');
   var overlay = document.getElementById('overlay');
   var ovTitle = document.getElementById('ovTitle');
@@ -69,6 +74,7 @@
   var cfg = null;              // last GET_CONFIG payload (grid + display config)
   var initialConfig = false;   // host gate: ignore buttons until first GET_CONFIG
   var dispatchReady = false;   // no action dispatch until the first GET_BUTTONS
+  var knobSel = null;          // MD-07: id of the knob-selected key (null = no selection)
   var uiState = '';            // current overlay/readiness state
   var gridFits = true;         // do usable (>=48px) keys fit? set by layout()
   var tiles = {};              // "row_col" -> { el, icon, label }
@@ -290,6 +296,7 @@
     cancelPress();            // close any held gesture before its element is torn down
     deck.textContent = '';
     tiles = {};
+    knobSel = null;           // selection is meaningless once the keys are torn down
     if (!cfg) return;
     layout();
     var d = gridDims();
@@ -463,6 +470,65 @@
     });
   }
 
+  // ---- knob (opt-in generic drop-in capability) ---------------------------
+  // Turn moves a highlight across the ASSIGNED keys (row-major, empties skipped, wrapping); a single
+  // click reveals the first key when nothing is selected yet, or presses the selected key; double
+  // click and hold are declined so the panel keeps its default behaviour there. Activation goes
+  // through the normal BUTTON_* path, so it is automatically read-only in preview.
+  function assignedIds() {
+    var d = gridDims(), out = [];
+    for (var y = 0; y < d.rows; y++) for (var x = 0; x < d.cols; x++) {
+      var id = keyId(x, y), t = tiles[id];
+      if (t && !t.el.classList.contains('empty')) out.push(id);
+    }
+    return out;
+  }
+  function clearKnobSel() {
+    if (knobSel && tiles[knobSel]) tiles[knobSel].el.classList.remove('knobsel');
+    knobSel = null;
+  }
+  function setKnobSel(id) {
+    clearKnobSel();
+    knobSel = id;
+    var t = tiles[id];
+    if (t) { t.el.classList.add('knobsel'); try { t.el.focus(); } catch (e) {} announce(t.el.getAttribute('aria-label') || 'Key selected'); }
+  }
+  // Drop a selection that no longer points at a live assigned key (e.g. after a button update).
+  function reconcileKnobSel() {
+    if (knobSel && (!tiles[knobSel] || tiles[knobSel].el.classList.contains('empty'))) clearKnobSel();
+  }
+  function knobRotate(dir) {
+    var ids = assignedIds();
+    if (!ids.length) { clearKnobSel(); return false; }   // nothing to navigate -> decline to panel
+    var i = ids.indexOf(knobSel);
+    if (i < 0) i = (dir > 0 ? 0 : ids.length - 1);        // first turn: CW -> first, CCW -> last
+    else i = (i + dir + ids.length) % ids.length;         // otherwise step and wrap
+    setKnobSel(ids[i]);
+    return true;
+  }
+  function knobPress() {
+    if (!dispatchReady) return false;                     // not ready -> decline
+    var ids = assignedIds();
+    if (!ids.length) return false;                        // empty page -> decline
+    if (knobSel == null || !tiles[knobSel] || tiles[knobSel].el.classList.contains('empty')) {
+      setKnobSel(ids[0]);                                 // no visible selection -> reveal first, do NOT fire
+      return true;
+    }
+    var t = tiles[knobSel];
+    t.el.classList.add('pressed');
+    send({ Method: 'BUTTON_PRESS', Message: knobSel });   // one short press/release (BUTTON_* -> gated in preview)
+    send({ Method: 'BUTTON_RELEASE', Message: knobSel });
+    setTimeout(function () { if (t.el) t.el.classList.remove('pressed'); }, 120);
+    return true;
+  }
+  // Manifest routes the knob here; decline everything unless the user opted in and we're not a preview.
+  window.oqKnob = function (ev) {
+    if (!KNOB_ON || PREVIEW || !ev) return false;
+    if (ev.type === 'rotate') return knobRotate(ev.dir > 0 ? 1 : -1);
+    if (ev.type === 'press' && ev.index === 1) return knobPress();
+    return false;   // double click (index 2), hold (start/end), and anything else -> panel default
+  };
+
   // ---- protocol -----------------------------------------------------------
 
   function handle(msg) {
@@ -493,6 +559,7 @@
         if (!initialConfig) return;
         if (msg.Buttons && msg.Buttons[0]) applyButton(msg.Buttons[0]);
         reconcileReady();           // first button on an empty page becomes usable
+        reconcileKnobSel();         // drop a knob selection that a button change invalidated
         break;
       case 'UPDATE_LABEL':
         if (!initialConfig) return;
