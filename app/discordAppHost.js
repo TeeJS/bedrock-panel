@@ -23,6 +23,11 @@ const RECENT_EVENT_LIMIT = 8;
 const RECENT_MESSAGE_LIMIT = 20;
 const RECENT_NOTIFICATION_LIMIT = 8;
 
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const toIdString = value => (value == null ? '' : String(value));
+const finiteNumber = item => (Number.isFinite(Number(item)) ? Number(item) : null);   // finite number, or null
+function sanitizeChannels(list) { return list.map(sanitizeChannel).filter(Boolean); }
+
 function cleanString(value, limit) {
   if (typeof value !== 'string') return null;
   const clean = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
@@ -51,7 +56,7 @@ function sanitizeParticipant(value, previous) {
   const voice = value.voice_state && typeof value.voice_state === 'object' ? value.voice_state : {};
   const id = user.id || cleanString(value.user_id, 32);
   if (!id) return null;
-  const number = item => Number.isFinite(Number(item)) ? Number(item) : null;
+  const number = finiteNumber;
   const volume = number(value.volume);
   const boolean = (source, key, fallback) => Object.prototype.hasOwnProperty.call(source, key) ? !!source[key] : !!fallback;
   const pan = value.pan && typeof value.pan === 'object' ? {
@@ -62,8 +67,8 @@ function sanitizeParticipant(value, previous) {
     nick: cleanString(value.nick, 128) || previous && previous.nick || null, avatarUrl: user.avatarUrl || previous && previous.avatarUrl || null,
     mute: boolean(voice, 'mute', previous && previous.mute), deaf: boolean(voice, 'deaf', previous && previous.deaf),
     selfMute: boolean(voice, 'self_mute', previous && previous.selfMute), selfDeaf: boolean(voice, 'self_deaf', previous && previous.selfDeaf),
-    localMute: boolean(value, 'mute', previous && previous.localMute), volume: volume == null ? previous && previous.volume != null ? previous.volume : null : Math.max(0, Math.min(200, volume)),
-    pan: pan && pan.left != null && pan.right != null ? { left: Math.max(0, Math.min(1, pan.left)), right: Math.max(0, Math.min(1, pan.right)) } : previous && previous.pan || null,
+    localMute: boolean(value, 'mute', previous && previous.localMute), volume: volume == null ? previous && previous.volume != null ? previous.volume : null : clamp(volume, 0, 200),
+    pan: pan && pan.left != null && pan.right != null ? { left: clamp(pan.left, 0, 1), right: clamp(pan.right, 0, 1) } : previous && previous.pan || null,
     speaking: !!(previous && previous.speaking),
   };
 }
@@ -143,7 +148,7 @@ class DiscordAppHost extends EventEmitter {
     this.settings = normalizeDiscordSettings(this.getSettings());
     this.service.setAutoReconnect(this.settings.autoReconnect);
     this.snapshot = {
-      connection: this._cleanConnection(service.getState()), capabilities: service.getCapabilities(), capabilityStates: service.getCapabilityStates ? service.getCapabilityStates() : {},
+      connection: this._cleanConnection(service.getState()), capabilities: service.getCapabilities(), capabilityStates: this._capabilityStates(),
       settings: this._publicSettings(this.settings), voice: {}, channel: null, guilds: [], participants: [], recentEvents: [],
       voiceSelection: { guildId: null, channelId: null, channels: [], status: null, error: null, initialized: false },
       voiceConnection: null, notifications: [], currentUser: service.getIdentity ? service.getIdentity() : null, voiceControlLock: false,
@@ -165,7 +170,7 @@ class DiscordAppHost extends EventEmitter {
     };
     this._onCapabilities = value => {
       this.snapshot.capabilities = value;
-      this.snapshot.capabilityStates = this.service.getCapabilityStates ? this.service.getCapabilityStates() : {};
+      this.snapshot.capabilityStates = this._capabilityStates();
       this._recordEvent('capabilities', 'Capabilities updated'); this._emit();
     };
     this._onEvent = event => this._applyEvent(event);
@@ -176,7 +181,7 @@ class DiscordAppHost extends EventEmitter {
     this.started = true;
     this.snapshot.connection = this._cleanConnection(this.service.getState());
     this.snapshot.capabilities = this.service.getCapabilities();
-    this.snapshot.capabilityStates = this.service.getCapabilityStates ? this.service.getCapabilityStates() : {};
+    this.snapshot.capabilityStates = this._capabilityStates();
     this.service.on('state', this._onState);
     this.service.on('capabilities', this._onCapabilities);
     this.service.on('event', this._onEvent);
@@ -193,6 +198,16 @@ class DiscordAppHost extends EventEmitter {
   }
 
   getSnapshot() { return JSON.parse(JSON.stringify(this.snapshot)); }
+  // The service's capability-state map, or {} when the service predates the method.
+  _capabilityStates() { return this.service.getCapabilityStates ? this.service.getCapabilityStates() : {}; }
+  // Merge voice settings into the snapshot: `extra` (the RPC response) wins over `base` (the optimistic
+  // patch/event) at the top level, and both fold into input/output. The event path passes no `extra`.
+  _mergeVoice(base, extra) {
+    this.snapshot.voice = Object.assign({}, this.snapshot.voice, extra || base);
+    for (const key of ['input', 'output']) {
+      if (base[key]) this.snapshot.voice[key] = Object.assign({}, this.snapshot.voice[key], base[key], extra && extra[key]);
+    }
+  }
 
   updateSettings(value) {
     this.settings = normalizeDiscordSettings(value);
@@ -216,7 +231,7 @@ class DiscordAppHost extends EventEmitter {
     const tasks = [];
     if (caps.voiceSettings) tasks.push(this.service.getVoiceSettings().then(v => { this.snapshot.voice = v || {}; }));
     if (caps.voiceChannelControl) tasks.push(this.service.getSelectedVoiceChannel().then(v => { this._setChannel(v || null); }));
-    if (caps.guildDiscovery) tasks.push(this.service.getGuilds().then(v => { this.snapshot.guilds = list(v, 'guilds').map(sanitizeChannel).filter(Boolean); }));
+    if (caps.guildDiscovery) tasks.push(this.service.getGuilds().then(v => { this.snapshot.guilds = sanitizeChannels(list(v, 'guilds')); }));
     const errors = (await Promise.all(tasks.map(task => task.then(() => null, error => error)))).filter(Boolean);
     const authError = errors.find(error => error && (error.code === 'DISCORD_AUTH_REQUIRED' || Number(error.code) === 4006));
     if (authError) {
@@ -269,7 +284,7 @@ class DiscordAppHost extends EventEmitter {
         break;
       }
       case 'chat-guild': {
-        const guildId = value == null ? '' : String(value);
+        const guildId = toIdString(value);
         if (this.service.clearTextChannel) await this.service.clearTextChannel();
         this.snapshot.chat.guildId = guildId || null;
         this.snapshot.chat.selected = null;
@@ -280,7 +295,7 @@ class DiscordAppHost extends EventEmitter {
         this._emit();
         if (!guildId) { this.snapshot.chat.channels = []; break; }
         try {
-          this.snapshot.chat.channels = usableTextChannels(await this.service.getChannels(guildId)).map(sanitizeChannel).filter(Boolean);
+          this.snapshot.chat.channels = sanitizeChannels(usableTextChannels(await this.service.getChannels(guildId)));
           this.snapshot.chat.status = null;
         } catch (error) {
           this.snapshot.chat.channels = [];
@@ -290,7 +305,7 @@ class DiscordAppHost extends EventEmitter {
         break;
       }
       case 'chat-channel': {
-        const channelId = value == null ? '' : String(value);
+        const channelId = toIdString(value);
         const channel = this.snapshot.chat.channels.find(item => String(item.id) === channelId);
         if (!channel) throw Object.assign(new Error('Select an available text channel'), { code: 'DISCORD_INVALID_CHANNEL' });
         this.snapshot.chat.status = 'Opening #' + (channel.name || channel.id) + '…';
@@ -301,7 +316,7 @@ class DiscordAppHost extends EventEmitter {
           const selected = sanitizeChannel(response && response.id ? response : channel);
           this.snapshot.chat.selected = selected;
           this.snapshot.chat.lastSelected = selected;
-          const capabilityStates = this.service.getCapabilityStates ? this.service.getCapabilityStates() : {};
+          const capabilityStates = this._capabilityStates();
           this._setMessages(capabilityStates.messageHistory === 'available' ? response && response.messages : null, channelId);
           this.snapshot.chat.status = 'Opened #' + (selected.name || channel.name || selected.id);
         } catch (error) {
@@ -311,7 +326,7 @@ class DiscordAppHost extends EventEmitter {
         break;
       }
       case 'channel': {
-        const channelId = value == null ? '' : String(value);
+        const channelId = toIdString(value);
         const selected = this.snapshot.voiceSelection.channels.find(channel => String(channel.id) === channelId);
         if (!selected) throw Object.assign(new Error('Select an available voice channel'), { code: 'DISCORD_INVALID_CHANNEL' });
         const response = await this.service.selectVoiceChannel(channelId);
@@ -332,9 +347,7 @@ class DiscordAppHost extends EventEmitter {
 
   async _voicePatch(patch) {
     const response = await this.service.setVoiceSettings(patch);
-    this.snapshot.voice = Object.assign({}, this.snapshot.voice, response || patch);
-    if (patch.input) this.snapshot.voice.input = Object.assign({}, this.snapshot.voice.input, patch.input, response && response.input);
-    if (patch.output) this.snapshot.voice.output = Object.assign({}, this.snapshot.voice.output, patch.output, response && response.output);
+    this._mergeVoice(patch, response);
   }
 
   async _participantPatch(value, field) {
@@ -343,7 +356,7 @@ class DiscordAppHost extends EventEmitter {
     if (!participant) throw Object.assign(new Error('Select an active voice participant'), { code: 'DISCORD_INVALID_PARTICIPANT' });
     const patch = field === 'mute'
       ? { mute: !!value.value }
-      : { volume: Math.max(0, Math.min(200, Number(value.value))) };
+      : { volume: clamp(Number(value.value), 0, 200) };
     if (field === 'volume' && !Number.isFinite(patch.volume)) throw Object.assign(new Error('Participant volume is invalid'), { code: 'DISCORD_INVALID_VOICE_SETTINGS' });
     const response = await this.service.setUserVoiceSettings(userId, patch);
     if (field === 'mute') participant.localMute = response && Object.prototype.hasOwnProperty.call(response, 'mute') ? !!response.mute : patch.mute;
@@ -353,7 +366,7 @@ class DiscordAppHost extends EventEmitter {
 
   async _loadVoiceGuild(value, options) {
     const opts = options || {};
-    const guildId = value == null ? '' : String(value);
+    const guildId = toIdString(value);
     const request = ++this.voiceGuildRequest;
     const selection = this.snapshot.voiceSelection;
     selection.initialized = true;
@@ -365,7 +378,7 @@ class DiscordAppHost extends EventEmitter {
     if (opts.emitLoading !== false) this._emit();
     if (!guildId) return;
     try {
-      const channels = usableVoiceChannels(await this.service.getChannels(guildId)).map(sanitizeChannel).filter(Boolean);
+      const channels = sanitizeChannels(usableVoiceChannels(await this.service.getChannels(guildId)));
       if (request !== this.voiceGuildRequest) return;
       selection.channels = channels;
       selection.status = null;
@@ -399,9 +412,7 @@ class DiscordAppHost extends EventEmitter {
     if (!event || !event.type) return;
     if (event.type === 'VOICE_SETTINGS_UPDATE') {
       const update = event.data || {};
-      this.snapshot.voice = Object.assign({}, this.snapshot.voice, update);
-      if (update.input) this.snapshot.voice.input = Object.assign({}, this.snapshot.voice.input, update.input);
-      if (update.output) this.snapshot.voice.output = Object.assign({}, this.snapshot.voice.output, update.output);
+      this._mergeVoice(update);
     }
     if (event.type === 'VOICE_CHANNEL_SELECT') {
       const channelId = event.data && event.data.channel_id;
@@ -428,8 +439,8 @@ class DiscordAppHost extends EventEmitter {
       const data = event.data || {};
       const pings = Array.isArray(data.pings) ? data.pings.slice(-20).map(Number).filter(Number.isFinite) : [];
       this.snapshot.voiceConnection = {
-        state: cleanString(data.state, 64), lastPing: Number.isFinite(Number(data.last_ping)) ? Number(data.last_ping) : null,
-        averagePing: Number.isFinite(Number(data.average_ping)) ? Number(data.average_ping) : null, pings,
+        state: cleanString(data.state, 64), lastPing: finiteNumber(data.last_ping),
+        averagePing: finiteNumber(data.average_ping), pings,
       };
     }
     if (event.type === 'MESSAGE_CREATE' || event.type === 'MESSAGE_UPDATE' || event.type === 'MESSAGE_DELETE') {

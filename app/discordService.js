@@ -168,7 +168,7 @@ class DiscordService extends EventEmitter {
       if (this.stopped || this.transport !== transport) return;
       await this._probeCapabilities();
       await this._subscribeGlobalEvents();
-      if (this.authState !== 'authenticated' || !this.transport) throw Object.assign(new Error('Discord authorization is required'), { code: 'DISCORD_AUTH_REQUIRED' });
+      if (this.authState !== 'authenticated' || !this.transport) throw this.authRequiredError();
       this._setState('connected');
     } catch (error) {
       if (this.transport !== transport || this.stopped) return;
@@ -254,63 +254,55 @@ class DiscordService extends EventEmitter {
   getIdentity() { return this.identity && Object.assign({}, this.identity); }
   getGrantedScopes() { return this.grantedScopes ? [...this.grantedScopes] : []; }
 
+  // The standard "not authorized" error, thrown wherever a request needs an authenticated session.
+  authRequiredError() { return Object.assign(new Error('Discord authorization is required'), { code: 'DISCORD_AUTH_REQUIRED' }); }
+  // Throw unless the session is authenticated and the capability is currently usable.
+  _assertCapabilityUsable(capability) {
+    if (this.authState !== 'authenticated') throw this.authRequiredError();
+    if (this.capabilityState[capability] === 'unsupported' || this.capabilityState[capability] === 'scope-missing' || !this.transport) throw Object.assign(new Error('Discord capability is unavailable: ' + capability), { code: 'DISCORD_UNSUPPORTED_CAPABILITY', capability });
+  }
+  // Classify an RPC failure: an auth code tears the session down and re-flags DISCORD_AUTH_REQUIRED;
+  // an unsupported code marks the capability unsupported; anything else is a temporary error. Always
+  // rethrows (with error.capability set). Shared by _request and _eventRequest.
+  _mapRpcError(error, capability) {
+    const rpcCode = Number(error.code);
+    if (AUTH_CODES.has(rpcCode)) {
+      this.authState = 'auth-error';
+      if (this.oauth && this.oauth.deleteTokens) this.oauth.deleteTokens();
+      this.identity = null;
+      this._setCapabilities('auth-failure');
+      this._detachTransport(true);
+      this._setState('error', this.authRequiredError());
+      error.code = 'DISCORD_AUTH_REQUIRED'; error.capability = capability;
+    } else if (UNSUPPORTED_CODES.has(rpcCode)) {
+      this._setCapability(capability, 'unsupported'); error.capability = capability;
+    } else {
+      this._setCapability(capability, 'temporary-error'); error.capability = capability;
+    }
+    throw error;
+  }
+
   async _request(command, args) {
     const capability = COMMAND_CAPABILITY[command];
     if (!capability) throw Object.assign(new Error('Unsupported Discord command: ' + command), { code: 'DISCORD_UNSUPPORTED_COMMAND' });
-    if (this.authState !== 'authenticated') throw Object.assign(new Error('Discord authorization is required'), { code: 'DISCORD_AUTH_REQUIRED' });
-    if (this.capabilityState[capability] === 'unsupported' || this.capabilityState[capability] === 'scope-missing' || !this.transport) throw Object.assign(new Error('Discord capability is unavailable: ' + capability), { code: 'DISCORD_UNSUPPORTED_CAPABILITY', capability });
+    this._assertCapabilityUsable(capability);
     try {
       const result = await this.transport.request(command, args);
       this._setCapability(capability, 'available');
       return result;
     }
-    catch (error) {
-      const rpcCode = Number(error.code);
-      if (AUTH_CODES.has(rpcCode)) {
-        this.authState = 'auth-error';
-        if (this.oauth && this.oauth.deleteTokens) this.oauth.deleteTokens();
-        this.identity = null;
-        this._setCapabilities('auth-failure');
-        this._detachTransport(true);
-        this._setState('error', Object.assign(new Error('Discord authorization is required'), { code: 'DISCORD_AUTH_REQUIRED' }));
-        error.code = 'DISCORD_AUTH_REQUIRED'; error.capability = capability;
-      } else if (UNSUPPORTED_CODES.has(rpcCode)) {
-        this._setCapability(capability, 'unsupported');
-        error.capability = capability;
-      } else {
-        this._setCapability(capability, 'temporary-error');
-        error.capability = capability;
-      }
-      throw error;
-    }
+    catch (error) { this._mapRpcError(error, capability); }
   }
 
   async _eventRequest(command, event, args) {
     const capability = SUBSCRIPTION_CAPABILITY[event];
     if (!capability) throw Object.assign(new Error('Unsupported Discord event: ' + event), { code: 'DISCORD_UNSUPPORTED_EVENT' });
-    if (this.authState !== 'authenticated') throw Object.assign(new Error('Discord authorization is required'), { code: 'DISCORD_AUTH_REQUIRED' });
-    if (this.capabilityState[capability] === 'unsupported' || this.capabilityState[capability] === 'scope-missing' || !this.transport) throw Object.assign(new Error('Discord capability is unavailable: ' + capability), { code: 'DISCORD_UNSUPPORTED_CAPABILITY', capability });
+    this._assertCapabilityUsable(capability);
     try {
       const result = await this.transport.request(command, args || {}, event);
       if (command === 'SUBSCRIBE') this._setCapability(capability, 'available');
       return result;
-    } catch (error) {
-      const rpcCode = Number(error.code);
-      if (AUTH_CODES.has(rpcCode)) {
-        this.authState = 'auth-error';
-        if (this.oauth && this.oauth.deleteTokens) this.oauth.deleteTokens();
-        this.identity = null;
-        this._setCapabilities('auth-failure');
-        this._detachTransport(true);
-        this._setState('error', Object.assign(new Error('Discord authorization is required'), { code: 'DISCORD_AUTH_REQUIRED' }));
-        error.code = 'DISCORD_AUTH_REQUIRED'; error.capability = capability;
-      } else if (UNSUPPORTED_CODES.has(rpcCode)) {
-        this._setCapability(capability, 'unsupported'); error.capability = capability;
-      } else {
-        this._setCapability(capability, 'temporary-error'); error.capability = capability;
-      }
-      throw error;
-    }
+    } catch (error) { this._mapRpcError(error, capability); }
   }
 
   _setCapability(capability, state) {
@@ -410,19 +402,20 @@ class DiscordService extends EventEmitter {
     if (kind === 'text') this._setCapability('messageHistory', Array.isArray(data.messages) ? 'available' : 'unsupported');
   }
 
+  _subKey(event, args) { return event + ':' + String(args && args.channel_id || 'global'); }
   async _subscribeGlobalEvents() {
     await Promise.all(GLOBAL_EVENTS.map(event => this._subscribe(event, {}).catch(() => null)));
   }
 
   async _subscribe(event, args) {
-    const key = event + ':' + String(args && args.channel_id || 'global');
+    const key = this._subKey(event, args);
     if (this.subscriptions.has(key)) return;
     await this._eventRequest('SUBSCRIBE', event, args);
     this.subscriptions.set(key, { event, args: Object.assign({}, args) });
   }
 
   async _unsubscribe(event, args) {
-    const key = event + ':' + String(args && args.channel_id || 'global');
+    const key = this._subKey(event, args);
     if (!this.subscriptions.has(key)) return;
     this.subscriptions.delete(key);
     if (!this.transport || this.authState !== 'authenticated') return;
