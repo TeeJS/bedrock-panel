@@ -25,14 +25,18 @@
   var HOST_RAW = (q.get('host') || '127.0.0.1:8191').trim();
   var CLIENT_ID = q.get('clientId') || 'Bedrock Panel';
   // Parse the same way the editor validates it (Number, not parseInt): parseInt('1e3')===1
-  // would run a saved 1000 as a 1ms hair-trigger. Supplied-but-invalid (non-finite, non-integer,
-  // out of 100-10000) falls back to the documented default rather than a truncated value.
-  var LONG_MS = (function () {
+  // would run a saved 1000 as a 1ms hair-trigger. A MISSING value defaults to 1000; an
+  // explicitly SUPPLIED but invalid value (non-finite, non-integer, out of 100-10000) is a
+  // config error surfaced honestly (configError state) rather than silently run at a different
+  // delay -- the editor gates this, so it only happens on a hand-edited/legacy config.
+  var LONG_MS = 1000;
+  var LONG_MS_ERR = '';
+  (function () {
     var raw = q.get('longPressMs');
-    if (raw == null || String(raw).trim() === '') return 1000;
+    if (raw == null || String(raw).trim() === '') return;   // missing -> default 1000
     var n = Number(String(raw).trim());
-    if (!isFinite(n) || !Number.isInteger(n) || n < 100 || n > 10000) return 1000;
-    return n;
+    if (isFinite(n) && Number.isInteger(n) && n >= 100 && n <= 10000) { LONG_MS = n; return; }
+    LONG_MS_ERR = 'Long-press delay must be a whole number from 100 to 10000 ms.';
   })();
   var LAYOUT_MODE = (q.get('layoutMode') === 'wide') ? 'wide' : 'mirror';   // default mirror
 
@@ -163,6 +167,11 @@
         // The address is immutable here, so Retry can't help — send them to edit it.
         ovMsg.textContent = 'Edit the host address in the Bedrock editor.';
         ovHost.textContent = HOST_RAW;
+        break;
+      case 'configError':
+        // A supplied option is invalid; not silently defaulted. Correction path is the editor.
+        ovTitle.textContent = 'Check the long-press delay';
+        ovMsg.textContent = LONG_MS_ERR + ' Edit it in the Bedrock editor.';
         break;
     }
     announce(ovTitle.textContent);
@@ -490,6 +499,7 @@
     // back to 'connecting'/'accept' on every attempt.
     var reconnecting = outageStart > 0;
 
+    if (LONG_MS_ERR) { wantOpen = false; setState('configError'); return; }   // bad option: don't run at a wrong delay
     var url = wsUrl(HOST_RAW);
     if (!url) { wantOpen = false; setState('invalid'); return; }   // malformed address: no loop
     if (!reconnecting) setState('connecting');

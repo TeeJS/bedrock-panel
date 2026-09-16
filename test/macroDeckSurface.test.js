@@ -172,18 +172,26 @@ test('runtime parses longPressMs like the editor (Number, not parseInt): 1e3 = 1
   env.restore();
 });
 
-test('runtime rejects supplied-but-invalid longPressMs -> default 1000ms', () => {
-  for (const bad of ['1.5', '50', 'abc', '  ', '99999']) {
+test('supplied-but-invalid longPressMs -> configError, no connect (not a silent default)', () => {
+  // (whitespace-only, like a blank host, is treated as "not set" -> default, tested separately)
+  for (const bad of ['1.5', '50', 'abc', '99999', '1e3x', '-100', '0']) {
     const env = loadApp('?longPressMs=' + encodeURIComponent(bad));
-    const ws = env.ready([{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }]);
-    const t = env.tile(0, 0);
-    env.ids.deck._fire('pointerdown', { target: t, pointerId: 1, button: 0 });
-    env.advance(999);   // no truncated/early trigger for a bad value
-    assert.ok(!presses(ws).some((m) => m.Method === 'BUTTON_LONG_PRESS'), bad + ': no early long-press');
-    env.advance(1);     // 1000ms total -> documented default
-    assert.ok(presses(ws).some((m) => m.Method === 'BUTTON_LONG_PRESS'), bad + ': long-press at default 1000ms');
+    assert.match(env.state(), /state-configError/, bad + ': config error state');
+    assert.ok(!env.ws(), bad + ': no socket opened while misconfigured');
     env.restore();
   }
+});
+
+test('missing longPressMs still defaults to 1000ms (no config error)', () => {
+  const env = loadApp('');   // no longPressMs param
+  const ws = env.ready([{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }]);
+  const t = env.tile(0, 0);
+  env.ids.deck._fire('pointerdown', { target: t, pointerId: 1, button: 0 });
+  env.advance(999);
+  assert.ok(!presses(ws).some((m) => m.Method === 'BUTTON_LONG_PRESS'), 'no early long-press');
+  env.advance(1);
+  assert.ok(presses(ws).some((m) => m.Method === 'BUTTON_LONG_PRESS'), 'default 1000ms long-press');
+  env.restore();
 });
 
 test('Enter down then Space up does not release; Enter up releases once', () => {

@@ -147,7 +147,8 @@ body.light #deck {
 .overlay.state-empty .ov-icon,
 .overlay.state-invalid .ov-icon,
 .overlay.state-loadfail .ov-icon,
-.overlay.state-toodense .ov-icon { display: none; }
+.overlay.state-toodense .ov-icon,
+.overlay.state-configError .ov-icon { display: none; }
 
 .ov-host { font-size: 18px; color: var(--muted); opacity: .85; word-break: break-all; }
 
