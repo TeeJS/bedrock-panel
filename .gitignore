@@ -12,6 +12,10 @@ app/config.json
 # local Azure Trusted Signing assets (3rd-party dlib + machine-specific metadata; re-fetched per machine)
 .signing/
 
+# python bytecode cache
+__pycache__/
+*.pyc
+
 # logs
 *.log
 npm-debug.log*
