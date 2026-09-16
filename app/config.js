@@ -644,10 +644,11 @@
         const d = (devs || []).find(x => x.kind === 'audiooutput' && x.label === label);
         const a = new Audio(blobUrl);
         player = a;
-        a.onended = () => { if (player === a) player = null; if (msg) msg.textContent = 'Playback finished.'; };
+        let warn = '';   // if the system is muted/at-0, keep the warning up AFTER playback ends, not just during
+        a.onended = () => { if (player === a) player = null; if (msg) msg.textContent = warn || 'Playback finished.'; };
         const go = () => {
           a.play().catch(() => {});
-          checkVolume().then(v => { const w = inaudibleWarning(v); if (msg) msg.textContent = w ? ('Playing… ' + w) : 'Playing…'; });
+          checkVolume().then(v => { warn = inaudibleWarning(v); if (msg) msg.textContent = warn ? ('Playing… ' + warn) : 'Playing…'; });
         };
         if (d && a.setSinkId) a.setSinkId(d.deviceId).then(go).catch(go); else go();
       }).catch(() => { if (msg) msg.textContent = 'Could not play the sample.'; });
@@ -5456,10 +5457,11 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
           osc.type = 'sine'; osc.frequency.value = 440; gain.gain.value = 0.15;
           osc.connect(gain); gain.connect(dest);
           const a = new Audio(); a.srcObject = dest.stream;
+          let warn = '';   // keep a muted/at-0 warning up after the tone ends, not just during it
           const play = () => {
             a.play().catch(() => {}); try { osc.start(); } catch (e) {}
-            checkVolume().then(v => { const w = inaudibleWarning(v); if (msg) msg.textContent = w ? ('Playing test tone… ' + w) : 'Playing test tone…'; });
-            setTimeout(() => { try { osc.stop(); } catch (e) {} try { ctx.close(); } catch (e) {} if (msg) msg.textContent = 'Test tone finished.'; }, 900);
+            checkVolume().then(v => { warn = inaudibleWarning(v); if (msg) msg.textContent = warn ? ('Playing test tone… ' + warn) : 'Playing test tone…'; });
+            setTimeout(() => { try { osc.stop(); } catch (e) {} try { ctx.close(); } catch (e) {} if (msg) msg.textContent = warn || 'Test tone finished.'; }, 900);
           };
           if (d && a.setSinkId) a.setSinkId(d.deviceId).then(play).catch(play); else play();
         }).catch(() => { if (msg) msg.textContent = 'Could not play a test tone.'; });
