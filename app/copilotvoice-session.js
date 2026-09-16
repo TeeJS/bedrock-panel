@@ -53,12 +53,29 @@ const COPILOT_MODE_PRESETS = {
   autopilot: { label: 'Full auto', desc: 'Runs autonomously until the task is done — no prompts at all', modeFragment: 'autopilot', allowAll: 'on' },
 };
 const COPILOT_DEFAULT_MODE = 'manual';   // matches the CLI's own out-of-the-box state (agent + allow_all off)
+// The ACP handshake params, shared by the interactive adapter and the one-shot batch client so the
+// two stay in lockstep. We declare no filesystem/terminal client capabilities.
+const INITIALIZE_PARAMS = { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } };
 
 // session/request_permission's toolCall.kind, for when the CLI's own title is missing.
 const TOOL_KIND_LABELS = {
   execute: 'Run command', edit: 'Change files', delete: 'Delete files', move: 'Move files',
   fetch: 'Access network', search: 'Search', read: 'Read files',
 };
+
+// Settle a JSON-RPC response (an id with no method) against a client's pending-request map. Returns
+// true when the message WAS a response (the caller stops), false to let request/notification handling
+// run. Shared by the interactive adapter and the one-shot batch client — each passes its own map.
+function handleResponse(pending, m) {
+  if (m.id == null || m.method) return false;
+  const p = pending.get(m.id);
+  if (p) {
+    pending.delete(m.id);
+    if (m.error) p.reject(new Error(m.error.message || JSON.stringify(m.error)));
+    else p.resolve(m.result);
+  }
+  return true;
+}
 
 function createCopilotVoiceAdapter({ log }) {
   const say = log || (() => {});
@@ -93,19 +110,15 @@ function createCopilotVoiceAdapter({ log }) {
       try { proc.stdin.write(line + '\n'); } catch (e) { pending.delete(id); reject(e); }
     });
   }
+  // Write one JSON-RPC frame to the app-server's stdin (no-op if it isn't running); errors swallowed.
+  function writeFrame(obj) {
+    if (!proc || !proc.stdin || proc.stdin.destroyed) return;
+    try { proc.stdin.write(JSON.stringify(obj) + '\n'); } catch (e) {}
+  }
   // ACP notifications (session/cancel) carry no id and expect no response.
-  function notify(method, params) {
-    if (!proc || !proc.stdin || proc.stdin.destroyed) return;
-    try { proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n'); } catch (e) {}
-  }
-  function respond(id, result) {
-    if (!proc || !proc.stdin || proc.stdin.destroyed) return;
-    try { proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n'); } catch (e) {}
-  }
-  function respondError(id, code, message) {
-    if (!proc || !proc.stdin || proc.stdin.destroyed) return;
-    try { proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }) + '\n'); } catch (e) {}
-  }
+  function notify(method, params) { writeFrame({ jsonrpc: '2.0', method, params }); }
+  function respond(id, result) { writeFrame({ jsonrpc: '2.0', id, result }); }
+  function respondError(id, code, message) { writeFrame({ jsonrpc: '2.0', id, error: { code, message } }); }
 
   // Retire the current process: null out `proc` FIRST so handlers still attached to the old process
   // see themselves as stale and stand down -- same folder-switch race guard as the codex adapter.
@@ -116,7 +129,7 @@ function createCopilotVoiceAdapter({ log }) {
     turnInFlight = false;
     pending.forEach(p => p.reject(new Error(reason || 'copilot app-server stopped')));
     pending = new Map();
-    pendingApprovals.forEach((entry, requestId) => {
+    pendingApprovals.forEach((_entry, requestId) => {
       emitter.emit('approval', { type: 'approval-timeout', requestId, decision: 'deny' });
     });
     pendingApprovals = new Map();
@@ -126,6 +139,10 @@ function createCopilotVoiceAdapter({ log }) {
     if (killTimer.unref) killTimer.unref();
   }
 
+  // Fire-and-forget set_config_option on the current session; a rejection just logs "<label> set failed".
+  function setConfigOption(configId, value, label) {
+    return send('session/set_config_option', { sessionId, configId, type: 'value_id', value }).catch(e => say(label + ' set failed: ' + e.message));
+  }
   // Applies the current mode preset's "mode" and "allow_all" config options. Best-effort/fire-and-
   // forget: the panel already shows the optimistic pick (mode()/currentModel() are local state), and
   // a rejected set_config_option call just logs -- same posture as codex's per-turn overrides.
@@ -133,12 +150,12 @@ function createCopilotVoiceAdapter({ log }) {
     if (!ready || !sessionId) return;
     const preset = COPILOT_MODE_PRESETS[mode] || COPILOT_MODE_PRESETS[COPILOT_DEFAULT_MODE];
     const modeValue = modeValueByFragment[preset.modeFragment];
-    if (modeValue) send('session/set_config_option', { sessionId, configId: 'mode', type: 'value_id', value: modeValue }).catch(e => say('mode set failed: ' + e.message));
-    if (preset.allowAll) send('session/set_config_option', { sessionId, configId: 'allow_all', type: 'value_id', value: preset.allowAll }).catch(e => say('permission set failed: ' + e.message));
+    if (modeValue) setConfigOption('mode', modeValue, 'mode');
+    if (preset.allowAll) setConfigOption('allow_all', preset.allowAll, 'permission');
   }
   function applyModelConfig() {
     if (!ready || !sessionId || !modelPick) return;
-    send('session/set_config_option', { sessionId, configId: 'model', type: 'value_id', value: modelPick }).catch(e => say('model set failed: ' + e.message));
+    setConfigOption('model', modelPick, 'model');
   }
 
   // configOptions arrive as a "select" list per option id; "mode"'s values are the CLI's real
@@ -172,14 +189,7 @@ function createCopilotVoiceAdapter({ log }) {
 
   function handleMessage(m) {
     // Response to one of our requests.
-    if (m.id != null && !m.method) {
-      const p = pending.get(m.id);
-      if (!p) return;
-      pending.delete(m.id);
-      if (m.error) p.reject(new Error(m.error.message || JSON.stringify(m.error)));
-      else p.resolve(m.result);
-      return;
-    }
+    if (handleResponse(pending, m)) return;
     // Server-initiated REQUEST -- the approval surface. Anything else fails closed (same posture as
     // the claude hook's timeout and the codex adapter's unexpected-request handling).
     if (m.id != null && m.method) {
@@ -259,7 +269,7 @@ function createCopilotVoiceAdapter({ log }) {
       }
     }, 30000);
     if (handshakeDeadline.unref) handshakeDeadline.unref();
-    send('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } })
+    send('initialize', INITIALIZE_PARAMS)
       .then(() => send('session/new', { cwd, mcpServers: [] }))
       .then(result => {
         clearTimeout(handshakeDeadline);
@@ -476,14 +486,7 @@ function runCopilotBatchPrompt({ cwd, text, model, timeoutMs, log, spawn, exe })
     rl.on('line', line => {
       if (!line.trim()) return;
       let m; try { m = JSON.parse(line); } catch (e) { return; }
-      if (m.id != null && !m.method) {
-        const p = pending.get(m.id);
-        if (!p) return;
-        pending.delete(m.id);
-        if (m.error) p.reject(new Error(m.error.message || JSON.stringify(m.error)));
-        else p.resolve(m.result);
-        return;
-      }
+      if (handleResponse(pending, m)) return;
       if (m.id != null && m.method) {
         // Fail closed: batch analysis never grants tool use -- reject (or cancel) every request.
         if (m.method === 'session/request_permission') {
@@ -508,7 +511,7 @@ function runCopilotBatchPrompt({ cwd, text, model, timeoutMs, log, spawn, exe })
       finish(reject, new Error('copilot exited' + (code == null ? '' : ' (code ' + code + ')') + (lastStderr ? ': ' + lastStderr : '')));
     });
 
-    send('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } })
+    send('initialize', INITIALIZE_PARAMS)
       .then(() => send('session/new', { cwd: resolvedCwd, mcpServers: [] }))
       .then(result => {
         const sessionId = result && result.sessionId;

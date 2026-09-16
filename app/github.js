@@ -25,6 +25,19 @@
   function reviewLabel(value) { const stateValue = value && value.state || 'pending'; return stateValue === 'changes_requested' ? 'Changes requested' : stateValue === 'review_requested' ? 'Review requested' : stateValue === 'approved' ? 'Approved' : 'Pending'; }
   function mergeLabel(item) { if (item.mergeable === false) return 'Conflicts'; if (item.mergeable === true) return item.mergeableState === 'clean' ? 'Mergeable' : 'Mergeable · ' + (item.mergeableState || 'checking'); return 'Checking'; }
   function notify(message, bad) { $('toast').textContent = message; $('toast').className = 'toast show' + (bad ? ' bad' : ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').className = 'toast'; }, 3200); }
+  // Set an onclick only if the element is present (many are optional per view).
+  function bindOptional(id, handler) { const el = $(id); if (el) el.onclick = handler; }
+  // Make Enter/Space on a focusable element trigger its click, like a button.
+  function activateOnKey(el) { el.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); el.click(); } }; }
+  // Close an overlay when its backdrop (the overlay element itself, not a child) is clicked.
+  function closeOnBackdrop(overlayId, closeFn) { const overlay = $(overlayId); overlay.onclick = event => { if (event.target === overlay) closeFn(); }; }
+  // Per-view API operation + loading label; any unlisted view falls back to the repository overview.
+  const VIEW_INFO = {
+    pulls: { operation: 'pulls', label: 'pull requests' },
+    actions: { operation: 'actions', label: 'workflows' },
+    issues: { operation: 'issues', label: 'issues' },
+  };
+  const viewInfo = view => VIEW_INFO[view] || { operation: 'overview', label: 'repository status' };
 
   function storedArray(key) {
     try { const value = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 20) : []; }
@@ -156,12 +169,12 @@
     </div>`;
     content.querySelectorAll('[data-go]').forEach(card => {
       card.onclick = () => switchView(card.dataset.go);
-      card.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); card.click(); } };
+      activateOnKey(card);
     });
     const commitCard = content.querySelector('[data-commit]');
     if (commitCard) {
       commitCard.onclick = () => openCommitDetail(commit, data.selectedBranch);
-      commitCard.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); commitCard.click(); } };
+      activateOnKey(commitCard);
     }
   }
 
@@ -200,10 +213,10 @@
     content.innerHTML = `<div class="split-view"><section class="list-panel"><div class="panel-title">Open Pull Requests · ${items.length}</div><div class="scroll-list">${rows || '<div class="empty">No open pull requests.</div>'}</div></section><section class="detail-panel">${detail}</section></div>`;
     content.querySelectorAll('[data-pr]').forEach(row => { row.onclick = () => loadPull(row.dataset.pr); });
     content.querySelectorAll('[data-check]').forEach(row => { row.onclick = () => { state.selectedCheck = Number(row.dataset.check); renderPulls(data); }; });
-    const back = $('backToPull'); if (back) back.onclick = () => { state.selectedCheck = null; renderPulls(data); };
-    const openPull = $('openPull'); if (openPull) openPull.onclick = () => openExternal(selected.url);
-    const openCheck = $('openCheck'); if (openCheck) openCheck.onclick = () => openExternal(selectedCheck.runUrl || selectedCheck.url);
-    const viewCheckRun = $('viewCheckRun'); if (viewCheckRun) viewCheckRun.onclick = () => loadRun(selectedCheck.runId, 'pulls');
+    bindOptional('backToPull', () => { state.selectedCheck = null; renderPulls(data); });
+    bindOptional('openPull', () => openExternal(selected.url));
+    bindOptional('openCheck', () => openExternal(selectedCheck.runUrl || selectedCheck.url));
+    bindOptional('viewCheckRun', () => loadRun(selectedCheck.runId, 'pulls'));
   }
 
   function renderIssueLabels(labels, limit) {
@@ -250,8 +263,8 @@
     content.innerHTML = `<div class="split-view"><section class="list-panel issues-list-panel"><div class="issues-toolbar"><div class="panel-title">Issues · ${items.length}${data.hasMore ? '+' : ''}</div><div class="issue-filters" role="group" aria-label="Issue filter">${filters}</div></div><div class="scroll-list issue-scroll-list">${listContent}${more}</div></section><section class="detail-panel">${renderIssueDetail(selected)}</section></div>`;
     content.querySelectorAll('[data-issue-filter]').forEach(button => { button.onclick = () => setIssueFilter(button.dataset.issueFilter); });
     content.querySelectorAll('[data-issue]').forEach(row => { row.onclick = () => loadIssue(row.dataset.issue, false); });
-    const loadMore = $('loadMoreIssues'); if (loadMore) loadMore.onclick = loadMoreIssues;
-    const openIssue = $('openIssue'); if (openIssue) openIssue.onclick = () => openExternal(selected.url);
+    bindOptional('loadMoreIssues', loadMoreIssues);
+    bindOptional('openIssue', () => openExternal(selected.url));
     const list = content.querySelector('.issue-scroll-list'); if (list) window.TouchDragScroll.attach(list);
     const bodyScroll = content.querySelector('.issue-body-scroll'); if (bodyScroll) window.TouchDragScroll.attach(bodyScroll);
   }
@@ -324,11 +337,12 @@
     const version = state.requestVersion;
     const repository = state.settings.repository;
     const view = state.view;
+    const info = viewInfo(view);
     state.loading = true; state.stale = false; updateHeader();
-    if (!silent && !state.data) loading('Loading ' + (view === 'pulls' ? 'pull requests' : view === 'actions' ? 'workflows' : view === 'issues' ? 'issues' : 'repository status') + '…');
+    if (!silent && !state.data) loading('Loading ' + info.label + '…');
     $('refreshButton').disabled = true;
     try {
-      const operation = view === 'pulls' ? 'pulls' : view === 'actions' ? 'actions' : view === 'issues' ? 'issues' : 'overview';
+      const operation = info.operation;
       const query = { repository };
       if (view === 'issues') { query.filter = state.issueFilter; query.page = 1; if (forceRefresh) query.refresh = '1'; }
       const selectedIssueNumber = view === 'issues' && state.selectedIssue && state.selectedIssue.item && state.selectedIssue.item.number;
@@ -445,8 +459,9 @@
       if (action === 'download-artifact') { notify('Artifact download started'); return; }
       notify(action === 'cancel' ? 'Cancel requested' : action === 'dispatch' ? 'Workflow started' : 'Rerun requested');
       if (action === 'dispatch' && result.runId) return loadRun(result.runId, 'actions');
-      if (state.view === 'run') await refreshRun(true); else await loadCurrent(true);
-      setTimeout(() => { if (state.view === 'run') refreshRun(true); else loadCurrent(true); }, 1200);
+      const refreshActive = () => state.view === 'run' ? refreshRun(true) : loadCurrent(true);
+      await refreshActive();
+      setTimeout(refreshActive, 1200);
     } catch (error) { notify(error.message, true); }
   }
   async function openExternal(url) { if (!url) return; try { const result = await api('open', { method:'POST', body:{ url, repository:state.settings.repository } }); if (!result.ok) notify(result.error || 'That GitHub link was blocked', true); } catch (error) { notify(error.message, true); } }
@@ -466,12 +481,12 @@
   $('repositoryRefresh').onclick = () => openRepositoryBrowser(true);
   $('repositorySearch').oninput = renderRepositoryList;
   window.TouchDragScroll.attach($('repositoryList'));
-  $('repositoryOverlay').onclick = event => { if (event.target === $('repositoryOverlay')) closeRepositoryBrowser(); };
+  closeOnBackdrop('repositoryOverlay', closeRepositoryBrowser);
   $('commitClose').onclick = () => { $('commitOverlay').hidden = true; };
-  $('commitOverlay').onclick = event => { if (event.target === $('commitOverlay')) $('commitOverlay').hidden = true; };
+  closeOnBackdrop('commitOverlay', () => { $('commitOverlay').hidden = true; });
   $('dispatchClose').onclick = closeDispatch;
   $('dispatchCancel').onclick = closeDispatch;
-  $('dispatchOverlay').onclick = event => { if (event.target === $('dispatchOverlay')) closeDispatch(); };
+  closeOnBackdrop('dispatchOverlay', closeDispatch);
   $('dispatchForm').onsubmit = event => {
     event.preventDefault();
     const inputs = {};

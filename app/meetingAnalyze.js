@@ -60,11 +60,7 @@ function highlightsBlock(metaText) {
   let spans;
   try { spans = (JSON.parse(metaText) || {}).highlights; } catch (e) { return null; }
   if (!Array.isArray(spans) || !spans.length) return null;
-  const clock = ms => {
-    const t = Math.max(0, Math.round(ms / 1000));
-    const m = Math.floor(t / 60), s = t % 60;
-    return m + ':' + (s < 10 ? '0' : '') + s;
-  };
+  const clock = ms => clockSec(ms / 1000);   // same mm:ss formatter, seconds from ms
   const rows = spans
     .filter(h => h && Number.isFinite(h.startMs) && Number.isFinite(h.endMs) && h.endMs > h.startMs)
     .map((h, i) => '  ' + (i + 1) + '. ' + clock(h.startMs) + '–' + clock(h.endMs) +
@@ -176,7 +172,7 @@ function createMeetingAnalyzer(deps) {
     const processed = resolveFolders().processed;
     const jsonPath = path.join(processed, n);
     const aiSetting = resolveAi();
-    const ai = aiSetting === 'codex' ? 'codex' : aiSetting === 'copilot' ? 'copilot' : aiSetting === 'owui' ? 'owui' : 'claude';
+    const ai = ['codex', 'copilot', 'owui'].includes(aiSetting) ? aiSetting : 'claude';
     running = { name: n, ai, startedAt: now() };
     log('analysis started (' + ai + '): ' + n);
     runJob(n, ai, jsonPath)
@@ -323,19 +319,20 @@ function createMeetingAnalyzer(deps) {
     }
     const fileDir = opts.useDetailsFolder ? path.join(home, 'details') : home;
 
-    const mv = async (src, dest) => {
+    // Move a file/dir into place: skip if missing or the target already exists; try an atomic rename,
+    // and on a cross-device failure fall back to copy+delete (recursive for a directory).
+    const move = async (src, dest, recursive) => {
       if (!src || src === dest || !fsMod.existsSync(src)) return;
       if (fsMod.existsSync(dest)) { log('filing skipped (exists): ' + path.basename(dest)); return; }
       try { await fsp.rename(src, dest); }
-      catch (e) { await fsp.copyFile(src, dest); await fsp.unlink(src); }
+      catch (e) {
+        if (recursive) { await fsp.cp(src, dest, { recursive: true }); await fsp.rm(src, { recursive: true, force: true }); }
+        else { await fsp.copyFile(src, dest); await fsp.unlink(src); }
+      }
     };
+    const mv = (src, dest) => move(src, dest, false);
     // The slide-capture folder (<base>-screenshots\) travels with the WAV — same target dir, recursive.
-    const mvDir = async (src, dest) => {
-      if (!src || src === dest || !fsMod.existsSync(src)) return;
-      if (fsMod.existsSync(dest)) { log('filing skipped (exists): ' + path.basename(dest)); return; }
-      try { await fsp.rename(src, dest); }
-      catch (e) { await fsp.cp(src, dest, { recursive: true }); await fsp.rm(src, { recursive: true, force: true }); }
-    };
+    const mvDir = (src, dest) => move(src, dest, true);
     try {
       await fsp.mkdir(fileDir, { recursive: true });
       await mv(mdPath, path.join(home, path.basename(mdPath)));
