@@ -3212,15 +3212,44 @@
     box.style.height = Math.max(220, Math.min(1600, Math.ceil(raw))) + 'px';
     box.style.minHeight = '0';
   });
+  // A random, persisted preview identity so a "separate device" app preview (e.g. Macro Deck Surface)
+  // connects to its host as a STABLE device distinct from the panel, and one that never churns as the
+  // user edits the device name. Editor-owned localStorage; a session-stable in-memory id if storage
+  // is unavailable (disclosed to the app the same way \u2014 it is still a valid, distinct id).
+  let previewIdMem = '';
+  function previewInstanceId() {
+    try {
+      let id = localStorage.getItem('oq_preview_id');
+      if (!id) {
+        const raw = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(16) + Math.random().toString(16).slice(2));
+        id = raw.replace(/[^a-fA-F0-9]/g, '').slice(0, 12);
+        localStorage.setItem('oq_preview_id', id);
+      }
+      return id;
+    } catch (e) {
+      if (!previewIdMem) previewIdMem = 's' + Math.random().toString(16).slice(2, 14);
+      return previewIdMem;
+    }
+  }
+  // App metadata may declare that its preview connects to an external host as a separate device;
+  // only then do we pass a preview identity and show the separate-device copy (never for other apps).
+  function appPreviewSeparateDevice(appId) {
+    const def = appDefs.find(a => a.id === appId);
+    return def && def.preview && def.preview.separateDevice ? def : null;
+  }
   function appendAppPreview(host, g) {
     if (!host) return;
     if (PREVIEW_EXCLUDE.has(g.app)) { host.innerHTML = ''; return; }
+    const sep = appPreviewSeparateDevice(g.app);
+    const caption = sep
+      ? esc(sep.preview.note || 'This preview connects to the host as a separate device and won\u2019t disturb your panel; taps are disabled.')
+      : 'Live \u2014 exactly what the panel shows with the options above.';
     host.innerHTML = `<p class="sectitle" style="margin-top:16px">Preview</p>
       <div class="apprev"><div class="apprevStage">
         <iframe class="apprevFrame" title="Live page preview" scrolling="no" tabindex="-1"></iframe>
         <div class="apprevStrip" style="display:none"></div>
       </div></div>
-      <p class="hint" style="margin:4px 0 0">Live \u2014 exactly what the panel shows with the options above.</p>`;
+      <p class="hint" style="margin:4px 0 0">${caption}</p>`;
     updateAppPreview(g);
   }
   // Native button strip composited into the preview with the panel's own geometry (index.js
@@ -3257,7 +3286,12 @@
     clearTimeout(appPreviewTimer);
     appPreviewTimer = setTimeout(async () => {
       try {
-        const url = await configApi.appPreviewUrl({ app: g.app, options: g.options || {}, gridOn: !!g.gridOn, appearance: g.appearance, accent: g.accent });
+        let url = await configApi.appPreviewUrl({ app: g.app, options: g.options || {}, gridOn: !!g.gridOn, appearance: g.appearance, accent: g.accent });
+        // Separate-device apps get a persisted preview identity so the preview connects (only when the
+        // user clicks Connect inside it) as a stable, distinct device — never the panel's identity.
+        if (url && url.lastIndexOf('about:blank', 0) !== 0 && appPreviewSeparateDevice(g.app)) {
+          url += (url.indexOf('?') >= 0 ? '&' : '?') + '_preview=' + encodeURIComponent(previewInstanceId());
+        }
         const f = document.querySelector('.apprevFrame');           // re-query: a re-render may have replaced it
         if (f && f.src !== url) f.src = url;
         layoutAppPreviewStrip(g);

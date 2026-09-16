@@ -148,7 +148,18 @@ body.light #deck {
 .overlay.state-invalid .ov-icon,
 .overlay.state-loadfail .ov-icon,
 .overlay.state-toodense .ov-icon,
-.overlay.state-configError .ov-icon { display: none; }
+.overlay.state-configError .ov-icon,
+.overlay.state-previewIdle .ov-icon { display: none; }
+
+/* Preview mode: a persistent, unobtrusive badge so a connected preview is never mistaken for the
+   live panel. Non-interactive; sits above the deck but never blocks touch. */
+body.preview::after {
+  content: 'PREVIEW';
+  position: fixed; top: 10px; right: 12px; z-index: 5;
+  padding: 3px 10px; border-radius: 999px;
+  font: 600 13px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: .08em;
+  color: #0b0e13; background: #f2c21b; pointer-events: none;
+}
 
 .ov-host { font-size: 18px; color: var(--muted); opacity: .85; word-break: break-all; }
 

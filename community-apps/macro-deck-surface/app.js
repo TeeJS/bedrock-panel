@@ -43,6 +43,20 @@
   })();
   var LAYOUT_MODE = (q.get('layoutMode') === 'wide') ? 'wide' : 'mirror';   // default mirror
 
+  // Editor preview mode (MD-06): the editor passes a persisted, random preview id via _preview so
+  // this surface connects to the host as a SEPARATE, stable device — never the live panel's identity
+  // (which would collide) and never the editable Device name (which would churn per keystroke). In
+  // preview we DISABLE all macro dispatch and never auto-connect: the user clicks Connect first, and
+  // is told the device must be accepted on the host and its page may differ from the panel.
+  var PREVIEW = false;
+  (function () {
+    var pv = q.get('_preview');
+    if (pv == null) return;
+    PREVIEW = true;
+    var id = String(pv).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
+    CLIENT_ID = 'Bedrock Panel Preview' + (id ? ' ' + id : '');
+  })();
+
   var deck = document.getElementById('deck');
   var overlay = document.getElementById('overlay');
   var ovTitle = document.getElementById('ovTitle');
@@ -126,6 +140,7 @@
 
     overlay.className = 'overlay state-' + state;
     ovRetry.hidden = true;
+    ovRetry.textContent = 'Retry connection';
     ovHost.textContent = '';
     ovMsg.textContent = '';
     switch (state) {
@@ -175,6 +190,14 @@
         // A supplied option is invalid; not silently defaulted. Correction path is the editor.
         ovTitle.textContent = 'Check the long-press delay';
         ovMsg.textContent = LONG_MS_ERR + ' Edit it in the Bedrock editor.';
+        break;
+      case 'previewIdle':
+        // Preview never auto-connects: the user opts in, and is told it's a separate device.
+        ovTitle.textContent = 'Preview — separate device';
+        ovMsg.textContent = 'Connects to the Macro Deck host as “' + CLIENT_ID + '”. Accept it on the host the first time. Its page may differ from the panel, and taps are disabled here.';
+        ovHost.textContent = HOST_RAW;
+        ovRetry.hidden = false;
+        ovRetry.textContent = 'Connect preview';
         break;
     }
     announce(ovTitle.textContent);
@@ -338,6 +361,9 @@
 
   // Send only if this is still the live socket (never a replacement session).
   function sendTo(sock, obj) {
+    // Preview never dispatches: drop every BUTTON_* frame at the single choke point so pointer,
+    // keyboard, AT-click and knob paths are all read-only. Handshake/config frames still flow.
+    if (PREVIEW && obj && typeof obj.Method === 'string' && obj.Method.lastIndexOf('BUTTON_', 0) === 0) return;
     if (sock && sock === ws && sock.readyState === 1) {
       try { sock.send(JSON.stringify(obj)); } catch (e) {}
     }
@@ -542,5 +568,6 @@
   window.addEventListener('resize', function () { if (cfg) { layout(); reconcileReady(); } });
 
   setupInput();
-  connect();
+  if (PREVIEW) { document.body.classList.add('preview'); setState('previewIdle'); }
+  else connect();
 })();

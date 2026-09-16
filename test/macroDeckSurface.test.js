@@ -195,6 +195,39 @@ test('missing longPressMs still defaults to 1000ms (no config error)', () => {
   env.restore();
 });
 
+test('preview: no socket before Connect; connects with a distinct, device-name-independent id', () => {
+  const env = loadApp('?_preview=abc123&clientId=MyPanelName');
+  assert.ok(!env.ws(), 'no socket opened before explicit Connect');
+  assert.ok(global.document.body.classList.contains('preview'), 'preview body class set');
+  assert.match(env.state(), /state-previewIdle/);
+  env.ids.ovRetry._fire('click');                 // the Connect preview action
+  const ws = env.ws();
+  assert.ok(ws, 'socket created on Connect');
+  ws._open();
+  const connected = ws.sent.find((m) => m.Method === 'CONNECTED');
+  assert.ok(connected, 'CONNECTED sent');
+  // Identity is the preview id, NOT the editable device name (no churn) and NOT the panel identity.
+  assert.equal(connected['Client-Id'], 'Bedrock Panel Preview abc123');
+  env.restore();
+});
+
+test('preview: every dispatch path (pointer, keyboard, AT click) is read-only', () => {
+  const env = loadApp('?_preview=xyz');
+  env.ids.ovRetry._fire('click');
+  const ws = env.ws(); ws._open();
+  ws._emit({ Method: 'GET_CONFIG', Rows: 3, Columns: 5, ButtonSpacing: 10, ButtonRadius: 40 });
+  ws._emit({ Method: 'GET_BUTTONS', Buttons: [{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }] });
+  const t = env.tile(0, 0);
+  env.ids.deck._fire('pointerdown', { target: t, pointerId: 1, button: 0 });
+  env.advance(2000);                               // cross the long-press threshold
+  env.ids.deck._fire('pointerup', { target: t, pointerId: 1 });
+  env.ids.deck._fire('keydown', { target: t, key: 'Enter', repeat: false, preventDefault() {} });
+  env.ids.deck._fire('keyup', { target: t, key: 'Enter', preventDefault() {} });
+  env.ids.deck._fire('click', { target: t, detail: 0, button: 0 });   // AT activation
+  assert.equal(presses(ws).length, 0, 'preview never sends BUTTON_* on any path');
+  env.restore();
+});
+
 test('Enter down then Space up does not release; Enter up releases once', () => {
   const env = loadApp('');
   const ws = env.ready([{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }]);

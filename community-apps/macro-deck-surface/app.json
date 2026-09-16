@@ -5,6 +5,10 @@
   "description": "Turn the panel into a Macro Deck surface: renders a Macro Deck host's live button page and sends taps, long-presses and releases back over its client WebSocket.",
   "entry": "index.html",
   "served": true,
+  "preview": {
+    "separateDevice": true,
+    "note": "This preview connects to the Macro Deck host as a separate device (not your panel), so it won’t disturb it. Click Connect inside the preview, and accept the device on the host the first time; its page may differ from the panel, and taps are disabled here."
+  },
   "options": [
     {
       "key": "host",
