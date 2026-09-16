@@ -5,7 +5,9 @@
   --fg: #e8eef6;
   --muted: #9fb3c8;
   --accent: #7CFFB2;
-  --tile-bd: #1a2738;
+  --deck-bg: #0e131b;      /* framed deck panel behind the keys */
+  --key-empty: #212936;    /* an inactive key slot */
+  --key-edge: rgba(255, 255, 255, .16);
   --tile-radius: 16px;
 }
 
@@ -13,7 +15,9 @@ body.light {
   --bg: #e6ecf3;
   --fg: #12202c;
   --muted: #566573;
-  --tile-bd: #c3ccd6;
+  --deck-bg: #d5dde6;
+  --key-empty: #eef2f7;
+  --key-edge: rgba(0, 0, 0, .18);
 }
 
 html, body { width: 100%; height: 100%; }
@@ -30,19 +34,34 @@ body {
   justify-content: center;
 }
 
-/* The deck: a grid of keys, sized by JS from the host's Rows/Columns. */
-#deck { display: grid; }
+/* The deck: a framed panel holding the full Rows x Columns key grid. */
+#deck {
+  display: grid;
+  background: var(--deck-bg);
+  border-radius: 28px;
+  padding: 18px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .04);
+}
 
+/* Every grid cell is drawn as a key so the surface reads as a deck. */
 .tile {
   position: relative;
   background: #000;
+  border: 1px solid var(--key-edge);
   border-radius: var(--tile-radius);
   overflow: hidden;
   cursor: pointer;
   transition: transform .07s ease, filter .07s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
 }
-.tile.pressed { transform: scale(.94); filter: brightness(1.25); }
+/* A cell with no button from the host: a visible-but-inactive slot. */
+.tile.empty {
+  background: var(--key-empty);
+  cursor: default;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+/* A real button: elevated so it reads above the deck surface. */
+.tile:not(.empty) { box-shadow: 0 3px 8px rgba(0, 0, 0, .4); }
+.tile.pressed { transform: scale(.94); filter: brightness(1.2); }
 
 /* Icon and label are separate images from the host, stacked (label over icon). */
 .tile .ic,
@@ -79,11 +98,10 @@ body {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  border: 6px solid var(--tile-bd);
+  border: 6px solid var(--key-edge);
   border-top-color: var(--accent);
   animation: spin 1s linear infinite;
 }
-/* Waiting for the user to accept the device on the host: steady ring, not a spinner. */
 .overlay.state-accept .ov-icon {
   animation: none;
   border-color: var(--accent);
