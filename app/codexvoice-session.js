@@ -112,6 +112,18 @@ function createCodexVoiceAdapter({ log }) {
     if (!proc || !proc.stdin || proc.stdin.destroyed) return;
     try { proc.stdin.write(JSON.stringify({ id, result }) + '\n'); } catch (e) {}
   }
+  // Reject every in-flight request and reset the map (process stop/exit).
+  function rejectPending(msg) { pending.forEach(p => p.reject(new Error(msg))); pending = new Map(); }
+  // Register a server-initiated approval request and surface it to the panel overlay.
+  function emitApprovalRequest(m, toolName, toolInput) {
+    const requestId = String(m.id);
+    pendingApprovals.set(requestId, { id: m.id, method: m.method });
+    emitter.emit('approval', { type: 'approval-request', requestId, toolName, toolInput });
+  }
+  // The active mode preset, falling back to the default mode.
+  function currentPreset() { return CODEX_MODE_PRESETS[mode] || CODEX_MODE_PRESETS[CODEX_DEFAULT_MODE]; }
+  // The discovered default model's slug, or '' when none (modelList entries always have a truthy model).
+  function defaultModelSlug() { return (modelList.find(m => m.isDefault) || {}).model || ''; }
 
   // Retire the current process: null out `proc` FIRST so every handler still attached to the old
   // process (line/exit/stderr) sees itself as stale and stands down -- the folder-switch race where
@@ -122,8 +134,7 @@ function createCodexVoiceAdapter({ log }) {
     const old = proc;
     proc = null;
     ready = false;
-    pending.forEach(p => p.reject(new Error(reason || 'codex app-server stopped')));
-    pending = new Map();
+    rejectPending(reason || 'codex app-server stopped');
     // A dying process invalidates its held-open approval requests; tell the panel so the overlay
     // never sits waiting on a request nobody can answer anymore.
     pendingApprovals.forEach((entry, requestId) => {
@@ -153,26 +164,16 @@ function createCodexVoiceAdapter({ log }) {
     if (m.id != null && m.method) {
       const p = m.params || {};
       if (m.method === 'item/commandExecution/requestApproval') {
-        const requestId = String(m.id);
-        pendingApprovals.set(requestId, { id: m.id, method: m.method });
-        emitter.emit('approval', {
-          type: 'approval-request', requestId,
-          toolName: 'Run command',
-          toolInput: { command: p.command || '(command unavailable)', path: p.cwd || undefined, reason: p.reason || undefined },
-        });
+        emitApprovalRequest(m, 'Run command',
+          { command: p.command || '(command unavailable)', path: p.cwd || undefined, reason: p.reason || undefined });
         return;
       }
       if (m.method === 'item/fileChange/requestApproval') {
-        const requestId = String(m.id);
-        pendingApprovals.set(requestId, { id: m.id, method: m.method });
         // The request itself carries no diff -- the change detail lives in the fileChange ITEM
         // streamed just before it. Best effort: show the stashed item, else reason/grantRoot.
         const item = p.itemId != null ? fileChangeItems.get(p.itemId) : null;
-        emitter.emit('approval', {
-          type: 'approval-request', requestId,
-          toolName: 'Change files',
-          toolInput: item || { reason: p.reason || 'File changes in the working folder', grantRoot: p.grantRoot || undefined },
-        });
+        emitApprovalRequest(m, 'Change files',
+          item || { reason: p.reason || 'File changes in the working folder', grantRoot: p.grantRoot || undefined });
         return;
       }
       if (m.method === 'item/permissions/requestApproval') {
@@ -269,8 +270,7 @@ function createCodexVoiceAdapter({ log }) {
       if (proc !== thisProc) return;   // intentionally replaced/stopped: stopProc() already cleaned up
       proc = null;
       ready = false;
-      pending.forEach(p => p.reject(new Error('codex app-server exited')));
-      pending = new Map();
+      rejectPending('codex app-server exited');
       say('codex app-server exited' + (code == null ? '' : ' (code ' + code + ')'));
       resumeThreadId = threadId || resumeThreadId;   // next start() resumes the conversation
       emitter.emit('exit', { stillRunning: false });
@@ -287,7 +287,7 @@ function createCodexVoiceAdapter({ log }) {
       }
     }, 30000);
     if (handshakeDeadline.unref) handshakeDeadline.unref();
-    const preset = CODEX_MODE_PRESETS[mode] || CODEX_MODE_PRESETS[CODEX_DEFAULT_MODE];
+    const preset = currentPreset();
     // experimentalApi unlocks the granular approval policy the Auto preset needs (0.147 gates it
     // behind this capability; verified live: without it turn/start rejects granular outright).
     send('initialize', { clientInfo: { name: 'bedrock-panel', version: '0' }, capabilities: { experimentalApi: true } })
@@ -343,7 +343,7 @@ function createCodexVoiceAdapter({ log }) {
     // explicit Stop control someday -- it is deliberately NOT wired to new turns or mute.
     // The current mode preset rides on EVERY turn: turn-level overrides are the only mechanism
     // that reliably re-arms a live session's policy (thread/resume ignores them once loaded).
-    const preset = CODEX_MODE_PRESETS[mode] || CODEX_MODE_PRESETS[CODEX_DEFAULT_MODE];
+    const preset = currentPreset();
     send('turn/start', {
       threadId,
       input: [{ type: 'text', text }],
@@ -428,14 +428,11 @@ function createCodexVoiceAdapter({ log }) {
     setModel(pick) {
       if (!isValidModel(pick)) return false;
       modelPick = pick;
-      const def = modelList.find(m => m.isDefault);
-      emitter.emit('model', { model: modelPick || (def ? def.model : '') });
+      emitter.emit('model', { model: modelPick || defaultModelSlug() });
       return true;
     },
     currentModel() {
-      if (modelPick) return modelPick;
-      const def = modelList.find(m => m.isDefault);
-      return def ? def.model : null;
+      return modelPick || defaultModelSlug() || null;
     },
     validModel(pick) { return isValidModel(pick); },
     listModels() {
@@ -446,12 +443,13 @@ function createCodexVoiceAdapter({ log }) {
     // ---- approvals (in-band JSON-RPC responses; no external hook, no settings.json) ----
     supportsAlwaysApproval: true,   // acceptForSession: approve + stop asking for similar requests this session
     decideApproval(requestId, decision) {
-      const pending = pendingApprovals.get(String(requestId));
+      const key = String(requestId);
+      const pending = pendingApprovals.get(key);
       if (!pending) return false;
-      pendingApprovals.delete(String(requestId));
+      pendingApprovals.delete(key);
       const wire = decision === 'always' ? 'acceptForSession' : decision === 'allow' ? 'accept' : 'decline';
       respond(pending.id, { decision: wire });
-      emitter.emit('approval', { type: 'approval-decision', requestId: String(requestId), decision });
+      emitter.emit('approval', { type: 'approval-decision', requestId: key, decision });
       return true;
     },
     cancelApprovals(reason) {
