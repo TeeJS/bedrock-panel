@@ -211,6 +211,17 @@ test('preview: no socket before Connect; connects with a distinct, device-name-i
   env.restore();
 });
 
+test('preview with empty/invalid identity refuses (previewBad) — never a bare shared identity', () => {
+  for (const bad of ['', '%20', '!!!']) {
+    const env = loadApp('?_preview=' + bad);
+    assert.match(env.state(), /state-previewBad/, bad + ': previewBad state');
+    assert.ok(!env.ws(), bad + ': no socket opened');
+    env.ids.ovRetry._fire('click');                              // even an explicit connect must refuse
+    assert.ok(!env.ws(), bad + ': still no socket');
+    env.restore();
+  }
+});
+
 test('preview: every dispatch path (pointer, keyboard, AT click) is read-only', () => {
   const env = loadApp('?_preview=xyz');
   env.ids.ovRetry._fire('click');

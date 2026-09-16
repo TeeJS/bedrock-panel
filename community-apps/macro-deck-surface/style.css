@@ -156,7 +156,8 @@ body.light #deck {
 .overlay.state-loadfail .ov-icon,
 .overlay.state-toodense .ov-icon,
 .overlay.state-configError .ov-icon,
-.overlay.state-previewIdle .ov-icon { display: none; }
+.overlay.state-previewIdle .ov-icon,
+.overlay.state-previewBad .ov-icon { display: none; }
 
 /* Preview mode: a persistent, unobtrusive badge so a connected preview is never mistaken for the
    live panel. Non-interactive; sits above the deck but never blocks touch. */

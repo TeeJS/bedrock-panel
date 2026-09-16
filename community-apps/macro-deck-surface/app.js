@@ -49,12 +49,14 @@
   // preview we DISABLE all macro dispatch and never auto-connect: the user clicks Connect first, and
   // is told the device must be accepted on the host and its page may differ from the panel.
   var PREVIEW = false;
+  var PREVIEW_BAD = false;
   (function () {
     var pv = q.get('_preview');
     if (pv == null) return;
     PREVIEW = true;
     var id = String(pv).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
-    CLIENT_ID = 'Bedrock Panel Preview' + (id ? ' ' + id : '');
+    if (!id) { PREVIEW_BAD = true; return; }   // empty/invalid metadata: refuse, never a bare shared identity
+    CLIENT_ID = 'Bedrock Panel Preview ' + id;
   })();
 
   // MD-07 opt-in knob: manifest declares "knob":true so the panel routes the knob to window.oqKnob,
@@ -197,6 +199,11 @@
         // A supplied option is invalid; not silently defaulted. Correction path is the editor.
         ovTitle.textContent = 'Check the long-press delay';
         ovMsg.textContent = LONG_MS_ERR + ' Edit it in the Bedrock editor.';
+        break;
+      case 'previewBad':
+        // A preview was requested without a valid identity; refuse rather than use a shared name.
+        ovTitle.textContent = 'Preview unavailable';
+        ovMsg.textContent = 'This preview didn’t receive a valid identity. Reopen it from the Bedrock editor.';
         break;
       case 'previewIdle':
         // Preview never auto-connects: the user opts in, and is told it's a separate device.
@@ -601,6 +608,7 @@
     // back to 'connecting'/'accept' on every attempt.
     var reconnecting = outageStart > 0;
 
+    if (PREVIEW_BAD) { wantOpen = false; setState('previewBad'); return; }    // no valid preview identity: never connect with a shared name
     if (LONG_MS_ERR) { wantOpen = false; setState('configError'); return; }   // bad option: don't run at a wrong delay
     var url = wsUrl(HOST_RAW);
     if (!url) { wantOpen = false; setState('invalid'); return; }   // malformed address: no loop
@@ -641,6 +649,6 @@
   window.addEventListener('resize', function () { if (cfg) { layout(); reconcileReady(); } });
 
   setupInput();
-  if (PREVIEW) { document.body.classList.add('preview'); setState('previewIdle'); }
+  if (PREVIEW) { document.body.classList.add('preview'); setState(PREVIEW_BAD ? 'previewBad' : 'previewIdle'); }
   else connect();
 })();
