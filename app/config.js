@@ -644,11 +644,15 @@
         const d = (devs || []).find(x => x.kind === 'audiooutput' && x.label === label);
         const a = new Audio(blobUrl);
         player = a;
-        let warn = '';   // if the system is muted/at-0, keep the warning up AFTER playback ends, not just during
-        a.onended = () => { if (player === a) player = null; if (msg) msg.textContent = warn || 'Playback finished.'; };
+        let warn = '', ended = false;   // keep a muted/at-0 warning up after playback; guard a slow IPC resolve
+        a.onended = () => { if (player === a) player = null; ended = true; if (msg) msg.textContent = warn || 'Playback finished.'; };
         const go = () => {
           a.play().catch(() => {});
-          checkVolume().then(v => { warn = inaudibleWarning(v); if (msg) msg.textContent = warn ? ('Playing… ' + warn) : 'Playing…'; });
+          checkVolume().then(v => {
+            warn = inaudibleWarning(v);
+            // A sample shorter than the volume read must not get "Playing…" re-asserted after it ends.
+            if (msg) msg.textContent = ended ? (warn || 'Playback finished.') : (warn ? ('Playing… ' + warn) : 'Playing…');
+          });
         };
         if (d && a.setSinkId) a.setSinkId(d.deviceId).then(go).catch(go); else go();
       }).catch(() => { if (msg) msg.textContent = 'Could not play the sample.'; });
@@ -5457,11 +5461,16 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
           osc.type = 'sine'; osc.frequency.value = 440; gain.gain.value = 0.15;
           osc.connect(gain); gain.connect(dest);
           const a = new Audio(); a.srcObject = dest.stream;
-          let warn = '';   // keep a muted/at-0 warning up after the tone ends, not just during it
+          let warn = '', ended = false;   // keep a muted/at-0 warning up after the tone; guard a slow IPC resolve
           const play = () => {
             a.play().catch(() => {}); try { osc.start(); } catch (e) {}
-            checkVolume().then(v => { warn = inaudibleWarning(v); if (msg) msg.textContent = warn ? ('Playing test tone… ' + warn) : 'Playing test tone…'; });
-            setTimeout(() => { try { osc.stop(); } catch (e) {} try { ctx.close(); } catch (e) {} if (msg) msg.textContent = warn || 'Test tone finished.'; }, 900);
+            checkVolume().then(v => {
+              warn = inaudibleWarning(v);
+              // If the volume read outran the 900ms tone (slow/missing helper), don't re-assert "Playing";
+              // show the bare warning (or the finished message) instead.
+              if (msg) msg.textContent = ended ? (warn || 'Test tone finished.') : (warn ? ('Playing test tone… ' + warn) : 'Playing test tone…');
+            });
+            setTimeout(() => { try { osc.stop(); } catch (e) {} try { ctx.close(); } catch (e) {} ended = true; if (msg) msg.textContent = warn || 'Test tone finished.'; }, 900);
           };
           if (d && a.setSinkId) a.setSinkId(d.deviceId).then(play).catch(play); else play();
         }).catch(() => { if (msg) msg.textContent = 'Could not play a test tone.'; });
