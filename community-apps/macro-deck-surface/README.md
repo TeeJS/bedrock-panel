@@ -23,15 +23,24 @@ a **surface**, not the host.
 | --- | --- | --- |
 | Macro Deck host | `127.0.0.1:8191` | Address of the Macro Deck host. Port defaults to `8191` if omitted. |
 | Device name | `Bedrock Panel` | Name this surface shows as on the host's accept prompt. |
-| Long-press (ms) | `1000` | Hold time before a long-press action is sent. |
+| Key shape | `Square keys (host layout)` | Square matches the Macro Deck host and is recommended. **Wide rectangular keys** fills the panel width instead; artwork is letterboxed, never stretched. |
+| Long-press delay (ms) | `1000` | *(Advanced)* Hold time before a long-press action is sent. Whole number, `100`–`10000`. |
+| Knob key navigation | Off | *(Advanced)* When on, the panel knob highlights the assigned keys (turn) and presses the highlighted key (click). Off by default, so the knob keeps its normal panel behavior. |
 
 ## Notes
 
 - **First run needs a click on the host** — Macro Deck gates a new device behind an
   accept prompt. Until you accept, the panel shows "Accept … on Macro Deck".
 - The **grid comes from the host** (its profile's rows × columns). Navigate
-  folders/pages by tapping the host's own navigation buttons; the panel knob does
-  not switch Macro Deck pages (the protocol has no client→host page command).
+  folders/pages by tapping the host's own navigation buttons — the knob does not
+  switch Macro Deck pages (the protocol has no client→host page command).
+- **Knob key navigation** (opt-in) turns to move a highlight across the assigned
+  keys (row-major, skipping empty cells, wrapping) and a single click presses the
+  highlighted key; double-click and hold keep their normal panel behavior. The
+  first click just reveals the highlight without pressing.
+- **No live editor preview.** In the Bedrock editor this page shows an informational
+  placeholder, not a live preview: it connects to the host as a *separate device*
+  with its own identity, so it can't be mirrored in the editor — test it on the panel.
 - **LAN trust only.** The Macro Deck client port is plaintext with no token; keep
   it on a trusted network.
 - Requires Macro Deck's newer build (Kestrel host + web client, port `8191`). The

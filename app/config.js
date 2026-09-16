@@ -3227,10 +3227,10 @@
     const sep = appPreviewSeparateDevice(g.app);
     if (sep) {
       // Informational placeholder only: no iframe, no host connection, no Connect/Expand controls.
-      const note = esc(sep.preview.note || 'This page connects to the host as a separate device with its own identity. It can\u2019t be previewed here \u2014 test it live on the panel.');
+      const note = esc(sep.preview.note || 'This app does not provide a live editor preview. Save and apply your settings to view it on the panel.');
       host.innerHTML = `<p class="sectitle" style="margin-top:16px">Preview</p>
         <div class="apprevNote" style="border:1px solid #233246;border-radius:10px;background:#0a111a;padding:14px 16px;max-width:640px">
-          <div style="font-weight:600;margin-bottom:4px">Live preview isn\u2019t available here</div>
+          <div style="font-weight:600;margin-bottom:4px">No live preview</div>
           <p class="hint" style="margin:0">${note}</p>
         </div>`;
       return;

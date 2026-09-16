@@ -56,7 +56,9 @@
     PREVIEW = true;
     var id = String(pv).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
     if (!id) { PREVIEW_BAD = true; return; }   // empty/invalid metadata: refuse, never a bare shared identity
-    CLIENT_ID = 'Bedrock Panel Preview ' + id;
+    var previewCid = 'Bedrock Panel Preview ' + id;
+    if (previewCid === (q.get('clientId') || 'Bedrock Panel')) { PREVIEW_BAD = true; return; }   // must differ from the panel's own identity
+    CLIENT_ID = previewCid;
   })();
 
   // MD-07 opt-in knob: manifest declares "knob":true so the panel routes the knob to window.oqKnob,
@@ -203,7 +205,7 @@
       case 'previewBad':
         // A preview was requested without a valid identity; refuse rather than use a shared name.
         ovTitle.textContent = 'Preview unavailable';
-        ovMsg.textContent = 'This preview didn’t receive a valid identity. Reopen it from the Bedrock editor.';
+        ovMsg.textContent = 'This preview didn’t receive a valid identity.';
         break;
       case 'previewIdle':
         // Preview never auto-connects: the user opts in, and is told it's a separate device.

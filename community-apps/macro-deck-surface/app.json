@@ -8,7 +8,7 @@
   "knob": true,
   "preview": {
     "separateDevice": true,
-    "note": "This page connects to the Macro Deck host as a separate device with its own identity, distinct from your panel — so it can’t be shown live here. Test it on the panel. The host may give it a different profile/page than your panel."
+    "note": "Live preview is disabled for this app to avoid opening an additional connection to Macro Deck. Save and apply your settings, then view the page on your panel."
   },
   "options": [
     {

@@ -220,6 +220,11 @@ test('preview with empty/invalid identity refuses (previewBad) — never a bare 
     assert.ok(!env.ws(), bad + ': still no socket');
     env.restore();
   }
+  // A preview identity that collides with the configured panel Client-Id is also refused.
+  const collide = loadApp('?_preview=abc123&clientId=' + encodeURIComponent('Bedrock Panel Preview abc123'));
+  assert.match(collide.state(), /state-previewBad/, 'clientId collision -> previewBad');
+  assert.ok(!collide.ws(), 'clientId collision -> no socket');
+  collide.restore();
 });
 
 test('preview: every dispatch path (pointer, keyboard, AT click) is read-only', () => {
