@@ -63,12 +63,14 @@ function setStatus(status, errorText) {
 // ---- microphone devices (mic only -- no speaker/model here) ----
 // Persist the pick as a LABEL ('' = system default); Chromium salts deviceIds per origin and the
 // served port changes each launch, so the page re-matches label -> id at startup.
-var savedMicLabel = Q.get('micDevice') || '';
+var savedMicLabel = Q.get('micDevice') || '';   // this page's own pick; '' = inherit the app-wide default
+var globalMicLabel = Q.get('micDef') || '';      // Settings > General > Audio default; '' = OS system default
+function effMicLabel() { return savedMicLabel || globalMicLabel; }
 var micDeviceId = '';
 var allDevices = [];
 var devicesReady = false;
 function matchDevices() {
-  var mic = allDevices.find(function (d) { return d.kind === 'audioinput' && d.label === savedMicLabel; });
+  var mic = allDevices.find(function (d) { return d.kind === 'audioinput' && d.label === effMicLabel(); });
   micDeviceId = mic ? mic.deviceId : '';
 }
 function ensureDeviceIds(force) {
@@ -80,7 +82,19 @@ function ensureDeviceIds(force) {
     });
   }).catch(function () { allDevices = []; matchDevices(); devicesReady = true; });
 }
-function syncMicPickVal() { $('micPickVal').textContent = savedMicLabel || 'System default'; }
+function syncMicPickVal() { $('micPickVal').textContent = savedMicLabel || ('Default — ' + (globalMicLabel || 'System default')); }
+// Announce a mic swap (incl. live panel swaps) via a lazily-created visually-hidden aria-live region.
+function announce(msg) {
+  var el = $('a11yLive');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'a11yLive'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+    el.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0';
+    document.body.appendChild(el);
+  }
+  el.textContent = '';
+  setTimeout(function () { el.textContent = msg; }, 30);
+}
 // Spoken (source) language: the same pick overlay as the microphone. '' = auto-detect (Soniox, Whisper);
 // the Mac's built-in engine cannot detect it and assumes English when blank.
 var LANGS = [['', 'Auto (Soniox / Whisper detect it)'], ['en', 'English'], ['de', 'German'], ['es', 'Spanish'], ['fr', 'French'], ['it', 'Italian'],
@@ -117,7 +131,7 @@ function renderDevOverlay() {
   }
   var devs = allDevices.filter(function (d) { return d.kind === 'audioinput' && d.label; });
   var matched = !!savedMicLabel && devs.some(function (d) { return d.label === savedMicLabel; });
-  addRow('System default', '', !matched);
+  addRow('App-wide default — ' + (globalMicLabel || 'System default'), '', !matched);
   devs.forEach(function (d) { addRow(d.label, d.label, matched && d.label === savedMicLabel); });
 }
 function pickMic(label) {
@@ -126,6 +140,8 @@ function pickMic(label) {
   postOption('micDevice', label);
   matchDevices();
   syncMicPickVal();
+  announce(label ? ('Microphone set to ' + label + ' for this page')
+                 : ('Microphone now using the app-wide default (' + (globalMicLabel || 'system default') + ')'));
   if (listening && provider === 'ai' && vad) {   // AI (VAD) path: reopen the mic on the new device now
     vad.stop();
     vad.setInputDevice(micDeviceId);

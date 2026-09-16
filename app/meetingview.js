@@ -307,7 +307,9 @@ $('hlClear').onclick = function () { if ($('hlClear').classList.contains('sdis')
 
 function applyState(st) {
   curState = st || curState;
+  globalMicLabel = curState.micDef || '';   // keep the inherited-default label fresh for the picker + row
   if (!micInitialized) { savedMicLabel = curState.mic || ''; micInitialized = true; syncMic(); }
+  else if (!savedMicLabel) { syncMic(); }   // inheriting: reflect a changed app-wide default in the row
   var live = !!curState.recording;
   // volume level (real, from main; when unreadable show a calm "System volume" label, no meter)
   var v = curState.volume;
@@ -359,9 +361,22 @@ function doStop() {
 }
 
 // ---- microphone picker (label-based; full-screen overlay) ----
-var savedMicLabel = '';
+var savedMicLabel = '';       // this page's own pick; '' = inherit the app-wide default
+var globalMicLabel = '';      // Settings > General > Audio default (from meeting state); '' = OS system default
 var allDevices = [];
-function syncMic() { $('micVal').textContent = savedMicLabel || 'System default'; }
+function syncMic() { $('micVal').textContent = savedMicLabel || ('Default — ' + (globalMicLabel || 'System default')); }
+// Announce a mic swap (incl. live panel swaps) via a lazily-created visually-hidden aria-live region.
+function announceMic(msg) {
+  var el = $('a11yLive');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'a11yLive'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+    el.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0';
+    document.body.appendChild(el);
+  }
+  el.textContent = '';
+  setTimeout(function () { el.textContent = msg; }, 30);
+}
 function ensureDeviceIds() {
   return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (tmp) {
     return navigator.mediaDevices.enumerateDevices().then(function (devs) {
@@ -381,7 +396,7 @@ function renderDevList() {
   }
   var devs = allDevices.filter(function (d) { return d.kind === 'audioinput' && d.label; });
   var matched = !!savedMicLabel && devs.some(function (d) { return d.label === savedMicLabel; });
-  addRow('System default', '', !matched);
+  addRow('App-wide default — ' + (globalMicLabel || 'System default'), '', !matched);
   devs.forEach(function (d) { addRow(d.label, d.label, matched && d.label === savedMicLabel); });
 }
 // Shared by the popover's Microphone row and the rail's Settings row — the picker IS the panel's
@@ -392,6 +407,8 @@ $('devCancel').onclick = function () { $('devOverlay').classList.remove('show');
 function pickMic(label) {
   $('devOverlay').classList.remove('show');
   savedMicLabel = label || ''; syncMic();
+  announceMic(savedMicLabel ? ('Microphone set to ' + savedMicLabel + ' for this page')
+                            : ('Microphone now using the app-wide default (' + (globalMicLabel || 'system default') + ')'));
   fetchJson('/meeting-set-mic/' + encodeURIComponent(savedMicLabel))
     .then(function (r) { if (r && r.state) applyState(r.state); })
     .catch(function () { statusShow('Could not set microphone', true); });
