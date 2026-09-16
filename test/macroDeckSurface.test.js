@@ -257,6 +257,18 @@ test('loading times out to a retryable loadfail when GET_BUTTONS never arrives',
   env.restore();
 });
 
+test('a late GET_BUTTONS after loadfail recovers to ready (un-inert)', () => {
+  const env = loadApp('');
+  const ws = env.ws(); ws._open();
+  ws._emit({ Method: 'GET_CONFIG', Rows: 3, Columns: 5, ButtonSpacing: 10, ButtonRadius: 40 });
+  env.advance(10000);
+  assert.match(env.state(), /state-loadfail/);
+  ws._emit({ Method: 'GET_BUTTONS', Buttons: [{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }] });
+  assert.match(env.state(), /hidden/, 'late success recovers from loadfail');
+  assert.equal(env.ids.deck.inert, false);
+  env.restore();
+});
+
 test('malformed Buttons (not an array) is ignored, not treated as empty', () => {
   const env = loadApp('');
   const ws = env.ws(); ws._open();

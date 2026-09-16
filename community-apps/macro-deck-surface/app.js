@@ -157,13 +157,18 @@
   }
   // After an incremental change, re-decide ready vs empty (so the first button
   // added to a previously-empty page becomes usable, and vice versa).
-  function reconcileReady() {
-    if (!dispatchReady) return;
-    // Only resolve a content state; never override a connection overlay
-    // (connecting / accept / reconnect / loadfail / invalid).
-    if (uiState !== 'loading' && uiState !== 'ready' && uiState !== 'empty' && uiState !== 'toodense') return;
+  // A definitive GET_BUTTONS response resolves the content state from ANY prior
+  // state (including loadfail / reconnect), so a late success always recovers.
+  function resolveLoaded() {
     if (!gridFits) { setState('toodense'); return; }   // can't show usable keys
     setState(countAssigned() > 0 ? 'ready' : 'empty');
+  }
+  // Incremental re-evaluation (UPDATE_BUTTON / resize): only from a content or
+  // loading context, never overriding a connection overlay.
+  function reconcileReady() {
+    if (!dispatchReady) return;
+    if (uiState !== 'loading' && uiState !== 'ready' && uiState !== 'empty' && uiState !== 'toodense') return;
+    resolveLoaded();
   }
 
   // ---- layout & rendering -------------------------------------------------
@@ -417,9 +422,9 @@
         if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
         renderButtons(msg.Buttons);
         dispatchReady = true;       // a valid (even empty) response completes loading
-        // reconcileReady() picks ready / empty / toodense from actually-rendered
-        // keys and whether they fit — not raw list length.
-        reconcileReady();
+        // A definitive response resolves the state from any prior state (incl. a
+        // late arrival after loadfail); uses rendered keys + fit, not list length.
+        resolveLoaded();
         break;
       case 'UPDATE_BUTTON':
         if (!initialConfig) return;
