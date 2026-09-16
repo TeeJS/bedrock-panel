@@ -372,7 +372,12 @@ let monitorMode = false;                 // monitor mode: panel UI hidden so the
 // Global HA cache — registries + dashboards in memory, per-entity states populated on demand.
 // `ok=false, ts=0` is the "never loaded" initial state. Refreshed on whenReady (if useHa) and on
 // explicit Refresh from the Auth tab; no auto-refresh on settings save.
-let haCache = { ok: false, ts: 0, error: null, dashboards: [], entities: [], areaRegistry: [], deviceRegistry: [], entityRegistry: [], floorRegistry: [], labelRegistry: [], states: {} };
+// The HA cache's "nothing loaded / error" shape: ok=false with every registry empty. `ts` defaults to
+// now (an error state that just occurred); the initial never-loaded state passes 0 explicitly.
+function emptyHaCache(error, ts) {
+  return { ok: false, ts: ts == null ? Date.now() : ts, error: error == null ? null : error, dashboards: [], entities: [], areaRegistry: [], deviceRegistry: [], entityRegistry: [], floorRegistry: [], labelRegistry: [], states: {} };
+}
+let haCache = emptyHaCache(null, 0);
 let haRefreshInFlight = null;            // Promise — coalesces concurrent refresh requests
 let touchDown = false, touchIdle = null; // monitor-mode touch -> OS mouse button state
 let sysserver = null;                    // SystemView/Music local server (lazy-required in whenReady)
@@ -1124,36 +1129,69 @@ function setAppSource(id, entry) {
 }
 function appRepoSetting() { const u = (config.settings && typeof config.settings.appRepo === 'string' && config.settings.appRepo.trim()) || DEFAULT_APP_REPO; return u === LEGACY_APP_REPO ? DEFAULT_APP_REPO : u; }
 
-// GET a URL as JSON via Electron's net stack (inherits system proxy/CA). Mirrors app/haClient.js.
-async function fetchJson(url) {
-  const r = await net.fetch(url, { method: 'GET', headers: { 'User-Agent': 'bedrock-panel/' + app.getVersion(), Accept: 'application/json' } });
+// GET a URL as JSON via Electron's net stack (inherits system proxy/CA), with caller-supplied
+// headers. Mirrors app/haClient.js.
+async function fetchJsonWithHeaders(url, headers) {
+  const r = await net.fetch(url, { method: 'GET', headers });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return JSON.parse(await r.text());
 }
-// Download a URL to a file, size-capped, http(s)-only, redirect-following (modeled on fetchIconToCache).
-function downloadToFile(url, dest, maxBytes, headers) {
-  url = String(url || '').trim();
+async function fetchJson(url) {
+  return fetchJsonWithHeaders(url, { 'User-Agent': 'bedrock-panel/' + app.getVersion(), Accept: 'application/json' });
+}
+// Shared core for the URL downloaders below: open a redirect-following net.request, set the
+// User-Agent + any extra headers, guard the status, and accumulate the body under a byte cap —
+// resolving with the whole response as a Buffer, or an error. Never rejects; each caller owns its
+// pre-checks (scheme / offline / cache), post-processing (file write, image sniff, SVG recolor) and
+// coalescing. `errors.read` is optional: set it to also attach a response-stream 'error' handler
+// (the mdi caller deliberately omits it, matching its original shape).
+//   opts: { userAgent, headers?, maxBytes, statusOk?(status), checkResponse?(resp, ctype)->reason|null,
+//           errors: { badUrl, unreachable, http(status), tooLarge, read? } }
+// Resolves { ok:true, buf, ctype, status } | { ok:false, error }.
+function httpGetToBuffer(url, opts) {
+  const e = opts.errors;
   return new Promise(resolve => {
-    if (!/^https?:\/\//i.test(url)) return resolve({ ok: false, error: 'Only http(s) URLs are allowed.' });
-    let req; try { req = net.request({ url, redirect: 'follow' }); } catch (e) { return resolve({ ok: false, error: 'That URL is not valid.' }); }
-    req.setHeader('User-Agent', 'bedrock-panel/' + app.getVersion() + ' (+https://github.com/TeeJS/bedrock-panel)');
-    if (headers) Object.keys(headers).forEach(k => req.setHeader(k, headers[k]));
+    let req;
+    try { req = net.request({ url, redirect: 'follow' }); } catch (err) { return resolve({ ok: false, error: e.badUrl }); }
+    req.setHeader('User-Agent', opts.userAgent);
+    if (opts.headers) Object.keys(opts.headers).forEach(k => req.setHeader(k, opts.headers[k]));
     let done = false;
-    const fail = msg => { if (done) return; done = true; try { req.abort(); } catch (e) {} resolve({ ok: false, error: msg }); };
-    req.on('error', () => fail('Could not reach the repository.'));
+    const fail = msg => { if (done) return; done = true; try { req.abort(); } catch (er) {} resolve({ ok: false, error: msg }); };
+    req.on('error', () => fail(e.unreachable));
     req.on('response', resp => {
       const status = resp.statusCode;
-      if (status < 200 || status >= 300) { resp.resume(); return fail('Download failed (HTTP ' + status + ').'); }
-      const chunks = []; let total = 0; const cap = maxBytes || APP_ZIP_MAX;
-      resp.on('data', d => { total += d.length; if (total > cap) return fail('That app is too large (over ' + Math.round(cap / 1048576) + ' MB).'); chunks.push(d); });
-      resp.on('error', () => fail('Error reading the download.'));
-      resp.on('end', () => {
-        if (done) return; done = true;
-        try { fs.writeFileSync(dest, Buffer.concat(chunks)); resolve({ ok: true, path: dest }); }
-        catch (e) { resolve({ ok: false, error: 'Could not write the download.' }); }
-      });
+      const ok = opts.statusOk ? opts.statusOk(status) : (status >= 200 && status < 300);
+      if (!ok) { resp.resume(); return fail(e.http(status)); }
+      const rawCt = resp.headers['content-type'];
+      const ctype = String(Array.isArray(rawCt) ? rawCt[0] : (rawCt || '')).split(';')[0].trim().toLowerCase();
+      if (opts.checkResponse) { const reason = opts.checkResponse(resp, ctype); if (reason) { resp.resume(); return fail(reason); } }
+      const chunks = []; let total = 0;
+      resp.on('data', d => { total += d.length; if (total > opts.maxBytes) return fail(e.tooLarge); chunks.push(d); });
+      if (e.read) resp.on('error', () => fail(e.read));
+      resp.on('end', () => { if (done) return; done = true; resolve({ ok: true, buf: Buffer.concat(chunks), ctype, status }); });
     });
     req.end();
+  });
+}
+// Download a URL to a file, size-capped, http(s)-only, redirect-following.
+function downloadToFile(url, dest, maxBytes, headers) {
+  url = String(url || '').trim();
+  if (!/^https?:\/\//i.test(url)) return Promise.resolve({ ok: false, error: 'Only http(s) URLs are allowed.' });
+  const cap = maxBytes || APP_ZIP_MAX;
+  return httpGetToBuffer(url, {
+    userAgent: 'bedrock-panel/' + app.getVersion() + ' (+https://github.com/TeeJS/bedrock-panel)',
+    headers, maxBytes: cap,
+    errors: {
+      badUrl: 'That URL is not valid.',
+      unreachable: 'Could not reach the repository.',
+      http: status => 'Download failed (HTTP ' + status + ').',
+      tooLarge: 'That app is too large (over ' + Math.round(cap / 1048576) + ' MB).',
+      read: 'Error reading the download.',
+    },
+  }).then(r => {
+    if (!r.ok) return r;
+    try { fs.writeFileSync(dest, r.buf); return { ok: true, path: dest }; }
+    catch (e) { return { ok: false, error: 'Could not write the download.' }; }
   });
 }
 
@@ -1170,9 +1208,7 @@ function githubApiHeaders(token) {
   return { Accept: 'application/vnd.github.raw', Authorization: 'Bearer ' + token, 'X-GitHub-Api-Version': '2022-11-28' };
 }
 async function fetchGithubRawJson(url, token) {
-  const r = await net.fetch(url, { method: 'GET', headers: Object.assign({ 'User-Agent': 'bedrock-panel/' + app.getVersion() }, githubApiHeaders(token)) });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return JSON.parse(await r.text());
+  return fetchJsonWithHeaders(url, Object.assign({ 'User-Agent': 'bedrock-panel/' + app.getVersion() }, githubApiHeaders(token)));
 }
 async function fetchRepoIndex(settingUrl) {
   if (!appRepo.isAllowedRepoUrl(settingUrl)) return { error: 'Only github.com app repositories are allowed for now.' };
@@ -1682,43 +1718,34 @@ const ICON_CACHE_DIR = path.join(USER_DIR, 'iconcache');
 const ICON_MAX_BYTES = 3 * 1024 * 1024;
 function fetchIconToCache(url) {
   url = (url || '').trim();
-  return new Promise(resolve => {
-    if (!/^https?:\/\//i.test(url)) return resolve({ ok: false, error: 'Only http(s) URLs are allowed.' });
-    if (iconsOffline(config.settings)) return resolve({ ok: false, error: 'Offline mode is on — icon downloads are disabled in Settings → Software.' });
-    let req;
-    try { req = net.request({ url, redirect: 'follow' }); }
-    catch (e) { return resolve({ ok: false, error: 'That URL is not valid.' }); }
-    req.setHeader('User-Agent', 'bedrock-panel/' + app.getVersion() + ' (+https://github.com/TeeJS/bedrock-panel)');
-    req.setHeader('Accept', 'image/*');
-    let done = false;
-    const fail = msg => { if (done) return; done = true; try { req.abort(); } catch (e) {} resolve({ ok: false, error: msg }); };
-    req.on('error', () => fail('Could not reach that URL.'));
-    req.on('response', resp => {
-      const status = resp.statusCode;
-      if (status < 200 || status >= 300) { resp.resume(); return fail('Server returned HTTP ' + status + '.'); }
-      const raw = resp.headers['content-type'];
-      const ctype = String(Array.isArray(raw) ? raw[0] : (raw || '')).split(';')[0].trim().toLowerCase();
-      // Reject obvious non-images on the header (avoid downloading an HTML page); allow image/*,
-      // octet-stream, or a missing type — then confirm by sniffing the actual bytes below.
-      if (ctype && !ctype.startsWith('image/') && ctype !== 'application/octet-stream') { resp.resume(); return fail('That URL is not an image (' + ctype + ').'); }
-      const chunks = []; let total = 0;
-      resp.on('data', d => { total += d.length; if (total > ICON_MAX_BYTES) return fail('Image is too large (over 3 MB).'); chunks.push(d); });
-      resp.on('error', () => fail('Error reading the image.'));
-      resp.on('end', () => {
-        if (done) return; done = true;
-        const buf = Buffer.concat(chunks);
-        if (!buf.length) return resolve({ ok: false, error: 'The image was empty.' });
-        const info = imageInfoFromBytes(buf);   // trust the real bytes over the (sometimes wrong) content-type header
-        if (!info && !ctype.startsWith('image/')) return resolve({ ok: false, error: "That URL doesn't appear to be an image." });
-        const mime = info ? info.mime : ctype;
-        const ext = info ? info.ext : (ctype === 'image/jpeg' ? 'jpg' : ctype === 'image/svg+xml' ? 'svg' : (ctype === 'image/x-icon' || ctype === 'image/vnd.microsoft.icon') ? 'ico' : (ctype.slice(6).replace(/[^a-z0-9]/g, '') || 'png'));
-        try { fs.mkdirSync(ICON_CACHE_DIR, { recursive: true }); } catch (e) {}
-        const file = path.join(ICON_CACHE_DIR, crypto.createHash('sha1').update(url).digest('hex').slice(0, 16) + '.' + ext);
-        try { fs.writeFileSync(file, buf); } catch (e) { return resolve({ ok: false, error: 'Could not save the icon to the cache.' }); }
-        resolve({ ok: true, cachePath: file, dataUrl: 'data:' + mime + ';base64,' + buf.toString('base64') });
-      });
-    });
-    req.end();
+  if (!/^https?:\/\//i.test(url)) return Promise.resolve({ ok: false, error: 'Only http(s) URLs are allowed.' });
+  if (iconsOffline(config.settings)) return Promise.resolve({ ok: false, error: 'Offline mode is on — icon downloads are disabled in Settings → Software.' });
+  return httpGetToBuffer(url, {
+    userAgent: 'bedrock-panel/' + app.getVersion() + ' (+https://github.com/TeeJS/bedrock-panel)',
+    headers: { Accept: 'image/*' },
+    maxBytes: ICON_MAX_BYTES,
+    // Reject obvious non-images on the header (avoid downloading an HTML page); allow image/*,
+    // octet-stream, or a missing type — then confirm by sniffing the actual bytes below.
+    checkResponse: (resp, ctype) => (ctype && !ctype.startsWith('image/') && ctype !== 'application/octet-stream') ? ('That URL is not an image (' + ctype + ').') : null,
+    errors: {
+      badUrl: 'That URL is not valid.',
+      unreachable: 'Could not reach that URL.',
+      http: status => 'Server returned HTTP ' + status + '.',
+      tooLarge: 'Image is too large (over 3 MB).',
+      read: 'Error reading the image.',
+    },
+  }).then(r => {
+    if (!r.ok) return r;
+    const buf = r.buf, ctype = r.ctype;
+    if (!buf.length) return { ok: false, error: 'The image was empty.' };
+    const info = imageInfoFromBytes(buf);   // trust the real bytes over the (sometimes wrong) content-type header
+    if (!info && !ctype.startsWith('image/')) return { ok: false, error: "That URL doesn't appear to be an image." };
+    const mime = info ? info.mime : ctype;
+    const ext = info ? info.ext : (ctype === 'image/jpeg' ? 'jpg' : ctype === 'image/svg+xml' ? 'svg' : (ctype === 'image/x-icon' || ctype === 'image/vnd.microsoft.icon') ? 'ico' : (ctype.slice(6).replace(/[^a-z0-9]/g, '') || 'png'));
+    try { fs.mkdirSync(ICON_CACHE_DIR, { recursive: true }); } catch (e) {}
+    const file = path.join(ICON_CACHE_DIR, crypto.createHash('sha1').update(url).digest('hex').slice(0, 16) + '.' + ext);
+    try { fs.writeFileSync(file, buf); } catch (e) { return { ok: false, error: 'Could not save the icon to the cache.' }; }
+    return { ok: true, cachePath: file, dataUrl: 'data:' + mime + ';base64,' + buf.toString('base64') };
   });
 }
 
@@ -1801,32 +1828,26 @@ function fetchMdiToCache(name) {
   if (iconsOffline(config.settings)) return Promise.resolve({ ok: false, error: 'offline' });   // no outbound fetch; cached hit above still serves, else emoji fallback
   if (mdiInFlight[bare]) return mdiInFlight[bare];
   const url = MDI_CDN_BASE + bare + '.svg';
-  mdiInFlight[bare] = new Promise(resolve => {
-    let req;
-    try { req = net.request({ url, redirect: 'follow' }); }
-    catch (e) { delete mdiInFlight[bare]; return resolve({ ok: false, error: 'invalid url' }); }
-    req.setHeader('User-Agent', 'bedrock-panel/' + app.getVersion());
-    req.setHeader('Accept', 'image/svg+xml');
-    let done = false;
-    const finish = result => { if (done) return; done = true; delete mdiInFlight[bare]; resolve(result); };
-    req.on('error', () => finish({ ok: false, error: 'CDN unreachable' }));
-    req.on('response', resp => {
-      if (resp.statusCode !== 200) { resp.resume(); return finish({ ok: false, error: 'CDN ' + resp.statusCode }); }
-      const chunks = []; let total = 0;
-      resp.on('data', d => { total += d.length; if (total > MDI_MAX_BYTES) { try { req.abort(); } catch (e) {} return finish({ ok: false, error: 'svg too large' }); } chunks.push(d); });
-      resp.on('end', () => {
-        if (done) return;
-        const svg = Buffer.concat(chunks).toString('utf8');
-        if (!/<svg\b/i.test(svg)) return finish({ ok: false, error: 'not an svg' });
-        const recolored = svg.replace(/<svg\b/i, '<svg fill="#ffffff"');
-        try { fs.mkdirSync(ICON_CACHE_DIR, { recursive: true }); } catch (e) {}
-        try { fs.writeFileSync(file, recolored, 'utf8'); }
-        catch (e) { return finish({ ok: false, error: 'cache write failed' }); }
-        finish({ ok: true, cachePath: file, dataUrl: 'data:image/svg+xml;base64,' + Buffer.from(recolored).toString('base64') });
-      });
-    });
-    req.end();
+  // No `errors.read`: the CDN fetch never had a response-stream 'error' handler, so the core doesn't
+  // add one. statusOk pins the old strict `=== 200` (a 3xx is already followed by redirect:'follow').
+  const p = httpGetToBuffer(url, {
+    userAgent: 'bedrock-panel/' + app.getVersion(),
+    headers: { Accept: 'image/svg+xml' },
+    maxBytes: MDI_MAX_BYTES,
+    statusOk: status => status === 200,
+    errors: { badUrl: 'invalid url', unreachable: 'CDN unreachable', http: status => 'CDN ' + status, tooLarge: 'svg too large' },
+  }).then(r => {
+    if (!r.ok) return r;
+    const svg = r.buf.toString('utf8');
+    if (!/<svg\b/i.test(svg)) return { ok: false, error: 'not an svg' };
+    const recolored = svg.replace(/<svg\b/i, '<svg fill="#ffffff"');
+    try { fs.mkdirSync(ICON_CACHE_DIR, { recursive: true }); } catch (e) {}
+    try { fs.writeFileSync(file, recolored, 'utf8'); }
+    catch (e) { return { ok: false, error: 'cache write failed' }; }
+    return { ok: true, cachePath: file, dataUrl: 'data:image/svg+xml;base64,' + Buffer.from(recolored).toString('base64') };
   });
+  // Clear the in-flight entry once the fetch settles, so a later request re-fetches (or serves cache).
+  mdiInFlight[bare] = p.then(r => { delete mdiInFlight[bare]; return r; }, err => { delete mdiInFlight[bare]; throw err; });
   return mdiInFlight[bare];
 }
 
@@ -2789,23 +2810,11 @@ function reservedTargetDisplay() {
 function reservedDisplayState() {
   const target = reservedTargetDisplay();
   const rect = b => ({ x: b.x, y: b.y, width: b.width, height: b.height });
-  if (!target) return {
-    reserved: null,
-    displays: screen.getAllDisplays().map(d => ({
-      id: String(d.id),
-      primary: d.id === screen.getPrimaryDisplay().id,
-      bounds: rect(d.bounds),
-      workArea: rect(d.workArea),
-    })),
-  };
+  const mapDisplay = d => ({ id: String(d.id), primary: d.id === screen.getPrimaryDisplay().id, bounds: rect(d.bounds), workArea: rect(d.workArea) });
+  if (!target) return { reserved: null, displays: screen.getAllDisplays().map(mapDisplay) };
   return {
     reserved: rect(target.bounds),
-    displays: screen.getAllDisplays().filter(d => String(d.id) !== String(target.id)).map(d => ({
-      id: String(d.id),
-      primary: d.id === screen.getPrimaryDisplay().id,
-      bounds: rect(d.bounds),
-      workArea: rect(d.workArea),
-    })),
+    displays: screen.getAllDisplays().filter(d => String(d.id) !== String(target.id)).map(mapDisplay),
   };
 }
 function refreshReservedDisplay(reason, delay) {
@@ -3363,134 +3372,76 @@ const linuxShortcuts = process.platform === 'linux'
   : null;
 const shortcuts = linuxShortcuts || Object.assign(Object.create(globalShortcut), { apply() { return true; } });
 
+// Register one global hotkey with the shared skeleton every call site used: release any held
+// modifiers BEFORE the action fires (so the OS sees them released immediately, not after async
+// window/IPC churn — see modifiersInAccelerator above), log a combo another app owns, and swallow
+// a register throw. `label` is the trailing text of the "already in use" log, matching each old
+// site's exact wording. A falsy combo is a no-op.
+function registerHotkey(combo, label, fn) {
+  if (!combo) return;
+  try {
+    const ok = shortcuts.register(combo, () => {
+      if (process.platform === 'win32') modifiersInAccelerator(combo).forEach(m => mediaKeys.keyUp(m));
+      fn();
+    });
+    if (!ok) console.log('shortcut already in use, not registered:', combo, label);
+  } catch (e) { console.log('shortcut register error:', combo, '-', e.message); }
+}
 // Per-page global hotkeys: register each page's `shortcut` so pressing it (system-wide) jumps the panel
 // to that page. Re-applied on launch and after every editor save; a combo another app owns just fails to
 // register (logged). Requires app-ready.
 function applyShortcuts() {
   try { shortcuts.unregisterAll(); } catch (e) {}
   for (const g of (config.grids || [])) {
-    if (!g.shortcut) continue;
-    try {
-      const ok = shortcuts.register(g.shortcut, () => {
-        // Release any held modifiers BEFORE the gotoGrid work so the OS sees them released
-        // immediately, not after async window/IPC churn. See modifiersInAccelerator above.
-        if (process.platform === 'win32') modifiersInAccelerator(g.shortcut).forEach(m => mediaKeys.keyUp(m));
-        gotoGrid(g.id, true);
-        // "Disables rotation": same path as the knob/tray toggle, so tray + panel state update
-        // and rotation stays off until the user starts it again.
-        if (g.shortcutStopsRotation) setRotation(false);
-        else if (rotateRunning) scheduleRotation();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', g.shortcut, '->', g.id);
-    } catch (e) { console.log('shortcut register error:', g.shortcut, '-', e.message); }
+    registerHotkey(g.shortcut, '-> ' + g.id, () => {
+      gotoGrid(g.id, true);
+      // "Disables rotation": same path as the knob/tray toggle, so tray + panel state update
+      // and rotation stays off until the user starts it again.
+      if (g.shortcutStopsRotation) setRotation(false);
+      else if (rotateRunning) scheduleRotation();
+    });
   }
   // Per-pane global hotkeys: same contract as page hotkeys, for the software window's panes. Firing
   // one switches to that pane (flipping the window to Panes view if needed); no-op outside software
   // mode. "Disables rotation" works exactly like the page version.
   for (const p of (config.panes || [])) {
-    if (!p.shortcut) continue;
-    try {
-      const ok = shortcuts.register(p.shortcut, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(p.shortcut).forEach(m => mediaKeys.keyUp(m));
-        gotoPane(p.id, true);
-        if (p.shortcutStopsRotation) setRotation(false);
-        else if (rotateRunning) scheduleRotation();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', p.shortcut, '-> pane', p.id);
-    } catch (e) { console.log('shortcut register error:', p.shortcut, '-', e.message); }
+    registerHotkey(p.shortcut, '-> pane ' + p.id, () => {
+      gotoPane(p.id, true);
+      if (p.shortcutStopsRotation) setRotation(false);
+      else if (rotateRunning) scheduleRotation();
+    });
   }
   // Live Translate: a per-page hotkey that toggles translation (start/stop listening). Global, so it
   // fires from any app; if the page isn't on-screen it is switched to first, then the mic toggles.
   for (const g of (config.grids || [])) {
     if (!(g.kind === 'app' && g.app === 'livetranslate' && g.options && g.options.micHotkey)) continue;
-    try {
-      const ok = shortcuts.register(g.options.micHotkey, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(g.options.micHotkey).forEach(m => mediaKeys.keyUp(m));
-        const active = activeGrid();
-        if (!(active && active.id === g.id)) gotoGrid(g.id, true);   // bring the page on-screen (loads it)
-        panelSendTargets().forEach(wc => wc.send('micToggle'));
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', g.options.micHotkey, '-> livetranslate toggle', g.id);
-    } catch (e) { console.log('shortcut register error:', g.options.micHotkey, '-', e.message); }
+    registerHotkey(g.options.micHotkey, '-> livetranslate toggle ' + g.id, () => {
+      const active = activeGrid();
+      if (!(active && active.id === g.id)) gotoGrid(g.id, true);   // bring the page on-screen (loads it)
+      panelSendTargets().forEach(wc => wc.send('micToggle'));
+    });
   }
   // Rotation toggle hotkey: same start/stop path as the knob, tray, and panel, so all three stay in sync.
   // Only registered while auto-rotate is enabled — matches the tray item (which hides when it's off) and
   // avoids holding a global combo hostage for a feature that can't run. Page hotkeys register first, so a
   // combo used by both goes to the page.
   const rot = rotationCfg();
-  if (rot.enabled && rot.hotkey) {
-    try {
-      const ok = shortcuts.register(rot.hotkey, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(rot.hotkey).forEach(m => mediaKeys.keyUp(m));
-        toggleRotation();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', rot.hotkey, '-> rotation toggle');
-    } catch (e) { console.log('shortcut register error:', rot.hotkey, '-', e.message); }
-  }
+  if (rot.enabled) registerHotkey(rot.hotkey, '-> rotation toggle', () => toggleRotation());
   // Dashboard reload hotkey: no on/off toggle (unlike rotation) -- just registers whenever a combo is set.
-  const dashReload = dashboardReloadCfg();
-  if (dashReload.hotkey) {
-    try {
-      const ok = shortcuts.register(dashReload.hotkey, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(dashReload.hotkey).forEach(m => mediaKeys.keyUp(m));
-        reloadActiveDashboard();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', dashReload.hotkey, '-> dashboard reload');
-    } catch (e) { console.log('shortcut register error:', dashReload.hotkey, '-', e.message); }
-  }
+  registerHotkey(dashboardReloadCfg().hotkey, '-> dashboard reload', () => reloadActiveDashboard());
   // Screen forward/back hotkeys: step the panel through the visible pages from anywhere. No toggle;
   // registered whenever a combo is set.
   const pageStep = pageStepCfg();
   [['nextHotkey', 1, 'page forward'], ['prevHotkey', -1, 'page back']].forEach(function (spec) {
-    const combo = pageStep[spec[0]];
-    if (!combo) return;
-    try {
-      const ok = shortcuts.register(combo, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(combo).forEach(m => mediaKeys.keyUp(m));
-        stepPage(spec[1]);
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', combo, '->', spec[2]);
-    } catch (e) { console.log('shortcut register error:', combo, '-', e.message); }
+    registerHotkey(pageStep[spec[0]], '-> ' + spec[2], () => stepPage(spec[1]));
   });
   // LucidType dictation hotkeys: toggle dictation + apply text. Global (fire regardless of focus) so
   // dictation starts from any app and Apply pastes into whatever window is foreground.
   const lt = lucidtypeSettings();
-  if (lt.dictationHotkey) {
-    try {
-      const ok = shortcuts.register(lt.dictationHotkey, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(lt.dictationHotkey).forEach(m => mediaKeys.keyUp(m));
-        toggleLucidDictation();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', lt.dictationHotkey, '-> lucidtype dictation');
-    } catch (e) { console.log('shortcut register error:', lt.dictationHotkey, '-', e.message); }
-  }
-  if (lt.applyHotkey) {
-    try {
-      const ok = shortcuts.register(lt.applyHotkey, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(lt.applyHotkey).forEach(m => mediaKeys.keyUp(m));
-        lucidApply();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', lt.applyHotkey, '-> lucidtype apply');
-    } catch (e) { console.log('shortcut register error:', lt.applyHotkey, '-', e.message); }
-  }
-  if (lt.cleanupHotkey) {
-    try {
-      const ok = shortcuts.register(lt.cleanupHotkey, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(lt.cleanupHotkey).forEach(m => mediaKeys.keyUp(m));
-        if (lucidDictation) lucidDictation.runCleanup();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', lt.cleanupHotkey, '-> lucidtype cleanup');
-    } catch (e) { console.log('shortcut register error:', lt.cleanupHotkey, '-', e.message); }
-  }
-  if (lt.rewriteHotkey) {
-    try {
-      const ok = shortcuts.register(lt.rewriteHotkey, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(lt.rewriteHotkey).forEach(m => mediaKeys.keyUp(m));
-        if (lucidDictation) lucidDictation.runRewrite();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', lt.rewriteHotkey, '-> lucidtype rewrite');
-    } catch (e) { console.log('shortcut register error:', lt.rewriteHotkey, '-', e.message); }
-  }
+  registerHotkey(lt.dictationHotkey, '-> lucidtype dictation', () => toggleLucidDictation());
+  registerHotkey(lt.applyHotkey, '-> lucidtype apply', () => lucidApply());
+  registerHotkey(lt.cleanupHotkey, '-> lucidtype cleanup', () => { if (lucidDictation) lucidDictation.runCleanup(); });
+  registerHotkey(lt.rewriteHotkey, '-> lucidtype rewrite', () => { if (lucidDictation) lucidDictation.runRewrite(); });
   registerSlideHotkeys();   // last, after the unregisterAll above, so a settings change re-arms them
   try { shortcuts.apply(); } catch (e) { console.log('[shortcuts] apply failed: ' + (e && e.message)); }
 }
@@ -3506,16 +3457,7 @@ function registerSlideHotkeys() {
     [m.slideHotkeySelect, () => slideCapture.requestPicker()],
     [m.slideHotkeyManual, () => slideCapture.manual()],
   ];
-  for (const [combo, fn] of binds) {
-    if (!combo) continue;
-    try {
-      const ok = shortcuts.register(combo, () => {
-        if (process.platform === 'win32') modifiersInAccelerator(combo).forEach(k => mediaKeys.keyUp(k));
-        fn();
-      });
-      if (!ok) console.log('shortcut already in use, not registered:', combo, '-> slide capture');
-    } catch (e) { console.log('shortcut register error:', combo, '-', e.message); }
-  }
+  for (const [combo, fn] of binds) registerHotkey(combo, '-> slide capture', fn);
 }
 function applySlideHotkeys() { try { applyShortcuts(); } catch (e) {} }   // re-arm everything (incl. slide combos)
 function rotateTick() {
@@ -3812,11 +3754,11 @@ function refreshHaCache() {
   if (haRefreshInFlight) return haRefreshInFlight;
   const ha = (config.settings && config.settings.haAuth) || {};
   if (!ha.useHa) {
-    haCache = { ok: false, ts: Date.now(), error: 'Use Home Assistant is off', dashboards: [], entities: [], areaRegistry: [], deviceRegistry: [], entityRegistry: [], floorRegistry: [], labelRegistry: [], states: {} };
+    haCache = emptyHaCache('Use Home Assistant is off');
     return Promise.resolve(haCache);
   }
   if (!ha.url || !ha.token) {
-    haCache = { ok: false, ts: Date.now(), error: 'HA URL and token required (Auth tab)', dashboards: [], entities: [], areaRegistry: [], deviceRegistry: [], entityRegistry: [], floorRegistry: [], labelRegistry: [], states: {} };
+    haCache = emptyHaCache('HA URL and token required (Auth tab)');
     return Promise.resolve(haCache);
   }
   haRefreshInFlight = haClient.fetchAll(ha.url, ha.token).then(c => {
@@ -3824,7 +3766,7 @@ function refreshHaCache() {
     console.log('[ha] cache: ' + c.dashboards.length + ' dashboards, ' + c.entities.length + ' entities, ' + c.areaRegistry.length + ' areas, ' + c.deviceRegistry.length + ' devices, ' + c.floorRegistry.length + ' floors, ' + c.labelRegistry.length + ' labels');
     return c;
   }).catch(e => {
-    haCache = { ok: false, ts: Date.now(), error: e.message || String(e), dashboards: [], entities: [], areaRegistry: [], deviceRegistry: [], entityRegistry: [], floorRegistry: [], labelRegistry: [], states: {} };
+    haCache = emptyHaCache(e.message || String(e));
     console.log('[ha] cache refresh failed: ' + (e.message || e));
     return haCache;
   }).finally(() => { haRefreshInFlight = null; });
@@ -4285,50 +4227,41 @@ app.whenReady().then(async () => {
     };
   });
   // Downloads the engine (once) and the chosen voice, reporting progress to the editor as it goes.
-  ipcMain.handle('installLinuxSpeechVoice', async (e, voiceId) => {
+  // Progress relay for the Linux speech install flows — the same closure both installers used.
+  const sendLinuxSpeechProgress = p => { try { if (configWin && !configWin.isDestroyed()) configWin.webContents.send('linuxSpeechProgress', p); } catch (err) {} };
+  // Install a Linux voice or STT model: run the installer, remember the choice (installing IS choosing —
+  // a person who just downloaded it means to use it), then restart the resident speech server. `field`
+  // is the config.settings.voice key to write; `key` is both the field on the installer's result and the
+  // field name in the {ok:true, ...} reply.
+  async function runLinuxSpeechInstall(e, id, install, field, key) {
     if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
-    const send = p => { try { if (configWin && !configWin.isDestroyed()) configWin.webContents.send('linuxSpeechProgress', p); } catch (err) {} };
     try {
-      const result = await speechInstaller().install(String(voiceId || ''), send);
-      // Installing IS choosing: a person who just downloaded a voice means to use it.
+      const result = await install(String(id || ''), sendLinuxSpeechProgress);
       if (!config.settings) config.settings = {};
       if (!config.settings.voice) config.settings.voice = {};
-      config.settings.voice.linuxVoice = result.voice;
+      config.settings.voice[field] = result[key];
       saveConfig();
       linuxSpeech.stop();
       applyLinuxSpeech();
-      return { ok: true, voice: result.voice };
+      return { ok: true, [key]: result[key] };
     } catch (err) {
-      send({ phase: 'error', message: String(err && err.message) });
+      sendLinuxSpeechProgress({ phase: 'error', message: String(err && err.message) });
       return { ok: false, error: String(err && err.message) };
     }
-  });
-  // Listening is its own download and its own button: someone who only wants a voice should not be
-  // made to fetch a recognition model, or the reverse.
-  ipcMain.handle('installLinuxSttModel', async (e, modelId) => {
-    if (!isFrom(e, configWin) || process.platform !== 'linux') return { ok: false };
-    const send = p => { try { if (configWin && !configWin.isDestroyed()) configWin.webContents.send('linuxSpeechProgress', p); } catch (err) {} };
-    try {
-      const result = await speechInstaller().installStt(String(modelId || ''), send);
-      if (!config.settings) config.settings = {};
-      if (!config.settings.voice) config.settings.voice = {};
-      config.settings.voice.linuxSttModel = result.model;
-      saveConfig();
-      linuxSpeech.stop();
-      applyLinuxSpeech();
-      return { ok: true, model: result.model };
-    } catch (err) {
-      send({ phase: 'error', message: String(err && err.message) });
-      return { ok: false, error: String(err && err.message) };
-    }
-  });
-  ipcMain.handle('removeLinuxSttModel', (e, modelId) => {
+  }
+  // Remove a Linux voice or STT model: stop the server, delete it, restart. `remove(id)` returns ok.
+  function runLinuxSpeechRemove(e, id, remove) {
     if (!isFrom(e, configWin) || process.platform !== 'linux') return false;
     linuxSpeech.stop();
-    const ok = speechInstaller().removeSttModel(String(modelId || ''));
+    const ok = remove(String(id || ''));
     applyLinuxSpeech();
     return ok;
-  });
+  }
+  ipcMain.handle('installLinuxSpeechVoice', (e, voiceId) => runLinuxSpeechInstall(e, voiceId, (id, cb) => speechInstaller().install(id, cb), 'linuxVoice', 'voice'));
+  // Listening is its own download and its own button: someone who only wants a voice should not be
+  // made to fetch a recognition model, or the reverse.
+  ipcMain.handle('installLinuxSttModel', (e, modelId) => runLinuxSpeechInstall(e, modelId, (id, cb) => speechInstaller().installStt(id, cb), 'linuxSttModel', 'model'));
+  ipcMain.handle('removeLinuxSttModel', (e, modelId) => runLinuxSpeechRemove(e, modelId, id => speechInstaller().removeSttModel(id)));
   // Enrolled voices for meeting transcripts. Profiles are .npy files named after the person, the
   // same layout the Windows helper writes, so a folder of them can be carried between machines.
   ipcMain.handle('listLinuxSpeakers', (e) => {
@@ -4406,13 +4339,7 @@ app.whenReady().then(async () => {
     } catch (err) { return { ok: false, error: String(err && err.message) }; }
   });
   ipcMain.handle('cancelLinuxSpeechInstall', (e) => { if (isFrom(e, configWin) && process.platform === 'linux') speechInstaller().cancel(); return true; });
-  ipcMain.handle('removeLinuxSpeechVoice', (e, voiceId) => {
-    if (!isFrom(e, configWin) || process.platform !== 'linux') return false;
-    linuxSpeech.stop();
-    const ok = speechInstaller().removeVoice(String(voiceId || ''));
-    applyLinuxSpeech();
-    return ok;
-  });
+  ipcMain.handle('removeLinuxSpeechVoice', (e, voiceId) => runLinuxSpeechRemove(e, voiceId, id => speechInstaller().removeVoice(id)));
   ipcMain.handle('rescanMacVoices', (e) => isFrom(e, configWin) ? macSpeech.rescan() : false);   // after a voice download in Spoken Content
   // Voice preview: macOS's own `say` speaks a sample with the chosen voice through the default output.
   // The running helper is not involved, so it works whichever engine is selected; a new preview
@@ -4771,31 +4698,24 @@ app.whenReady().then(async () => {
     else if (runMode() === 'software' && paneRebuildKey() !== prevPaneKey) applyPaneLive();   // pane display/slots changed -> adjust the window in place
     return { ok: true };
   });
-  ipcMain.handle('pickProgram', async (e) => {
+  // Shared tail for the editor's file/folder pickers: reject a sender that isn't the editor window,
+  // open a modal dialog with the caller's options, and return the single chosen path (or null).
+  const pickOne = async (e, options) => {
     if (!isFrom(e, configWin)) return null;
+    const r = await dialog.showOpenDialog(configWin, options);
+    return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
+  };
+  ipcMain.handle('pickProgram', (e) => {
     const filters = process.platform === 'darwin'
       ? [{ name: 'Applications', extensions: ['app'] }, { name: 'All Files', extensions: ['*'] }]
       : [{ name: 'Programs', extensions: ['exe', 'lnk', 'bat', 'cmd', 'com'] }, { name: 'All Files', extensions: ['*'] }];
-    const r = await dialog.showOpenDialog(configWin, { properties: ['openFile'], filters });
-    return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
+    return pickOne(e, { properties: ['openFile'], filters });
   });
-  ipcMain.handle('pickImage', async (e) => {
-    if (!isFrom(e, configWin)) return null;
-    const r = await dialog.showOpenDialog(configWin, { properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg'] }, { name: 'All Files', extensions: ['*'] }] });
-    return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
-  });
+  ipcMain.handle('pickImage', (e) => pickOne(e, { properties: ['openFile'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg'] }, { name: 'All Files', extensions: ['*'] }] }));
   // For "Open file/folder" tiles: a plain file picker (any file) and a folder picker. Windows can't show
   // both in one dialog, so the editor offers two buttons.
-  ipcMain.handle('pickFile', async (e) => {
-    if (!isFrom(e, configWin)) return null;
-    const r = await dialog.showOpenDialog(configWin, { properties: ['openFile'], filters: [{ name: 'All Files', extensions: ['*'] }] });
-    return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
-  });
-  ipcMain.handle('pickFolder', async (e) => {
-    if (!isFrom(e, configWin)) return null;
-    const r = await dialog.showOpenDialog(configWin, { properties: ['openDirectory'] });
-    return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
-  });
+  ipcMain.handle('pickFile', (e) => pickOne(e, { properties: ['openFile'], filters: [{ name: 'All Files', extensions: ['*'] }] }));
+  ipcMain.handle('pickFolder', (e) => pickOne(e, { properties: ['openDirectory'] }));
   // Screensaver "Open photos/videos folder": resolve the effective folder (custom or the app's
   // own default for that kind), create it if needed, and show it in Explorer. Directory-only —
   // never opens (= executes) a file.

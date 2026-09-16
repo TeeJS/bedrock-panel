@@ -38,9 +38,12 @@
     if (webAttached) { setUA(desktop); web.src = url; }
     else { pendingWebUrl = url; pendingDesktop = desktop; }
   }
+  // Toggle the dashboard voice app's conversation via its page hook (the knob's mic action). No-op if
+  // the page defines no hook; the webMode/webReady guard stays at each call site.
+  function toggleConversation() { web.executeJavaScript('window.oqxToggleConversation && window.oqxToggleConversation()').catch(function () {}); }
   web.addEventListener('dom-ready', () => {
     webReady = true;
-    if (pendingMicToggle) { pendingMicToggle = false; web.executeJavaScript('window.oqxToggleConversation && window.oqxToggleConversation()').catch(function () {}); }
+    if (pendingMicToggle) { pendingMicToggle = false; toggleConversation(); }
     if (!webAttached) {
       webAttached = true;
       try { defaultUA = web.getUserAgent(); } catch (e) {}      // true default (about:blank), before any override
@@ -242,11 +245,46 @@
     if (t && t.cover != null) idx = t.cover;                  // covered cell -> its merged owner
     return idx;
   }
-  function highlight(i) {
-    if (i === lastHit) return;
-    if (lastHit >= 0) { const p = grid.querySelector(`[data-i="${lastHit}"]`); if (p) p.classList.remove('hit'); }
-    if (i >= 0 && cfg.tiles[i] && cfg.tiles[i].type) { const el = grid.querySelector(`[data-i="${i}"]`); if (el) el.classList.add('hit'); }
-    lastHit = i;
+  // A tile-highlighter over `host`: clears the previously-hit tile and lights the new one (only if it
+  // is a typed tile), tracking the last index via get/setLast. The main grid and the dashboard strip
+  // each get their own, over their own host element and last-index variable.
+  function makeHighlighter(host, getLast, setLast) {
+    return function (i) {
+      const last = getLast();
+      if (i === last) return;
+      if (last >= 0) { const p = host.querySelector(`[data-i="${last}"]`); if (p) p.classList.remove('hit'); }
+      if (i >= 0 && cfg.tiles[i] && cfg.tiles[i].type) { const el = host.querySelector(`[data-i="${i}"]`); if (el) el.classList.add('hit'); }
+      setLast(i);
+    };
+  }
+  const highlight = makeHighlighter(grid, () => lastHit, i => { lastHit = i; });
+  const stripHighlight = makeHighlighter(webgrid, () => stripLastHit, i => { stripLastHit = i; });
+  // Flash a counter tile's +/- button briefly on activation.
+  function flashCounterBtn(el, isMinus) {
+    const btn = el.querySelector(isMinus ? '.btn-minus' : '.btn-plus');
+    if (btn) { btn.classList.add('btn-hit'); setTimeout(() => btn.classList.remove('btn-hit'), 150); }
+  }
+  // Wire PC-mouse clicks on a tile host: a counter tile bumps its value (with a button flash), any
+  // other typed tile launches (with a brief highlight). isBlocked() gates the whole handler;
+  // highlightFn is the host's own highlighter.
+  function bindGridClick(hostEl, highlightFn, isBlocked) {
+    hostEl.addEventListener('click', (e) => {
+      if (isBlocked()) return;
+      const el = e.target.closest && e.target.closest('[data-i]');
+      if (!el) return;
+      const i = parseInt(el.dataset.i, 10);
+      if (i < 0 || !cfg.tiles[i] || !cfg.tiles[i].type) return;
+      if (cfg.tiles[i].type === 'counter') {
+        const rect = el.getBoundingClientRect();
+        const isMinus = (e.clientX - rect.left) < rect.width / 2;
+        flashCounterBtn(el, isMinus);
+        updateCounter(i, isMinus ? -1 : 1);
+        return;
+      }
+      highlightFn(i);
+      panelApi.launch(cfg.tiles[i]);
+      setTimeout(() => highlightFn(-1), 180);
+    });
   }
   panelApi.onTouch(pts => {
     if (introOpen) { if (pts.some(p => p.action === 1)) dismissIntro(); return; }   // any tap dismisses the intro
@@ -262,10 +300,7 @@
         const tileWidth = 1920 / cfg.cols;
         const isMinus = (p.x % tileWidth) < tileWidth / 2;
         const tileEl = grid.querySelector(`[data-i="${i}"]`);
-        if (tileEl) {
-          const btn = tileEl.querySelector(isMinus ? '.btn-minus' : '.btn-plus');
-          if (btn) { btn.classList.add('btn-hit'); setTimeout(() => btn.classList.remove('btn-hit'), 150); }
-        }
+        if (tileEl) flashCounterBtn(tileEl, isMinus);
         if (!counterLocked) { counterLocked = true; updateCounter(i, isMinus ? -1 : 1); setTimeout(() => { counterLocked = false; }, 150); }
       }
       return;
@@ -277,44 +312,10 @@
   });
 
   // ---- PC mouse -> launch (the panel is a real display; let the cursor click tiles too) ----
-  grid.addEventListener('click', (e) => {
-    if (selOpen || webMode) return;                  // ignore while picking a page / on dashboards (webview clicks natively)
-    const el = e.target.closest && e.target.closest('[data-i]');
-    if (!el) return;
-    const i = parseInt(el.dataset.i, 10);
-    if (i < 0 || !cfg.tiles[i] || !cfg.tiles[i].type) return;
-    if (cfg.tiles[i].type === 'counter') {
-      // For PC mouse: figure out which half of the tile got clicked, then update
-      const rect = el.getBoundingClientRect();
-      const isMinus = (e.clientX - rect.left) < rect.width / 2;
-      const btn = el.querySelector(isMinus ? '.btn-minus' : '.btn-plus');
-      if (btn) { btn.classList.add('btn-hit'); setTimeout(() => btn.classList.remove('btn-hit'), 150); }
-      updateCounter(i, isMinus ? -1 : 1);
-      return;
-    }
-    highlight(i);
-    panelApi.launch(cfg.tiles[i]);
-    setTimeout(() => highlight(-1), 180);
-  });
-  // PC mouse on the dashboard button strip (the strip overlays the webview region, so it gets its own handler)
-  webgrid.addEventListener('click', (e) => {
-    if (selOpen || !webStrip) return;
-    const el = e.target.closest && e.target.closest('[data-i]');
-    if (!el) return;
-    const i = parseInt(el.dataset.i, 10);
-    if (i < 0 || !cfg.tiles[i] || !cfg.tiles[i].type) return;
-    if (cfg.tiles[i].type === 'counter') {
-      const rect = el.getBoundingClientRect();
-      const isMinus = (e.clientX - rect.left) < rect.width / 2;
-      const btn = el.querySelector(isMinus ? '.btn-minus' : '.btn-plus');
-      if (btn) { btn.classList.add('btn-hit'); setTimeout(() => btn.classList.remove('btn-hit'), 150); }
-      updateCounter(i, isMinus ? -1 : 1);
-      return;
-    }
-    stripHighlight(i);
-    panelApi.launch(cfg.tiles[i]);
-    setTimeout(() => stripHighlight(-1), 180);
-  });
+  // Main grid: ignore while picking a page / on dashboards (the webview handles clicks natively).
+  bindGridClick(grid, highlight, () => selOpen || webMode);
+  // Dashboard button strip (overlays the webview region, so it gets its own handler + highlighter).
+  bindGridClick(webgrid, stripHighlight, () => selOpen || !webStrip);
 
   // ---- dashboard touch -> mouse (tap = click, drag = move) ----
   function webTouch(p) {
@@ -336,12 +337,6 @@
   }
 
   // ---- dashboard button strip: a tap in the strip launches its tile (mirrors the main grid touch path) ----
-  function stripHighlight(i) {
-    if (i === stripLastHit) return;
-    if (stripLastHit >= 0) { const p = webgrid.querySelector(`[data-i="${stripLastHit}"]`); if (p) p.classList.remove('hit'); }
-    if (i >= 0 && cfg.tiles[i] && cfg.tiles[i].type) { const el = webgrid.querySelector(`[data-i="${i}"]`); if (el) el.classList.add('hit'); }
-    stripLastHit = i;
-  }
   function stripTouch(p) {
     if (!webStrip) return;
     const sy = 480 - p.y, lx = p.x - webStrip.left;
@@ -356,7 +351,7 @@
       if (p.action === 1) {
         const isMinus = (lx % tileW) < tileW / 2;
         const el = webgrid.querySelector(`[data-i="${idx}"]`);
-        if (el) { const btn = el.querySelector(isMinus ? '.btn-minus' : '.btn-plus'); if (btn) { btn.classList.add('btn-hit'); setTimeout(() => btn.classList.remove('btn-hit'), 150); } }
+        if (el) flashCounterBtn(el, isMinus);
         if (!counterLocked) { counterLocked = true; updateCounter(idx, isMinus ? -1 : 1); setTimeout(() => { counterLocked = false; }, 150); }
       }
       return;
@@ -426,7 +421,7 @@
   // the exact hook the knob uses (window.oqxToggleConversation). If main just switched to the page
   // and the webview isn't ready yet, defer until dom-ready fires.
   panelApi.onMicToggle(() => {
-    if (webMode && webReady) web.executeJavaScript('window.oqxToggleConversation && window.oqxToggleConversation()').catch(function () {});
+    if (webMode && webReady) toggleConversation();
     else pendingMicToggle = true;
   });
 
@@ -531,7 +526,7 @@
     }
     if (cfg && cfg.app === 'music') { panelApi.media('playpause'); return; }   // music: play/pause
     if (cfg && (cfg.app === 'ai-voice' || cfg.app === 'livetranslate')) {   // AI Voice (every backend) + live translate: tap toggles on/off
-      if (webMode && webReady) web.executeJavaScript('window.oqxToggleConversation && window.oqxToggleConversation()').catch(function () {});
+      if (webMode && webReady) toggleConversation();
       return;
     }
     panelApi.launch({ type: 'key', value: 'enter', label: 'knob enter' });     // else: a real Enter keystroke
@@ -545,7 +540,6 @@
     const host = (webMode && webStrip) ? webgrid : grid;   // a counter can live in the dashboard strip too
     const el = host.querySelector(`[data-i="${idx}"] .val`);
     if (el) el.textContent = String(count);
-    console.log('[counter] updateCounter: cfg.id=', JSON.stringify(cfg.id), 'idx=', idx, 'count=', count);
     panelApi.saveTileValue(cfg.id, idx, String(count));
   }
 

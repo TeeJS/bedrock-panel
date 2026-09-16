@@ -162,6 +162,15 @@
     };
   }
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // The hotkey-capture field: a readonly input the user clicks then presses a combo into, plus a ✕
+  // that clears it. `id` names the input; the clear button is `<id>Clear`. Any warning span or
+  // closing tag around it stays at the call site.
+  const hotkeyFieldHtml = (id, value) => `<span class="hkwrap"><input id="${id}" readonly placeholder="click, then press keys" value="${esc(value || '')}"><button id="${id}Clear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span>`;
+  // OpenAI-compatible endpoint presets, shared by the AI Voice (api backend) and Live Translate rows.
+  // A convenience only — the stored truth is each row's own URL/model options. `matchApiPreset(url)`
+  // returns the preset key whose URL equals `url`, or 'custom'.
+  const API_PRESETS = { openai: { url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }, deepseek: { url: 'https://api.deepseek.com', model: 'deepseek-v4-flash' }, openrouter: { url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' } };
+  const matchApiPreset = url => Object.keys(API_PRESETS).find(k => API_PRESETS[k].url === url) || 'custom';
   // A masked credential field: a password input + an eyeball to reveal it. attrs = extra input HTML
   // (id / class / data-* / placeholder); wrapStyle = optional style on the wrapper (e.g. a flex weight).
   // RULE: every password / API key / token / secret in the editor goes through this — shown as ••••
@@ -402,7 +411,7 @@
   // ---- per-page global shortcut ----
   function shortcutRowHtml(g) {
     return `<div class="row" style="margin-top:6px"><label style="width:auto">Jump-to-page shortcut</label>
-      <span class="hkwrap"><input id="gShortcut" readonly placeholder="click, then press keys" value="${esc(g.shortcut || '')}"><button id="gShortcutClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span>
+      ${hotkeyFieldHtml('gShortcut', g.shortcut)}
       <label id="gShortcutNoRotLbl" style="width:auto;margin-left:14px;font-weight:normal;cursor:pointer"><input type="checkbox" id="gShortcutNoRot" ${g.shortcutStopsRotation ? 'checked' : ''}> Pause rotation when this shortcut is used</label>
       <span id="gShortcutWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
       <details class="hint"><summary>Global hotkey that jumps the panel to this page from anywhere.</summary> Click the box and press a combo that includes a modifier (e.g. Ctrl+Alt+1). If another app already owns that combo, it just won't fire. <b>Pause rotation</b> turns auto-rotation off when the shortcut fires, so the panel stays on this page until you start rotation again (knob, tray, or panel).</details>`;
@@ -476,6 +485,37 @@
     else if (key.length === 1) key = key.toUpperCase();
     else key = key.charAt(0).toUpperCase() + key.slice(1);
     return mods.concat(key).join('+');
+  }
+
+  // Fill a <select> with the available audio-input devices (by LABEL, which is what we persist),
+  // keeping a saved-but-disconnected device visible as "(not connected)". Labels are only exposed
+  // after a getUserMedia grant, so enumerate first and briefly grab-then-release the mic when the
+  // labels come back blank. onPick(value) persists the choice (and may do more, e.g. restart a meter).
+  function wireMicPicker(sel, cur, onPick) {
+    const fill = devs => {
+      const inputs = (devs || []).filter(d => d.kind === 'audioinput' && d.label);
+      sel.innerHTML = '<option value="">System default</option>';
+      inputs.forEach(d => { const o = document.createElement('option'); o.value = d.label; o.textContent = d.label; sel.appendChild(o); });
+      if (cur && !inputs.some(d => d.label === cur)) { const o = document.createElement('option'); o.value = cur; o.textContent = cur + ' (not connected)'; sel.appendChild(o); }
+      sel.value = cur;
+      sel.onchange = e => onPick(e.target.value);
+    };
+    navigator.mediaDevices.enumerateDevices().then(devs => {
+      if ((devs || []).some(d => d.kind === 'audioinput' && d.label)) return fill(devs);
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(tmp => navigator.mediaDevices.enumerateDevices().then(d2 => { tmp.getTracks().forEach(t => t.stop()); fill(d2); }))
+        .catch(() => fill(devs));
+    }).catch(() => fill([]));
+  }
+
+  // The bordered "advanced section" box the OAuth/services/Discord/GitHub setup panels each build:
+  // an .advsec div with the shared inset style, appended to `el`, returned so the caller fills it.
+  function makeAdvsecBox(el) {
+    const box = document.createElement('div');
+    box.className = 'advsec';
+    box.style.cssText = 'margin-top:12px;padding:10px;border:1px solid #213145;border-radius:8px';
+    el.appendChild(box);
+    return box;
   }
 
   // ---- per-page Advanced: override the global theme for just this page ----
@@ -2174,14 +2214,14 @@
 
         <p class="sectitle formsec" style="margin-top:16px">Hotkeys</p>
         <div class="row"><label style="width:auto">Start / stop dictation</label>
-          <span class="hkwrap"><input id="ltDictKey" readonly placeholder="click, then press keys" value="${esc(optVal(g, 'dictationHotkey', ''))}"><button id="ltDictKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span></div>
+          ${hotkeyFieldHtml('ltDictKey', optVal(g, 'dictationHotkey', ''))}</div>
         <div class="row"><label style="width:auto">When starting a new dictation</label>
           <select id="ltStartMode" style="width:230px">
             <option value="clear" ${optVal(g, 'startMode', 'clear') === 'append' ? '' : 'selected'}>Clears the box and starts fresh</option>
             <option value="append" ${optVal(g, 'startMode', 'clear') === 'append' ? 'selected' : ''}>Appends to the existing text</option>
           </select></div>
         <div class="row"><label style="width:auto">Apply text</label>
-          <span class="hkwrap"><input id="ltApplyKey" readonly placeholder="click, then press keys" value="${esc(optVal(g, 'applyHotkey', ''))}"><button id="ltApplyKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span></div>
+          ${hotkeyFieldHtml('ltApplyKey', optVal(g, 'applyHotkey', ''))}</div>
         <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="ltApplyStops" ${optVal(g, 'applyStopsRecording', true) ? 'checked' : ''}> Apply text also stops recording</label></div>
         <p class="hint">Global combos (need a modifier) that fire from any app. To <b>jump to this page</b>, use the page's <b>Jump-to-page shortcut</b> below. Applies on Save.</p>
 
@@ -2213,7 +2253,7 @@
         <details class="advsec" style="margin-top:14px">
           <summary style="cursor:pointer;color:#9fb3c8;font-size:13px;user-select:none">Cleanup — fix grammar / filler <span class="hint" style="margin:0">${optVal(g, 'cleanupHotkey', '') ? '(' + esc(optVal(g, 'cleanupHotkey', '')) + ')' : '(no hotkey)'}</span></summary>
           <div class="row" style="margin-top:8px"><label style="width:auto">Hotkey</label>
-            <span class="hkwrap"><input id="ltCleanupKey" readonly placeholder="click, then press keys" value="${esc(optVal(g, 'cleanupHotkey', ''))}"><button id="ltCleanupKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span></div>
+            ${hotkeyFieldHtml('ltCleanupKey', optVal(g, 'cleanupHotkey', ''))}</div>
           <div class="row" style="margin-top:6px"><label style="width:auto">Prompt</label></div>
           <textarea id="ltCleanupPrompt" rows="5" style="width:100%">${esc(optVal(g, 'cleanupPrompt', '') || LT_DEFAULT_CLEANUP_PROMPT)}</textarea>
           <p class="hint">System prompt for Cleanup. Applies on Save.</p>
@@ -2222,7 +2262,7 @@
         <details class="advsec" style="margin-top:10px">
           <summary style="cursor:pointer;color:#9fb3c8;font-size:13px;user-select:none">Rewrite — restyle <span class="hint" style="margin:0">${optVal(g, 'rewriteHotkey', '') ? '(' + esc(optVal(g, 'rewriteHotkey', '')) + ')' : '(no hotkey)'}</span></summary>
           <div class="row" style="margin-top:8px"><label style="width:auto">Hotkey</label>
-            <span class="hkwrap"><input id="ltRewriteKey" readonly placeholder="click, then press keys" value="${esc(optVal(g, 'rewriteHotkey', ''))}"><button id="ltRewriteKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span></div>
+            ${hotkeyFieldHtml('ltRewriteKey', optVal(g, 'rewriteHotkey', ''))}</div>
           <div class="row"><label style="width:auto">Default mode</label>
             <select id="ltRewriteMode" style="width:200px">
               <option value="professional">Professional</option><option value="concise">Concise</option>
@@ -2274,7 +2314,7 @@
           <select id="xlMic" style="flex:1"><option value="">System default</option></select></div>
         <p class="hint">The mic used for live translation (also selectable from the panel's Settings).</p>
         <div class="row" style="margin-top:10px"><label style="width:auto">Toggle translation shortcut</label>
-          <span class="hkwrap"><input id="xlHotkey" readonly placeholder="click, then press keys" value="${esc(optVal(g, 'micHotkey', ''))}"><button id="xlHotkeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span><span id="xlHotkeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
+          ${hotkeyFieldHtml('xlHotkey', optVal(g, 'micHotkey', ''))}<span id="xlHotkeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
         <p class="hint">Starts/stops translation from any app — it switches to this page and toggles the mic. This is separate from the <b>Jump-to-page shortcut</b> below, which only navigates. Applies on Save.</p>
         <p class="sectitle" style="margin-top:14px">Transcript saving</p>
         <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="xlSave" ${optVal(g, 'saveToFile', false) ? 'checked' : ''}> Save transcript to a file</label></div>
@@ -2390,13 +2430,11 @@
       const cvEditPrompt = document.getElementById('cvEditPrompt');
       if (cvEditPrompt) cvEditPrompt.onclick = () => configApi.editClaudeVoicePrompt();
       // API backend rows: preset fills URL+model (stored truth is always apiBaseUrl/apiModel).
-      const CV_API_PRESETS = { openai: { url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }, deepseek: { url: 'https://api.deepseek.com', model: 'deepseek-v4-flash' }, openrouter: { url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' } };
       const cvApiUrl = document.getElementById('cvApiUrl');
       if (cvApiUrl) {
         const preset = document.getElementById('cvApiPreset');
-        const cur = cvApiUrl.value.trim();
-        preset.value = cur === CV_API_PRESETS.openai.url ? 'openai' : cur === CV_API_PRESETS.deepseek.url ? 'deepseek' : cur === CV_API_PRESETS.openrouter.url ? 'openrouter' : 'custom';
-        preset.onchange = e => { const p = CV_API_PRESETS[e.target.value]; if (p) { cvApiUrl.value = p.url; setOpt('apiBaseUrl', p.url); document.getElementById('cvApiModel').value = p.model; setOpt('apiModel', p.model); } };
+        preset.value = matchApiPreset(cvApiUrl.value.trim());
+        preset.onchange = e => { const p = API_PRESETS[e.target.value]; if (p) { cvApiUrl.value = p.url; setOpt('apiBaseUrl', p.url); document.getElementById('cvApiModel').value = p.model; setOpt('apiModel', p.model); } };
         cvApiUrl.oninput = e => setOpt('apiBaseUrl', e.target.value.trim());
         document.getElementById('cvApiKey').onchange = e => setOpt('apiKey', e.target.value);
         document.getElementById('cvApiModel').oninput = e => setOpt('apiModel', e.target.value.trim());
@@ -2489,23 +2527,7 @@
           tick();
         }).catch(function () { if (ltMeterStop) ltMeterStop(); });
       }
-      (function () {
-        const sel = document.getElementById('ltMic'); const cur = optVal(g, 'micDevice', '');
-        const fill = devs => {
-          const inputs = (devs || []).filter(d => d.kind === 'audioinput' && d.label);
-          sel.innerHTML = '<option value="">System default</option>';
-          inputs.forEach(d => { const o = document.createElement('option'); o.value = d.label; o.textContent = d.label; sel.appendChild(o); });
-          if (cur && !inputs.some(d => d.label === cur)) { const o = document.createElement('option'); o.value = cur; o.textContent = cur + ' (not connected)'; sel.appendChild(o); }
-          sel.value = cur;
-          sel.onchange = e => { setOpt('micDevice', e.target.value); if (ltMeterStop) startLtMeter(e.target.value); };
-        };
-        navigator.mediaDevices.enumerateDevices().then(devs => {
-          if ((devs || []).some(d => d.kind === 'audioinput' && d.label)) return fill(devs);
-          navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(tmp => navigator.mediaDevices.enumerateDevices().then(d2 => { tmp.getTracks().forEach(t => t.stop()); fill(d2); }))
-            .catch(() => fill(devs));
-        }).catch(() => fill([]));
-      })();
+      wireMicPicker(document.getElementById('ltMic'), optVal(g, 'micDevice', ''), v => { setOpt('micDevice', v); if (ltMeterStop) startLtMeter(v); });
       document.getElementById('ltTest').onclick = e => {
         if (ltMeterStop) { ltMeterStop(); ltMeterStop = null; const b = document.getElementById('ltMeter'); if (b) b.style.width = '0%'; e.target.textContent = 'Test microphone'; }
         else { startLtMeter(document.getElementById('ltMic').value); e.target.textContent = 'Stop test'; }
@@ -2571,12 +2593,10 @@
       document.getElementById('xlSaveFolderBrowse').onclick = async () => { const p = await configApi.pickFolder(); if (p) { document.getElementById('xlSaveFolder').value = p; setOpt('saveFolder', p); } };
       // AI provider fields. The endpoint preset is a convenience that fills URL + model; the stored
       // truth is always aiBaseUrl/aiModel, so "Custom" covers Open WebUI, Ollama, or anything else.
-      const AI_PRESETS = { deepseek: { url: 'https://api.deepseek.com', model: 'deepseek-v4-flash' }, openai: { url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }, openrouter: { url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' } };
       const xlAiUrl = document.getElementById('xlAiUrl'), xlAiPreset = document.getElementById('xlAiPreset');
       if (xlAiUrl) {
-        const cur = xlAiUrl.value.trim();
-        xlAiPreset.value = cur === AI_PRESETS.deepseek.url ? 'deepseek' : cur === AI_PRESETS.openai.url ? 'openai' : cur === AI_PRESETS.openrouter.url ? 'openrouter' : 'custom';
-        xlAiPreset.onchange = e => { const p = AI_PRESETS[e.target.value]; if (p) { xlAiUrl.value = p.url; setOpt('aiBaseUrl', p.url); document.getElementById('xlAiModel').value = p.model; setOpt('aiModel', p.model); } };
+        xlAiPreset.value = matchApiPreset(xlAiUrl.value.trim());
+        xlAiPreset.onchange = e => { const p = API_PRESETS[e.target.value]; if (p) { xlAiUrl.value = p.url; setOpt('aiBaseUrl', p.url); document.getElementById('xlAiModel').value = p.model; setOpt('aiModel', p.model); } };
         xlAiUrl.oninput = e => { setOpt('aiBaseUrl', e.target.value.trim()); };
         document.getElementById('xlAiKey').onchange = e => setOpt('aiApiKey', e.target.value);
         document.getElementById('xlAiModel').oninput = e => setOpt('aiModel', e.target.value.trim());
@@ -2590,23 +2610,7 @@
       }
       // Microphone dropdown — the app's default capture device (same pattern as LucidType/Meeting).
       // enumerateDevices exposes labels only after a getUserMedia grant, so grab-then-release once.
-      (function () {
-        const sel = document.getElementById('xlMic'); const cur = optVal(g, 'micDevice', '');
-        const fill = devs => {
-          const inputs = (devs || []).filter(d => d.kind === 'audioinput' && d.label);
-          sel.innerHTML = '<option value="">System default</option>';
-          inputs.forEach(d => { const o = document.createElement('option'); o.value = d.label; o.textContent = d.label; sel.appendChild(o); });
-          if (cur && !inputs.some(d => d.label === cur)) { const o = document.createElement('option'); o.value = cur; o.textContent = cur + ' (not connected)'; sel.appendChild(o); }
-          sel.value = cur;
-          sel.onchange = e => setOpt('micDevice', e.target.value);
-        };
-        navigator.mediaDevices.enumerateDevices().then(devs => {
-          if ((devs || []).some(d => d.kind === 'audioinput' && d.label)) return fill(devs);
-          navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(tmp => navigator.mediaDevices.enumerateDevices().then(d2 => { tmp.getTracks().forEach(t => t.stop()); fill(d2); }))
-            .catch(() => fill(devs));
-        }).catch(() => fill([]));
-      })();
+      wireMicPicker(document.getElementById('xlMic'), optVal(g, 'micDevice', ''), v => setOpt('micDevice', v));
     } else if (isOffice) {
       wireOfficeOptions(g);
     } else {
@@ -2628,10 +2632,7 @@
     // "selfManaged": the app renders its own connect/disconnect UI, so the editor draws no
     // account chrome at all. Provider registration and the app's ctx.oauth bridge are unchanged.
     if (def.oauth.selfManaged) return;
-    const box = document.createElement('div');
-    box.className = 'advsec';
-    box.style.cssText = 'margin-top:12px;padding:10px;border:1px solid #213145;border-radius:8px';
-    el.appendChild(box);
+    const box = makeAdvsecBox(el);
     let notice = '';
     let noticeBad = false;
     let expanded = false;   // healthy Connected state collapses to one line until the user clicks Manage
@@ -2965,10 +2966,7 @@
   // Stream Deck Host page: manage profiles from the editor (keyboard for names; the panel only
   // offers quick select/remove). Talks to the app's server through the generic appApiCall bridge.
   async function appendDeckProfiles(el) {
-    const box = document.createElement('div');
-    box.className = 'advsec';
-    box.style.cssText = 'margin-top:12px;padding:10px;border:1px solid #213145;border-radius:8px';
-    el.appendChild(box);
+    const box = makeAdvsecBox(el);
     const draw = async () => {
       let s = null;
       try { s = await configApi.appApiCall('deck-host', 'state'); } catch (e) {}
@@ -3002,11 +3000,8 @@
   // Dev Services keeps its service list in app-owned storage so the desktop editor and panel
   // edit the same data. The generic app API retains the main-process trust boundary.
   async function appendDevServices(el) {
-    const box = document.createElement('div');
-    box.className = 'advsec';
-    box.style.cssText = 'margin-top:12px;padding:10px;border:1px solid #213145;border-radius:8px';
+    const box = makeAdvsecBox(el);
     box.innerHTML = '<p class="hint" style="margin:0">Loading configured services…</p>';
-    el.appendChild(box);
     let state;
     let openIndex = 0;
 
@@ -3125,10 +3120,7 @@
   // Discord keeps application configuration and account authorization together in its app settings.
   // The generic option rows cannot represent live provider state or lifecycle actions.
   async function appendDiscordSetup(el) {
-    const box = document.createElement('div');
-    box.className = 'advsec';
-    box.style.cssText = 'margin-top:12px;padding:10px;border:1px solid #213145;border-radius:8px';
-    el.appendChild(box);
+    const box = makeAdvsecBox(el);
     const guideUrl = 'https://github.com/TeeJS/bedrock-panel/blob/main/docs/discord.md';
     const draw = async () => {
       let provider = null;
@@ -3203,10 +3195,7 @@
     if (!config.settings.oauth.providers || typeof config.settings.oauth.providers !== 'object') config.settings.oauth.providers = {};
     if (!config.settings.oauth.providers.github || typeof config.settings.oauth.providers.github !== 'object') config.settings.oauth.providers.github = {};
 
-    const box = document.createElement('div');
-    box.className = 'advsec';
-    box.style.cssText = 'margin-top:12px;padding:10px;border:1px solid #213145;border-radius:8px';
-    el.appendChild(box);
+    const box = makeAdvsecBox(el);
     const guideUrl = 'https://github.com/TeeJS/bedrock-panel/blob/main/docs/github.md';
     const createUrl = 'https://github.com/settings/applications/new';
 
@@ -3314,6 +3303,29 @@
   }
   // Scenes (five options) stays behind ONE collapsed multiselect dropdown — five always-visible
   // checkbox rows ate the whole box. Stays open across picks; closes on a click anywhere outside.
+  // Build a collapsed multiselect row: a ▾ button that toggles a dropdown of checkboxes
+  // (checkboxesHtml). Returns { row, btn, menu } with open/close-on-outside-click already wired
+  // (clicks inside the menu don't bubble that far); the caller inserts `row`, wires each checkbox's
+  // onchange, and manages the button label.
+  function makeMultiselectRow(rowLabel, checkboxesHtml) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.position = 'relative';
+    row.innerHTML = `<label>${esc(rowLabel)}</label>
+      <button type="button" data-ms-btn style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></button>
+      <div data-ms-menu style="display:none;position:absolute;left:78px;right:0;top:100%;z-index:30;background:#121a24;border:1px solid #2a3a4e;border-radius:8px;padding:8px 12px">
+        ${checkboxesHtml}
+      </div>`;
+    const btn = row.querySelector('[data-ms-btn]'), menu = row.querySelector('[data-ms-menu]');
+    btn.onclick = e => {
+      e.stopPropagation();
+      const opening = menu.style.display === 'none';
+      menu.style.display = opening ? '' : 'none';
+      if (opening) setTimeout(() => document.addEventListener('click', () => { menu.style.display = 'none'; }, { once: true }), 0);
+    };
+    menu.onclick = e => e.stopPropagation();
+    return { row, btn, menu };
+  }
   function appendScreensaverMultiRow(el, g, def, rowLabel, keys, afterEl) {
     const opts = (def.options || []).filter(o => keys.includes(o.key));
     if (!opts.length) return null;
@@ -3321,27 +3333,11 @@
     // Collapsed label deliberately does NOT echo the picks — a value there reads like a
     // single-choice select. Only the all-off footgun still surfaces.
     const summary = () => opts.some(on) ? `Click to select` : 'None selected — nothing will show';
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.style.position = 'relative';
-    row.innerHTML = `<label>${esc(rowLabel)}</label>
-      <button type="button" data-ms-btn style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></button>
-      <div data-ms-menu style="display:none;position:absolute;left:78px;right:0;top:100%;z-index:30;background:#121a24;border:1px solid #2a3a4e;border-radius:8px;padding:8px 12px">
-        ${opts.map(o => `<label class="iconopt" style="display:block;width:auto;margin:4px 0"><input type="checkbox" data-sk="${esc(o.key)}" ${on(o) ? 'checked' : ''}> ${esc(o.label)}</label>`).join('')}
-      </div>`;
+    const { row, btn, menu } = makeMultiselectRow(rowLabel, opts.map(o => `<label class="iconopt" style="display:block;width:auto;margin:4px 0"><input type="checkbox" data-sk="${esc(o.key)}" ${on(o) ? 'checked' : ''}> ${esc(o.label)}</label>`).join(''));
     if (afterEl) afterEl.insertAdjacentElement('afterend', row);
     else el.insertAdjacentElement('afterbegin', row);
-    const btn = row.querySelector('[data-ms-btn]'), menu = row.querySelector('[data-ms-menu]');
     const setLabel = () => { btn.textContent = '▾ ' + summary(); };
     setLabel();
-    btn.onclick = e => {
-      e.stopPropagation();
-      const opening = menu.style.display === 'none';
-      menu.style.display = opening ? '' : 'none';
-      // Close on the next click anywhere outside; clicks inside the menu don't bubble this far.
-      if (opening) setTimeout(() => document.addEventListener('click', () => { menu.style.display = 'none'; }, { once: true }), 0);
-    };
-    menu.onclick = e => e.stopPropagation();
     menu.querySelectorAll('input[data-sk]').forEach(cb => cb.onchange = () => {
       if (!g.options) g.options = {};
       g.options[cb.dataset.sk] = cb.checked;
@@ -3359,14 +3355,7 @@
     const anchorInp = Array.prototype.find.call(el.querySelectorAll('input'), i => i.dataset.key === 'idleMinutes');
     if (!pages.length || !anchorInp) return;
     const picked = () => new Set(String((g.options || {}).excludePages || '').split(',').map(s => s.trim()).filter(Boolean));
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.style.position = 'relative';
-    row.innerHTML = `<label>Excluded pages</label>
-      <button type="button" data-ms-btn style="flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></button>
-      <div data-ms-menu style="display:none;position:absolute;left:78px;right:0;top:100%;z-index:30;background:#121a24;border:1px solid #2a3a4e;border-radius:8px;padding:8px 12px">
-        ${pages.map(p => `<label class="iconopt" style="display:block;width:auto;margin:4px 0"><input type="checkbox" data-xid="${esc(p.id)}" ${picked().has(p.id) ? 'checked' : ''}> ${esc(p.name || '(unnamed page)')}</label>`).join('')}
-      </div>`;
+    const { row, btn, menu } = makeMultiselectRow('Excluded pages', pages.map(p => `<label class="iconopt" style="display:block;width:auto;margin:4px 0"><input type="checkbox" data-xid="${esc(p.id)}" ${picked().has(p.id) ? 'checked' : ''}> ${esc(p.name || '(unnamed page)')}</label>`).join(''));
     let after = anchorInp.closest('.row');
     if (after.nextElementSibling && after.nextElementSibling.classList.contains('hint')) after = after.nextElementSibling;
     after.insertAdjacentElement('afterend', row);
@@ -3375,16 +3364,8 @@
     hint.style.cssText = 'margin:-2px 0 10px 78px';
     hint.textContent = 'While any picked page is on screen, idle auto-start never fires — for pages you watch without touching. Leaving the page resumes the countdown; manual starts still work.';
     row.insertAdjacentElement('afterend', hint);
-    const btn = row.querySelector('[data-ms-btn]'), menu = row.querySelector('[data-ms-menu]');
     const setLabel = () => { const n = picked().size; btn.textContent = '▾ ' + (n ? n + ' excluded' : 'None'); };
     setLabel();
-    btn.onclick = e => {
-      e.stopPropagation();
-      const opening = menu.style.display === 'none';
-      menu.style.display = opening ? '' : 'none';
-      if (opening) setTimeout(() => document.addEventListener('click', () => { menu.style.display = 'none'; }, { once: true }), 0);
-    };
-    menu.onclick = e => e.stopPropagation();
     menu.querySelectorAll('input[data-xid]').forEach(cb => cb.onchange = () => {
       const set = picked();
       if (cb.checked) set.add(cb.dataset.xid); else set.delete(cb.dataset.xid);
@@ -3646,7 +3627,7 @@
     el.innerHTML = `
       <div class="row"><label>Name</label><input id="pnName" value="${esc(p.name)}"></div>
       <div class="row" style="margin-top:6px"><label style="width:auto">Hotkey shortcut</label>
-        <span class="hkwrap"><input id="pnShortcut" readonly placeholder="click, then press keys" value="${esc(p.shortcut || '')}"><button id="pnShortcutClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span>
+        ${hotkeyFieldHtml('pnShortcut', p.shortcut)}
         <label style="width:auto;margin-left:14px;font-weight:normal;cursor:pointer"><input type="checkbox" id="pnShortcutNoRot" ${p.shortcutStopsRotation ? 'checked' : ''}> Disables rotation</label></div>
       <details class="hint"><summary>Global hotkey that switches the software window to this pane from anywhere (flipping it to Panes view if needed).</summary> Press a combo that includes a modifier. <b>Disables rotation</b> turns auto-rotation off when it fires.</details>
       <div class="row" style="margin-top:6px"><label style="width:auto">Rotation</label>
@@ -3834,19 +3815,19 @@
         <label class="iconopt" style="width:auto"><input type="checkbox" id="sRotD"> Dashboards</label>
         <label class="iconopt" style="width:auto"><input type="checkbox" id="sRotA"> Apps</label></div>
       <div class="row"><label>Hotkey</label>
-        <span class="hkwrap"><input id="sRotKey" readonly placeholder="click, then press keys" value="${esc(rot.hotkey || '')}"><button id="sRotKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span><span id="sRotKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
+        ${hotkeyFieldHtml('sRotKey', rot.hotkey)}<span id="sRotKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
       <details class="hint"><summary>A page rotates only if its category is ticked here <i>and</i> that page's own “Include in rotation” box is checked — the box appears on each page once its category is enabled.</summary> Start/stop any time from the knob menu (double-click) or the tray.</details>
       <details class="hint"><summary>The <b>hotkey</b> starts and pauses rotation from anywhere, even when Bedrock Panel isn't focused.</summary> Click the box and press a combo that includes a modifier (e.g. Ctrl+Alt+R). If another app — or one of your page hotkeys — already owns the combo, it just won't fire.</details>
       </div>
 
       <p class="sectitle">Global shortcuts</p>
       <div class="row"><label>Page forward</label>
-        <span class="hkwrap"><input id="sPageNextKey" readonly placeholder="click, then press keys" value="${esc(pageStep.nextHotkey || '')}"><button id="sPageNextKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span><span id="sPageNextKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
+        ${hotkeyFieldHtml('sPageNextKey', pageStep.nextHotkey)}<span id="sPageNextKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
       <div class="row"><label>Page back</label>
-        <span class="hkwrap"><input id="sPagePrevKey" readonly placeholder="click, then press keys" value="${esc(pageStep.prevHotkey || '')}"><button id="sPagePrevKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span><span id="sPagePrevKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
+        ${hotkeyFieldHtml('sPagePrevKey', pageStep.prevHotkey)}<span id="sPagePrevKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
       <details class="hint"><summary>Global hotkeys that step the panel <b>forward</b> / <b>back</b> through your visible pages — in the order they're listed here, wrapping around the ends.</summary> Hidden pages are skipped. These work anytime, independent of rotation.</details>
       <div class="row"><label>Reload dashboard</label>
-        <span class="hkwrap"><input id="sDashReloadKey" readonly placeholder="click, then press keys" value="${esc(dashReload.hotkey || '')}"><button id="sDashReloadKeyClear" class="inclear" title="Clear shortcut" aria-label="Clear shortcut">✕</button></span><span id="sDashReloadKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
+        ${hotkeyFieldHtml('sDashReloadKey', dashReload.hotkey)}<span id="sDashReloadKeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
       <details class="hint"><summary>A global combo that force-reloads the current dashboard page from anywhere, even when Bedrock Panel isn't focused.</summary> Switching away to another page and back does <b>not</b> reload a dashboard (that's what keeps its session/scroll state) — this hotkey is the way to force one. Only acts while a dashboard page is showing; does nothing on a grid or app page.</details>
 
       <p class="sectitle">Network and icons</p>
@@ -4521,6 +4502,12 @@ ${IS_MAC ? `
 
       const closeDiMenus = () => document.querySelectorAll('#diPane .diMenu.open, #diPane .diFmenu.open').forEach(m => m.classList.remove('open'));
       if (!window.__diMenuClose) { document.addEventListener('click', closeDiMenus); window.__diMenuClose = true; }
+      // Wire the ⋯ kebab buttons in `container`: a click closes any open menu then toggles this one,
+      // and a click on the open menu itself is swallowed so the document-level close handler ignores it.
+      const wireKebab = container => {
+        container.querySelectorAll('.diKb').forEach(b => b.onclick = e => { e.stopPropagation(); const menu = e.currentTarget.parentElement.querySelector('.diMenu'); const wasOpen = menu.classList.contains('open'); closeDiMenus(); if (!wasOpen) menu.classList.add('open'); });
+        container.querySelectorAll('.diMenu').forEach(m => m.onclick = e => e.stopPropagation());
+      };
 
       // ---- actions ----
       // Per-APP executable-code trust: once approved with "don't ask again", installs/updates/
@@ -4769,8 +4756,7 @@ ${IS_MAC ? `
           if (diSortI.col === col) diSortI.dir = -diSortI.dir; else { diSortI.col = col; diSortI.dir = 1; }
           renderInstalledList();
         });
-        host.querySelectorAll('.diKb').forEach(b => b.onclick = e => { e.stopPropagation(); const menu = e.currentTarget.parentElement.querySelector('.diMenu'); const wasOpen = menu.classList.contains('open'); closeDiMenus(); if (!wasOpen) menu.classList.add('open'); });
-        host.querySelectorAll('.diMenu').forEach(m => m.onclick = e => e.stopPropagation());
+        wireKebab(host);
         host.querySelectorAll('.diUp').forEach(b => b.onclick = e => doUpdate(e.currentTarget.dataset.id));
         host.querySelectorAll('.diExport').forEach(b => b.onclick = e => { closeDiMenus(); doExport(e.currentTarget.dataset.id); });
         host.querySelectorAll('.diReinstall').forEach(b => b.onclick = e => { closeDiMenus(); doReinstall(e.currentTarget.dataset.id); });
@@ -4851,8 +4837,7 @@ ${IS_MAC ? `
         });
         body.querySelectorAll('.diRepoUrl').forEach(inp => inp.oninput = e => { repos[+e.target.dataset.i] = e.target.value.trim(); persistRepos(); diCatalog = null; });
         body.querySelectorAll('.diRepoRefresh').forEach(b => b.onclick = async () => { diMsg('Refreshing sources…'); diCatalog = null; await loadCatalog(true); diMsg('Sources refreshed.'); });
-        body.querySelectorAll('.diKb').forEach(b => b.onclick = e => { e.stopPropagation(); const menu = e.currentTarget.parentElement.querySelector('.diMenu'); const wasOpen = menu.classList.contains('open'); closeDiMenus(); if (!wasOpen) menu.classList.add('open'); });
-        body.querySelectorAll('.diMenu').forEach(m => m.onclick = e => e.stopPropagation());
+        wireKebab(body);
         body.querySelectorAll('.diBrowseSrc').forEach(b => b.onclick = e => { closeDiMenus(); diSrcFilter = e.currentTarget.dataset.i; diTab = 'discover'; renderSubtabs(); renderPane(); });
         body.querySelectorAll('.diRemoveSrc').forEach(b => b.onclick = e => { if (b.disabled) return; closeDiMenus(); const i = +e.currentTarget.dataset.i; repos.splice(i, 1); repoNames.splice(i, 1); persistRepos(); persistNames(); diCatalog = null; renderSrcRows(); });
       };
@@ -4958,22 +4943,27 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       document.getElementById('sOwUrl').oninput = e => saveOwui({ url: e.target.value.trim() });
       document.getElementById('sOwKey').oninput = e => saveOwui({ apiKey: e.target.value.trim() });
       document.getElementById('sOwModel').oninput = e => saveOwui({ model: e.target.value.trim() });
+      // Wire a "test connection" button: auto-save first (main probes its SAVED config, same as HA
+      // Refresh), run probe(), then show probe-specific success text via formatOk(result), or a failure.
+      const wireProbeTest = (btn, statusEl, probe, formatOk) => {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          statusEl.textContent = dirty ? 'Saving, then testing…' : 'Testing…'; statusEl.style.color = '#7e93ab';
+          try {
+            if (dirty && !await doSave()) throw new Error('settings were not saved securely');
+            const r = await probe();
+            if (!(r && r.ok)) throw new Error((r && r.error) || 'connection failed');
+            statusEl.textContent = formatOk(r); statusEl.style.color = '#7e93ab';
+          } catch (e2) { statusEl.textContent = 'Test failed: ' + (e2.message || e2); statusEl.style.color = '#c98'; }
+          finally { btn.disabled = false; }
+        };
+      };
       const owTest = document.getElementById('sOwTest');
       const owStatus = document.getElementById('sOwStatus');
-      owTest.onclick = async () => {
-        owTest.disabled = true;
-        owStatus.textContent = dirty ? 'Saving, then testing…' : 'Testing…'; owStatus.style.color = '#7e93ab';
-        try {
-          // Same auto-save-first pattern as HA Refresh: main probes with its SAVED config.
-          if (dirty && !await doSave()) throw new Error('settings were not saved securely');
-          const r = await configApi.probeOwui();
-          if (!(r && r.ok)) throw new Error((r && r.error) || 'connection failed');
-          const list = r.models || [];
-          owStatus.textContent = 'OK — ' + list.length + ' model(s)' + (list.length ? ': ' + list.slice(0, 6).join(', ') + (list.length > 6 ? ', …' : '') : '');
-          owStatus.style.color = '#7e93ab';
-        } catch (e2) { owStatus.textContent = 'Test failed: ' + (e2.message || e2); owStatus.style.color = '#c98'; }
-        finally { owTest.disabled = false; }
-      };
+      wireProbeTest(owTest, owStatus, () => configApi.probeOwui(), r => {
+        const list = r.models || [];
+        return 'OK — ' + list.length + ' model(s)' + (list.length ? ': ' + list.slice(0, 6).join(', ') + (list.length > 6 ? ', …' : '') : '');
+      });
 
       // OBS Studio connection -> config.settings.obs; Test = auto-save-then-probe (same as owui).
       const saveObs = patch => {
@@ -4998,18 +4988,8 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       const obsPass = document.getElementById('sObsPass'); if (obsPass) obsPass.oninput = e => saveObs({ password: e.target.value });
       const obsTest = document.getElementById('sObsTest');
       const obsStatus = document.getElementById('sObsStatus');
-      if (obsTest) obsTest.onclick = async () => {
-        obsTest.disabled = true;
-        obsStatus.textContent = dirty ? 'Saving, then testing…' : 'Testing…'; obsStatus.style.color = '#7e93ab';
-        try {
-          if (dirty && !await doSave()) throw new Error('settings were not saved securely');
-          const r = await configApi.probeObs();
-          if (!(r && r.ok)) throw new Error((r && r.error) || 'connection failed');
-          obsStatus.textContent = 'OK — OBS-WebSocket v' + (r.obsVersion || '?') + ', ' + (r.sceneCount || 0) + ' scene(s)';
-          obsStatus.style.color = '#7e93ab';
-        } catch (e2) { obsStatus.textContent = 'Test failed: ' + (e2.message || e2); obsStatus.style.color = '#c98'; }
-        finally { obsTest.disabled = false; }
-      };
+      if (obsTest) wireProbeTest(obsTest, obsStatus, () => configApi.probeObs(),
+        r => 'OK — OBS-WebSocket v' + (r.obsVersion || '?') + ', ' + (r.sceneCount || 0) + ' scene(s)');
 
       let oauthPoll = null;
       const oauthMsg = (id, text, bad) => {
@@ -5853,24 +5833,7 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       // Populate the mic dropdown with device LABELS (persisted, not deviceIds). Labels are only
       // visible after a getUserMedia grant, so enumerate first and momentarily grab the mic if the
       // labels come back blank — same lazy-enumeration trick as the panel's picker.
-      (function () {
-        const sel = document.getElementById('meMic');
-        const cur = me.micDevice || '';
-        const fill = devs => {
-          const inputs = (devs || []).filter(d => d.kind === 'audioinput' && d.label);
-          sel.innerHTML = '<option value="">System default</option>';
-          inputs.forEach(d => { const o = document.createElement('option'); o.value = d.label; o.textContent = d.label; sel.appendChild(o); });
-          if (cur && !inputs.some(d => d.label === cur)) { const o = document.createElement('option'); o.value = cur; o.textContent = cur + ' (not connected)'; sel.appendChild(o); }
-          sel.value = cur;
-          sel.onchange = e => saveMe({ micDevice: e.target.value });
-        };
-        navigator.mediaDevices.enumerateDevices().then(devs => {
-          if ((devs || []).some(d => d.kind === 'audioinput' && d.label)) return fill(devs);
-          navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(tmp => navigator.mediaDevices.enumerateDevices().then(d2 => { tmp.getTracks().forEach(t => t.stop()); fill(d2); }))
-            .catch(() => fill(devs));
-        }).catch(() => fill([]));
-      })();
+      wireMicPicker(document.getElementById('meMic'), me.micDevice || '', v => saveMe({ micDevice: v }));
     } else {
       // Theme — global appearance + accent (applied on Save, via the main process)
       const DEFAULT_ACCENT = '#7CFFB2';

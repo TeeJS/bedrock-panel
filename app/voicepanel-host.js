@@ -62,6 +62,19 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   let turnActive = false;
   let turnQueue = [];             // [{text, speak}] in arrival order
   let queuedSpeakPending = false; // a dequeued turn wants speech; its stream opens on first delta
+  // Clear the turn queue + in-flight flags (session (re)start/stop, and the error/exit handlers).
+  // The accompanying speech.abortActive(reason) stays at each call site.
+  function resetTurns() { turnActive = false; turnQueue = []; queuedSpeakPending = false; }
+  // Push the current Panel Builder review state to the page.
+  function broadcastPanelReview() { broadcast({ type: 'panel-review', panel: panelReview.state() }); }
+  // The active grid IF this host owns it, with its options object ensured — else null. The gate for
+  // per-page writes (setProfile/setOption) so a backgrounded backend never writes the shown page.
+  function ownedGrid() {
+    const g = deps.activeGrid();
+    if (!ownsGrid(g)) return null;
+    if (!g.options) g.options = {};
+    return g;
+  }
 
   function broadcast(payload) {
     const line = 'data: ' + JSON.stringify(payload) + '\n\n';
@@ -162,7 +175,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       transcript.push({ role: 'assistant', text: ps.status === 'ready'
         ? 'Proposed "' + ps.page.name + '" — review it on screen.'
         : 'That panel could not be used: ' + ps.error });
-      broadcast({ type: 'panel-review', panel: ps });
+      broadcastPanelReview();
     }
     panelTurnText = '';
     broadcast({ type: 'turn-complete', text: panelOffered ? null : shownText, error: state.error });
@@ -175,18 +188,14 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   });
   adapter.on('error', ({ message }) => {
     state.status = 'error'; state.error = message;
-    turnActive = false;
-    turnQueue = [];
-    queuedSpeakPending = false;
+    resetTurns();
     speech.abortActive('session error');
     broadcast({ type: 'error', error: state.error });
   });
   adapter.on('exit', ({ stillRunning }) => {
     state.running = false;
     if (!stillRunning) {
-      turnActive = false;
-      turnQueue = [];
-      queuedSpeakPending = false;
+      resetTurns();
       speech.abortActive('agent process exited');
     }
   });
@@ -254,17 +263,18 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     const config = deps.getConfig();
     if (!config.settings) config.settings = {};
     if (!Array.isArray(config.settings.routines)) config.settings.routines = [];
+    const gopt = grid.options || {};
     const routine = routinesLib.normalizeRoutine({
       prompt: prompt,
       appPageId: grid.id,
-      profileId: (grid.options && grid.options.profilePick) || '',   // the profile this page is on right now
+      profileId: gopt.profilePick || '',   // the profile this page is on right now
       // ...and the folder it's in right now, so re-running lands in the same place. Chat-only
       // backends have no working directory; normalizeRoutine keeps the blank.
-      folder: routinesLib.allowsFolder(grid) ? ((grid.options && grid.options.projectDir) || '') : '',
+      folder: routinesLib.allowsFolder(grid) ? (gopt.projectDir || '') : '',
       // ...and the permission mode the page is running under -- the same truth the Mode button
       // shows: the live session's mode if one is running, else the page's stored pick. Backends
       // with no modes report '' and it stays blank.
-      mode: (adapter.isRunning() && adapter.mode ? adapter.mode() : ((grid.options && grid.options.permissionMode) || '')),
+      mode: (adapter.isRunning() && adapter.mode ? adapter.mode() : (gopt.permissionMode || '')),
     });
     if (!routine) return { ok: false, error: 'Nothing to save yet.' };
     config.settings.routines.push(routine);
@@ -327,9 +337,8 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   // prefix their next turn), and tell every subscribed page.
   function setProfile(id) {
     if (typeof id !== 'string' || id.length > 64) return false;
-    const g = deps.activeGrid();
-    if (!ownsGrid(g)) return false;
-    if (!g.options) g.options = {};
+    const g = ownedGrid();
+    if (!g) return false;
     g.options.profilePick = id;
     deps.saveConfig();
     const prof = currentProfile();
@@ -338,7 +347,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // another mode, and a stale proposal reappearing later would be baffling.
     if (prof.id !== PANEL_PROFILE.id && panelReview.isActive()) {
       panelReview.cancel();
-      broadcast({ type: 'panel-review', panel: panelReview.state() });
+      broadcastPanelReview();
     }
     broadcast({ type: 'profile', id: prof.id, name: prof.name });
     return true;
@@ -413,9 +422,8 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (!validate) return false;
     const v = validate(value);
     if (v == null) return false;
-    const g = deps.activeGrid();
-    if (!ownsGrid(g)) return false;
-    if (!g.options) g.options = {};
+    const g = ownedGrid();
+    if (!g) return false;
     g.options[key] = v;
     deps.saveConfig();
     return true;
@@ -439,14 +447,14 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (at >= 0) config.grids[at] = r.page; else config.grids.push(r.page);
     deps.saveConfig();
     say('panel accepted: "' + r.page.name + '" ' + (at >= 0 ? 'replaced page ' : 'added as page ') + r.page.id);
-    broadcast({ type: 'panel-review', panel: panelReview.state() });
+    broadcastPanelReview();
     broadcast({ type: 'panel-accepted', id: r.page.id, name: r.page.name });
     if (deps.gotoGrid) { try { deps.gotoGrid(r.page.id); } catch (e) {} }   // land on what was just built
     return { ok: true, id: r.page.id, name: r.page.name };
   }
   function panelCancel() {
     panelReview.cancel();
-    broadcast({ type: 'panel-review', panel: panelReview.state() });
+    broadcastPanelReview();
     return { ok: true };
   }
 
@@ -489,9 +497,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       profilePrompt: profilePromptFor(currentProfile()),
     });
     state = { running: true, status: 'idle', lastUserText: '', lastAssistantText: '', error: null };
-    turnActive = false;
-    turnQueue = [];
-    queuedSpeakPending = false;
+    resetTurns();
     transcript = [];   // new session, fresh conversation
     speech.abortActive('new session started');   // a folder switch mid-reply silences the old folder's voice
     // permissionMode rides along so the page's Mode button is corrected the moment a lazy first-turn
@@ -502,9 +508,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
 
   function stopSession() {
     adapter.stop();
-    turnActive = false;
-    turnQueue = [];
-    queuedSpeakPending = false;
+    resetTurns();
     speech.abortActive('session stopped');
     state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null };
     deps.clearRingOverride();

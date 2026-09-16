@@ -15,6 +15,7 @@ const ISSUE_DETAIL_CACHE_MS = 2 * 60 * 1000;
 const ACCOUNT_CACHE_MS = 10 * 60 * 1000;
 const WORKFLOW_METADATA_CACHE_MS = 2 * 60 * 1000;
 const MAX_REPOSITORY_PAGES = 100;
+const REQUEST_TIMEOUT_MS = 12000;   // abort a GitHub request/download that stalls past this
 const FORK_DETAIL_CONCURRENCY = 4;
 const PULL_INDICATOR_LIMIT = 12;
 const MAX_WORKFLOW_BYTES = 256 * 1024;
@@ -200,6 +201,12 @@ function validRef(value) {
 function resultError(error) {
   return { ok: false, error: error && error.message || 'GitHub request failed', code: error && error.code || 'github_error', resetAt: error && error.resetAt || null };
 }
+// A .catch handler that turns a tolerated error code into `fallback` and rethrows everything else —
+// the "this repo/endpoint isn't available, degrade gracefully" pattern used across the fetch methods.
+function swallow(codes, fallback) {
+  const list = Array.isArray(codes) ? codes : [codes];
+  return error => list.includes(error.code) ? fallback : Promise.reject(error);
+}
 
 function nextApiPath(linkHeader) {
   const part = String(linkHeader || '').split(',').find(value => /;\s*rel="next"\s*$/.test(value.trim()));
@@ -272,17 +279,10 @@ class GitHubService {
     try {
       const result = await this.oauth.pollDeviceFlow('github');
       if (result.connected) {
-        this.repositoryCache = null;
-        this.pullIndicatorCache.clear();
-        this.issueListCache.clear();
-        this.issueDetailCache.clear();
-        this.workflowMetadataCache.clear();
+        this.clearCaches();
         try {
-          const account = await this.request('/user');
-          const login = String(account && account.login || '').trim();
-          if (!login) throw Object.assign(new Error('GitHub did not return the authenticated account'), { code: 'invalid_response' });
-          this.accountCache = { login, expiresAt: this.now() + ACCOUNT_CACHE_MS };
-          result.account = { login, avatarUrl: String(account && account.avatar_url || ''), url: String(account && account.html_url || '') };
+          const account = await this.fetchAndCacheAccount();
+          result.account = { login: this.accountCache.login, avatarUrl: String(account && account.avatar_url || ''), url: String(account && account.html_url || '') };
         } catch (error) {
           await this.oauth.revokeToken('github');
           throw error;
@@ -292,15 +292,26 @@ class GitHubService {
     } catch (error) { return resultError(error); }
   }
 
+  // Reset the per-repo data caches (not accountCache — pollConnect repopulates it immediately).
+  clearCaches() {
+    this.repositoryCache = null;
+    this.pullIndicatorCache.clear();
+    this.issueListCache.clear();
+    this.issueDetailCache.clear();
+    this.workflowMetadataCache.clear();
+  }
+  // Current time as an ISO string, honoring the injected clock (this.now) — the `fetchedAt` stamp.
+  timestamp() { return new Date(this.now()).toISOString(); }
+  // The standard GitHub request headers (auth + API version + UA); callers add Content-Type as needed.
+  authHeaders(token, accept) {
+    return { Accept: accept || 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'bedrock-panel', 'X-GitHub-Api-Version': API_VERSION };
+  }
+
   async disconnect() {
     try {
       await this.oauth.revokeToken('github');
-      this.repositoryCache = null;
-      this.pullIndicatorCache.clear();
-      this.issueListCache.clear();
-      this.issueDetailCache.clear();
+      this.clearCaches();
       this.accountCache = null;
-      this.workflowMetadataCache.clear();
       return this.publicSettings();
     }
     catch (error) { return resultError(error); }
@@ -325,12 +336,12 @@ class GitHubService {
   async request(path, options = {}) {
     const token = await this.accessToken();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     let response;
     try {
       response = await this.fetchImpl(API_BASE + path, {
         method: options.method || 'GET', signal: controller.signal,
-        headers: Object.assign({ Accept: options.accept || 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'bedrock-panel', 'X-GitHub-Api-Version': API_VERSION }, options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        headers: Object.assign(this.authHeaders(token, options.accept), options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         redirect: options.redirect || 'follow',
       });
@@ -390,27 +401,31 @@ class GitHubService {
         return { ok: true, items: this.repositoryCache.items.slice(), cached: true, truncated: this.repositoryCache.truncated, upstreamsIncomplete: this.repositoryCache.upstreamsIncomplete, fetchedAt: this.repositoryCache.fetchedAt };
       }
       let path = '/user/repos?visibility=all&affiliation=owner%2Ccollaborator%2Corganization_member&sort=updated&direction=desc&per_page=100';
-      const items = [];
-      const rawRepositories = [];
+      // Map each repo ONCE and carry { raw, summary } together, so the fork filter and detail loop
+      // below reuse the summary instead of re-running repositorySummary on the same raw two more times.
+      const entries = [];
       let pages = 0;
       while (path && pages < MAX_REPOSITORY_PAGES) {
         const page = await this.request(path, { includeHeaders: true });
         (Array.isArray(page.data) ? page.data : []).forEach(value => {
-          const item = repositorySummary(value);
-          if (!item) return;
-          items.push(item);
-          rawRepositories.push(value);
+          const summary = repositorySummary(value);
+          if (summary) entries.push({ raw: value, summary });
         });
         path = nextApiPath(page.link);
         pages += 1;
       }
       const seen = new Set();
-      const unique = items.filter(item => { const key = item.fullName.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; });
+      const unique = [];
+      entries.forEach(entry => {
+        const key = entry.summary.fullName.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        unique.push(entry.summary);
+      });
       const forkNames = new Set();
-      const forks = rawRepositories.filter(value => {
-        const item = repositorySummary(value);
-        if (!item || !item.fork) return false;
-        const key = item.fullName.toLowerCase();
+      const forks = entries.filter(entry => {
+        if (!entry.summary.fork) return false;
+        const key = entry.summary.fullName.toLowerCase();
         if (forkNames.has(key)) return false;
         forkNames.add(key);
         return true;
@@ -418,13 +433,13 @@ class GitHubService {
       let upstreamsIncomplete = false;
       for (let offset = 0; offset < forks.length; offset += FORK_DETAIL_CONCURRENCY) {
         const batch = forks.slice(offset, offset + FORK_DETAIL_CONCURRENCY);
-        const details = await Promise.all(batch.map(async value => {
-          if (value.parent || value.source) return value;
-          try { return await this.request(this.repoPath('', value.full_name)); }
+        const details = await Promise.all(batch.map(async ({ raw }) => {
+          if (raw.parent || raw.source) return raw;
+          try { return await this.request(this.repoPath('', raw.full_name)); }
           catch (error) { upstreamsIncomplete = true; return null; }
         }));
         details.forEach((detail, index) => {
-          const fork = repositorySummary(batch[index]);
+          const fork = batch[index].summary;
           if (!fork || !detail) return;
           [detail.parent, detail.source].forEach(value => {
             const upstream = repositorySummary(value);
@@ -436,7 +451,7 @@ class GitHubService {
           });
         });
       }
-      const fetchedAt = new Date(this.now()).toISOString();
+      const fetchedAt = this.timestamp();
       const truncated = !!path;
       this.repositoryCache = { items: unique, truncated, upstreamsIncomplete, fetchedAt, expiresAt: this.now() + REPOSITORY_CACHE_MS };
       return { ok: true, items: unique.slice(), truncated, upstreamsIncomplete, fetchedAt };
@@ -452,9 +467,9 @@ class GitHubService {
       const base = this.repoPath('', repository);
       const [commit, release, pulls, runs] = await Promise.all([
         this.request(base + '/commits/' + encodeURIComponent(branch)),
-        this.request(base + '/releases/latest').catch(error => error.code === 'repository_unavailable' ? null : Promise.reject(error)),
+        this.request(base + '/releases/latest').catch(swallow('repository_unavailable', null)),
         this.request(base + '/pulls?state=open&sort=updated&direction=desc&per_page=20'),
-        this.request(base + '/actions/runs?branch=' + encodeURIComponent(branch) + '&per_page=10').catch(error => ['repository_unavailable', 'actions_unavailable'].includes(error.code) ? { workflow_runs: [] } : Promise.reject(error)),
+        this.request(base + '/actions/runs?branch=' + encodeURIComponent(branch) + '&per_page=10').catch(swallow(['repository_unavailable', 'actions_unavailable'], { workflow_runs: [] })),
       ]);
       let tag = null;
       if (!release) { const tags = await this.request(base + '/tags?per_page=1'); tag = Array.isArray(tags) ? tags[0] || null : null; }
@@ -464,15 +479,15 @@ class GitHubService {
         const upstream = this.repository(repo.parent.full_name);
         const baseRef = upstream.owner + ':' + validRef(repo.parent.default_branch);
         const headRef = selected.owner + ':' + branch;
-        comparison = await this.request(base + '/compare/' + encodeURIComponent(baseRef) + '...' + encodeURIComponent(headRef)).catch(error => error.code === 'repository_unavailable' ? null : Promise.reject(error));
+        comparison = await this.request(base + '/compare/' + encodeURIComponent(baseRef) + '...' + encodeURIComponent(headRef)).catch(swallow('repository_unavailable', null));
       } else if (repo.default_branch && branch !== repo.default_branch) {
-        comparison = await this.request(base + '/compare/' + encodeURIComponent(repo.default_branch) + '...' + encodeURIComponent(branch)).catch(error => error.code === 'repository_unavailable' ? null : Promise.reject(error));
+        comparison = await this.request(base + '/compare/' + encodeURIComponent(repo.default_branch) + '...' + encodeURIComponent(branch)).catch(swallow('repository_unavailable', null));
       }
       const [associatedPulls, enrichedPulls] = await Promise.all([
-        commit && commit.sha ? this.request(base + '/commits/' + encodeURIComponent(commit.sha) + '/pulls?per_page=5').catch(error => error.code === 'repository_unavailable' ? [] : Promise.reject(error)) : [],
+        commit && commit.sha ? this.request(base + '/commits/' + encodeURIComponent(commit.sha) + '/pulls?per_page=5').catch(swallow('repository_unavailable', [])) : [],
         this.enrichPulls(pulls, repository, 8),
       ]);
-      return Object.assign({ ok: true, selectedBranch: branch, fetchedAt: new Date(this.now()).toISOString() }, models.overview(repo, commit, release, tag, comparison, enrichedPulls, runs, associatedPulls, this.now()));
+      return Object.assign({ ok: true, selectedBranch: branch, fetchedAt: this.timestamp() }, models.overview(repo, commit, release, tag, comparison, enrichedPulls, runs, associatedPulls, this.now()));
     } catch (error) { return resultError(error); }
   }
 
@@ -480,18 +495,25 @@ class GitHubService {
     try {
       const values = await this.request(this.repoPath('/pulls?state=open&sort=updated&direction=desc&per_page=30', repositoryValue));
       const items = await this.enrichPulls(values, repositoryValue);
-      return { ok: true, items, indicatorsLimited: items.length > PULL_INDICATOR_LIMIT, fetchedAt: new Date(this.now()).toISOString() };
+      return { ok: true, items, indicatorsLimited: items.length > PULL_INDICATOR_LIMIT, fetchedAt: this.timestamp() };
     }
     catch (error) { return resultError(error); }
   }
 
-  async accountLogin(forceRefresh) {
-    if (!forceRefresh && this.accountCache && this.accountCache.login && this.accountCache.expiresAt > this.now()) return this.accountCache.login;
+  // Fetch /user, require it returned a login, and cache it. Returns the raw account so a caller can
+  // also read fields like avatar_url/html_url; the validated login lands in this.accountCache.login.
+  async fetchAndCacheAccount() {
     const account = await this.request('/user');
     const login = String(account && account.login || '').trim();
     if (!login) throw Object.assign(new Error('GitHub did not return the authenticated account'), { code: 'invalid_response' });
     this.accountCache = { login, expiresAt: this.now() + ACCOUNT_CACHE_MS };
-    return login;
+    return account;
+  }
+
+  async accountLogin(forceRefresh) {
+    if (!forceRefresh && this.accountCache && this.accountCache.login && this.accountCache.expiresAt > this.now()) return this.accountCache.login;
+    await this.fetchAndCacheAccount();
+    return this.accountCache.login;
   }
 
   async issues(filterValue, pageValue, repositoryValue, forceRefresh) {
@@ -520,7 +542,7 @@ class GitHubService {
         page,
         items: models.issuePage(response.data, 'https://github.com/' + repository),
         hasMore: !!nextApiPath(response.link),
-        fetchedAt: new Date(this.now()).toISOString(),
+        fetchedAt: this.timestamp(),
       };
       this.issueListCache.set(key, { value, expiresAt: this.now() + ISSUE_LIST_CACHE_MS });
       return Object.assign({}, value, { items: value.items.slice() });
@@ -544,7 +566,7 @@ class GitHubService {
         const code = value && value.pull_request ? 'not_an_issue' : 'invalid_response';
         throw Object.assign(new Error(code === 'not_an_issue' ? 'That number belongs to a pull request' : 'GitHub returned an invalid issue'), { code });
       }
-      const result = { ok: true, item, fetchedAt: new Date(this.now()).toISOString() };
+      const result = { ok: true, item, fetchedAt: this.timestamp() };
       this.issueDetailCache.set(key, { value: result, expiresAt: this.now() + ISSUE_DETAIL_CACHE_MS });
       return Object.assign({}, result, { item: Object.assign({}, item) });
     } catch (error) {
@@ -564,9 +586,9 @@ class GitHubService {
         this.request(base + '/reviews?per_page=100'),
         sha ? this.request(this.repoPath('/commits/' + encodeURIComponent(sha) + '/check-runs?filter=latest&per_page=100', repositoryValue)) : { check_runs: [] },
         sha ? this.request(this.repoPath('/commits/' + encodeURIComponent(sha) + '/status', repositoryValue)) : { statuses: [] },
-        sha ? this.request(this.repoPath('/actions/runs?head_sha=' + encodeURIComponent(sha) + '&per_page=30', repositoryValue)).catch(error => ['repository_unavailable', 'actions_unavailable'].includes(error.code) ? { workflow_runs: [] } : Promise.reject(error)) : { workflow_runs: [] },
+        sha ? this.request(this.repoPath('/actions/runs?head_sha=' + encodeURIComponent(sha) + '&per_page=30', repositoryValue)).catch(swallow(['repository_unavailable', 'actions_unavailable'], { workflow_runs: [] })) : { workflow_runs: [] },
       ]);
-      return { ok: true, item: models.pullDetails(item, reviews, checks, statuses, workflowRuns, this.now()), fetchedAt: new Date(this.now()).toISOString() };
+      return { ok: true, item: models.pullDetails(item, reviews, checks, statuses, workflowRuns, this.now()), fetchedAt: this.timestamp() };
     } catch (error) { return resultError(error); }
   }
 
@@ -588,7 +610,7 @@ class GitHubService {
         branch,
         workflows: (Array.isArray(workflows && workflows.workflows) ? workflows.workflows : []).map(value => models.workflow(value, latestByWorkflow.get(models.positiveInteger(value && value.id)), this.now())),
         runs: rawRuns.map(value => models.run(value, this.now())),
-        fetchedAt: new Date(this.now()).toISOString(),
+        fetchedAt: this.timestamp(),
       };
     } catch (error) { return resultError(error); }
   }
@@ -600,9 +622,9 @@ class GitHubService {
       const [run, jobs, artifacts] = await Promise.all([
         this.request(this.repoPath('/actions/runs/' + id, repositoryValue)),
         this.request(this.repoPath('/actions/runs/' + id + '/jobs?filter=latest&per_page=100', repositoryValue)),
-        this.request(this.repoPath('/actions/runs/' + id + '/artifacts?per_page=100', repositoryValue)).catch(error => error.code === 'repository_unavailable' ? { artifacts: [] } : Promise.reject(error)),
+        this.request(this.repoPath('/actions/runs/' + id + '/artifacts?per_page=100', repositoryValue)).catch(swallow('repository_unavailable', { artifacts: [] })),
       ]);
-      return { ok: true, item: models.runDetails(run, jobs, artifacts, this.now()), fetchedAt: new Date(this.now()).toISOString() };
+      return { ok: true, item: models.runDetails(run, jobs, artifacts, this.now()), fetchedAt: this.timestamp() };
     }
     catch (error) { return resultError(error); }
   }
@@ -642,12 +664,12 @@ class GitHubService {
     const id = models.positiveInteger(idValue);
     if (!id) return { ok: false, error: 'Artifact id is invalid', code: 'invalid_artifact' };
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       const token = await this.accessToken();
       const response = await this.fetchImpl(API_BASE + this.repoPath('/actions/artifacts/' + id + '/zip', repositoryValue), {
         method: 'GET', signal: controller.signal, redirect: 'manual',
-        headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + token, 'User-Agent': 'bedrock-panel', 'X-GitHub-Api-Version': API_VERSION },
+        headers: this.authHeaders(token),
       });
       if (response.status === 410) return { ok: false, error: 'This artifact has expired', code: 'artifact_expired' };
       if (![301, 302, 303, 307, 308].includes(response.status)) return { ok: false, error: 'GitHub did not provide an artifact download', code: 'artifact_download_failed' };
