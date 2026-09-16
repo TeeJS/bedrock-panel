@@ -30,10 +30,14 @@
     },
     {
       "key": "longPressMs",
-      "label": "Long-press (ms)",
-      "type": "text",
+      "label": "Long-press delay (ms)",
+      "type": "number",
+      "min": 100,
+      "max": 10000,
+      "step": 1,
       "default": "1000",
-      "help": "How long a key must be held before a long-press action is sent."
+      "advanced": true,
+      "help": "How long a key must be held before a long-press action is sent (100–10000)."
     }
   ]
 }

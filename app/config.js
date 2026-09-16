@@ -1352,6 +1352,15 @@
   function ask(msg) { const r = window.confirm(msg); refocusAfterDialog(); return r; }
   function tell(msg) { window.alert(msg); refocusAfterDialog(); }
   async function doSave() {
+    // Model-level gate: never report "saved" while any number draft is invalid.
+    const bad = invalidNumberOptions();
+    if (bad.length) {
+      const b = bad[0];
+      setState('Fix “' + b.label + '”: ' + b.err, 'dirty');
+      document.getElementById('saveBtn').disabled = false;
+      revealInvalid(b);
+      return false;
+    }
     document.getElementById('saveBtn').disabled = true;
     setState('Saving…');
     try {
@@ -2891,12 +2900,73 @@
   // matching change handler in renderAppOpts picks it up. Selects heal a stale stored value to the
   // manifest default. (#29 wired calls to this helper but never defined it, which threw and broke the
   // whole App-options box -- app settings, incl. Discord's, never rendered; this restores it.)
+  // Which advanced disclosures are open, keyed by stable app id + scope (not summary
+  // text), so the open state survives renderAppOpts re-renders.
+  const openAdv = new Set();
+
+  // Generic number-option validation (declared min/max/step; integer only when step==1).
+  function numberError(o, raw) {
+    if (raw === '' || raw == null) return 'Enter a number';
+    const n = Number(raw);
+    if (!isFinite(n)) return 'Enter a valid number';
+    if (o.min != null && n < Number(o.min)) return 'Must be ' + o.min + ' or more';
+    if (o.max != null && n > Number(o.max)) return 'Must be ' + o.max + ' or less';
+    if (Number(o.step) === 1 && !Number.isInteger(n)) return 'Must be a whole number';
+    return '';
+  }
+  // Model-level scan across ALL app pages + their settings (not just the visible DOM),
+  // so an invalid draft anywhere blocks Save & apply.
+  function invalidNumberOptions() {
+    const bad = [];
+    const scan = (defs, values, scope, g) => (defs || []).forEach(o => {
+      if (o.type !== 'number') return;
+      const raw = (values && o.key in values) ? values[o.key] : o.default;
+      const err = numberError(o, raw);
+      if (err) bad.push({ label: o.label || o.key, key: o.key, err, g, scope });
+    });
+    (config.grids || []).forEach(g => {
+      if (!g || g.kind !== 'app') return;
+      const def = appDefs.find(a => a.id === g.app);
+      if (!def) return;
+      scan(def.options, g.options, 'page', g);
+      const sd = def.settings && Array.isArray(def.settings.options) ? def.settings : null;
+      if (sd) scan(sd.options, (config.settings || {})[sd.key], 'settings', g);
+    });
+    return bad;
+  }
+  // Show/hide an inline number error (+ a Reset-to-default affordance) on one input.
+  function showNumberError(inp, o) {
+    const err = numberError(o, inp.value);
+    const ee = document.getElementById(inp.id + '-err');
+    if (ee) {
+      if (err) {
+        ee.innerHTML = esc(err) + (o.default != null
+          ? ` <button type="button" class="optreset" data-id="${esc(inp.id)}" data-key="${esc(inp.dataset.key)}">Reset to default</button>` : '');
+        ee.style.display = '';
+      } else { ee.textContent = ''; ee.style.display = 'none'; }
+    }
+    inp.setAttribute('aria-invalid', err ? 'true' : 'false');
+  }
+
+  function revealInvalid(b) {
+    const idx = (config.grids || []).indexOf(b.g);
+    if (idx >= 0) { view = 'pages'; gi = idx; ti = -1; selEnd = -1; render(); }
+    setTimeout(() => {
+      const id = 'mdopt-' + (b.scope === 'settings' ? 'aset' : 'aopt') + '-' + String(b.key).replace(/[^a-zA-Z0-9_-]/g, '');
+      const el = document.getElementById(id);
+      if (!el) return;
+      const d = el.closest && el.closest('details'); if (d) d.open = true;   // open its Advanced disclosure
+      try { el.scrollIntoView({ block: 'center' }); el.focus(); } catch (e) {}
+    }, 0);
+  }
+
   function renderOptions(options, values, cssClass) {
     let lastSection = null;
     return (options || []).map(o => {
       let v = (o.key in values) ? values[o.key] : o.default;
       let field;
-      const attrs = `class="${cssClass}" data-key="${esc(o.key)}"`;
+      const id = 'mdopt-' + cssClass + '-' + String(o.key).replace(/[^a-zA-Z0-9_-]/g, '');
+      const attrs = `class="${cssClass}" data-key="${esc(o.key)}" id="${esc(id)}"`;
       if (o.type === 'select') {
         // Heal a stored value that no longer matches any choice to the manifest default.
         if (!o.choices.some(ch => String(Array.isArray(ch) ? ch[0] : ch) === String(v))) {
@@ -2910,6 +2980,10 @@
         : `<input type="checkbox" ${attrs} ${v ? 'checked' : ''} style="width:auto">`;
       else if (o.type === 'secret') field = secretInput(v, attrs);
       else if (o.type === 'folder') field = `<span class="folderopt" style="display:flex;gap:6px;flex:1"><input ${attrs} value="${esc(v)}" placeholder="${esc(o.placeholder || 'No folder chosen')}" style="flex:1"><button type="button" class="folderbrowse" data-for="${esc(o.key)}">Browse…</button></span>`;
+      else if (o.type === 'number') {
+        const na = [o.min != null ? `min="${Number(o.min)}"` : '', o.max != null ? `max="${Number(o.max)}"` : '', o.step != null ? `step="${Number(o.step)}"` : ''].filter(Boolean).join(' ');
+        field = `<input type="number" inputmode="numeric" ${attrs} value="${esc(v)}" ${na} aria-describedby="${esc(id)}-err">`;
+      }
       else field = `<input ${attrs} value="${esc(v)}"${o.maxLength ? ` maxlength="${Number(o.maxLength)}"` : ''}>`;
       // help display: helpCollapsed hides ALL help behind a bare More… beside the control;
       // helpSummary shows one sentence with the rest behind More…; help alone stays a plain hint.
@@ -2924,8 +2998,10 @@
       // bool without inline text: keep the checkbox and its label together in one clickable row
       const rowHtml = (o.type === 'bool' && !o.inline)
         ? `<div class="row"><label class="iconopt" style="width:auto">${field} ${esc(o.label)}</label>${inlineMore}</div>`
-        : `<div class="row"><label>${esc(o.label)}</label>${field}${inlineMore}</div>`;
-      return heading + rowHtml + help;
+        : `<div class="row"><label for="${esc(id)}">${esc(o.label)}</label>${field}${inlineMore}</div>`;
+      const errHtml = (o.type === 'number')
+        ? `<span class="opterr" id="${esc(id)}-err" role="alert" style="display:none;color:#e23b54;margin:-6px 0 10px 78px;font-size:13px"></span>` : '';
+      return heading + rowHtml + errHtml + help;
     }).join('');
   }
   function renderAppOpts(g, def) {
@@ -2944,10 +3020,16 @@
       return ('not' in c) ? cur !== String(c.not) : cur === String(c.value);
     };
     const visible = o => !o.showIf || (Array.isArray(o.showIf) ? o.showIf.every(showIfOk) : showIfOk(o.showIf));
-    const pageHtml = renderOptions((def.options || []).filter(o => !o.editorCustom).filter(visible), g.options, 'aopt');
+    const pageOpts = (def.options || []).filter(o => !o.editorCustom).filter(visible);
+    const pageRegular = pageOpts.filter(o => !o.advanced);
+    const pageAdvanced = pageOpts.filter(o => o.advanced);
+    const pageAdvKey = 'adv-page-' + def.id;
+    const pageHtml = renderOptions(pageRegular, g.options, 'aopt')
+      + (pageAdvanced.length ? `<details class="advsec" data-adv="${esc(pageAdvKey)}"${openAdv.has(pageAdvKey) ? ' open' : ''} style="margin-top:12px"><summary>Advanced</summary>${renderOptions(pageAdvanced, g.options, 'aopt')}</details>` : '');
     const regularSettings = settingDef ? settingDef.options.filter(o => !o.advanced) : [];
     const advancedSettings = settingDef ? settingDef.options.filter(o => o.advanced) : [];
-    const settingsHtml = settingDef ? `<p class="sectitle" data-app-settings="${esc(def.id)}">${esc(settingDef.title || def.name + ' settings')}</p>${renderOptions(regularSettings, appSettings, 'aset')}${advancedSettings.length ? `<details class="advsec" style="margin-top:12px"><summary>Advanced / developer overrides</summary>${renderOptions(advancedSettings, appSettings, 'aset')}</details>` : ''}` : '';
+    const setAdvKey = 'adv-set-' + def.id;
+    const settingsHtml = settingDef ? `<p class="sectitle" data-app-settings="${esc(def.id)}">${esc(settingDef.title || def.name + ' settings')}</p>${renderOptions(regularSettings, appSettings, 'aset')}${advancedSettings.length ? `<details class="advsec" data-adv="${esc(setAdvKey)}"${openAdv.has(setAdvKey) ? ' open' : ''} style="margin-top:12px"><summary>Advanced / developer overrides</summary>${renderOptions(advancedSettings, appSettings, 'aset')}</details>` : ''}` : '';
     // Long manifest descriptions (a full feature paragraph reads fine in the install list but
     // walls off the app page): show only the first sentence, with a native <details> "more…"
     // revealing the rest — no event wiring, survives the innerHTML assignment below.
@@ -2967,6 +3049,7 @@
       const o = (def.options || []).find(x => x.key === e.target.dataset.key);
       g.options[e.target.dataset.key] = (o && o.type === 'bool') ? e.target.checked : e.target.value;
       markDirty();
+      if (o && o.type === 'number') { showNumberError(e.target, o); return; }   // keep the (maybe invalid) draft; gate blocks save
       if (o && (o.type === 'select' || o.type === 'bool')) renderAppOpts(g, def);   // re-evaluate conditional (showIf) options
       enforceMusicCap(g);   // re-apply the 2-of-3 panel cap (grid/art/lyrics)
     });
@@ -2986,6 +3069,30 @@
       const o = settingDef.options.find(x => x.key === e.target.dataset.key);
       appSettings[e.target.dataset.key] = o && o.type === 'bool' ? e.target.checked : e.target.value;
       markDirty();
+      if (o && o.type === 'number') showNumberError(e.target, o);
+    });
+    // Show validity for already-stored number values on load (no auto-correction).
+    el.querySelectorAll('input.aopt[type="number"], input.aset[type="number"]').forEach(inp => {
+      const isSet = inp.classList.contains('aset');
+      const defs = isSet ? (settingDef ? settingDef.options : []) : (def.options || []);
+      const o = defs.find(x => x.key === inp.dataset.key);
+      if (o) showNumberError(inp, o);
+    });
+    // Reset-to-default for an invalid number: marks dirty + refreshes validity/preview, never saves.
+    el.querySelectorAll('.optreset').forEach(btn => btn.onclick = () => {
+      const inp = document.getElementById(btn.dataset.id); if (!inp) return;
+      const isSet = inp.classList.contains('aset');
+      const defs = isSet ? (settingDef ? settingDef.options : []) : (def.options || []);
+      const o = defs.find(x => x.key === btn.dataset.key); if (!o) return;
+      const dv = o.default == null ? '' : String(o.default);
+      if (isSet) appSettings[btn.dataset.key] = dv; else g.options[btn.dataset.key] = dv;
+      markDirty();
+      renderAppOpts(g, def);
+      try { updateAppSurface(g); } catch (e) {}
+    });
+    // Persist advanced-disclosure open state across re-renders (keyed by app id + scope).
+    el.querySelectorAll('details.advsec[data-adv]').forEach(d => d.ontoggle = () => {
+      if (d.open) openAdv.add(d.dataset.adv); else openAdv.delete(d.dataset.adv);
     });
     // type:'folder' options -> native folder picker. Sets the sibling input and fires its change so
     // the normal .aopt/.aset handler above persists it (works for both per-page options and settings).
