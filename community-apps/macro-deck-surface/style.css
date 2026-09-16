@@ -102,6 +102,10 @@ body {
   object-fit: contain;
   pointer-events: none;
 }
+/* A src-less image (every empty slot, and any key without that layer) must not
+   render the browser's broken-image box. */
+.tile .ic:not([src]),
+.tile .lb:not([src]) { display: none; }
 
 /* Full-screen status overlay for every non-connected state. */
 .overlay {
