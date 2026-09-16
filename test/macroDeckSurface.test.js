@@ -160,6 +160,32 @@ test('long press: PRESS, LONG_PRESS at threshold, LONG_PRESS_RELEASE on up', () 
   env.restore();
 });
 
+test('runtime parses longPressMs like the editor (Number, not parseInt): 1e3 = 1000ms', () => {
+  const env = loadApp('?longPressMs=1e3');
+  const ws = env.ready([{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }]);
+  const t = env.tile(0, 0);
+  env.ids.deck._fire('pointerdown', { target: t, pointerId: 1, button: 0 });
+  env.advance(1);   // parseInt('1e3')===1 would fire a hair-trigger long-press here
+  assert.ok(!presses(ws).some((m) => m.Method === 'BUTTON_LONG_PRESS'), 'no 1ms hair-trigger');
+  env.advance(999); // reaches 1000ms
+  assert.ok(presses(ws).some((m) => m.Method === 'BUTTON_LONG_PRESS'), 'long-press at 1000ms');
+  env.restore();
+});
+
+test('runtime rejects supplied-but-invalid longPressMs -> default 1000ms', () => {
+  for (const bad of ['1.5', '50', 'abc', '  ', '99999']) {
+    const env = loadApp('?longPressMs=' + encodeURIComponent(bad));
+    const ws = env.ready([{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }]);
+    const t = env.tile(0, 0);
+    env.ids.deck._fire('pointerdown', { target: t, pointerId: 1, button: 0 });
+    env.advance(999);   // no truncated/early trigger for a bad value
+    assert.ok(!presses(ws).some((m) => m.Method === 'BUTTON_LONG_PRESS'), bad + ': no early long-press');
+    env.advance(1);     // 1000ms total -> documented default
+    assert.ok(presses(ws).some((m) => m.Method === 'BUTTON_LONG_PRESS'), bad + ': long-press at default 1000ms');
+    env.restore();
+  }
+});
+
 test('Enter down then Space up does not release; Enter up releases once', () => {
   const env = loadApp('');
   const ws = env.ready([{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }]);

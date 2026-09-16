@@ -24,8 +24,16 @@
 
   var HOST_RAW = (q.get('host') || '127.0.0.1:8191').trim();
   var CLIENT_ID = q.get('clientId') || 'Bedrock Panel';
-  var LONG_MS = parseInt(q.get('longPressMs'), 10);
-  if (!(LONG_MS > 0)) LONG_MS = 1000;
+  // Parse the same way the editor validates it (Number, not parseInt): parseInt('1e3')===1
+  // would run a saved 1000 as a 1ms hair-trigger. Supplied-but-invalid (non-finite, non-integer,
+  // out of 100-10000) falls back to the documented default rather than a truncated value.
+  var LONG_MS = (function () {
+    var raw = q.get('longPressMs');
+    if (raw == null || String(raw).trim() === '') return 1000;
+    var n = Number(String(raw).trim());
+    if (!isFinite(n) || !Number.isInteger(n) || n < 100 || n > 10000) return 1000;
+    return n;
+  })();
   var LAYOUT_MODE = (q.get('layoutMode') === 'wide') ? 'wide' : 'mirror';   // default mirror
 
   var deck = document.getElementById('deck');

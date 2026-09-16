@@ -2906,20 +2906,45 @@
 
   // Generic number-option validation (declared min/max/step; integer only when step==1).
   function numberError(o, raw) {
-    if (raw === '' || raw == null) return 'Enter a number';
-    const n = Number(raw);
+    const s = raw == null ? '' : String(raw).trim();
+    if (s === '') return 'Enter a number';      // trimmed-empty is not a valid 0
+    const n = Number(s);
     if (!isFinite(n)) return 'Enter a valid number';
     if (o.min != null && n < Number(o.min)) return 'Must be ' + o.min + ' or more';
     if (o.max != null && n > Number(o.max)) return 'Must be ' + o.max + ' or less';
-    if (Number(o.step) === 1 && !Number.isInteger(n)) return 'Must be a whole number';
+    // Real step alignment against a base (min, else 0) with float tolerance. step==1 means
+    // "whole number from base"; a fractional step (e.g. 0.5) rejects off-grid values like 0.3.
+    if (o.step != null) {
+      const step = Number(o.step);
+      if (isFinite(step) && step > 0) {
+        const base = o.min != null ? Number(o.min) : 0;
+        const k = (n - base) / step;
+        const tol = 1e-9 * Math.max(1, Math.abs(k));
+        if (Math.abs(k - Math.round(k)) > tol) {
+          return step === 1
+            ? 'Must be a whole number'
+            : 'Must be in steps of ' + o.step + (o.min != null ? ' from ' + o.min : '');
+        }
+      }
+    }
     return '';
   }
   // Model-level scan across ALL app pages + their settings (not just the visible DOM),
   // so an invalid draft anywhere blocks Save & apply.
   function invalidNumberOptions() {
     const bad = [];
-    const scan = (defs, values, scope, g) => (defs || []).forEach(o => {
+    // A field the editor never renders (editorCustom, or hidden by its showIf) has no generic
+    // input to reveal/focus, so validating it would produce an unfixable Save block. Skip those
+    // (their drafts are preserved), matching what renderAppOpts actually shows.
+    const isVisible = (o, defs, values) => {
+      if (!o.showIf) return true;
+      const valOf = k => (values && k in values) ? values[k] : ((defs || []).find(x => x.key === k) || {}).default;
+      const ok = c => { const cur = String(valOf(c.key)); return ('not' in c) ? cur !== String(c.not) : cur === String(c.value); };
+      return Array.isArray(o.showIf) ? o.showIf.every(ok) : ok(o.showIf);
+    };
+    const scan = (defs, values, scope, g, applyVisibility) => (defs || []).forEach(o => {
       if (o.type !== 'number') return;
+      if (applyVisibility && (o.editorCustom || !isVisible(o, defs, values))) return;
       const raw = (values && o.key in values) ? values[o.key] : o.default;
       const err = numberError(o, raw);
       if (err) bad.push({ label: o.label || o.key, key: o.key, err, g, scope });
@@ -2928,9 +2953,9 @@
       if (!g || g.kind !== 'app') return;
       const def = appDefs.find(a => a.id === g.app);
       if (!def) return;
-      scan(def.options, g.options, 'page', g);
+      scan(def.options, g.options, 'page', g, true);       // page options honor editorCustom + showIf
       const sd = def.settings && Array.isArray(def.settings.options) ? def.settings : null;
-      if (sd) scan(sd.options, (config.settings || {})[sd.key], 'settings', g);
+      if (sd) scan(sd.options, (config.settings || {})[sd.key], 'settings', g, false);   // settings are always rendered
     });
     return bad;
   }
@@ -2966,7 +2991,10 @@
       let v = (o.key in values) ? values[o.key] : o.default;
       let field;
       const id = 'mdopt-' + cssClass + '-' + String(o.key).replace(/[^a-zA-Z0-9_-]/g, '');
-      const attrs = `class="${cssClass}" data-key="${esc(o.key)}" id="${esc(id)}"`;
+      const helpId = id + '-help';
+      // Associate help (when present) and, for numbers, the error region with the control.
+      const describedby = [o.help ? helpId : '', o.type === 'number' ? id + '-err' : ''].filter(Boolean).join(' ');
+      const attrs = `class="${cssClass}" data-key="${esc(o.key)}" id="${esc(id)}"${describedby ? ` aria-describedby="${esc(describedby)}"` : ''}`;
       if (o.type === 'select') {
         // Heal a stored value that no longer matches any choice to the manifest default.
         if (!o.choices.some(ch => String(Array.isArray(ch) ? ch[0] : ch) === String(v))) {
@@ -2982,17 +3010,17 @@
       else if (o.type === 'folder') field = `<span class="folderopt" style="display:flex;gap:6px;flex:1"><input ${attrs} value="${esc(v)}" placeholder="${esc(o.placeholder || 'No folder chosen')}" style="flex:1"><button type="button" class="folderbrowse" data-for="${esc(o.key)}">Browse…</button></span>`;
       else if (o.type === 'number') {
         const na = [o.min != null ? `min="${Number(o.min)}"` : '', o.max != null ? `max="${Number(o.max)}"` : '', o.step != null ? `step="${Number(o.step)}"` : ''].filter(Boolean).join(' ');
-        field = `<input type="number" inputmode="numeric" ${attrs} value="${esc(v)}" ${na} aria-describedby="${esc(id)}-err">`;
+        field = `<input type="number" inputmode="numeric" ${attrs} value="${esc(v)}" ${na}>`;
       }
       else field = `<input ${attrs} value="${esc(v)}"${o.maxLength ? ` maxlength="${Number(o.maxLength)}"` : ''}>`;
       // help display: helpCollapsed hides ALL help behind a bare More… beside the control;
       // helpSummary shows one sentence with the rest behind More…; help alone stays a plain hint.
       const inlineMore = o.helpCollapsed && o.help
-        ? `<details class="hint" style="margin:0 0 0 8px"><summary></summary> ${esc(o.help)}</details>` : '';
+        ? `<details class="hint" id="${esc(helpId)}" style="margin:0 0 0 8px"><summary></summary> ${esc(o.help)}</details>` : '';
       const help = o.helpCollapsed ? ''
         : o.helpSummary
-          ? `<details class="hint" style="margin:-2px 0 10px 78px"><summary>${esc(o.helpSummary)}</summary> ${esc(o.help || '')}</details>`
-          : o.help ? `<p class="hint" style="margin:-2px 0 10px 78px">${esc(o.help)}</p>` : '';
+          ? `<details class="hint" id="${esc(helpId)}" style="margin:-2px 0 10px 78px"><summary>${esc(o.helpSummary)}</summary> ${esc(o.help || '')}</details>`
+          : o.help ? `<p class="hint" id="${esc(helpId)}" style="margin:-2px 0 10px 78px">${esc(o.help)}</p>` : '';
       let heading = '';
       if (o.section && o.section !== lastSection) { heading = `<p class="sectitle" style="margin-top:16px">${esc(o.section)}</p>`; lastSection = o.section; }
       // bool without inline text: keep the checkbox and its label together in one clickable row
@@ -3045,13 +3073,23 @@
         '<p class="hint" style="margin:6px 0 0;line-height:1.45">' + esc(rest) + '</p></details>';
     })() : '';
     el.innerHTML = descriptionHtml + pageHtml + settingsHtml;
-    el.querySelectorAll('.aopt').forEach(inp => inp.onchange = e => {
-      const o = (def.options || []).find(x => x.key === e.target.dataset.key);
-      g.options[e.target.dataset.key] = (o && o.type === 'bool') ? e.target.checked : e.target.value;
-      markDirty();
-      if (o && o.type === 'number') { showNumberError(e.target, o); return; }   // keep the (maybe invalid) draft; gate blocks save
-      if (o && (o.type === 'select' || o.type === 'bool')) renderAppOpts(g, def);   // re-evaluate conditional (showIf) options
-      enforceMusicCap(g);   // re-apply the 2-of-3 panel cap (grid/art/lyrics)
+    el.querySelectorAll('.aopt').forEach(inp => {
+      inp.onchange = e => {
+        const o = (def.options || []).find(x => x.key === e.target.dataset.key);
+        g.options[e.target.dataset.key] = (o && o.type === 'bool') ? e.target.checked : e.target.value;
+        markDirty();
+        if (o && o.type === 'number') { showNumberError(e.target, o); return; }   // keep the (maybe invalid) draft; gate blocks save
+        if (o && (o.type === 'select' || o.type === 'bool')) renderAppOpts(g, def);   // re-evaluate conditional (showIf) options
+        enforceMusicCap(g);   // re-apply the 2-of-3 panel cap (grid/art/lyrics)
+      };
+      // Number fields commit the draft + validity on every keystroke, not just blur, so a
+      // Ctrl+S mid-edit sees the invalid draft and the gate blocks it (not the old model value).
+      if (inp.type === 'number') inp.oninput = e => {
+        const o = (def.options || []).find(x => x.key === e.target.dataset.key);
+        g.options[e.target.dataset.key] = e.target.value;
+        markDirty();
+        showNumberError(e.target, o);
+      };
     });
     if (def.id === 'screensaver') {
       // Show: only ever three options, so all three sit as permanent side-by-side checkboxes in
@@ -3065,11 +3103,19 @@
       appendScreensaverFolderButtons(el, g, 'photosDir', 'photos');
       appendScreensaverFolderButtons(el, g, 'videosDir', 'videos');
     }
-    el.querySelectorAll('.aset').forEach(inp => inp.onchange = e => {
-      const o = settingDef.options.find(x => x.key === e.target.dataset.key);
-      appSettings[e.target.dataset.key] = o && o.type === 'bool' ? e.target.checked : e.target.value;
-      markDirty();
-      if (o && o.type === 'number') showNumberError(e.target, o);
+    el.querySelectorAll('.aset').forEach(inp => {
+      inp.onchange = e => {
+        const o = settingDef.options.find(x => x.key === e.target.dataset.key);
+        appSettings[e.target.dataset.key] = o && o.type === 'bool' ? e.target.checked : e.target.value;
+        markDirty();
+        if (o && o.type === 'number') showNumberError(e.target, o);
+      };
+      if (inp.type === 'number') inp.oninput = e => {
+        const o = settingDef.options.find(x => x.key === e.target.dataset.key);
+        appSettings[e.target.dataset.key] = e.target.value;
+        markDirty();
+        showNumberError(e.target, o);
+      };
     });
     // Show validity for already-stored number values on load (no auto-correction).
     el.querySelectorAll('input.aopt[type="number"], input.aset[type="number"]').forEach(inp => {
@@ -3079,7 +3125,11 @@
       if (o) showNumberError(inp, o);
     });
     // Reset-to-default for an invalid number: marks dirty + refreshes validity/preview, never saves.
-    el.querySelectorAll('.optreset').forEach(btn => btn.onclick = () => {
+    // Delegated on the container: showNumberError re-creates the Reset button on later
+    // valid->invalid / invalid->invalid transitions, which a one-time forEach binding would miss.
+    el.onclick = e => {
+      const btn = e.target && e.target.closest && e.target.closest('.optreset');
+      if (!btn) return;
       const inp = document.getElementById(btn.dataset.id); if (!inp) return;
       const isSet = inp.classList.contains('aset');
       const defs = isSet ? (settingDef ? settingDef.options : []) : (def.options || []);
@@ -3088,8 +3138,8 @@
       if (isSet) appSettings[btn.dataset.key] = dv; else g.options[btn.dataset.key] = dv;
       markDirty();
       renderAppOpts(g, def);
-      try { updateAppSurface(g); } catch (e) {}
-    });
+      try { updateAppSurface(g); } catch (e2) {}
+    };
     // Persist advanced-disclosure open state across re-renders (keyed by app id + scope).
     el.querySelectorAll('details.advsec[data-adv]').forEach(d => d.ontoggle = () => {
       if (d.open) openAdv.add(d.dataset.adv); else openAdv.delete(d.dataset.adv);
