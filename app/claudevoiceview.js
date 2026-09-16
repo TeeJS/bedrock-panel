@@ -13,12 +13,13 @@ var BASE = '/' + (location.pathname.split('/')[1] || 'ai-voice') + '/' + BACKEND
 (function () {
   document.body.classList.toggle('light', Q.get('_dark') === '0');
   var a = Q.get('_accent') || '';
-  if (/^#[0-9a-fA-F]{6}$/.test(a)) document.documentElement.style.setProperty('--accent', a);
+  var validAccent = /^#[0-9a-fA-F]{6}$/.test(a);
+  if (validAccent) document.documentElement.style.setProperty('--accent', a);
   // Contrast-safe foreground for text/icons sitting on the accent (user bubble, buttons, the
   // current-row highlights) -- runtime accents vary, and a dark one made the user's own message
   // unreadable against the fixed near-black text those rules used to hardcode. Same luminance
   // formula as meetingview.js's --accent-fg.
-  var hex = /^#[0-9a-fA-F]{6}$/.test(a) ? a : '#7CFFB2';
+  var hex = validAccent ? a : '#7CFFB2';
   var r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
   var lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   document.documentElement.style.setProperty('--accent-fg', lum > 0.45 ? '#04120b' : '#f2f7fc');
@@ -32,6 +33,15 @@ function esc(s) {
   d.textContent = s == null ? '' : String(s);
   return d.innerHTML;
 }
+
+// POST a JSON body to this app's backend (BASE prefix), returning the fetch promise so each caller
+// keeps its own .then/.catch. The two non-JSON POSTs (/audio binary, /panel-cancel no-body) stay inline.
+function postJSON(p, body) {
+  return fetch(BASE + p, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+// The shared "server unreachable" status — the catch for most backend POSTs. Callers with extra
+// cleanup (or a different message) keep their own catch.
+function reachErr() { setStatus('error', 'Could not reach the panel server.'); }
 
 // Markdown rendering: claudevoice-markdown.js carries the same parser + sanitizer the Open WebUI
 // chat app uses, so headings, lists, tables, links, and images render instead of showing raw. The
@@ -127,12 +137,16 @@ function setStatus(status, errorText) {
 // to on every 'assistant-delta', finalized (and re-rendered once more with the authoritative text)
 // on 'turn-complete'.
 var liveMsg = null;
+// Repaint a live row's bubble from liveMsg + rewire its copy buttons. Callers keep their own guards.
+function paintBubble(row) {
+  row.querySelector('.bubble').innerHTML = renderContent(liveMsg.text);
+  wireCopyButtons(row);
+}
 function updateLiveBubble() {
   var list = $('list');
   var row = list.querySelector('[data-live="1"]');
   if (!row) return;
-  row.querySelector('.bubble').innerHTML = renderContent(liveMsg.text);
-  wireCopyButtons(row);
+  paintBubble(row);
   $('card').scrollTop = $('card').scrollHeight;
 }
 function connectEvents() {
@@ -246,7 +260,7 @@ function connectEvents() {
 // current /claude-voice/state snapshot doesn't carry pending-request detail, only the status text) --
 // same acknowledged limitation as the SSE transcript-replay gap noted above.
 var pendingApprovalRequestId = null;
-function renderApprovalDetail(toolName, toolInput) {
+function renderApprovalDetail(toolInput) {
   toolInput = toolInput || {};
   var parts = [];
   var code = typeof toolInput.command === 'string' ? toolInput.command :
@@ -261,7 +275,7 @@ function renderApprovalDetail(toolName, toolInput) {
 function showApprovalOverlay(requestId, toolName, toolInput) {
   pendingApprovalRequestId = requestId;
   $('approvalTool').textContent = toolName || 'a tool';
-  $('approvalDetail').innerHTML = renderApprovalDetail(toolName, toolInput);
+  $('approvalDetail').innerHTML = renderApprovalDetail(toolInput);
   $('approvalOverlay').classList.remove('hidden');
   setStatus('approval');
 }
@@ -274,18 +288,15 @@ function decideApproval(decision) {
   var requestId = pendingApprovalRequestId;
   if (!requestId) return;
   hideApprovalOverlay();
-  fetch(BASE + '/approval-decision', {
-    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId: requestId, decision: decision }),
-  }).catch(function () { setStatus('error', 'Could not send the approval decision.'); });
+  postJSON('/approval-decision', { requestId: requestId, decision: decision })
+    .catch(function () { setStatus('error', 'Could not send the approval decision.'); });
 }
 $('approvalApprove').onclick = function () { decideApproval('allow'); };
 $('approvalDeny').onclick = function () { decideApproval('deny'); };
 $('approvalAlways').onclick = function () { decideApproval('always'); };   // approve + stop asking this session (meta-gated)
 function updateLiveBubbleFinal(row) {
   if (!row || !liveMsg) return;
-  row.querySelector('.bubble').innerHTML = renderContent(liveMsg.text);
-  wireCopyButtons(row);
+  paintBubble(row);
 }
 // Agent-specific strings and pick lists, delivered by the host on /state. The markup ships with
 // claude-shaped fallbacks so the page still renders sensibly if the fetch fails; meta replaces
@@ -296,10 +307,9 @@ function applyMeta(meta) {
   if (meta.approvalTitle) $('approvalTitle').textContent = meta.approvalTitle;
   if (meta.turnFailedText) turnFailedText = meta.turnFailedText;
   $('approvalAlways').classList.toggle('hidden', !meta.approvalAlways);   // only agents whose protocol supports session-wide approval
-  // Chat-only backends (owui/api) have no working directory and no permission modes -- hide the
+  // Chat-only backends (owui/api) have no working directory and no permission modes: hide the folder
+  // controls (the rail's folder-name line and the Settings overlay's Folder row) and the permission-mode
   // buttons instead of leaving dead claude-shaped controls on screen.
-  // Chat backends (owui/api) have no working directory: hide the rail's folder-name line and the
-  // Settings overlay's Folder row.
   $('project').classList.toggle('hidden', meta.hasProject === false);
   $('folderPickBtn').style.display = meta.hasProject === false ? 'none' : '';
   $('vpMode').classList.toggle('hidden', !(meta.modes && meta.modes.length));
@@ -373,11 +383,8 @@ function routineNotice(text, ok) {
 $('routineBtn').onclick = function () {
   var btn = $('routineBtn');
   btn.disabled = true;
-  fetch(BASE + '/routine-save', {
-    method: 'POST', cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: $('textInput').value.trim() }),
-  }).then(function (r) { return r.json(); })
+  postJSON('/routine-save', { text: $('textInput').value.trim() })
+    .then(function (r) { return r.json(); })
     .then(function (r) {
       if (r && r.ok) routineNotice('Saved routine: ' + r.name, true);
       else routineNotice((r && r.error) || 'Could not save that routine.', false);
@@ -394,20 +401,17 @@ function sendText(text) {
   renderTranscript();
   turnInProgress = true;
   $('sendBtn').disabled = true;
-  fetch(BASE + '/turn', {
-    method: 'POST', cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
-    // `speak` is decided HERE, per turn, by the SPEAKER toggle alone -- mic and speaker are fully
-    // independent (mic off + speaker on = type questions, hear the answers; explicitly required).
-    // Tying it to the turn server-side means one turn finishing can never silence a queued next
-    // turn's speech (the old lastTurnWasVoice-clobber bug).
-    body: JSON.stringify({ text: text, speak: !!speakEnabled }),
-  }).then(function (r) { return r.json(); })
+  // `speak` is decided HERE, per turn, by the SPEAKER toggle alone -- mic and speaker are fully
+  // independent (mic off + speaker on = type questions, hear the answers; explicitly required).
+  // Tying it to the turn server-side means one turn finishing can never silence a queued next
+  // turn's speech (the old lastTurnWasVoice-clobber bug).
+  postJSON('/turn', { text: text, speak: !!speakEnabled })
+    .then(function (r) { return r.json(); })
     .then(function (r) {
       if (!r || !r.ok) { turnInProgress = false; setStatus('error', turnFailedText); return; }
       if (r.speech) startTurnAudio(r.speech);
     })
-    .catch(function () { turnInProgress = false; setStatus('error', 'Could not reach the panel server.'); })
+    .catch(function () { turnInProgress = false; reachErr(); })
     .finally(function () { $('sendBtn').disabled = false; });
 }
 function send() {
@@ -444,10 +448,8 @@ function speak(text, onDone) {
   // string survives (oversized request lines got rejected server-side before any handler ran --
   // the "sometimes replies just aren't spoken" bug). Failures surface in the status line now
   // instead of dying silently.
-  fetch(BASE + '/tts', {
-    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: text }),
-  }).then(function (r) { return r.json(); })
+  postJSON('/tts', { text: text })
+    .then(function (r) { return r.json(); })
     .then(function (r) {
       if (!r || !r.ok || !r.id) { finish('Speech failed to start.'); return; }
       var audio = new Audio(BASE + '/tts-audio?id=' + encodeURIComponent(r.id));
@@ -605,12 +607,10 @@ function pickDevice(kind, label) {
     savedModelPick = label;
     postOption('modelPick', label);   // persists; also what a fresh session start reads
     // Live session: resume-restart onto the new model (same trick as the Mode button, ~2s pause).
-    fetch(BASE + '/model', {
-      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: label }),
-    }).then(function (r) { return r.json(); })
+    postJSON('/model', { model: label })
+      .then(function (r) { return r.json(); })
       .then(function (r) { if (!r || !r.ok) setStatus(conversationOpen ? 'listening' : 'idle', 'Model switch failed.'); })
-      .catch(function () { setStatus('error', 'Could not reach the panel server.'); });
+      .catch(reachErr);
     syncPickButtons();
     return;
   }
@@ -734,12 +734,10 @@ var projRoot = '';
 function pickProject(dir) {
   $('projectOverlay').classList.add('hidden');
   setStatus('thinking', '');
-  fetch(BASE + '/session/start', {
-    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectDir: dir }),
-  }).then(function (r) { return r.json(); })
+  postJSON('/session/start', { projectDir: dir })
+    .then(function (r) { return r.json(); })
     .then(function (r) { if (!r || !r.ok) setStatus('error', 'Could not start a session in ' + dir); })
-    .catch(function () { setStatus('error', 'Could not reach the panel server.'); });
+    .catch(reachErr);
 }
 // Loads (or reloads) the overlay listing `browsePath` -- omitted on first open, so the server
 // falls back to the page's configured root. Tapping folders (rows or Recent chips) only NAVIGATES
@@ -822,10 +820,7 @@ $('settingsClose').onclick = function () { $('settingsOverlay').classList.add('h
 
 // ---- Panel-tunable settings (persisted server-side into the page's options in config.json) ----
 function postOption(key, value) {
-  fetch(BASE + '/option', {
-    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key: key, value: String(value) }),
-  }).catch(function () {});
+  postJSON('/option', { key: key, value: String(value) }).catch(function () {});
 }
 // Chat text size: applies live via the --chatFont CSS var (bubbles only; chrome is unaffected).
 var chatFontSize = parseInt(Q.get('chatFontSize'), 10) || 16;
@@ -875,12 +870,10 @@ function renderProfileGrid() {
     b.onclick = function () {
       $('profileOverlay').classList.add('hidden');
       if (p.id === currentProfileId) return;
-      fetch(BASE + '/profile', {
-        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: p.id }),
-      }).then(function (r) { return r.json(); })
+      postJSON('/profile', { id: p.id })
+        .then(function (r) { return r.json(); })
         .then(function (r) { if (!r || !r.ok) setStatus(conversationOpen ? 'listening' : 'idle', 'Profile switch failed.'); })
-        .catch(function () { setStatus('error', 'Could not reach the panel server.'); });
+        .catch(reachErr);
     };
     grid.appendChild(b);
   });
@@ -983,16 +976,14 @@ function showPanelRisky(list) {
 }
 
 function sendPanelAccept(replace) {
-  fetch(BASE + '/panel-accept', {
-    method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ confirm: panelRiskyPending, replace: !!replace }),
-  }).then(function (r) { return r.json(); })
+  postJSON('/panel-accept', { confirm: panelRiskyPending, replace: !!replace })
+    .then(function (r) { return r.json(); })
     .then(function (r) {
       if (r && r.ok) { $('panelOverlay').classList.add('hidden'); panelRiskyPending = false; return; }
       if (r && r.needsConfirm) { panelReplacePending = !!replace; return showPanelRisky(r.risky || []); }
       setStatus(conversationOpen ? 'listening' : 'idle', (r && r.error) || 'That panel could not be added.');
     })
-    .catch(function () { setStatus('error', 'Could not reach the panel server.'); });
+    .catch(reachErr);
 }
 var panelReplacePending = false;   // which button opened the consent stage, so the second yes matches it
 $('panelAccept').onclick = function () { sendPanelAccept(panelRiskyPending ? panelReplacePending : false); };
@@ -1026,14 +1017,12 @@ function wireModeOpt(btn) {
     var mode = btn.getAttribute('data-mode');
     $('modeOverlay').classList.add('hidden');
     if (!mode || mode === currentMode) return;
-    fetch(BASE + '/permission-mode', {
-      method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: mode }),
-    }).then(function (r) { return r.json(); })
+    postJSON('/permission-mode', { mode: mode })
+      .then(function (r) { return r.json(); })
       .then(function (r) {
         if (!r || !r.ok) setStatus(conversationOpen ? 'listening' : 'idle', 'Mode switch failed — is a session running yet? (Send a message first.)');
       })
-      .catch(function () { setStatus('error', 'Could not reach the panel server.'); });
+      .catch(reachErr);
   };
 }
 document.querySelectorAll('.modeOpt').forEach(wireModeOpt);

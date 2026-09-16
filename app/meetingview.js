@@ -65,8 +65,7 @@ function statusShow(msg, isError) {
   statusT = setTimeout(statusReady, 3000);
 }
 function fireAction(plat, action, label) {
-  return fetch('/meeting-action/' + encodeURIComponent(plat) + '/' + encodeURIComponent(action), { cache: 'no-store' })
-    .then(function (r) { return r.json(); })
+  return fetchJson('/meeting-action/' + encodeURIComponent(plat) + '/' + encodeURIComponent(action))
     .then(function (r) {
       if (r && r.ok) statusShow('Sent: ' + label); else statusShow((r && r.error) || 'Failed: ' + label, true);
       return r;
@@ -171,7 +170,7 @@ function togglePanel(key) {
   panelsOpen[key] = !panelsOpen[key];
   syncPanels();
   var csv = PANELS.filter(function (p) { return panelsOpen[p.key]; }).map(function (p) { return p.key; }).join(',');
-  fetch('/meeting-set-panels/' + encodeURIComponent(csv), { cache: 'no-store' }).catch(function () {});
+  sendCmd('/meeting-set-panels/' + encodeURIComponent(csv));
 }
 PANELS.forEach(function (p) { $(p.btn).onclick = function () { togglePanel(p.key); }; });
 
@@ -192,7 +191,7 @@ var BUSY_SWATCHES = [
 function setBusyOverride(mode) {
   busyOverride = mode;
   syncBusyModes();
-  fetch('/meeting-busy/' + encodeURIComponent(mode), { cache: 'no-store' }).catch(function () {});
+  sendCmd('/meeting-busy/' + encodeURIComponent(mode));
 }
 function syncBusyModes() {
   [['busyAuto', 'auto'], ['busyBusy', 'busy'], ['busyFree', 'free'], ['busyCustom', 'custom']]
@@ -237,13 +236,12 @@ function pickBusyColor(hex) {
   busyManualColor = hex;
   syncBusyModes();
   closeBusyPicker();
-  fetch('/meeting-busy-color/' + encodeURIComponent(hex), { cache: 'no-store' }).catch(function () {});
+  sendCmd('/meeting-busy-color/' + encodeURIComponent(hex));
 }
 
 function busyReasonText(b) {
   if (!b.busy) return b.override === 'free' ? 'Set by you' : 'Not on a call';
-  if (b.reason === 'custom') return 'Set by you';
-  if (b.reason === 'manual') return 'Set by you';
+  if (b.reason === 'custom' || b.reason === 'manual') return 'Set by you';
   if (b.reason === 'recording') return 'Recording';
   if (b.reason === 'call') return b.app ? b.app.replace(/\.exe$/i, '') : 'On a call';
   return '';
@@ -300,7 +298,7 @@ function applyHighlight(h) {
   else st.textContent = 'Ready · flags moments for the notes';
 }
 function hlCmd(path) {
-  return fetch(path, { cache: 'no-store' }).then(function (r) { return r.json(); })
+  return fetchJson(path)
     .then(function (r) { if (r && r.error) statusShow(r.error, true); if (r && r.state) applyHighlight(r.state); return r; })
     .catch(function () { statusShow('Highlight command failed', true); });
 }
@@ -340,7 +338,7 @@ function applyState(st) {
   tick();
 }
 function pollState() {
-  return fetch('/meeting-state', { cache: 'no-store' }).then(function (r) { return r.json(); })
+  return fetchJson('/meeting-state')
     .then(function (st) { applyState(st); }).catch(function () {});
 }
 recHost.querySelector('#recToggle').onclick = function () { drawerManual = true; applyState(curState); };
@@ -349,13 +347,13 @@ $('pill').onclick = function (e) { if (e.target.closest('#pillStop')) return; dr
 $('pillStop').onclick = function () { doStop(); };
 $('recStopBig').onclick = function () { doStop(); };
 function doStart() {
-  fetch('/meeting-record/start', { cache: 'no-store' }).then(function (r) { return r.json(); })
+  fetchJson('/meeting-record/start')
     .then(function (r) { if (r && r.error) statusShow(r.error, true); drawerManual = false; if (r && r.state) applyState(r.state); pollState(); })
     .catch(function () { statusShow('Could not start recording', true); });
 }
 $('recStart').onclick = function () { doStart(); };
 function doStop() {
-  fetch('/meeting-record/stop', { cache: 'no-store' }).then(function (r) { return r.json(); })
+  fetchJson('/meeting-record/stop')
     .then(function (r) { drawerManual = false; if (r && r.state) applyState(r.state); pollState(); })
     .catch(function () { statusShow('Could not stop recording', true); });
 }
@@ -394,8 +392,8 @@ $('devCancel').onclick = function () { $('devOverlay').classList.remove('show');
 function pickMic(label) {
   $('devOverlay').classList.remove('show');
   savedMicLabel = label || ''; syncMic();
-  fetch('/meeting-set-mic/' + encodeURIComponent(savedMicLabel), { cache: 'no-store' })
-    .then(function (r) { return r.json(); }).then(function (r) { if (r && r.state) applyState(r.state); })
+  fetchJson('/meeting-set-mic/' + encodeURIComponent(savedMicLabel))
+    .then(function (r) { if (r && r.state) applyState(r.state); })
     .catch(function () { statusShow('Could not set microphone', true); });
 }
 
@@ -431,7 +429,7 @@ function applySlide(s) {
   else { st.className = 'sstat'; st.textContent = 'Ready · captures into this meeting'; }
 }
 function slideCmd(path) {
-  return fetch(path, { cache: 'no-store' }).then(function (r) { return r.json(); })
+  return fetchJson(path)
     .then(function (r) { if (r && r.error) statusShow(r.error, true); if (r && r.state) applySlide(r.state); return r; })
     .catch(function () { statusShow('Slide command failed', true); });
 }
@@ -453,7 +451,7 @@ function openWinPicker() {
   $('winRetry').style.display = 'none';
   $('winSub').textContent = 'Choose the window being presented';
   winMessage('Finding windows…');
-  fetch('/slide/windows', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (r) {
+  fetchJson('/slide/windows').then(function (r) {
     if (!r || r.ok === false) return winError();
     renderWins((r && r.windows) || []);
   }).catch(winError);
@@ -495,6 +493,10 @@ function pickWindow(id, name) {
 function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function fmtSize(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
 function fetchJson(url) { return fetch(url, { cache: 'no-store' }).then(function (r) { return r.json(); }); }
+// " · N queued" suffix for the transcription/analysis status lines, or '' when nothing is queued.
+function qSuffix(n) { return n ? ' · ' + n + ' queued' : ''; }
+// Fire-and-forget command GET (panel/busy toggles); errors are ignored — the next poll re-syncs state.
+function sendCmd(url) { fetch(url, { cache: 'no-store' }).catch(function () {}); }
 function fileMeta(f) {
   var sub = (f.durationMs != null ? fmtDur(f.durationMs) + ' · ' : '') + fmtSize(f.size);
   var meta = document.createElement('div'); meta.className = 'meta';
@@ -588,13 +590,13 @@ function libPoll() {
     var queued = (st.queue || []).length;
     if (st.phase === 'pre' || st.phase === 'waiting') {
       s.classList.remove('err');
-      s.textContent = (st.phase === 'pre' ? 'Starting transcription server…' : 'Waiting for transcription server…') + (queued ? ' · ' + queued + ' queued' : '');
+      s.textContent = (st.phase === 'pre' ? 'Starting transcription server…' : 'Waiting for transcription server…') + qSuffix(queued);
     } else if (st.phase === 'post') {
       s.classList.remove('err'); s.textContent = 'Stopping transcription server…';
     } else if (st.current) {
       s.classList.remove('err');
       s.innerHTML = 'Transcribing ' + escHtml(st.current.name) + ' — <span class="t">' + fmtDur(Date.now() - st.current.startedAt) + '</span>' +
-        '&nbsp;&nbsp;(takes about ⅓ of the recording length)' + (queued ? ' · ' + queued + ' queued' : '');
+        '&nbsp;&nbsp;(takes about ⅓ of the recording length)' + qSuffix(queued);
     } else if (queued) {
       s.classList.remove('err'); s.textContent = queued + ' queued';
     } else if (st.health === 'down') {
@@ -697,15 +699,19 @@ function updateLibTxButtons() {
     r.del.disabled = busy;   // can't delete a file the diarizer is using / about to use
   });
 }
-$('libGoSel').onclick = function () {
-  // Enqueue every selected file; the server FIFO dedupes anything already queued/running.
-  var names = selNames(libSel);
-  if (!names.length) return;
-  $('libGoSel').disabled = true;
-  Promise.all(names.map(function (n) {
-    return fetchJson('/meeting-transcribe/start?name=' + encodeURIComponent(n)).catch(function () { return null; });
-  })).then(function () { libSel.set = {}; selSync(libSel); libPoll(); });
-};
+// Wire a "queue selected" button: enqueue every selected name via urlBase (server FIFO dedupes
+// anything already queued/running), then clear the selection and re-poll.
+function wireEnqueue(btnId, sel, urlBase, poll) {
+  $(btnId).onclick = function () {
+    var names = selNames(sel);
+    if (!names.length) return;
+    $(btnId).disabled = true;
+    Promise.all(names.map(function (n) {
+      return fetchJson(urlBase + encodeURIComponent(n)).catch(function () { return null; });
+    })).then(function () { sel.set = {}; selSync(sel); poll(); });
+  };
+}
+wireEnqueue('libGoSel', libSel, '/meeting-transcribe/start?name=', libPoll);
 var libDelT = null;
 $('libDelSel').onclick = function () {
   var btn = $('libDelSel');
@@ -747,7 +753,7 @@ function anPoll() {
     anState = st;
     var n = $('anNote');
     var queued = (st.queue || []).length;
-    if (st.running) { n.textContent = 'Analyzing ' + splitRel(st.name).base + ' — ' + fmtDur(Date.now() - st.startedAt) + (queued ? ' · ' + queued + ' queued' : ''); n.classList.remove('err'); }
+    if (st.running) { n.textContent = 'Analyzing ' + splitRel(st.name).base + ' — ' + fmtDur(Date.now() - st.startedAt) + qSuffix(queued); n.classList.remove('err'); }
     else if (st.error) { n.textContent = splitRel(st.error.name).base + ': ' + st.error.error; n.classList.add('err'); }
     else if (st.joplin && st.joplin.ok === false) { n.textContent = 'Joplin note failed (' + st.joplin.name + '): ' + st.joplin.error; n.classList.add('err'); }
     else { n.textContent = ''; n.classList.remove('err'); }
@@ -829,15 +835,7 @@ function renderAnList() {
     el.scrollTop = keepScroll;
   }).catch(function () {});
 }
-$('anGoSel').onclick = function () {
-  // Queue every selected transcript; the analyzer FIFO runs them one at a time.
-  var names = selNames(anSel);
-  if (!names.length) return;
-  $('anGoSel').disabled = true;
-  Promise.all(names.map(function (n) {
-    return fetchJson('/meeting-analyze/start?name=' + encodeURIComponent(n)).catch(function () { return null; });
-  })).then(function () { anSel.set = {}; selSync(anSel); anPoll(); });
-};
+wireEnqueue('anGoSel', anSel, '/meeting-analyze/start?name=', anPoll);
 function updateAnButtons() {
   if (!anState) return;
   Object.keys(anRows).forEach(function (name) {

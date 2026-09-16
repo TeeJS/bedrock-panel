@@ -317,6 +317,8 @@
   function shuffleArr(a) {
     for (var i = a.length - 1; i > 0; i--) { var j = (Math.random() * (i + 1)) | 0, t = a[i]; a[i] = a[j]; a[j] = t; }
   }
+  // Wrap fn so it runs at most once (media load resolves via load/error/timeout, whichever fires first).
+  function once(fn) { var done = false; return function () { if (!done) { done = true; fn(); } }; }
 
   function drawStamp(ctx, rec) {
     var b = 10;   // white border
@@ -468,9 +470,7 @@
   }
   function reshuffle() {
     order = playlist.map(function (_, i) { return i; });
-    if (opts.shuffle) for (var i = order.length - 1; i > 0; i--) {
-      var j = (Math.random() * (i + 1)) | 0, t = order[i]; order[i] = order[j]; order[j] = t;
-    }
+    if (opts.shuffle) shuffleArr(order);
   }
 
   function clearTimer() { if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; } }
@@ -501,7 +501,7 @@
       ready();
     } else if (item.kind === 'image') {
       var img = document.createElement('img');
-      var done = false, fin = function () { if (!done) { done = true; ready(); } };
+      var fin = once(ready);
       img.onload = fin; img.onerror = fin;
       img.src = mediaUrl('image', item.name);
       layer.appendChild(img);
@@ -511,7 +511,7 @@
       v.muted = true; v.autoplay = true; v.playsInline = true;
       if (playlist.length === 1) v.loop = true;
       else v.addEventListener('ended', function () { advance(); });
-      var vdone = false, vfin = function () { if (!vdone) { vdone = true; ready(); } };
+      var vfin = once(ready);
       v.addEventListener('canplaythrough', vfin);
       v.addEventListener('error', function () { vfin(); });
       v.src = mediaUrl('video', item.name);
@@ -619,40 +619,30 @@
       el.appendChild(b);
     });
   }
+  // Flat multiselect: a toggle button per item, lit when isOn(item), flipping on click. label/isOn/
+  // onPick are per-caller so the persistence + restart behavior stays each row's own.
+  function renderMulti(el, items, label, isOn, onPick) {
+    el.innerHTML = '';
+    items.forEach(function (item) {
+      var b = document.createElement('button');
+      b.textContent = label(item);
+      if (isOn(item)) b.classList.add('on');
+      b.addEventListener('click', function () { onPick(item); });
+      el.appendChild(b);
+    });
+  }
 
   function syncSettingsUI() {
     // Show is a flat multiselect: any mix of the three groups.
-    (function () {
-      var el = $('segShow');
-      el.innerHTML = '';
-      [['showScenes', 'Scenes'], ['showPhotos', 'Photos'], ['showVideos', 'Videos']].forEach(function (pair) {
-        var b = document.createElement('button');
-        b.textContent = pair[1];
-        if (opts[pair[0]]) b.classList.add('on');
-        b.addEventListener('click', function () {
-          opts[pair[0]] = !opts[pair[0]];
-          postOption(pair[0], opts[pair[0]] ? '1' : '0');
-          syncSettingsUI(); restart();
-        });
-        el.appendChild(b);
-      });
-    })();
+    renderMulti($('segShow'), [['showScenes', 'Scenes'], ['showPhotos', 'Photos'], ['showVideos', 'Videos']],
+      function (pair) { return pair[1]; },
+      function (pair) { return opts[pair[0]]; },
+      function (pair) { opts[pair[0]] = !opts[pair[0]]; postOption(pair[0], opts[pair[0]] ? '1' : '0'); syncSettingsUI(); restart(); });
     // Scenes are independent toggles — tap any mix on/off (all off = the honest empty state).
-    (function () {
-      var el = $('segScene');
-      el.innerHTML = '';
-      SCENES.forEach(function (id) {
-        var b = document.createElement('button');
-        b.textContent = SCENE_LABELS[id];
-        if (opts.sceneOn[id]) b.classList.add('on');
-        b.addEventListener('click', function () {
-          opts.sceneOn[id] = !opts.sceneOn[id];
-          postOption(sceneKey(id), opts.sceneOn[id] ? '1' : '0');
-          syncSettingsUI(); restart();
-        });
-        el.appendChild(b);
-      });
-    })();
+    renderMulti($('segScene'), SCENES,
+      function (id) { return SCENE_LABELS[id]; },
+      function (id) { return opts.sceneOn[id]; },
+      function (id) { opts.sceneOn[id] = !opts.sceneOn[id]; postOption(sceneKey(id), opts.sceneOn[id] ? '1' : '0'); syncSettingsUI(); restart(); });
     renderSeg($('segStyle'), [['slide', 'Slideshow'], ['collage', 'Collage']], opts.imageStyle, function (v) {
       opts.imageStyle = v; postOption('imageStyle', v); syncSettingsUI(); restart();
     });
@@ -671,23 +661,16 @@
     // Exclusion list: a multiselect of the other pages — while a lit one is active, idle
     // auto-start never fires (a watched dashboard produces no input). Row hidden when the
     // config has no other pages to pick.
-    (function () {
-      var el = $('segExclude');
-      el.innerHTML = '';
-      pagesList.forEach(function (p) {
-        var b = document.createElement('button');
-        b.textContent = p.name;
+    renderMulti($('segExclude'), pagesList,
+      function (p) { return p.name; },
+      function (p) { return opts.excludeIds.indexOf(p.id) >= 0; },
+      function (p) {
         var idx = opts.excludeIds.indexOf(p.id);
-        if (idx >= 0) b.classList.add('on');
-        b.addEventListener('click', function () {
-          if (idx >= 0) opts.excludeIds.splice(idx, 1); else opts.excludeIds.push(p.id);
-          postOption('excludePages', opts.excludeIds.join(','));
-          syncSettingsUI();
-        });
-        el.appendChild(b);
+        if (idx >= 0) opts.excludeIds.splice(idx, 1); else opts.excludeIds.push(p.id);
+        postOption('excludePages', opts.excludeIds.join(','));
+        syncSettingsUI();
       });
-      $('rowExclude').style.display = pagesList.length ? '' : 'none';
-    })();
+    $('rowExclude').style.display = pagesList.length ? '' : 'none';
     $('rowScene').style.display = opts.showScenes ? '' : 'none';
     $('rowStyle').style.display = opts.showPhotos ? '' : 'none';
     $('rowFill').style.display = (opts.showPhotos && opts.imageStyle === 'slide') ? '' : 'none';   // crop applies to slideshow photos only
