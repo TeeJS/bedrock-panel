@@ -143,6 +143,7 @@
       return;
     }
     deck.setAttribute('aria-hidden', 'true');
+    clearKnobSel();   // a knob selection is only valid on the interactive (ready) deck
 
     overlay.className = 'overlay state-' + state;
     ovRetry.hidden = true;
@@ -497,9 +498,14 @@
   function reconcileKnobSel() {
     if (knobSel && (!tiles[knobSel] || tiles[knobSel].el.classList.contains('empty'))) clearKnobSel();
   }
+  // Only interactive when the deck itself is (state ready + a live open socket). This mirrors the
+  // deck.inert gate that the pointer/keyboard paths get for free; oqKnob is called programmatically,
+  // so it must check explicitly or it would navigate/dispatch under a reconnect/too-dense overlay.
+  function knobInteractive() { return uiState === 'ready' && ws && ws.readyState === 1; }
   function knobRotate(dir) {
+    if (!knobInteractive()) { clearKnobSel(); return false; }
     var ids = assignedIds();
-    if (!ids.length) { clearKnobSel(); return false; }   // nothing to navigate -> decline to panel
+    if (!ids.length) { clearKnobSel(); return false; }    // nothing to navigate -> decline to panel
     var i = ids.indexOf(knobSel);
     if (i < 0) i = (dir > 0 ? 0 : ids.length - 1);        // first turn: CW -> first, CCW -> last
     else i = (i + dir + ids.length) % ids.length;         // otherwise step and wrap
@@ -507,18 +513,18 @@
     return true;
   }
   function knobPress() {
-    if (!dispatchReady) return false;                     // not ready -> decline
+    if (!knobInteractive()) { clearKnobSel(); return false; }
     var ids = assignedIds();
     if (!ids.length) return false;                        // empty page -> decline
     if (knobSel == null || !tiles[knobSel] || tiles[knobSel].el.classList.contains('empty')) {
       setKnobSel(ids[0]);                                 // no visible selection -> reveal first, do NOT fire
       return true;
     }
-    var t = tiles[knobSel];
-    t.el.classList.add('pressed');
-    send({ Method: 'BUTTON_PRESS', Message: knobSel });   // one short press/release (BUTTON_* -> gated in preview)
-    send({ Method: 'BUTTON_RELEASE', Message: knobSel });
-    setTimeout(function () { if (t.el) t.el.classList.remove('pressed'); }, 120);
+    if (press) return true;                               // a pointer/key gesture is mid-flight: consume, never interleave
+    // Route the activation through the ONE centralized, socket-bound controller so it shares the
+    // single-gesture guard, pressed state and timer teardown -> exactly one BUTTON_PRESS + RELEASE.
+    startPress(tiles[knobSel].el, 'knob', null, null);
+    if (press && press.source === 'knob') finishPress();
     return true;
   }
   // Manifest routes the knob here; decline everything unless the user opted in and we're not a preview.

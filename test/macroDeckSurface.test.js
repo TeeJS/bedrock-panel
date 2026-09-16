@@ -312,6 +312,44 @@ test('knob is declined in preview (read-only), even with knob=1', () => {
   env.restore();
 });
 
+test('knob declines and clears selection when the deck leaves ready (socket drop -> reconnect)', () => {
+  const env = loadApp('?knob=1');
+  const ws = env.ready(KNOB_BTNS);
+  oqKnob({ type: 'rotate', dir: 1 }); assert.equal(sel(env), '0_0');
+  ws._drop();                                   // ready -> reconnect overlay
+  assert.match(env.state(), /state-reconnect/);
+  assert.equal(sel(env), null, 'selection cleared on leaving ready');
+  assert.equal(oqKnob({ type: 'rotate', dir: 1 }), false, 'rotate declined under overlay');
+  assert.equal(sel(env), null, 'no stale hidden selection');
+  env.restore();
+});
+
+test('knob press does not dispatch under the too-dense overlay (resize away from ready)', () => {
+  const env = loadApp('?knob=1');
+  const ws = env.ready(KNOB_BTNS);
+  oqKnob({ type: 'rotate', dir: 1 }); assert.equal(sel(env), '0_0');
+  env.win.innerWidth = 200; env.win.innerHeight = 120;          // shrink so no 48px cell fits
+  env.win._fire('resize');
+  assert.match(env.state(), /state-toodense/);
+  assert.equal(sel(env), null, 'selection cleared leaving ready');
+  assert.equal(oqKnob({ type: 'press', index: 1 }), false, 'press declined under overlay');
+  assert.equal(presses(ws).length, 0, 'nothing dispatched under the overlay');
+  env.restore();
+});
+
+test('knob click during an active touch gesture is consumed, never interleaving frames', () => {
+  const env = loadApp('?knob=1');
+  const ws = env.ready(KNOB_BTNS);
+  oqKnob({ type: 'rotate', dir: 1 });                            // select 0_0
+  const t = env.tile(0, 0);
+  env.ids.deck._fire('pointerdown', { target: t, pointerId: 1, button: 0 });   // hold: BUTTON_PRESS
+  assert.equal(oqKnob({ type: 'press', index: 1 }), true, 'knob click consumed');
+  env.ids.deck._fire('pointerup', { target: t, pointerId: 1 });                 // BUTTON_RELEASE
+  assert.deepEqual(presses(ws).map((m) => m.Method), ['BUTTON_PRESS', 'BUTTON_RELEASE'],
+    'exactly the touch gesture frames — no injected/duplicated knob frames');
+  env.restore();
+});
+
 test('Enter down then Space up does not release; Enter up releases once', () => {
   const env = loadApp('');
   const ws = env.ready([{ Position_X: 0, Position_Y: 0, BackgroundColorHex: '#f00' }]);
