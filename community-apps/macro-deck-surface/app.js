@@ -72,49 +72,58 @@
 
   // ---- layout & rendering -------------------------------------------------
 
+  function gridDims() {
+    return {
+      rows: (cfg && cfg.Rows > 0) ? cfg.Rows : 3,
+      cols: (cfg && cfg.Columns > 0) ? cfg.Columns : 5,
+      gap: (cfg && typeof cfg.ButtonSpacing === 'number') ? cfg.ButtonSpacing : 10
+    };
+  }
+
   function layout() {
     if (!cfg) return;
-    var rows = cfg.Rows > 0 ? cfg.Rows : 3;
-    var cols = cfg.Columns > 0 ? cfg.Columns : 5;
-    var gap = (typeof cfg.ButtonSpacing === 'number') ? cfg.ButtonSpacing : 10;
-    var pad = 24;
+    var d = gridDims();
+    var outer = 24;    // screen edge -> deck panel
+    var deckPad = 18;  // deck panel -> keys (matches #deck padding in CSS)
     var W = window.innerWidth, H = window.innerHeight;
-    var maxH = (H - pad * 2 - gap * (rows - 1)) / rows;
-    var maxW = (W - pad * 2 - gap * (cols - 1)) / cols;
-    var size = Math.max(48, Math.floor(Math.min(maxH, maxW)));  // square keys, ≥48px
+    var availW = W - outer * 2 - deckPad * 2 - d.gap * (d.cols - 1);
+    var availH = H - outer * 2 - deckPad * 2 - d.gap * (d.rows - 1);
+    var size = Math.max(48, Math.floor(Math.min(availH / d.rows, availW / d.cols)));
 
-    deck.style.gridTemplateColumns = 'repeat(' + cols + ', ' + size + 'px)';
-    deck.style.gridTemplateRows = 'repeat(' + rows + ', ' + size + 'px)';
-    deck.style.gap = gap + 'px';
+    deck.style.gridTemplateColumns = 'repeat(' + d.cols + ', ' + size + 'px)';
+    deck.style.gridTemplateRows = 'repeat(' + d.rows + ', ' + size + 'px)';
+    deck.style.gap = d.gap + 'px';
 
-    var radius = (typeof cfg.ButtonRadius === 'number')
+    var radius = (cfg && typeof cfg.ButtonRadius === 'number')
       ? Math.min(cfg.ButtonRadius, size / 2)
-      : Math.round(size * 0.12);
+      : Math.round(size * 0.14);
     document.documentElement.style.setProperty('--tile-radius', radius + 'px');
   }
 
+  // Draw the FULL grid (every Rows x Columns cell) so it reads as a deck. Cells
+  // with no button are visible inactive slots; buttons fill their own cell.
   function rebuildGrid() {
     deck.textContent = '';
     tiles = {};
+    if (!cfg) return;
     layout();
-  }
-
-  function ensureTile(x, y) {
-    var id = keyId(x, y);
-    if (tiles[id]) return tiles[id];
-    var el = document.createElement('div');
-    el.className = 'tile';
-    el.style.gridColumn = (x + 1);
-    el.style.gridRow = (y + 1);
-    var icon = document.createElement('img'); icon.className = 'ic'; icon.alt = '';
-    var label = document.createElement('img'); label.className = 'lb'; label.alt = '';
-    el.appendChild(icon);
-    el.appendChild(label);
-    wirePress(el, id);
-    deck.appendChild(el);
-    var t = { el: el, icon: icon, label: label };
-    tiles[id] = t;
-    return t;
+    var d = gridDims();
+    for (var y = 0; y < d.rows; y++) {
+      for (var x = 0; x < d.cols; x++) {
+        var id = keyId(x, y);
+        var el = document.createElement('div');
+        el.className = 'tile empty';
+        el.style.gridColumn = (x + 1);
+        el.style.gridRow = (y + 1);
+        var icon = document.createElement('img'); icon.className = 'ic'; icon.alt = '';
+        var label = document.createElement('img'); label.className = 'lb'; label.alt = '';
+        el.appendChild(icon);
+        el.appendChild(label);
+        wirePress(el, id);
+        deck.appendChild(el);
+        tiles[id] = { el: el, icon: icon, label: label };
+      }
+    }
   }
 
   function setImg(img, b64) {
@@ -124,7 +133,9 @@
 
   function applyButton(b) {
     if (!b) return;
-    var t = ensureTile(b.Position_X, b.Position_Y);
+    var t = tiles[keyId(b.Position_X, b.Position_Y)];
+    if (!t) return;  // outside the declared grid
+    t.el.classList.remove('empty');
     t.el.style.background = (cfg && cfg.ButtonBackground === false)
       ? 'transparent'
       : (b.BackgroundColorHex || '#000');
@@ -144,6 +155,7 @@
 
     function down(ev) {
       if (active) return;
+      if (el.classList.contains('empty')) return;  // inactive slot: no button here
       active = true; longFired = false;
       el.classList.add('pressed');
       send({ Method: 'BUTTON_PRESS', Message: id });
