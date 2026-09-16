@@ -6,12 +6,14 @@ The Linux answer to sysvolume.exe / the macOS sysvolume helper. PipeWire (and Pu
 answers this through `pactl`, which every desktop audio stack on Linux provides, so there is nothing
 to install and nothing desktop-specific here.
 
+    sysvolume.py          one-shot: print the level once and exit (exit 1 if it cannot be read)
     sysvolume.py watch    one integer percentage per line, on change, until stdin closes
 
-Event-driven rather than polled, deliberately. `pactl subscribe` is one long-lived process that says
-when something changed; polling twice a second would mean thousands of short-lived processes an hour
-with the meeting page open, which is exactly the churn the Windows helper was rewritten to avoid and
-which endpoint-security tools flag as malware-like behaviour.
+The no-arg one-shot matches sysvolume.exe and the macOS helper; the settings editor's mic/speaker test
+uses it for a single click-time volume read. `watch` is event-driven rather than polled, deliberately:
+`pactl subscribe` is one long-lived process that says when something changed; polling twice a second
+would mean thousands of short-lived processes an hour with the meeting page open, which is exactly the
+churn the Windows helper was rewritten to avoid and which endpoint-security tools flag as malware-like.
 
 Reads the DEFAULT sink, so it follows the output the person actually switched to rather than pinning
 itself to whatever was default at launch.
@@ -95,11 +97,27 @@ def watch():
     return 0
 
 
+def once():
+    """Print the level once and exit — the no-arg mode used by the settings editor's audio test."""
+    value = read_volume()
+    if value is None:
+        return 1
+    try:
+        sys.stdout.write('%d' % value)
+        sys.stdout.flush()
+    except (BrokenPipeError, ValueError):
+        return 1
+    return 0
+
+
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] != 'watch':
-        sys.stderr.write('usage: sysvolume.py watch\n')
+    arg = sys.argv[1] if len(sys.argv) > 1 else ''
+    if arg == 'watch':
+        return watch()
+    if arg:
+        sys.stderr.write('usage: sysvolume.py [watch]\n')
         return 2
-    return watch()
+    return once()
 
 
 if __name__ == '__main__':

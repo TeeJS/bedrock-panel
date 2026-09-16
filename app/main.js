@@ -2552,7 +2552,8 @@ function readSystemVolumeOnce() {
     const c = helperCommand('sysvolume');
     try {
       require('child_process').execFile(c.command, c.args, { windowsHide: true, timeout: 4000 }, (err, stdout) => {
-        if (err) return resolve(null);
+        // Trust a parseable level even if `err` is set: a helper that prints then lingers trips execFile's
+        // timeout with the value already on stdout. `err` with no usable stdout -> null (warn "unreadable").
         const n = parseInt(String(stdout || '').trim(), 10);
         resolve(Number.isFinite(n) && n >= 0 ? n : null);
       });
