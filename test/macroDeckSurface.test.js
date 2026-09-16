@@ -173,8 +173,9 @@ test('runtime parses longPressMs like the editor (Number, not parseInt): 1e3 = 1
 });
 
 test('supplied-but-invalid longPressMs -> configError, no connect (not a silent default)', () => {
-  // (whitespace-only, like a blank host, is treated as "not set" -> default, tested separately)
-  for (const bad of ['1.5', '50', 'abc', '99999', '1e3x', '-100', '0']) {
+  // Present-but-blank/whitespace is invalid too (matches the editor's required-field rule);
+  // only a truly-absent param defaults. '' and '  ' are present-blank here.
+  for (const bad of ['1.5', '50', 'abc', '99999', '1e3x', '-100', '0', '', '   ']) {
     const env = loadApp('?longPressMs=' + encodeURIComponent(bad));
     assert.match(env.state(), /state-configError/, bad + ': config error state');
     assert.ok(!env.ws(), bad + ': no socket opened while misconfigured');

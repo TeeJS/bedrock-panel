@@ -33,9 +33,12 @@
   var LONG_MS_ERR = '';
   (function () {
     var raw = q.get('longPressMs');
-    if (raw == null || String(raw).trim() === '') return;   // missing -> default 1000
-    var n = Number(String(raw).trim());
-    if (isFinite(n) && Number.isInteger(n) && n >= 100 && n <= 10000) { LONG_MS = n; return; }
+    if (raw == null) return;                     // absent -> default 1000
+    var s = String(raw).trim();                  // present-but-blank is invalid, like the editor's required field
+    if (s !== '') {
+      var n = Number(s);
+      if (isFinite(n) && Number.isInteger(n) && n >= 100 && n <= 10000) { LONG_MS = n; return; }
+    }
     LONG_MS_ERR = 'Long-press delay must be a whole number from 100 to 10000 ms.';
   })();
   var LAYOUT_MODE = (q.get('layoutMode') === 'wide') ? 'wide' : 'mirror';   // default mirror

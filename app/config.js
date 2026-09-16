@@ -2975,7 +2975,7 @@
 
   function revealInvalid(b) {
     const idx = (config.grids || []).indexOf(b.g);
-    if (idx >= 0) { view = 'pages'; gi = idx; ti = -1; selEnd = -1; render(); }
+    if (idx >= 0) { view = 'pages'; leftTab = 'pages'; gi = idx; ti = -1; selEnd = -1; render(); }
     setTimeout(() => {
       const id = 'mdopt-' + (b.scope === 'settings' ? 'aset' : 'aopt') + '-' + String(b.key).replace(/[^a-zA-Z0-9_-]/g, '');
       const el = document.getElementById(id);
