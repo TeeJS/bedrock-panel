@@ -1424,7 +1424,7 @@ function appPageUrl(page, preview) {
   if (!def) return 'about:blank';
   if (def.served) {                                                          // served by the local server (live data, same-origin fetch, grid launch)
     const opts = page.options || {};                                         // non-secret options only; secrets are served by /app-config
-    const qs = [appOptionQuery(def, opts, o => o.type !== 'secret' && !o.serverOnly), themeParams(page)].filter(Boolean).join('&');
+    const qs = [appOptionQuery(def, opts, o => o.type !== 'secret' && !o.serverOnly), themeParams(page), audioDefaultParams(def)].filter(Boolean).join('&');
     if (def._folder) return 'http://127.0.0.1:' + serverPort + '/apps/' + encodeURIComponent(def.id) + '/' + appEntryUrlPath(def.entry || def.file) + (qs ? '?' + qs : '');
     const base = 'http://127.0.0.1:' + serverPort + '/' + def.id + (qs ? '?' + qs : '');
     if (!sysserver || def.id !== 'github') return base;
@@ -1437,7 +1437,7 @@ function appPageUrl(page, preview) {
   const file = def._folder ? path.join(def._dir, def.entry || def.file) : path.join(APPS_DIR, def.file);
   const opts = page.options || {};
   const gridHint = page.gridOn ? '_grid=1' : '';   // lets the page (e.g. a clock) make room for the native button strip
-  const hash = [appOptionQuery(def, opts, o => o.type !== 'secret' && !o.serverOnly), themeParams(page), gridHint].filter(Boolean).join('&');
+  const hash = [appOptionQuery(def, opts, o => o.type !== 'secret' && !o.serverOnly), themeParams(page), gridHint, audioDefaultParams(def)].filter(Boolean).join('&');
   return pathToFileURL(file).href + (hash ? '#' + hash : '');
 }
 // Optional interactive management page owned by a served drop-in. It stays on that app's
@@ -1451,6 +1451,7 @@ function appEditorUrl(page) {
     appOptionQuery(def, opts, o => o.type !== 'secret' && !o.serverOnly),
     themeParams(page),
     '_surface=editor',
+    audioDefaultParams(def),
   ].filter(Boolean).join('&');
   return 'http://127.0.0.1:' + serverPort + '/apps/' + encodeURIComponent(def.id) + '/' + appEntryUrlPath(def.editor.entry) + '?' + qs;
 }
@@ -2277,6 +2278,28 @@ async function meetingActionInner(platform, action) {
 // exist while it's the active app, which is useless for background recording.
 const MEETING_DEFAULTS = { folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: process.platform === 'darwin' ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' };
 function meetingSettings() { return Object.assign({}, MEETING_DEFAULTS, (config.settings || {}).meeting || {}); }
+// ---- Software-wide audio defaults (Settings > General > Audio) ----
+// One default mic + speaker for the whole app, stored as device LABELS ('' = OS system default) --
+// same label-persistence rationale as the per-app pickers (Chromium salts deviceIds per origin, and
+// each app page's origin/port changes per launch, so an id would never match twice). Resolution rule
+// (no config migration needed): a per-app device of '' means "inherit this global default"; any
+// non-empty label is that app's own override. So an app left on "system default" adopts the global,
+// while an app with a specific mic/speaker keeps it. audioDefaults().micLabel === '' falls all the way
+// through to the OS system default, reproducing the old behavior when no global default is set.
+const AUDIO_DEFAULTS = { micLabel: '', spkLabel: '' };
+function audioDefaults() { return Object.assign({}, AUDIO_DEFAULTS, (config.settings || {}).audio || {}); }
+function effMicLabel(perApp) { const v = perApp == null ? '' : String(perApp); return v !== '' ? v : audioDefaults().micLabel; }
+function effSpkLabel(perApp) { const v = perApp == null ? '' : String(perApp); return v !== '' ? v : audioDefaults().spkLabel; }
+// Query fragment giving an audio-using served page its global defaults, so the page can show an
+// "App-wide default (<name>)" option and resolve effective = rawPerApp || def entirely client-side.
+// Gated to apps that actually declare a mic/speaker option (or the AI Voice app, whose devices live
+// in its in-page overlay rather than as declared options).
+function audioDefaultParams(def) {
+  const hasAudio = def && (def.id === 'ai-voice' || (Array.isArray(def.options) && def.options.some(o => o && (o.key === 'micDevice' || o.key === 'spkDevice'))));
+  if (!hasAudio) return '';
+  const a = audioDefaults();
+  return 'micDef=' + encodeURIComponent(a.micLabel) + '&spkDef=' + encodeURIComponent(a.spkLabel);
+}
 // Open WebUI connection (config.settings.owui, edited on the Auth tab): shared by the meeting
 // Analysis-AI backend and the owui-voice panel app. apiKey is a secret — encrypted at rest by
 // secretStore, plaintext in memory like haAuth.token.
@@ -2303,7 +2326,7 @@ function lucidStateForPanel() {
   const s = lucidtypeSettings();
   return { dictating: !!st.dictating, transcript: st.transcript || '', seq: st.seq || 0,
     review: st.review || { active: false }, rewriteMode: s.rewriteMode || 'professional',
-    sttHost: ep.sttHost, sttPort: ep.sttPort, mic: s.micDevice || '' };
+    sttHost: ep.sttHost, sttPort: ep.sttPort, mic: s.micDevice || '', micDef: audioDefaults().micLabel };
 }
 // Cleanup/Rewrite (Phase 2): kick off the transform, or drive the open review (apply/refine/cancel),
 // or set the default rewrite mode from the panel's mode picker.
@@ -2518,6 +2541,30 @@ function ensureVolumeWatcher() {
   sysVolProc.on('error', () => {});
   sysVolProc.on('close', () => { sysVolProc = null; sysVolCache = null; });   // next panel poll respawns it
 }
+// One-shot system-audio read for the Settings editor's mic/speaker test. This is a rare, click-time
+// check (Play / Test speaker), so a one-shot exec is fine — no persistent watcher needed. Resolves
+// { level, muted }: level 0-100 (or null when unreadable), muted true/false (or null when the helper
+// doesn't report it — e.g. an older build before the GetMute change, which degrades to a level-only
+// warning). One-shot output is "LEVEL MUTE" (MUTE 1/0/-1); a lone integer (older helper) parses as
+// level with muted=null.
+function readSystemAudioOnce() {
+  return new Promise(resolve => {
+    if (!SYSVOL_EXE || !fs.existsSync(SYSVOL_EXE)) return resolve({ level: null, muted: null });
+    const c = helperCommand('sysvolume');
+    try {
+      require('child_process').execFile(c.command, c.args, { windowsHide: true, timeout: 4000 }, (err, stdout) => {
+        // Trust parseable output even if `err` is set: a helper that prints then lingers trips execFile's
+        // timeout with the value already on stdout.
+        const parts = String(stdout || '').trim().split(/\s+/);
+        const n = parseInt(parts[0], 10);
+        const level = (Number.isFinite(n) && n >= 0) ? n : null;
+        const m = parts[1];
+        const muted = m === '1' ? true : m === '0' ? false : null;
+        resolve({ level, muted });
+      });
+    } catch (e) { resolve({ level: null, muted: null }); }
+  });
+}
 
 // State the panel poller reads: recorder runtime state + the configured mic (so the page loads with
 // the editor-chosen mic as its default even when idle) + the auto-record flag.
@@ -2525,6 +2572,7 @@ function meetingStateForPanel() {
   const st = meetingRecorder ? meetingRecorder.getState() : { recording: false, startedAt: null, durationMs: 0, file: null, app: null, mic: '' };
   const m = meetingSettings();
   st.mic = st.mic || m.micDevice || '';
+  st.micDef = audioDefaults().micLabel;   // app-wide default label so the panel picker can show "App-wide default"
   st.autoRecord = !!m.autoRecord;
   ensureVolumeWatcher();       // keeps the persistent volume watcher alive while the panel polls
   st.volume = sysVolCache;     // 0-100, or null when unavailable (panel shows "—")
@@ -3902,7 +3950,7 @@ app.whenReady().then(async () => {
         },
         resolveSettings: () => {
           const m = meetingSettings();
-          return { meetingFolder: m.folder, micDevice: m.micDevice, echoGate: !!m.echoGate, silenceStopMin: m.silenceStopMin, autoRecord: !!m.autoRecord };
+          return { meetingFolder: m.folder, micDevice: effMicLabel(m.micDevice), echoGate: !!m.echoGate, silenceStopMin: m.silenceStopMin, autoRecord: !!m.autoRecord };
         },
         defaultFolder: defaultMeetingFolder,
         onState: (() => {   // fires on every state change; fetch calendar info on the idle->recording edge
@@ -3999,7 +4047,7 @@ app.whenReady().then(async () => {
           try { w.loadURL('http://127.0.0.1:' + serverPort + '/lucidtype-dictate'); } catch (e) { console.log('[lucidtype] loadURL error: ' + e.message); }
           return w;
         },
-        resolveSettings: () => { const s = lucidtypeSettings(); return { micDevice: s.micDevice, silenceMs: s.silenceMs, notifyBeep: !!s.notifyBeep, startMode: s.startMode, rewriteMode: s.rewriteMode }; },
+        resolveSettings: () => { const s = lucidtypeSettings(); return { micDevice: effMicLabel(s.micDevice), silenceMs: s.silenceMs, notifyBeep: !!s.notifyBeep, startMode: s.startMode, rewriteMode: s.rewriteMode }; },
         resolveEndpoints: () => lucidtypeVoiceEndpoints(),
         transcribe: async ({ host, port, audio }) => {
           const t = await lucidWyoming.transcribe({ host, port, audio, rate: 16000, width: 2, channels: 1, log: m => console.log('[lucidtype] ' + m) });
@@ -4818,6 +4866,10 @@ app.whenReady().then(async () => {
     if (!panelWin || panelWin.isDestroyed()) return { ok: false, error: 'no panel window — Monitor mode needs the device display' };
     enterMonitorMode();
     return { ok: !!monitorMode };
+  });
+  ipcMain.handle('getSystemVolume', (e) => {
+    if (!isFrom(e, configWin)) return null;
+    return readSystemAudioOnce();   // { level: 0-100|null, muted: true|false|null }
   });
   ipcMain.handle('getLighting', async (e) => {
     if (!isFrom(e, configWin)) return null;

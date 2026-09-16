@@ -23,7 +23,6 @@
   // Per-page Advanced <details> open state — persisted across re-renders so toggling an override
   // checkbox inside it (which calls render()) doesn't collapse the section out from under the user.
   let advOpen = false;
-  let ltMeterStop = null;   // teardown for the LucidType mic test meter (getUserMedia); stopped on any editor re-render
   let githubAuthPollTimer = null;   // device-flow poll while the GitHub app's editor setup is visible
   // QMK RGB-Matrix effect names — index is the value written to the device (0 = ring off).
   const LED_EFFECTS = ['All Off (ring off)', 'Solid Color', 'Alphas Mods', 'Gradient Up/Down', 'Gradient Left/Right', 'Breathing', 'Band Sat.', 'Band Val.', 'Pinwheel Sat.', 'Pinwheel Val.', 'Spiral Sat.', 'Spiral Val.', 'Cycle All', 'Cycle Left/Right', 'Cycle Up/Down', 'Rainbow Moving Chevron', 'Cycle Out/In', 'Cycle Out/In Dual', 'Cycle Pinwheel', 'Cycle Spiral', 'Dual Beacon', 'Rainbow Beacon', 'Rainbow Pinwheels', 'Raindrops', 'Jellybean Raindrops', 'Hue Breathing', 'Hue Pendulum', 'Hue Wave', 'Pixel Rain', 'Pixel Flow', 'Pixel Fractal', 'Typing Heatmap', 'Digital Rain', 'Solid Reactive Simple', 'Solid Reactive', 'Solid Reactive Wide', 'Solid Reactive Multi Wide', 'Solid Reactive Cross', 'Solid Reactive Multi Cross', 'Solid Reactive Nexus', 'Solid Reactive Multi Nexus', 'Splash', 'Multi Splash', 'Solid Splash', 'Solid Multi Splash'];
@@ -491,10 +490,10 @@
   // keeping a saved-but-disconnected device visible as "(not connected)". Labels are only exposed
   // after a getUserMedia grant, so enumerate first and briefly grab-then-release the mic when the
   // labels come back blank. onPick(value) persists the choice (and may do more, e.g. restart a meter).
-  function wireMicPicker(sel, cur, onPick) {
+  function wireMicPicker(sel, cur, onPick, noDefault) {
     const fill = devs => {
       const inputs = (devs || []).filter(d => d.kind === 'audioinput' && d.label);
-      sel.innerHTML = '<option value="">System default</option>';
+      sel.innerHTML = noDefault ? '' : '<option value="">System default</option>';
       inputs.forEach(d => { const o = document.createElement('option'); o.value = d.label; o.textContent = d.label; sel.appendChild(o); });
       if (cur && !inputs.some(d => d.label === cur)) { const o = document.createElement('option'); o.value = cur; o.textContent = cur + ' (not connected)'; sel.appendChild(o); }
       sel.value = cur;
@@ -506,6 +505,159 @@
         .then(tmp => navigator.mediaDevices.enumerateDevices().then(d2 => { tmp.getTracks().forEach(t => t.stop()); fill(d2); }))
         .catch(() => fill(devs));
     }).catch(() => fill([]));
+  }
+  // Same as wireMicPicker but for audio OUTPUT (speaker) devices. Output labels — like input labels —
+  // only appear after a getUserMedia grant, so fall back to a momentary mic grab to reveal them.
+  function wireSpkPicker(sel, cur, onPick) {
+    const fill = devs => {
+      const outs = (devs || []).filter(d => d.kind === 'audiooutput' && d.label);
+      sel.innerHTML = '<option value="">System default</option>';
+      outs.forEach(d => { const o = document.createElement('option'); o.value = d.label; o.textContent = d.label; sel.appendChild(o); });
+      if (cur && !outs.some(d => d.label === cur)) { const o = document.createElement('option'); o.value = cur; o.textContent = cur + ' (not connected)'; sel.appendChild(o); }
+      sel.value = cur;
+      sel.onchange = e => onPick(e.target.value);
+    };
+    navigator.mediaDevices.enumerateDevices().then(devs => {
+      if ((devs || []).some(d => d.kind === 'audiooutput' && d.label)) return fill(devs);
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(tmp => navigator.mediaDevices.enumerateDevices().then(d2 => { tmp.getTracks().forEach(t => t.stop()); fill(d2); }))
+        .catch(() => fill(devs));
+    }).catch(() => fill([]));
+  }
+
+  // ---- shared mic-test widget (Settings > Audio, per-page Advanced override, Meeting override) ----
+  // Two controls over one meter bar: "Show levels" toggles a live input meter; "Test microphone"
+  // records ~3s (meter running + a spoken countdown) then offers Play (through the selected default
+  // speaker via setSinkId) and Re-record — the Windows "Test your microphone" flow. Every active
+  // stream/recorder/animation registers a teardown in micTestTeardowns so a re-render stops the mic.
+  const micTestTeardowns = new Set();
+  function stopAllMicTests() { micTestTeardowns.forEach(fn => { try { fn(); } catch (e) {} }); micTestTeardowns.clear(); }
+  // Warn (accurately) when a playback/speaker-test may be inaudible, from the main process's read of the
+  // system audio: { level: 0-100|null, muted: true|false|null }. Copy says "muted" ONLY when muted is
+  // truly true; a muted + level-0 state reads as one combined sentence, not two; when the mute flag is
+  // unreadable (older helper) it falls back to the level-only wording. Returns '' when audio looks fine.
+  function inaudibleWarning(v) {
+    const level = (v && typeof v === 'object') ? v.level : v;      // tolerate a bare number (defensive)
+    const muted = (v && typeof v === 'object') ? v.muted : null;
+    const zero = level === 0;
+    if (muted === true && zero) return 'System is muted and volume is at 0 — unmute and turn it up to hear this.';
+    if (muted === true) return 'System is muted — unmute to hear this.';
+    if (zero) return 'System volume is at 0 — turn it up to hear this.';
+    if (level == null) return 'Could not read system volume — if you hear nothing, check it is not muted or at 0.';
+    return '';
+  }
+  function checkVolume() { try { return Promise.resolve(configApi.getSystemVolume ? configApi.getSystemVolume() : null); } catch (e) { return Promise.resolve(null); } }
+  function micTestHtml(p) {
+    return `<div class="row" style="margin-top:6px"><button id="${p}Show" type="button" aria-pressed="false">Show levels</button>
+        <div id="${p}MeterWrap" role="meter" aria-label="Microphone input level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 percent" style="display:none;flex:1;height:14px;border-radius:7px;background:#0e1822;border:1px solid #1b2838;overflow:hidden;margin-left:10px"><div id="${p}Meter" style="height:100%;width:0%;background:#7CFFB2;transition:width .06s"></div></div></div>
+      <div class="row" style="margin-top:6px"><button id="${p}Test" type="button">Test microphone</button>
+        <button id="${p}Play" type="button" style="display:none;margin-left:8px"><span aria-hidden="true">▶</span> Play</button>
+        <button id="${p}Redo" type="button" style="display:none;margin-left:8px">Re-record</button>
+        <span id="${p}Msg" class="hint" role="status" aria-live="polite" style="margin:0 0 0 10px"></span></div>`;
+  }
+  // Resolve a saved input LABEL to a live getUserMedia stream (label -> deviceId needs a grant first).
+  function micStreamForLabel(label) {
+    return navigator.mediaDevices.getUserMedia({ audio: true }).then(grant =>
+      (label ? navigator.mediaDevices.enumerateDevices() : Promise.resolve([])).then(devs => {
+        const m = (devs || []).find(d => d.kind === 'audioinput' && d.label === label);
+        grant.getTracks().forEach(t => t.stop());
+        return navigator.mediaDevices.getUserMedia({ audio: m ? { deviceId: { ideal: m.deviceId } } : true });
+      }));
+  }
+  // getMicLabel()/getSpkLabel() return the EFFECTIVE labels ('' = system default) at click time.
+  function wireMicTest(p, getMicLabel, getSpkLabel) {
+    const $id = s => document.getElementById(p + s);
+    const showBtn = $id('Show'), testBtn = $id('Test'), playBtn = $id('Play'), redoBtn = $id('Redo');
+    const wrap = $id('MeterWrap'), bar = $id('Meter'), msg = $id('Msg');
+    if (!showBtn || !testBtn) return;
+    let stream = null, ctx = null, raf = 0, rec = null, chunks = [], blobUrl = '', countdown = 0, mode = '', maxPeak = 0, player = null;   // mode: '' | 'levels' | 'recording'
+    function stopPlayback() { if (player) { try { player.pause(); } catch (e) {} try { player.src = ''; } catch (e) {} player = null; } }
+    function setMeter(pct) { if (bar) bar.style.width = pct + '%'; if (wrap) { wrap.setAttribute('aria-valuenow', String(pct)); wrap.setAttribute('aria-valuetext', pct + ' percent'); } }
+    function animate() {
+      const an = ctx.createAnalyser(); an.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(an);
+      const data = new Uint8Array(an.fftSize);
+      const tick = () => { an.getByteTimeDomainData(data); let peak = 0; for (let i = 0; i < data.length; i++) { const v = Math.abs(data[i] - 128); if (v > peak) peak = v; } if (mode === 'recording' && peak > maxPeak) maxPeak = peak; setMeter(Math.min(100, Math.round((peak / 128) * 140))); raf = requestAnimationFrame(tick); };
+      tick();
+    }
+    function stopStream() {
+      try { cancelAnimationFrame(raf); } catch (e) {}
+      try { if (rec && rec.state !== 'inactive') rec.stop(); } catch (e) {}
+      try { if (stream) stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      try { if (ctx) ctx.close(); } catch (e) {}
+      stream = null; ctx = null; rec = null; raf = 0;
+      if (countdown) { clearInterval(countdown); countdown = 0; }
+      setMeter(0); if (wrap) wrap.style.display = 'none';
+      showBtn.setAttribute('aria-pressed', 'false'); showBtn.textContent = 'Show levels';
+      testBtn.textContent = 'Test microphone';
+      mode = '';
+    }
+    function teardown() { stopPlayback(); stopStream(); if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} blobUrl = ''; } if (playBtn) playBtn.style.display = 'none'; if (redoBtn) redoBtn.style.display = 'none'; micTestTeardowns.delete(teardown); }
+    micTestTeardowns.add(teardown);
+
+    showBtn.onclick = () => {
+      if (mode === 'levels') { stopStream(); return; }
+      if (mode === 'recording') return;   // let the recording finish/stop first
+      micStreamForLabel(getMicLabel()).then(s => {
+        stream = s; ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (wrap) wrap.style.display = ''; animate();
+        mode = 'levels'; showBtn.setAttribute('aria-pressed', 'true'); showBtn.textContent = 'Hide levels';
+      }).catch(() => { if (msg) msg.textContent = 'Could not open the microphone.'; });
+    };
+    testBtn.onclick = () => {
+      if (mode === 'recording') { stopStream(); return; }   // clicking again stops early
+      if (mode === 'levels') stopStream();
+      stopPlayback();   // a Re-record while the previous sample is playing should silence it first
+      if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} blobUrl = ''; }
+      if (playBtn) playBtn.style.display = 'none'; if (redoBtn) redoBtn.style.display = 'none';
+      micStreamForLabel(getMicLabel()).then(s => {
+        stream = s; ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (wrap) wrap.style.display = ''; animate();
+        chunks = []; maxPeak = 0;
+        try { rec = new MediaRecorder(stream); } catch (e) { if (msg) msg.textContent = 'Recording is unavailable here.'; stopStream(); return; }
+        rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+        rec.onstop = () => {
+          const hadAudio = chunks.length > 0;
+          try { if (blobUrl) URL.revokeObjectURL(blobUrl); } catch (e) {}
+          blobUrl = hadAudio ? URL.createObjectURL(new Blob(chunks, { type: (chunks[0] && chunks[0].type) || 'audio/webm' })) : '';
+          if (stream) stream.getTracks().forEach(t => t.stop());
+          try { cancelAnimationFrame(raf); } catch (e) {} try { if (ctx) ctx.close(); } catch (e) {}
+          stream = null; ctx = null; rec = null; setMeter(0); if (wrap) wrap.style.display = 'none';
+          mode = ''; testBtn.textContent = 'Test microphone';
+          const silent = maxPeak <= 2;   // ~0 on the 0-128 amplitude scale: nothing reached the mic
+          if (blobUrl && playBtn) {
+            playBtn.style.display = ''; if (redoBtn) redoBtn.style.display = '';
+            if (msg) msg.textContent = silent ? 'Recording complete, but no input was detected — check the microphone.' : 'Recorded — press Play to hear it back.';
+          } else if (msg) msg.textContent = 'No audio captured.';
+        };
+        rec.start();
+        mode = 'recording'; testBtn.textContent = 'Stop';
+        let left = 5; if (msg) msg.textContent = 'Recording… ' + left;
+        countdown = setInterval(() => { left -= 1; if (left > 0) { if (msg) msg.textContent = 'Recording… ' + left; } else { clearInterval(countdown); countdown = 0; if (rec && rec.state !== 'inactive') rec.stop(); } }, 1000);
+      }).catch(() => { if (msg) msg.textContent = 'Could not open the microphone.'; });
+    };
+    if (playBtn) playBtn.onclick = () => {
+      if (!blobUrl) return;
+      stopPlayback();   // restart cleanly if Play is tapped again mid-playback
+      const label = getSpkLabel();
+      (label ? navigator.mediaDevices.enumerateDevices() : Promise.resolve([])).then(devs => {
+        const d = (devs || []).find(x => x.kind === 'audiooutput' && x.label === label);
+        const a = new Audio(blobUrl);
+        player = a;
+        let warn = '', ended = false;   // keep a muted/at-0 warning up after playback; guard a slow IPC resolve
+        a.onended = () => { if (player === a) player = null; ended = true; if (msg) msg.textContent = warn || 'Playback finished.'; };
+        const go = () => {
+          a.play().catch(() => {});
+          checkVolume().then(v => {
+            warn = inaudibleWarning(v);
+            // A sample shorter than the volume read must not get "Playing…" re-asserted after it ends.
+            if (msg) msg.textContent = ended ? (warn || 'Playback finished.') : (warn ? ('Playing… ' + warn) : 'Playing…');
+          });
+        };
+        if (d && a.setSinkId) a.setSinkId(d.deviceId).then(go).catch(go); else go();
+      }).catch(() => { if (msg) msg.textContent = 'Could not play the sample.'; });
+    };
+    if (redoBtn) redoBtn.onclick = () => { testBtn.click(); };
   }
 
   // The bordered "advanced section" box the OAuth/services/Discord/GitHub setup panels each build:
@@ -556,6 +708,15 @@
         <input id="gVoiceTtsHost" value="${esc(optVal(g, 'voiceTtsHost', ''))}" placeholder="127.0.0.1" style="flex:1">
         <input id="gVoiceTtsPort" value="${esc(optVal(g, 'voiceTtsPort', ''))}" placeholder="10200" style="width:90px;margin-left:8px"></div>` : ''}
       <p class="hint">Off = use the global <b>Settings → TTS/STT</b> servers. On = this page dials its own STT/TTS host + port.</p>` : ''}
+      ${(g.app === 'lucidtype' || g.app === 'livetranslate') ? `
+      <div class="row" style="margin-top:8px"><label style="width:auto">Audio</label>
+        <label class="iconopt" style="width:auto"><input type="checkbox" id="gAudioOn" ${optVal(g, 'micDevice', '') !== '' ? 'checked' : ''}> Override default audio sources</label></div>
+      <div id="gAudioRows" style="display:${optVal(g, 'micDevice', '') !== '' ? '' : 'none'}">
+        <div class="row"><label for="gAudioMic" style="width:auto">Microphone</label>
+          <select id="gAudioMic" style="flex:1"></select></div>
+        ${micTestHtml('gAudio')}
+      </div>
+      <p class="hint">Off = use the app-wide default from <b>Settings → General → Audio</b>. On = this page uses its own microphone.</p>` : ''}
       ${focusRowHtml(g)}
       ${advCloneHtml(g)}
     </details>`;
@@ -1139,6 +1300,29 @@
     const vSetOpt = (key, el) => { const inp = document.getElementById(el); if (inp) inp.oninput = e => { if (!g.options) g.options = {}; g.options[key] = e.target.value.trim(); markDirty(); }; };
     vSetOpt('voiceSttHost', 'gVoiceSttHost'); vSetOpt('voiceSttPort', 'gVoiceSttPort');
     vSetOpt('voiceTtsHost', 'gVoiceTtsHost'); vSetOpt('voiceTtsPort', 'gVoiceTtsPort');
+    // Per-page audio-source override (lucidtype / livetranslate). Derived model: micDevice === '' means
+    // "inherit the app-wide default"; a non-empty label is this page's own mic. The checkbox shows/hides
+    // the picker WITHOUT a re-render (like ltUseEndpoint) so toggling on before a device is picked doesn't
+    // fight the derived checkbox state. Unchecking clears micDevice back to inherit and stops any test.
+    const audOn = document.getElementById('gAudioOn');
+    if (audOn) {
+      const rows = document.getElementById('gAudioRows');
+      const micSel = document.getElementById('gAudioMic');
+      if (micSel) wireMicPicker(micSel, optVal(g, 'micDevice', ''), v => { if (!g.options) g.options = {}; g.options.micDevice = v; markDirty(); }, true);
+      // Test the page's own mic; play the sample back on the app-wide default speaker (this app has no speaker pick).
+      wireMicTest('gAudio', () => (micSel ? micSel.value : ''), () => (((config.settings || {}).audio || {}).spkLabel || ''));
+      audOn.onchange = e => {
+        if (e.target.checked) { if (rows) rows.style.display = ''; }
+        else {
+          if (rows) rows.style.display = 'none';
+          stopAllMicTests();
+          if (!g.options) g.options = {};
+          g.options.micDevice = '';               // back to inheriting the app-wide default
+          if (micSel) micSel.value = '';
+          markDirty();
+        }
+      };
+    }
     const clone = document.getElementById('gClone'), cloneBtn = document.getElementById('gCloneBtn');
     if (clone && cloneBtn) {
       clone.onchange = () => { cloneBtn.disabled = !clone.value; };
@@ -2200,12 +2384,7 @@
         <details class="hint"><summary>Your own instructions for panel sessions (claude-panel-prompt.md, opens in your default editor).</summary> Appended to the built-in voice prompt; text inside &lt;!-- comment markers --&gt; is ignored. Applies from the next session start. Never affects terminal Claude Code.</details>` : '') + `
       </div>`;
     const lucidTypeBox = `<div style="margin-top:10px">
-        <p class="sectitle">Microphone</p>
-        <div class="row"><label>Capture device</label>
-          <select id="ltMic" style="flex:1"><option value="">System default</option></select></div>
-        <div class="row"><button id="ltTest" type="button">Test microphone</button>
-          <div id="ltMeterWrap" style="flex:1;height:14px;border-radius:7px;background:#0e1822;border:1px solid #1b2838;overflow:hidden;margin-left:10px"><div id="ltMeter" style="height:100%;width:0%;background:#7CFFB2;transition:width .06s"></div></div></div>
-        <p class="hint">The mic used for dictation. Set the input <b>level</b> in Windows Sound settings; speak with the test on and watch the bar.</p>
+        <p class="hint">The mic used for dictation is the app-wide default from <b>Settings → General → Audio</b>. To use a different mic for just this page, turn on <b>Override default audio sources</b> under <b>Advanced settings</b> below.</p>
         <p class="sectitle formsec" style="margin-top:16px">Dictation</p>
         <div class="row"><label style="width:auto">Voice pause tolerance</label>
           <input type="number" id="ltPause" min="400" max="2500" step="100" value="${esc(String(optVal(g, 'silenceMs', 400)))}" style="width:110px">
@@ -2309,10 +2488,8 @@
         <div class="row" style="margin-top:10px"><label>Target language</label>
           <input id="xlTargetLang" value="${esc(optVal(g, 'targetLanguage', 'en'))}" placeholder="en (or any language name)" style="width:230px"></div>
         <details class="hint"><summary>Any OpenAI-compatible chat endpoint (DeepSeek ≈ $0.10/hr, OpenAI, a local Open WebUI/Ollama…).</summary> Utterances are transcribed by your <b>Settings → TTS/STT</b> server first — its model must be <b>multilingual</b> (Parakeet v3 or Whisper small/medium/large; the Distil-Whisper models are English-only) — then translated with recent-line context, so captions arrive per phrase — a beat behind speech, not word-by-word like Soniox. Key stored encrypted, used only from the main process.</details>`}
-        <p class="sectitle" style="margin-top:14px">Microphone &amp; activation</p>
-        <div class="row"><label>Capture device</label>
-          <select id="xlMic" style="flex:1"><option value="">System default</option></select></div>
-        <p class="hint">The mic used for live translation (also selectable from the panel's Settings).</p>
+        <p class="sectitle" style="margin-top:14px">Activation</p>
+        <p class="hint">The mic used for live translation is the app-wide default from <b>Settings → General → Audio</b> (also selectable live from the panel's Settings). To pin a different mic to just this page, use <b>Override default audio sources</b> under <b>Advanced settings</b> below.</p>
         <div class="row" style="margin-top:10px"><label style="width:auto">Toggle translation shortcut</label>
           ${hotkeyFieldHtml('xlHotkey', optVal(g, 'micHotkey', ''))}<span id="xlHotkeyWarn" class="hint warn" style="margin:0 0 0 8px"></span></div>
         <p class="hint">Starts/stops translation from any app — it switches to this page and toggles the mic. This is separate from the <b>Jump-to-page shortcut</b> below, which only navigates. Applies on Save.</p>
@@ -2498,40 +2675,8 @@
       }).catch(() => {});
     } else if (isLucidType) {
       const setOpt = (key, val) => { if (!g.options) g.options = {}; g.options[key] = val; markDirty(); };
-      // Live mic test meter — peak level off a getUserMedia AnalyserNode; torn down on re-render (render()).
-      function startLtMeter(label) {
-        if (ltMeterStop) { ltMeterStop(); }
-        const wrap = document.getElementById('ltMeterWrap'), bar = document.getElementById('ltMeter');
-        if (wrap) wrap.style.display = '';
-        let stream = null, ctx = null, raf = 0, dead = false;
-        ltMeterStop = () => { dead = true; try { cancelAnimationFrame(raf); } catch (e) {} try { if (stream) stream.getTracks().forEach(t => t.stop()); } catch (e) {} try { if (ctx) ctx.close(); } catch (e) {} if (wrap) wrap.style.display = 'none'; if (bar) bar.style.width = '0%'; ltMeterStop = null; };
-        navigator.mediaDevices.getUserMedia({ audio: true }).then(function (grant) {
-          return (label ? navigator.mediaDevices.enumerateDevices() : Promise.resolve([])).then(function (devs) {
-            var m = (devs || []).find(function (d) { return d.kind === 'audioinput' && d.label === label; });
-            grant.getTracks().forEach(function (t) { t.stop(); });
-            return navigator.mediaDevices.getUserMedia({ audio: m ? { deviceId: { ideal: m.deviceId } } : true });
-          });
-        }).then(function (s) {
-          if (dead) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
-          stream = s;
-          ctx = new (window.AudioContext || window.webkitAudioContext)();
-          var an = ctx.createAnalyser(); an.fftSize = 512;
-          ctx.createMediaStreamSource(stream).connect(an);
-          var data = new Uint8Array(an.fftSize);
-          var tick = function () {
-            an.getByteTimeDomainData(data);
-            var peak = 0; for (var i = 0; i < data.length; i++) { var v = Math.abs(data[i] - 128); if (v > peak) peak = v; }
-            if (bar) bar.style.width = Math.min(100, Math.round((peak / 128) * 140)) + '%';
-            raf = requestAnimationFrame(tick);
-          };
-          tick();
-        }).catch(function () { if (ltMeterStop) ltMeterStop(); });
-      }
-      wireMicPicker(document.getElementById('ltMic'), optVal(g, 'micDevice', ''), v => { setOpt('micDevice', v); if (ltMeterStop) startLtMeter(v); });
-      document.getElementById('ltTest').onclick = e => {
-        if (ltMeterStop) { ltMeterStop(); ltMeterStop = null; const b = document.getElementById('ltMeter'); if (b) b.style.width = '0%'; e.target.textContent = 'Test microphone'; }
-        else { startLtMeter(document.getElementById('ltMic').value); e.target.textContent = 'Stop test'; }
-      };
+      // The dictation mic is chosen under per-page Advanced settings ("Override default audio sources")
+      // or inherited from Settings > General > Audio — both wired in wireAdvRow(), not here.
       const ltDictKey = document.getElementById('ltDictKey'), ltApplyKey = document.getElementById('ltApplyKey');
       ltDictKey.onkeydown = e => { e.preventDefault(); const acc = accelFromEvent(e); if (acc) { ltDictKey.value = acc; setOpt('dictationHotkey', acc); } };
       document.getElementById('ltDictKeyClear').onclick = () => { ltDictKey.value = ''; setOpt('dictationHotkey', ''); };
@@ -2608,9 +2753,8 @@
         xlHotkey.onkeydown = e => { e.preventDefault(); const acc = accelFromEvent(e); if (acc) { xlHotkey.value = acc; setOpt('micHotkey', acc); refreshHotkeyWarn('xlHotkey', xlOwn()); } };
         document.getElementById('xlHotkeyClear').onclick = () => { xlHotkey.value = ''; setOpt('micHotkey', ''); refreshHotkeyWarn('xlHotkey', xlOwn()); };
       }
-      // Microphone dropdown — the app's default capture device (same pattern as LucidType/Meeting).
-      // enumerateDevices exposes labels only after a getUserMedia grant, so grab-then-release once.
-      wireMicPicker(document.getElementById('xlMic'), optVal(g, 'micDevice', ''), v => setOpt('micDevice', v));
+      // The capture device is chosen under per-page Advanced settings ("Override default audio sources")
+      // or inherited from Settings > General > Audio — wired in wireAdvRow(), not here.
     } else if (isOffice) {
       wireOfficeOptions(g);
     } else {
@@ -3434,7 +3578,7 @@
   }
 
   function render() {
-    if (ltMeterStop) { try { ltMeterStop(); } catch (e) {} ltMeterStop = null; }   // stop the LucidType mic test meter on any re-render
+    stopAllMicTests();  // stop any per-page Advanced audio-override mic meter/recording on any re-render
     if (githubAuthPollTimer) { clearTimeout(githubAuthPollTimer); githubAuthPollTimer = null; }
     renderGrids();
     renderGroups();
@@ -3742,6 +3886,7 @@
   const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: IS_MAC, panelFarRight: IS_MAC, panelInput: true, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
   function appSettings() { return Object.assign({}, DEFAULT_SETTINGS, config.settings || {}); }
   function renderSettings() {
+    stopAllMicTests();   // stop any Audio-tab mic meter/recording before this tab is replaced
     ['tilegrid', 'mergebar', 'tileform', 'iconpane'].forEach(id => { const e = document.getElementById(id); if (e) e.innerHTML = ''; });
     const s = appSettings();
     const currentRot = () => { const r = Object.assign({ enabled: false, interval: 30 }, (config.settings || {}).rotation || {}); r.cats = Object.assign({ grids: false, dashboards: false, apps: false }, ((config.settings || {}).rotation || {}).cats || {}); return r; };
@@ -3769,6 +3914,10 @@
     // voiceConfig.js. Each service has its own host+port so STT and TTS can live on different servers.
     const currentVoice = () => Object.assign({ sttHost: '', sttPort: '10300', ttsHost: '', ttsPort: '10200' }, (config.settings || {}).voice || {});
     const voice = currentVoice();
+    // Software-wide default audio devices (config.settings.audio), stored as device LABELS
+    // ('' = OS system default). Mirrors main.js AUDIO_DEFAULTS/audioDefaults().
+    const currentAudio = () => Object.assign({ micLabel: '', spkLabel: '' }, (config.settings || {}).audio || {});
+    const aud = currentAudio();
     // ledState = the device's live lighting (loaded when the page opens); fall back to saved config / defaults.
     const L = Object.assign({}, LED_DEFAULT, (config.settings || {}).lighting || {}, ledState || {});
     const effOpts = LED_EFFECTS.map((n, i) => `<option value="${i}">${esc(n)}</option>`).join('');
@@ -3958,9 +4107,14 @@ ${IS_MAC ? `
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meByDate" ${me.processedByDate ? 'checked' : ''}> Organize by date</label></div>
       <p class="hint">Files each processed recording into year and month subfolders (e.g. 2026\\08\\) under the folder above, by the date it was processed.</p>
 
-      <div class="row" style="margin-top:12px"><label>Microphone</label>
-        <select id="meMic" style="flex:1"><option value="">System default</option></select></div>
-      <p class="hint">This must be the same mic you use with Teams</p>
+      <div class="row" style="margin-top:12px"><label style="width:auto">Audio</label>
+        <label class="iconopt" style="width:auto"><input type="checkbox" id="meAudioOn" ${me.micDevice ? 'checked' : ''}> Override default audio sources</label></div>
+      <div id="meAudioRows" style="display:${me.micDevice ? '' : 'none'}">
+        <div class="row"><label for="meMic" style="width:auto">Microphone</label>
+          <select id="meMic" style="flex:1"></select></div>
+        ${micTestHtml('meAudio')}
+      </div>
+      <p class="hint">Off = record with the app-wide default mic from <b>Settings → General → Audio</b>. On = pick a specific mic for meeting recording (use the same one you use with Teams).</p>
 
       <p class="sectitle">Transcription</p>
       ${IS_MAC || IS_LINUX ? `<div class="row"><label>Engine</label>
@@ -4342,16 +4496,31 @@ ${IS_MAC ? `
       <div id="sRoutineRows">${routineEditorHtml()}</div>`;
     // Two-level settings nav: grouped vertical category list instead of a wrapping tab strip.
     const NAV = [
-      ['General', [['software', 'Software'], ['theme', 'Theme']]],
+      ['General', [['software', 'Software'], ['audio', 'Audio'], ['theme', 'Theme']]],
       ['Device', [['hardware', 'Hardware'], ['monitor', 'Monitor']]],
       ['Apps', [['apps', 'Apps'], ['dropin', 'Drop-in apps']]],
       ['Integrations', [['auth', 'Auth'], ['ttsstt', 'TTS/STT']]],
       ['Automation', [['aiprofiles', 'AI Profiles'], ['routines', 'Routines'], ['meeting', 'Meeting']]],
     ];
+    // Audio tab — the software-wide default mic + speaker, with a live level meter and a speaker test tone.
+    const audioHtml = `
+      <p class="sectitle">Default microphone</p>
+      <div class="row"><label for="audMic">Microphone</label>
+        <select id="audMic" style="flex:1"><option value="">System default</option></select></div>
+      ${micTestHtml('aud')}
+      <p class="hint">The mic every app uses unless a page overrides it in its <b>Advanced settings</b>. <b>Show levels</b> watches the input live; <b>Test microphone</b> records a 5-second sample and plays it back on the default speaker.</p>
+
+      <p class="sectitle" style="margin-top:16px">Default speaker</p>
+      <div class="row"><label for="audSpk">Speaker</label>
+        <select id="audSpk" style="flex:1"><option value="">System default</option></select></div>
+      <div class="row"><button id="audSpkTest" type="button">Test speaker</button>
+        <span id="audSpkMsg" class="hint" role="status" aria-live="polite" style="margin:0 0 0 10px"></span></div>
+      <p class="hint">Where app audio and voice replies play unless a page overrides it. <b>Test speaker</b> plays a short tone on the selected device.</p>`;
     // Every settings page opens with a normal title + one-sentence purpose; small uppercase labels
     // are reserved for its subsections.
     const TAB_META = {
       software: ['Software', 'Run mode, launch behavior, screen rotation, and global shortcuts.'],
+      audio: ['Audio', 'The default microphone and speaker every app uses unless a page overrides it.'],
       theme: ['Theme', 'Light/dark appearance and the accent color.'],
       hardware: ['Hardware', 'Knob ring, knob controls, microphone, display, and touchscreen.'],
       monitor: ['Monitor', 'Reserved-display protection and Monitor-mode knob behavior.'],
@@ -4374,7 +4543,7 @@ ${IS_MAC ? `
         <div class="setbody">
           <h2 class="settitle">${meta[0]}</h2>
           <p class="setdesc">${meta[1]}</p>
-          ${tab === 'software' ? swHtml : tab === 'hardware' ? hwHtml : tab === 'theme' ? thHtml : tab === 'apps' ? appsHtml : tab === 'dropin' ? diHtml : tab === 'auth' ? authHtml : tab === 'aiprofiles' ? apHtml : tab === 'routines' ? rtHtml : tab === 'meeting' ? meHtml : tab === 'ttsstt' ? ttsHtml : monHtml}
+          ${tab === 'software' ? swHtml : tab === 'audio' ? audioHtml : tab === 'hardware' ? hwHtml : tab === 'theme' ? thHtml : tab === 'apps' ? appsHtml : tab === 'dropin' ? diHtml : tab === 'auth' ? authHtml : tab === 'aiprofiles' ? apHtml : tab === 'routines' ? rtHtml : tab === 'meeting' ? meHtml : tab === 'ttsstt' ? ttsHtml : monHtml}
         </div>
       </div>`;
 
@@ -5270,6 +5439,42 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       document.getElementById('sMonTap').value = mon.knobTap;
       document.getElementById('sMonTurn').onchange = e => saveMon({ knobTurn: e.target.value });
       document.getElementById('sMonTap').onchange = e => saveMon({ knobTap: e.target.value });
+    } else if (tab === 'audio') {
+      const saveAudio = (k, v) => { if (!config.settings) config.settings = {}; if (!config.settings.audio) config.settings.audio = {}; config.settings.audio[k] = v; markDirty(); };
+      const micSel = document.getElementById('audMic');
+      const spkSel = document.getElementById('audSpk');
+      if (micSel) wireMicPicker(micSel, aud.micLabel, v => saveAudio('micLabel', v));
+      if (spkSel) wireSpkPicker(spkSel, aud.spkLabel, v => saveAudio('spkLabel', v));
+      // Show levels + record/playback test over the current mic pick; playback routes to the current speaker pick.
+      wireMicTest('aud', () => (micSel ? micSel.value : ''), () => (spkSel ? spkSel.value : ''));
+      // Speaker test: a short 440 Hz tone routed to the selected output via setSinkId (labels/ids are
+      // available because wireSpkPicker already ran a momentary grant). Status text is aria-live=polite.
+      const spkTest = document.getElementById('audSpkTest');
+      if (spkTest) spkTest.onclick = () => {
+        const msg = document.getElementById('audSpkMsg');
+        const label = spkSel ? spkSel.value : '';
+        (label ? navigator.mediaDevices.enumerateDevices() : Promise.resolve([])).then(devs => {
+          const d = (devs || []).find(x => x.kind === 'audiooutput' && x.label === label);
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const dest = ctx.createMediaStreamDestination();
+          const osc = ctx.createOscillator(), gain = ctx.createGain();
+          osc.type = 'sine'; osc.frequency.value = 440; gain.gain.value = 0.15;
+          osc.connect(gain); gain.connect(dest);
+          const a = new Audio(); a.srcObject = dest.stream;
+          let warn = '', ended = false;   // keep a muted/at-0 warning up after the tone; guard a slow IPC resolve
+          const play = () => {
+            a.play().catch(() => {}); try { osc.start(); } catch (e) {}
+            checkVolume().then(v => {
+              warn = inaudibleWarning(v);
+              // If the volume read outran the 900ms tone (slow/missing helper), don't re-assert "Playing";
+              // show the bare warning (or the finished message) instead.
+              if (msg) msg.textContent = ended ? (warn || 'Test tone finished.') : (warn ? ('Playing test tone… ' + warn) : 'Playing test tone…');
+            });
+            setTimeout(() => { try { osc.stop(); } catch (e) {} try { ctx.close(); } catch (e) {} ended = true; if (msg) msg.textContent = warn || 'Test tone finished.'; }, 900);
+          };
+          if (d && a.setSinkId) a.setSinkId(d.deviceId).then(play).catch(play); else play();
+        }).catch(() => { if (msg) msg.textContent = 'Could not play a test tone.'; });
+      };
     } else if (tab === 'ttsstt') {
       const saveVoice = (k, v) => { if (!config.settings) config.settings = {}; if (!config.settings.voice) config.settings.voice = {}; config.settings.voice[k] = v; markDirty(); };
       document.getElementById('ttsSttHost').oninput = e => saveVoice('sttHost', e.target.value.trim());
@@ -5830,10 +6035,22 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       document.getElementById('meApps').oninput = e => saveMe({ recordApps: e.target.value });
       document.getElementById('meSilence').onchange = e => saveMe({ silenceStopMin: Math.max(0, parseInt(e.target.value, 10) || 0) });
       document.getElementById('meEcho').onchange = e => saveMe({ echoGate: e.target.checked });
-      // Populate the mic dropdown with device LABELS (persisted, not deviceIds). Labels are only
-      // visible after a getUserMedia grant, so enumerate first and momentarily grab the mic if the
-      // labels come back blank — same lazy-enumeration trick as the panel's picker.
-      wireMicPicker(document.getElementById('meMic'), me.micDevice || '', v => saveMe({ micDevice: v }));
+      // Audio-source override: OFF (no meeting mic saved) inherits the app-wide Settings > General >
+      // Audio default; ON picks a specific mic. Populate with device LABELS (persisted, not deviceIds),
+      // which are only visible after a getUserMedia grant, so the picker enumerates lazily. Real devices
+      // only (no "System default" entry) — unchecking the box is how you return to the app-wide default.
+      const meAudioOn = document.getElementById('meAudioOn');
+      if (meAudioOn) {
+        const rows = document.getElementById('meAudioRows');
+        const meMicSel = document.getElementById('meMic');
+        wireMicPicker(meMicSel, me.micDevice || '', v => saveMe({ micDevice: v }), true);
+        // Test the meeting mic; play back on the app-wide default speaker (meeting has no speaker pick).
+        wireMicTest('meAudio', () => (meMicSel ? meMicSel.value : ''), () => (((config.settings || {}).audio || {}).spkLabel || ''));
+        meAudioOn.onchange = e => {
+          if (e.target.checked) { if (rows) rows.style.display = ''; }
+          else { if (rows) rows.style.display = 'none'; stopAllMicTests(); saveMe({ micDevice: '' }); if (meMicSel) meMicSel.value = ''; }
+        };
+      }
     } else {
       // Theme — global appearance + accent (applied on Save, via the main process)
       const DEFAULT_ACCENT = '#7CFFB2';

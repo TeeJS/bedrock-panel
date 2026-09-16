@@ -515,15 +515,21 @@ function startTurnAudio(turnId) {
 // Labels only become visible after a getUserMedia grant in this session, so enumeration runs
 // lazily (conversation open, settings open, Test speech) via a momentary mic grab that is closed
 // again immediately.
-var savedMicLabel = Q.get('micDevice') || '';
+var savedMicLabel = Q.get('micDevice') || '';   // this page's own pick; '' = inherit the app-wide default
 var savedSpkLabel = Q.get('spkDevice') || '';
+// The software-wide defaults (Settings > General > Audio), passed in by main.js. '' here = OS system
+// default. Effective device = this page's own pick if set, else the app-wide default.
+var globalMicLabel = Q.get('micDef') || '';
+var globalSpkLabel = Q.get('spkDef') || '';
+function effMicLabel() { return savedMicLabel || globalMicLabel; }
+function effSpkLabel() { return savedSpkLabel || globalSpkLabel; }
 var micDeviceId = '', spkDeviceId = '';
 var allDevices = [];
 var devicesReady = false;
 function matchDevices() {
-  var mic = allDevices.find(function (d) { return d.kind === 'audioinput' && d.label === savedMicLabel; });
-  var spk = allDevices.find(function (d) { return d.kind === 'audiooutput' && d.label === savedSpkLabel; });
-  micDeviceId = mic ? mic.deviceId : '';   // saved device missing -> system default (never a hard fail)
+  var mic = allDevices.find(function (d) { return d.kind === 'audioinput' && d.label === effMicLabel(); });
+  var spk = allDevices.find(function (d) { return d.kind === 'audiooutput' && d.label === effSpkLabel(); });
+  micDeviceId = mic ? mic.deviceId : '';   // resolved device missing -> system default (never a hard fail)
   spkDeviceId = spk ? spk.deviceId : '';
 }
 function ensureDeviceIds(force) {
@@ -558,8 +564,8 @@ function modelPrettyName(id) {   // 'claude-sonnet-5' -> 'Sonnet' (best-effort; 
 // Settings shows only the CURRENT pick per row (big row, tap to change); the actual list lives
 // in its own full-size overlay -- never an always-visible scrolling list inside a dialog.
 function syncPickButtons() {
-  $('micPickVal').textContent = savedMicLabel || 'System default';
-  $('spkPickVal').textContent = savedSpkLabel || 'System default';
+  $('micPickVal').textContent = savedMicLabel || ('Default — ' + (globalMicLabel || 'System default'));
+  $('spkPickVal').textContent = savedSpkLabel || ('Default — ' + (globalSpkLabel || 'System default'));
   var pick = MODEL_PICKS.find(function (p) { return p[0] === savedModelPick; });
   var label = savedModelPick ? (pick ? pick[1] : savedModelPick) : 'Default';
   if (!savedModelPick && liveModel) label = 'Default — ' + modelPrettyName(liveModel);
@@ -584,9 +590,12 @@ function renderDevOverlay() {
     return;
   }
   var savedLabel = kind === 'audioinput' ? savedMicLabel : savedSpkLabel;
+  var globalLabel = kind === 'audioinput' ? globalMicLabel : globalSpkLabel;
   var devs = allDevices.filter(function (d) { return d.kind === kind && d.label; });
   var matched = !!savedLabel && devs.some(function (d) { return d.label === savedLabel; });
-  addRow('System default', '', !matched);
+  // Top entry inherits the app-wide default (Settings > General > Audio); shown with the resolved
+  // device name so the user sees what it currently points at. Selecting it clears this page's override.
+  addRow('App-wide default — ' + (globalLabel || 'System default'), '', !matched);
   devs.forEach(function (d) { addRow(d.label, d.label, matched && d.label === savedLabel); });
 }
 function openDevOverlay(kind) {
@@ -599,6 +608,26 @@ function openDevOverlay(kind) {
     });
   }
   $('devOverlay').classList.remove('hidden');
+}
+// Announce device changes to assistive tech via a lazily-created visually-hidden aria-live region, so a
+// swap (including a live one done from the panel) is not silent to non-visual users. The message states
+// whether the choice is an override for this page or the inherited app-wide default.
+function announce(msg) {
+  var el = $('a11yLive');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'a11yLive';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0';
+    document.body.appendChild(el);
+  }
+  el.textContent = '';
+  setTimeout(function () { el.textContent = msg; }, 30);   // clear-then-set so repeated same-text swaps still speak
+}
+function deviceAnnounce(what, label, globalLabel) {
+  announce(label ? (what + ' set to ' + label + ' for this page')
+                 : (what + ' now using the app-wide default (' + (globalLabel || 'system default') + ')'));
 }
 function pickDevice(kind, label) {
   $('devOverlay').classList.add('hidden');
@@ -625,11 +654,13 @@ function pickDevice(kind, label) {
         setStatus('error', 'Microphone switch failed: ' + (e && e.message ? e.message : e));
       });
     }
+    deviceAnnounce('Microphone', label, globalMicLabel);
   } else {
     savedSpkLabel = label;
     postOption('spkDevice', label);
     matchDevices();
     if (turnAudio) applySinkId(turnAudio);   // mid-reply switch moves the voice immediately
+    deviceAnnounce('Speaker', label, globalSpkLabel);
   }
   syncPickButtons();
 }

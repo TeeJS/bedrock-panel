@@ -46,7 +46,20 @@ $('btnClear').addEventListener('click', function () {
 
 // Settings button -> overlay (like the voice apps); Done closes it. Mode is Phase 2 (no-op for now).
 var settingsOvl = $('ltSettingsOverlay');
-var curMic = '';   // latest mic label from state, so the picker opens on the current selection
+var curMic = '';   // this page's own mic pick from state ('' = inherit the app-wide default)
+var globalMic = ''; // Settings > General > Audio default label (from state); '' = OS system default
+// Announce a mic swap (incl. live panel swaps) via a lazily-created visually-hidden aria-live region.
+function announceMic(msg) {
+  var el = $('a11yLive');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'a11yLive'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+    el.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0';
+    document.body.appendChild(el);
+  }
+  el.textContent = '';
+  setTimeout(function () { el.textContent = msg; }, 30);
+}
 $('btnSettings').addEventListener('click', function () { settingsOvl.classList.remove('hidden'); fillMicPicker(); });
 $('btnSettingsClose').addEventListener('click', function () { settingsOvl.classList.add('hidden'); });
 settingsOvl.addEventListener('click', function (e) { if (e.target === settingsOvl) settingsOvl.classList.add('hidden'); });
@@ -57,7 +70,7 @@ function fillMicPicker() {
   var sel = $('ltOvlMic');
   function fill(devs) {
     var inputs = (devs || []).filter(function (d) { return d.kind === 'audioinput' && d.label; });
-    sel.innerHTML = '<option value="">System default</option>';
+    sel.innerHTML = '<option value="">App-wide default — ' + esc(globalMic || 'System default') + '</option>';
     inputs.forEach(function (d) { var o = document.createElement('option'); o.value = d.label; o.textContent = d.label; sel.appendChild(o); });
     if (curMic && !inputs.some(function (d) { return d.label === curMic; })) { var o = document.createElement('option'); o.value = curMic; o.textContent = curMic + ' (not connected)'; sel.appendChild(o); }
     sel.value = curMic;
@@ -69,7 +82,12 @@ function fillMicPicker() {
       .catch(function () { fill(devs); });
   }).catch(function () { fill([]); });
 }
-$('ltOvlMic').addEventListener('change', function (e) { curMic = e.target.value; get('/lucidtype-set-mic/' + encodeURIComponent(e.target.value)); });
+$('ltOvlMic').addEventListener('change', function (e) {
+  curMic = e.target.value;
+  get('/lucidtype-set-mic/' + encodeURIComponent(e.target.value));
+  announceMic(curMic ? ('Microphone set to ' + curMic + ' for this page')
+                     : ('Microphone now using the app-wide default (' + (globalMic || 'system default') + ')'));
+});
 
 // ---- Cleanup / Rewrite (Phase 2) ----
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -160,7 +178,8 @@ function applyState(st) {
     lastSeq = st.seq;
   }
 
-  curMic = st.mic || '';   // remember for the settings picker's current selection
+  curMic = st.mic || '';   // this page's own pick ('' = inherit); remembered for the settings picker
+  globalMic = st.micDef || '';   // app-wide default label, so the picker's top entry shows what it points at
   rewriteMode = st.rewriteMode || 'professional';
   $('modeText').textContent = cap(rewriteMode);
   renderReview(st.review);

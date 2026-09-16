@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   getConfig() { return ipcRenderer.invoke('getConfig'); },
   getStarterPages() { return ipcRenderer.invoke('getStarterPages'); },   // the bundled starter tile pages for this platform
   getLinuxDeviceAccess() { return ipcRenderer.invoke('getLinuxDeviceAccess'); },   // Linux: where the udev rule lives on THIS install, and whether it is already active
+  getSystemVolume() { return ipcRenderer.invoke('getSystemVolume'); },   // master output level 0-100 (or null) for the mic/speaker test warning
   getMacSpeechStatus() { return ipcRenderer.invoke('getMacSpeechStatus'); },
   previewMacVoice(name) { return ipcRenderer.invoke('previewMacVoice', name); },   // macOS: speak a sample with a system voice
   rescanMacVoices() { return ipcRenderer.invoke('rescanMacVoices'); },
