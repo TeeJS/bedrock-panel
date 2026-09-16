@@ -142,6 +142,17 @@ function githubJson(res, obj, nextCapability) {
   res.writeHead(200, h);
   res.end(JSON.stringify(obj));
 }
+// Run an optional main-process remote for a route and JSON its result: a missing handler yields
+// {ok:false,error:'not wired'}, a throw yields {ok:false,error: e.message || failMsg}. Pass a null/
+// undefined `fn` to force the not-wired reply (a route with its own preconditions), and a `failMsg`
+// of undefined to reproduce a bare `error: e.message` with no fallback string.
+async function runRemote(res, fn, failMsg, ...args) {
+  let result = { ok: false, error: 'not wired' };
+  if (typeof fn === 'function') {
+    try { result = await fn(...args); } catch (e) { result = { ok: false, error: e.message || failMsg }; }
+  }
+  return json(res, result);
+}
 
 function reportDiagnostic(event) {
   const clean = Object.freeze(Object.assign({}, event));
@@ -636,33 +647,29 @@ function storeTtsText(text) {
   return id;
 }
 
-function discordBroadcast(payload) {
+// Write an SSE `data:` frame to every open subscriber response; a failed write prunes that response
+// from the set. Shared by the discord/obs/lucid broadcasters below.
+function sseBroadcast(subscribers, payload) {
   const line = 'data: ' + JSON.stringify(payload) + '\n\n';
-  for (const res of discordSubscribers) { try { res.write(line); } catch (e) { discordSubscribers.delete(res); } }
+  for (const res of subscribers) { try { res.write(line); } catch (e) { subscribers.delete(res); } }
 }
+function discordBroadcast(payload) { sseBroadcast(discordSubscribers, payload); }
 
-function subscribeDiscord(req, res) {
+// Open an SSE stream on `res`, register it in `subscribers`, and (when getSnapshot is given) write the
+// current snapshot as the first frame. Pruned from the set when the request or response closes.
+function subscribeSse(req, res, subscribers, getSnapshot) {
   res.writeHead(200, Object.assign(headers('text/event-stream; charset=utf-8'), { Connection: 'keep-alive' }));
-  discordSubscribers.add(res);
-  res.write('data: ' + JSON.stringify(discordApp.getSnapshot()) + '\n\n');
-  const close = () => discordSubscribers.delete(res);
+  subscribers.add(res);
+  if (getSnapshot) res.write('data: ' + JSON.stringify(getSnapshot()) + '\n\n');
+  const close = () => subscribers.delete(res);
   req.on('close', close);
   res.on('close', close);
 }
+function subscribeDiscord(req, res) { subscribeSse(req, res, discordSubscribers, () => discordApp.getSnapshot()); }
 
-function obsBroadcast(payload) {
-  const line = 'data: ' + JSON.stringify(payload) + '\n\n';
-  for (const res of obsSubscribers) { try { res.write(line); } catch (e) { obsSubscribers.delete(res); } }
-}
+function obsBroadcast(payload) { sseBroadcast(obsSubscribers, payload); }
 
-function subscribeObs(req, res) {
-  res.writeHead(200, Object.assign(headers('text/event-stream; charset=utf-8'), { Connection: 'keep-alive' }));
-  obsSubscribers.add(res);
-  if (obsApp) res.write('data: ' + JSON.stringify(obsApp.getSnapshot()) + '\n\n');
-  const close = () => obsSubscribers.delete(res);
-  req.on('close', close);
-  res.on('close', close);
-}
+function subscribeObs(req, res) { subscribeSse(req, res, obsSubscribers, obsApp ? () => obsApp.getSnapshot() : null); }
 
 // Library route path -> op name passed to onMeetingLibrary (main.js). Kept as one table so the
 // handler branch, main.js dispatch, and the tests all agree on the surface.
@@ -987,12 +994,7 @@ async function handler(req, res) {
     const slash = rest.indexOf('/');
     const platform = slash < 0 ? '' : rest.slice(0, slash);
     const action = slash < 0 ? '' : rest.slice(slash + 1);
-    let result = { ok: false, error: 'not wired' };
-    if (platform && action && typeof onMeetingAction === 'function') {
-      try { result = await onMeetingAction(platform, action); }
-      catch (e) { result = { ok: false, error: e.message || 'meeting action failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, (platform && action) ? onMeetingAction : null, 'meeting action failed', platform, action);
   }
   // Meeting recorder: the panel page polls /meeting-state and drives start/stop/setMic here.
   if (url === '/device-diagnostics') {
@@ -1016,27 +1018,15 @@ async function handler(req, res) {
   }
   if (url === '/lucidtype-dictation/start' || url === '/lucidtype-dictation/stop') {
     const cmd = url.endsWith('/start') ? 'start' : 'stop';
-    const mode = new URL(full, 'http://local').searchParams.get('mode') || '';   // clear | append (start only)
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onLucidDictation === 'function') {
-      try { result = await onLucidDictation(cmd, mode); } catch (e) { result = { ok: false, error: e.message || 'dictation command failed' }; }
-    }
-    return json(res, result);
+    const mode = queryValue(full, 'mode');   // clear | append (start only)
+    return runRemote(res, onLucidDictation, 'dictation command failed', cmd, mode);
   }
   if (url === '/lucidtype-apply') {
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onLucidApply === 'function') {
-      try { result = await onLucidApply(); } catch (e) { result = { ok: false, error: e.message || 'apply failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onLucidApply, 'apply failed');
   }
   if (url.indexOf('/lucidtype-set-mic/') === 0) {
     const label = decodeURIComponent(url.slice('/lucidtype-set-mic/'.length));
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onLucidSetMic === 'function') {
-      try { result = await onLucidSetMic(label); } catch (e) { result = { ok: false, error: e.message || 'set-mic failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onLucidSetMic, 'set-mic failed', label);
   }
   if (url === '/lucidtype-edit' && req.method === 'POST') {
     const body = await readJsonBody(req).catch(() => null);
@@ -1048,112 +1038,59 @@ async function handler(req, res) {
   }
   // Cleanup / Rewrite (Phase 2): kick off the transform (opens a review), then apply/refine/cancel it.
   if (url === '/lucidtype-cleanup' || url === '/lucidtype-rewrite') {
-    const fn = url.endsWith('cleanup') ? onLucidCleanup : onLucidRewrite;
-    let result = { ok: false, error: 'not wired' };
-    if (typeof fn === 'function') { try { result = await fn(); } catch (e) { result = { ok: false, error: e.message }; } }
-    return json(res, result);
+    // failMsg undefined: these routes surface a bare error: e.message with no fallback string.
+    return runRemote(res, url.endsWith('cleanup') ? onLucidCleanup : onLucidRewrite, undefined);
   }
   if (url === '/lucidtype-review/apply' || url === '/lucidtype-review/refine') {
     const op = url.endsWith('apply') ? 'apply' : 'refine';
     const body = await readJsonBody(req).catch(() => null);
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onLucidReview === 'function') {
-      try { result = await onLucidReview(op, body && typeof body.text === 'string' ? body.text : undefined); } catch (e) { result = { ok: false, error: e.message }; }
-    }
-    return json(res, result);
+    return runRemote(res, onLucidReview, undefined, op, body && typeof body.text === 'string' ? body.text : undefined);
   }
   if (url === '/lucidtype-review/cancel') {
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onLucidReview === 'function') { try { result = await onLucidReview('cancel'); } catch (e) { result = { ok: false, error: e.message }; } }
-    return json(res, result);
+    return runRemote(res, onLucidReview, undefined, 'cancel');
   }
   if (url.indexOf('/lucidtype-set-mode/') === 0) {
-    const mode = decodeURIComponent(url.slice('/lucidtype-set-mode/'.length));
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onLucidSetMode === 'function') { try { result = await onLucidSetMode(mode); } catch (e) { result = { ok: false, error: e.message }; } }
-    return json(res, result);
+    return runRemote(res, onLucidSetMode, undefined, decodeURIComponent(url.slice('/lucidtype-set-mode/'.length)));
   }
   // Slide capture: window list + select/start/stop/manual. GET (matching the recorder remotes),
   // same-origin-gated above. Slide state itself rides in /meeting-state so the column polls with it.
   if (url === '/slide/windows' || url === '/slide/select' || url === '/slide/start' || url === '/slide/stop' || url === '/slide/manual') {
     const cmd = url.slice('/slide/'.length);
-    const q = new URL(full, 'http://local').searchParams;
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onSlide === 'function') {
-      try { result = await onSlide(cmd, { id: q.get('id') || '', name: q.get('name') || '' }); }
-      catch (e) { result = { ok: false, error: e.message || 'slide command failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onSlide, 'slide command failed', cmd, { id: queryValue(full, 'id'), name: queryValue(full, 'name') });
   }
   // Mid-meeting highlights: start / stop the span in progress, or clear it. GET like the slide and
   // recorder remotes; the state itself rides in /meeting-state so the column polls with everything else.
   if (url === '/highlight/start' || url === '/highlight/stop' || url === '/highlight/cancel') {
     const cmd = url.slice('/highlight/'.length);
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onHighlight === 'function') {
-      try { result = await onHighlight(cmd); } catch (e) { result = { ok: false, error: e.message || 'highlight command failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onHighlight, 'highlight command failed', cmd);
   }
   if (url === '/meeting-record/start' || url === '/meeting-record/stop') {
-    const cmd = url.endsWith('/start') ? 'start' : 'stop';
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onMeetingRecord === 'function') {
-      try { result = await onMeetingRecord(cmd); } catch (e) { result = { ok: false, error: e.message || 'record command failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onMeetingRecord, 'record command failed', url.endsWith('/start') ? 'start' : 'stop');
   }
   if (url.indexOf('/meeting-set-panels/') === 0) {
-    const csv = decodeURIComponent(url.slice('/meeting-set-panels/'.length));
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onMeetingRecord === 'function') {
-      try { result = await onMeetingRecord('setPanels', csv); } catch (e) { result = { ok: false, error: e.message || 'set-panels failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onMeetingRecord, 'set-panels failed', 'setPanels', decodeURIComponent(url.slice('/meeting-set-panels/'.length)));
   }
   // Manual busy override from the meeting panel's Busy column. Side-effecting, so it inherits the
   // same loopback + Host-header + same-origin gating as every other /meeting-* route above.
   if (url.indexOf('/meeting-busy/') === 0) {
-    const mode = decodeURIComponent(url.slice('/meeting-busy/'.length));
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onMeetingRecord === 'function') {
-      try { result = await onMeetingRecord('busyOverride', mode); } catch (e) { result = { ok: false, error: e.message || 'busy-override failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onMeetingRecord, 'busy-override failed', 'busyOverride', decodeURIComponent(url.slice('/meeting-busy/'.length)));
   }
   if (url.indexOf('/meeting-busy-color/') === 0) {
-    const hex = decodeURIComponent(url.slice('/meeting-busy-color/'.length));
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onMeetingRecord === 'function') {
-      try { result = await onMeetingRecord('busyColor', hex); } catch (e) { result = { ok: false, error: e.message || 'busy-color failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onMeetingRecord, 'busy-color failed', 'busyColor', decodeURIComponent(url.slice('/meeting-busy-color/'.length)));
   }
   if (url.indexOf('/meeting-set-mic/') === 0) {
-    const label = decodeURIComponent(url.slice('/meeting-set-mic/'.length));
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onMeetingRecord === 'function') {
-      try { result = await onMeetingRecord('setMic', label); } catch (e) { result = { ok: false, error: e.message || 'set-mic failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onMeetingRecord, 'set-mic failed', 'setMic', decodeURIComponent(url.slice('/meeting-set-mic/'.length)));
   }
   // Recordings library + transcription/analysis remotes for the panel's Unprocessed / Transcription /
   // Analysis overlays. All GET (matching /meeting-record above); filename validation happens in
   // main.js/meetingLibrary — a rejected name comes back as {ok:false} or, for audio, a plain 404.
   if (MEETING_LIBRARY_OPS[url]) {
-    const q = new URL(full, 'http://local').searchParams;
-    let result = { ok: false, error: 'not wired' };
-    if (typeof onMeetingLibrary === 'function') {
-      try { result = await onMeetingLibrary(MEETING_LIBRARY_OPS[url], { kind: q.get('kind') || '', name: q.get('name') || '', dir: q.get('dir') || '' }); }
-      catch (e) { result = { ok: false, error: e.message || 'library request failed' }; }
-    }
-    return json(res, result);
+    return runRemote(res, onMeetingLibrary, 'library request failed', MEETING_LIBRARY_OPS[url], { kind: queryValue(full, 'kind'), name: queryValue(full, 'name'), dir: queryValue(full, 'dir') });
   }
   // WAV playback for the panel's <audio>. Chromium seeks with single-range requests, so honor
   // bytes=a-b with a 206; anything else gets the whole file.
   if (url === '/meeting-audio') {
-    const q = new URL(full, 'http://local').searchParams;
-    const p = typeof resolveMeetingAudio === 'function' ? resolveMeetingAudio(q.get('kind') || '', q.get('name') || '') : null;
+    const p = typeof resolveMeetingAudio === 'function' ? resolveMeetingAudio(queryValue(full, 'kind'), queryValue(full, 'name')) : null;
     return streamFileRange(req, res, p, 'audio/wav');
   }
   if (url === '/launch') {
@@ -1253,16 +1190,18 @@ function start(opts) {
   server = candidate;
   let pending;
   pending = new Promise((resolve, reject) => {
-    try { musicHtml = fs.readFileSync(path.join(__dirname, 'musicview.html'), 'utf8'); } catch (e) {}
-    try { meetingHtml = fs.readFileSync(path.join(__dirname, 'meetingview.html'), 'utf8'); } catch (e) {}
-    try { diagnosticsHtml = fs.readFileSync(path.join(__dirname, 'diagnosticsview.html'), 'utf8'); } catch (e) {}
-    try { obsviewHtml = fs.readFileSync(path.join(__dirname, 'obsview.html'), 'utf8'); } catch (e) {}
-    try { lucidtypeHtml = fs.readFileSync(path.join(__dirname, 'lucidtypeview.html'), 'utf8'); } catch (e) {}
-    try { lucidtypeDictateHtml = fs.readFileSync(path.join(__dirname, 'lucidtype-dictate.html'), 'utf8'); } catch (e) {}
-    try { recorderHtml = fs.readFileSync(path.join(__dirname, 'recorderview.html'), 'utf8'); } catch (e) {}
-    try { slideHtml = fs.readFileSync(path.join(__dirname, 'slidecapture.html'), 'utf8'); } catch (e) {}
-    try { githubHtml = fs.readFileSync(path.join(__dirname, 'github.html'), 'utf8'); } catch (e) {}
-    try { keyshortcutsHtml = fs.readFileSync(path.join(__dirname, 'keyshortcutsview.html'), 'utf8'); } catch (e) {}
+    // Read a bundled view's HTML, keeping the prior value (FALLBACK on first load) if the file is missing.
+    const readView = (file, prev) => { try { return fs.readFileSync(path.join(__dirname, file), 'utf8'); } catch (e) { return prev; } };
+    musicHtml = readView('musicview.html', musicHtml);
+    meetingHtml = readView('meetingview.html', meetingHtml);
+    diagnosticsHtml = readView('diagnosticsview.html', diagnosticsHtml);
+    obsviewHtml = readView('obsview.html', obsviewHtml);
+    lucidtypeHtml = readView('lucidtypeview.html', lucidtypeHtml);
+    lucidtypeDictateHtml = readView('lucidtype-dictate.html', lucidtypeDictateHtml);
+    recorderHtml = readView('recorderview.html', recorderHtml);
+    slideHtml = readView('slidecapture.html', slideHtml);
+    githubHtml = readView('github.html', githubHtml);
+    keyshortcutsHtml = readView('keyshortcutsview.html', keyshortcutsHtml);
     Object.values(voiceApps).forEach(v => {
       if (v.htmlFile) { try { v.htmlContent = fs.readFileSync(path.join(__dirname, v.htmlFile), 'utf8'); } catch (e) {} }
     });
@@ -1387,9 +1326,6 @@ function stop() {
 
 // Push a LucidType state payload to every open /lucidtype-events subscriber (called by main on each
 // dictation state change). Dropped writes prune themselves from the set.
-function lucidBroadcast(payload) {
-  const line = 'data: ' + JSON.stringify(payload) + '\n\n';
-  for (const res of lucidSubscribers) { try { res.write(line); } catch (e) { lucidSubscribers.delete(res); } }
-}
+function lucidBroadcast(payload) { sseBroadcast(lucidSubscribers, payload); }
 
 module.exports = { start, stop, setActivePage, setAppFolders, invalidateAppServer, callAppServer, issueGitHubCapability, clearGitHubCapability, githubCapabilityEpoch, lucidBroadcast };
