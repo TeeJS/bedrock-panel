@@ -2541,23 +2541,28 @@ function ensureVolumeWatcher() {
   sysVolProc.on('error', () => {});
   sysVolProc.on('close', () => { sysVolProc = null; sysVolCache = null; });   // next panel poll respawns it
 }
-// One-shot system-volume read for the Settings editor's mic/speaker test. This is a rare, click-time
-// check (Play / Test speaker), so a one-shot exec is fine — no persistent watcher needed. Returns the
-// master LEVEL 0-100, or null when it can't read. NOTE: level only; Windows mute is a SEPARATE flag the
-// helper doesn't expose yet (a future change would add GetMute), so callers phrase the warning as
-// "volume is 0 or unreadable", never "muted".
-function readSystemVolumeOnce() {
+// One-shot system-audio read for the Settings editor's mic/speaker test. This is a rare, click-time
+// check (Play / Test speaker), so a one-shot exec is fine — no persistent watcher needed. Resolves
+// { level, muted }: level 0-100 (or null when unreadable), muted true/false (or null when the helper
+// doesn't report it — e.g. an older build before the GetMute change, which degrades to a level-only
+// warning). One-shot output is "LEVEL MUTE" (MUTE 1/0/-1); a lone integer (older helper) parses as
+// level with muted=null.
+function readSystemAudioOnce() {
   return new Promise(resolve => {
-    if (!SYSVOL_EXE || !fs.existsSync(SYSVOL_EXE)) return resolve(null);
+    if (!SYSVOL_EXE || !fs.existsSync(SYSVOL_EXE)) return resolve({ level: null, muted: null });
     const c = helperCommand('sysvolume');
     try {
       require('child_process').execFile(c.command, c.args, { windowsHide: true, timeout: 4000 }, (err, stdout) => {
-        // Trust a parseable level even if `err` is set: a helper that prints then lingers trips execFile's
-        // timeout with the value already on stdout. `err` with no usable stdout -> null (warn "unreadable").
-        const n = parseInt(String(stdout || '').trim(), 10);
-        resolve(Number.isFinite(n) && n >= 0 ? n : null);
+        // Trust parseable output even if `err` is set: a helper that prints then lingers trips execFile's
+        // timeout with the value already on stdout.
+        const parts = String(stdout || '').trim().split(/\s+/);
+        const n = parseInt(parts[0], 10);
+        const level = (Number.isFinite(n) && n >= 0) ? n : null;
+        const m = parts[1];
+        const muted = m === '1' ? true : m === '0' ? false : null;
+        resolve({ level, muted });
       });
-    } catch (e) { resolve(null); }
+    } catch (e) { resolve({ level: null, muted: null }); }
   });
 }
 
@@ -4864,7 +4869,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('getSystemVolume', (e) => {
     if (!isFrom(e, configWin)) return null;
-    return readSystemVolumeOnce();   // 0-100 level, or null if unreadable (see readSystemVolumeOnce)
+    return readSystemAudioOnce();   // { level: 0-100|null, muted: true|false|null }
   });
   ipcMain.handle('getLighting', async (e) => {
     if (!isFrom(e, configWin)) return null;

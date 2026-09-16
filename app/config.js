@@ -532,12 +532,18 @@
   // stream/recorder/animation registers a teardown in micTestTeardowns so a re-render stops the mic.
   const micTestTeardowns = new Set();
   function stopAllMicTests() { micTestTeardowns.forEach(fn => { try { fn(); } catch (e) {} }); micTestTeardowns.clear(); }
-  // Warn (accurately) when a playback/speaker-test may be inaudible. We can only read the master LEVEL
-  // (0-100) via the main process; Windows mute is a separate flag we don't read yet, so the copy never
-  // claims "muted" — only "0 or unreadable". Returns '' when the level looks fine.
-  function inaudibleWarning(vol) {
-    if (vol === 0) return 'System volume is at 0 — turn it up to hear this.';
-    if (vol == null) return 'Could not read system volume — if you hear nothing, check it is not muted or at 0.';
+  // Warn (accurately) when a playback/speaker-test may be inaudible, from the main process's read of the
+  // system audio: { level: 0-100|null, muted: true|false|null }. Copy says "muted" ONLY when muted is
+  // truly true; a muted + level-0 state reads as one combined sentence, not two; when the mute flag is
+  // unreadable (older helper) it falls back to the level-only wording. Returns '' when audio looks fine.
+  function inaudibleWarning(v) {
+    const level = (v && typeof v === 'object') ? v.level : v;      // tolerate a bare number (defensive)
+    const muted = (v && typeof v === 'object') ? v.muted : null;
+    const zero = level === 0;
+    if (muted === true && zero) return 'System is muted and volume is at 0 — unmute and turn it up to hear this.';
+    if (muted === true) return 'System is muted — unmute to hear this.';
+    if (zero) return 'System volume is at 0 — turn it up to hear this.';
+    if (level == null) return 'Could not read system volume — if you hear nothing, check it is not muted or at 0.';
     return '';
   }
   function checkVolume() { try { return Promise.resolve(configApi.getSystemVolume ? configApi.getSystemVolume() : null); } catch (e) { return Promise.resolve(null); } }

@@ -6,11 +6,12 @@ The Linux answer to sysvolume.exe / the macOS sysvolume helper. PipeWire (and Pu
 answers this through `pactl`, which every desktop audio stack on Linux provides, so there is nothing
 to install and nothing desktop-specific here.
 
-    sysvolume.py          one-shot: print the level once and exit (exit 1 if it cannot be read)
+    sysvolume.py          one-shot: print 'LEVEL MUTE' once and exit (LEVEL 0-100 or -1; MUTE 1/0/-1)
     sysvolume.py watch    one integer percentage per line, on change, until stdin closes
 
 The no-arg one-shot matches sysvolume.exe and the macOS helper; the settings editor's mic/speaker test
-uses it for a single click-time volume read. `watch` is event-driven rather than polled, deliberately:
+uses it for a single click-time read of both the level and the mute flag. `watch` stays level-only (a
+bare integer per line) so the meeting console's output rail, which parses that, is unchanged. `watch` is event-driven rather than polled, deliberately:
 `pactl subscribe` is one long-lived process that says when something changed; polling twice a second
 would mean thousands of short-lived processes an hour with the meeting page open, which is exactly the
 churn the Windows helper was rewritten to avoid and which endpoint-security tools flag as malware-like.
@@ -26,6 +27,20 @@ import sys
 import threading
 
 SINK = '@DEFAULT_SINK@'
+
+
+def read_muted():
+    """True/False if the default sink is muted, or None when it cannot be read."""
+    try:
+        out = subprocess.run(['pactl', 'get-sink-mute', SINK],
+                             capture_output=True, text=True, timeout=5).stdout.lower()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if 'yes' in out:
+        return True
+    if 'no' in out:
+        return False
+    return None
 
 
 def read_volume():
@@ -98,16 +113,18 @@ def watch():
 
 
 def once():
-    """Print the level once and exit — the no-arg mode used by the settings editor's audio test."""
+    """Print 'LEVEL MUTE' once and exit — the no-arg mode used by the settings editor's audio test.
+    LEVEL is 0-100 (or -1 if unreadable); MUTE is 1 (muted), 0 (not muted) or -1 (unreadable)."""
     value = read_volume()
-    if value is None:
-        return 1
+    muted = read_muted()
+    lvl = value if value is not None else -1
+    mu = '1' if muted is True else '0' if muted is False else '-1'
     try:
-        sys.stdout.write('%d' % value)
+        sys.stdout.write('%d %s' % (lvl, mu))
         sys.stdout.flush()
     except (BrokenPipeError, ValueError):
         return 1
-    return 0
+    return 0 if (value is not None or muted is not None) else 1
 
 
 def main():
