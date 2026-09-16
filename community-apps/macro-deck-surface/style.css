@@ -1,0 +1,92 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #05080d;
+  --fg: #e8eef6;
+  --muted: #9fb3c8;
+  --accent: #7CFFB2;
+  --tile-bd: #1a2738;
+  --tile-radius: 16px;
+}
+
+body.light {
+  --bg: #e6ecf3;
+  --fg: #12202c;
+  --muted: #566573;
+  --tile-bd: #c3ccd6;
+}
+
+html, body { width: 100%; height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+  user-select: none;
+  touch-action: manipulation;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The deck: a grid of keys, sized by JS from the host's Rows/Columns. */
+#deck { display: grid; }
+
+.tile {
+  position: relative;
+  background: #000;
+  border-radius: var(--tile-radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .07s ease, filter .07s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+}
+.tile.pressed { transform: scale(.94); filter: brightness(1.25); }
+
+/* Icon and label are separate images from the host, stacked (label over icon). */
+.tile .ic,
+.tile .lb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* Full-screen status overlay for every non-connected state. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  text-align: center;
+  padding: 48px;
+  z-index: 10;
+}
+.overlay.hidden { display: none; }
+
+.ov-title { font-size: 34px; font-weight: 700; line-height: 1.15; }
+.ov-msg { font-size: 22px; color: var(--muted); max-width: 1500px; line-height: 1.35; }
+
+.ov-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 6px solid var(--tile-bd);
+  border-top-color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+/* Waiting for the user to accept the device on the host: steady ring, not a spinner. */
+.overlay.state-accept .ov-icon {
+  animation: none;
+  border-color: var(--accent);
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
