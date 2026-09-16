@@ -52,12 +52,29 @@
 
   // ---- helpers ------------------------------------------------------------
 
+  // Build the client WebSocket URL. Preserves a secure scheme (never silently
+  // downgrades wss/https), strips any path/query/hash (the client WS is at root),
+  // accepts bracketed IPv6, defaults the port to 8191, and returns '' for input we
+  // can't safely parse (→ the 'invalid' state, not an endless reconnect).
   function wsUrl(hostText) {
-    var t = String(hostText || '').trim();
-    t = t.replace(/^wss?:\/\//i, '').replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    var t = String(hostText == null ? '' : hostText).trim();
     if (!t) t = '127.0.0.1:8191';
-    if (!/:\d+$/.test(t)) t += ':8191';   // default Macro Deck port
-    return 'ws://' + t;
+    var secure = /^(wss|https):\/\//i.test(t);
+    t = t.replace(/^wss?:\/\//i, '').replace(/^https?:\/\//i, '');
+    if (t.indexOf('@') !== -1) return '';           // embedded credentials → reject
+    var mm = t.match(/^([^\/?#]*)([\/?#].*)?$/);
+    var authority = mm[1], rest = mm[2] || '';
+    if (rest && rest !== '/') return '';            // non-root path/query/hash → reject (don't pretend it was honored)
+    if (!authority || /\s/.test(authority)) return '';
+    var host, port;
+    var m6 = authority.match(/^\[([^\]]+)\](?::(\d+))?$/);   // [ipv6] or [ipv6]:port
+    if (m6) { host = '[' + m6[1] + ']'; port = m6[2]; }
+    else if ((authority.match(/:/g) || []).length > 1) { return ''; }   // bare IPv6 is ambiguous
+    else { var p = authority.split(':'); host = p[0]; port = p[1]; }
+    if (!host) return '';
+    if (port != null && port !== '' && !/^\d+$/.test(port)) return '';
+    if (!port) port = '8191';
+    return (secure ? 'wss://' : 'ws://') + host + ':' + port;
   }
 
   // The host's client hardcodes a data:image/jpg URI, but payloads are raw base64

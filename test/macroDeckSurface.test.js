@@ -292,6 +292,21 @@ test('invalid host address goes to invalid with no reconnect loop', () => {
   env.restore();
 });
 
+test('wsUrl: preserves secure scheme, strips path, IPv6, default port; rejects bad input', () => {
+  function urlFor(host) { const e = loadApp('?host=' + encodeURIComponent(host)); const w = e.ws(); const u = w ? w.url : null; e.restore(); return u; }
+  assert.equal(urlFor('127.0.0.1:8191'), 'ws://127.0.0.1:8191');
+  assert.equal(urlFor('example.com'), 'ws://example.com:8191');           // default port
+  assert.equal(urlFor('wss://example.com'), 'wss://example.com:8191');    // no silent downgrade
+  assert.equal(urlFor('https://host:9000'), 'wss://host:9000');
+  assert.equal(urlFor('example.com/'), 'ws://example.com:8191');          // trailing root slash OK
+  assert.equal(urlFor('example.com/some/path'), null);                   // non-root path rejected, not silently stripped
+  assert.equal(urlFor('example.com?x=1'), null);                         // query rejected
+  assert.equal(urlFor('user:pass@host:8191'), null);                     // embedded credentials rejected
+  assert.equal(urlFor('[::1]:8191'), 'ws://[::1]:8191');                  // bracketed IPv6
+  assert.equal(urlFor('has space'), null);                               // whitespace -> invalid, no socket
+  assert.equal(urlFor('1:2:3'), null);                                   // ambiguous bare IPv6 -> invalid
+});
+
 test('too many buttons than fit -> toodense explanatory state', () => {
   const env = loadApp('');
   const ws = env.ws(); ws._open();
