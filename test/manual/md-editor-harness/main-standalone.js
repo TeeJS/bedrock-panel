@@ -16,6 +16,11 @@ const OUT = path.join(os.tmpdir(), 'md-editor-harness');
 const SHOTS = path.join(OUT, 'shots');
 const PRELOAD = path.join(__dirname, 'preload-stub.js');
 
+// Keep Electron's profile out of the default app data: an isolated temp userData/sessionData so a
+// run never reads or writes the real app's profile.
+app.setPath('userData', path.join(OUT, 'userData'));
+try { app.setPath('sessionData', path.join(OUT, 'sessionData')); } catch (e) {}
+
 fs.rmSync(SHOTS, { recursive: true, force: true }); fs.mkdirSync(SHOTS, { recursive: true });
 const results = { steps: [], shots: [], out: OUT };
 const log = o => { results.steps.push(o); console.log('[H] ' + JSON.stringify(o)); };

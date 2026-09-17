@@ -48,7 +48,7 @@ const overrides = {
   getEmojiIndex: () => Promise.resolve([]),
   getSystemVolume: () => Promise.resolve(null),
   saveConfig: (cfg) => { window.__lastSaved = cfg; return Promise.resolve({ ok: true }); },
-  appPreviewUrl: (page) => Promise.resolve('http://127.0.0.1:9999/apps/' + (page && page.app || 'x') + '/index.html?host=' + encodeURIComponent((page && page.options && page.options.host) || '')),
+  appPreviewUrl: () => Promise.resolve('about:blank'),   // never hit a real localhost server from the harness
   appEditorUrl: () => Promise.resolve('about:blank'),
   pathToFileURL: (p) => 'file://' + String(p),
   imageToDataUrl: () => null,

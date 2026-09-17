@@ -1,9 +1,12 @@
 # MD editor renderer harness (manual)
 
-A side-effect-free way to exercise the **real** shared editor renderer (`app/config.js` via
+A low-side-effect way to exercise the **real** shared editor renderer (`app/config.js` via
 `app/config.html`) in one offscreen Electron window, over a stubbed `window.bedrockConfig`. It does
 **not** require `app/main.js`, so it never starts the panel, servers, devices, MQTT or Home
-Assistant — nothing on your machine is touched.
+Assistant, and it makes no network requests (the stub returns `about:blank` for preview URLs). It
+does write to a temp directory: an isolated Electron profile (`userData`/`sessionData`) and the
+screenshots/`result.json`, all under `<os-tmpdir>/md-editor-harness/` — the real app profile is
+never read or written.
 
 It verifies the generic option-validation the Macro Deck Surface work added and the separate-device
 preview placeholder, on the actual renderer (which `node --test` can't, since there's no jsdom):
