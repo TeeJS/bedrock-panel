@@ -48,7 +48,9 @@ const overrides = {
   getEmojiIndex: () => Promise.resolve([]),
   getSystemVolume: () => Promise.resolve(null),
   saveConfig: (cfg) => { window.__lastSaved = cfg; return Promise.resolve({ ok: true }); },
-  appPreviewUrl: () => Promise.resolve('about:blank'),   // never hit a real localhost server from the harness
+  // A served-style URL so the editor's _preview append + iframe wiring can be inspected. Port 9
+  // (discard) so no real server is contacted; we only read the resulting src attribute.
+  appPreviewUrl: (page) => Promise.resolve('http://127.0.0.1:9/apps/' + (page && page.app || 'x') + '/index.html?host=' + encodeURIComponent((page && page.options && page.options.host) || '')),
   appEditorUrl: () => Promise.resolve('about:blank'),
   pathToFileURL: (p) => 'file://' + String(p),
   imageToDataUrl: () => null,

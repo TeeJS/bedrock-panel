@@ -180,6 +180,11 @@
   .apprev .ptile .em, .apprev .ptile .ic { font-size: 60px; line-height: 1; }
   .apprev .ptile img { width: 64px; height: 64px; object-fit: contain; }
   .apprev .ptile .lb { font-size: 20px; margin-top: 8px; color: #9fb3c8; }
+  /* Separate-device preview: JS (fitApprevStage) drives the stage scale + height from the container
+     width, so Expand just widens the SAME frame in place (no reload). Collapsed defaults match the
+     .apprev 640px/0.3333 above. */
+  .apprev.apprev-sep { aspect-ratio: auto; transition: width .12s ease; }
+  .apprev.apprev-sep.expanded { width: 100%; max-width: 1280px; }
   /* interactive management surface for served drop-ins that declare manifest.editor.
      The iframe remains a sandboxed loopback page: no preload, Node, or raw IPC exposure. */
   .appmanage { width: 100%; max-width: 1100px; height: min(680px, calc(100vh - 220px)); min-height: 500px;

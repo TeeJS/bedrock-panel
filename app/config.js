@@ -3212,27 +3212,63 @@
     box.style.height = Math.max(220, Math.min(1600, Math.ceil(raw))) + 'px';
     box.style.minHeight = '0';
   });
+  // A random, persisted preview identity so a "separate device" app preview connects to its host as a
+  // STABLE device distinct from the panel, and one that never churns as the user edits the device
+  // name. Editor-owned localStorage; a session-stable in-memory id if storage is unavailable.
+  let previewIdMem = '';
+  const validPreviewId = id => typeof id === 'string' && /^[a-f0-9]{8,16}$/i.test(id);
+  function newPreviewId() {
+    const raw = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(16) + Math.random().toString(16).slice(2));
+    return raw.replace(/[^a-fA-F0-9]/g, '').slice(0, 12);
+  }
+  function previewInstanceId() {
+    try {
+      let id = localStorage.getItem('oq_preview_id');
+      if (!validPreviewId(id)) { id = newPreviewId(); localStorage.setItem('oq_preview_id', id); }
+      return id;
+    } catch (e) {
+      if (!validPreviewId(previewIdMem)) previewIdMem = newPreviewId();
+      return previewIdMem;
+    }
+  }
   // A SERVED app whose metadata declares preview.separateDevice connects to an external host as its
-  // own device, so it can't be shown as a live in-editor preview without opening a second host
-  // connection. Per the review decision (Option B) we DON'T do that: such apps get an honest
-  // informational placeholder instead of an iframe, and the editor never connects to the host. (The
-  // app itself still carries the non-disruptive preview guard for a future working preview.)
+  // own device. Its editor preview loads the app with a DISTINCT persisted preview identity (never the
+  // panel's) and only connects to the host when the user clicks Connect — so it never disturbs the
+  // panel. Expand enlarges the same iframe in place (no reload/reconnect).
   function appPreviewSeparateDevice(appId) {
     const def = appDefs.find(a => a.id === appId);
     return def && def.served && def.preview && def.preview.separateDevice ? def : null;
+  }
+  // Fit the 1920x480 preview stage into the current .apprev width by scaling the SAME iframe (no
+  // reload). Called on render, expand/collapse, and window resize.
+  function fitApprevStage(apprev) {
+    if (!apprev) return;
+    const stage = apprev.querySelector('.apprevStage');
+    if (!stage) return;
+    const w = apprev.clientWidth || 640;
+    const s = w / 1920;
+    stage.style.transform = 'scale(' + s + ')';
+    apprev.style.height = Math.round(w / 4) + 'px';   // 1920x480 == 4:1
   }
   function appendAppPreview(host, g) {
     if (!host) return;
     if (PREVIEW_EXCLUDE.has(g.app)) { host.innerHTML = ''; return; }
     const sep = appPreviewSeparateDevice(g.app);
     if (sep) {
-      // Informational placeholder only: no iframe, no host connection, no Connect/Expand controls.
-      const note = esc(sep.preview.note || 'This app does not provide a live editor preview. Save and apply your settings to view it on the panel.');
+      // Working preview: the app loads showing its own idle screen (NO host connection yet). The
+      // editor-level Connect (reachable, unlike the thumbnail-scaled in-app button) tells the app to
+      // connect as its distinct preview device; Expand enlarges the same frame in place.
+      const note = esc(sep.preview.note || 'Connects to the host as a separate device (not your panel); its page may differ from the panel and taps are disabled.');
       host.innerHTML = `<p class="sectitle" style="margin-top:16px">Preview</p>
-        <div class="apprevNote" style="border:1px solid #233246;border-radius:10px;background:#0a111a;padding:14px 16px;max-width:640px">
-          <div style="font-weight:600;margin-bottom:4px">No live preview</div>
-          <p class="hint" style="margin:0">${note}</p>
+        <div class="apprev apprev-sep"><div class="apprevStage">
+          <iframe class="apprevFrame" title="Live page preview" scrolling="no" tabindex="-1"></iframe>
+        </div></div>
+        <div class="apprevControls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 0">
+          <button type="button" class="apprevConnect btn">Connect preview</button>
+          <button type="button" class="apprevExpand btn" aria-expanded="false">Expand</button>
+          <span class="hint" style="margin:0;flex:1;min-width:220px">${note}</span>
         </div>`;
+      wireSepPreview(g);
       return;
     }
     host.innerHTML = `<p class="sectitle" style="margin-top:16px">Preview</p>
@@ -3242,6 +3278,50 @@
       </div></div>
       <p class="hint" style="margin:4px 0 0">Live \u2014 exactly what the panel shows with the options above.</p>`;
     updateAppPreview(g);
+  }
+  // Build the served preview URL for a separate-device app, with the distinct persisted identity.
+  async function sepPreviewUrl(g) {
+    let url = await configApi.appPreviewUrl({ app: g.app, options: g.options || {}, appearance: g.appearance, accent: g.accent });
+    if (!url || url.lastIndexOf('about:blank', 0) === 0) return '';
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + '_preview=' + encodeURIComponent(previewInstanceId());
+  }
+  let sepPreviewGlobalsBound = false;
+  // Wire the working separate-device preview: load the app IDLE (no host connection), a reachable
+  // Connect that applies the current options then tells the app to connect as its preview device, and
+  // Expand that enlarges the SAME iframe in place (no reload -> connection preserved).
+  async function wireSepPreview(g) {
+    const apprev = document.querySelector('.apprev-sep');
+    const frame = apprev && apprev.querySelector('.apprevFrame');
+    if (!apprev || !frame) return;
+    try { const u = await sepPreviewUrl(g); if (u && frame.src !== u) frame.src = u; } catch (e) {}   // idle load
+    fitApprevStage(apprev);
+    const connectBtn = document.querySelector('.apprevConnect');
+    const expandBtn = document.querySelector('.apprevExpand');
+    const tellConnect = () => { try { frame.contentWindow.postMessage({ type: 'oq-preview-connect' }, '*'); } catch (e) {} };
+    if (connectBtn) connectBtn.onclick = async () => {
+      // Apply the CURRENT edited options: reload only if they changed, then connect once loaded.
+      let u = ''; try { u = await sepPreviewUrl(g); } catch (e) {}
+      if (u && frame.src !== u) { frame.onload = () => { frame.onload = null; tellConnect(); }; frame.src = u; }
+      else tellConnect();
+      connectBtn.textContent = 'Reconnect';
+    };
+    const setExpanded = (on) => {
+      apprev.classList.toggle('expanded', on);
+      if (expandBtn) { expandBtn.setAttribute('aria-expanded', on ? 'true' : 'false'); expandBtn.textContent = on ? 'Collapse' : 'Expand'; }
+      fitApprevStage(apprev);
+      if (!on && expandBtn) { try { expandBtn.focus(); } catch (e) {} }
+    };
+    if (expandBtn) expandBtn.onclick = () => setExpanded(!apprev.classList.contains('expanded'));
+    if (!sepPreviewGlobalsBound) {
+      window.addEventListener('resize', () => { const a = document.querySelector('.apprev-sep'); if (a) fitApprevStage(a); });
+      window.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const a = document.querySelector('.apprev-sep.expanded'); if (!a) return;
+        a.classList.remove('expanded'); fitApprevStage(a);
+        const b = document.querySelector('.apprevExpand'); if (b) { b.setAttribute('aria-expanded', 'false'); b.textContent = 'Expand'; try { b.focus(); } catch (e2) {} }
+      });
+      sepPreviewGlobalsBound = true;
+    }
   }
   // Native button strip composited into the preview with the panel's own geometry (index.js
   // buildStrip: stripW = min(1100, cols\u00b7(480/rows)), left/right per gridAlign) and tile styling.
@@ -3277,7 +3357,8 @@
     clearTimeout(appPreviewTimer);
     appPreviewTimer = setTimeout(async () => {
       try {
-        // Separate-device apps render a placeholder (no iframe), so there's nothing to point here.
+        // Separate-device apps are driven by wireSepPreview (distinct _preview identity + explicit
+        // Connect); never re-point their frame from here (that would drop the identity/connection).
         if (appPreviewSeparateDevice(g.app)) return;
         const url = await configApi.appPreviewUrl({ app: g.app, options: g.options || {}, gridOn: !!g.gridOn, appearance: g.appearance, accent: g.accent });
         const f = document.querySelector('.apprevFrame');           // re-query: a re-render may have replaced it
