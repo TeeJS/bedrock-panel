@@ -76,7 +76,7 @@
       "id": "git-updater",
       "name": "git-updater",
       "description": "Panel front-end for git-updater: check and update your tracked Windows apps (portable & installed) straight from their GitHub releases. Shares its app list with the standalone git-updater — manage the list there, run updates from here.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "zip": "git-updater.zip",
       "server": true
     },
