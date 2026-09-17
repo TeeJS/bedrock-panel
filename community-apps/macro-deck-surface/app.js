@@ -24,8 +24,47 @@
 
   var HOST_RAW = (q.get('host') || '127.0.0.1:8191').trim();
   var CLIENT_ID = q.get('clientId') || 'Bedrock Panel';
-  var LONG_MS = parseInt(q.get('longPressMs'), 10);
-  if (!(LONG_MS > 0)) LONG_MS = 1000;
+  // Parse the same way the editor validates it (Number, not parseInt): parseInt('1e3')===1
+  // would run a saved 1000 as a 1ms hair-trigger. A MISSING value defaults to 1000; an
+  // explicitly SUPPLIED but invalid value (non-finite, non-integer, out of 100-10000) is a
+  // config error surfaced honestly (configError state) rather than silently run at a different
+  // delay -- the editor gates this, so it only happens on a hand-edited/legacy config.
+  var LONG_MS = 1000;
+  var LONG_MS_ERR = '';
+  (function () {
+    var raw = q.get('longPressMs');
+    if (raw == null) return;                     // absent -> default 1000
+    var s = String(raw).trim();                  // present-but-blank is invalid, like the editor's required field
+    if (s !== '') {
+      var n = Number(s);
+      if (isFinite(n) && Number.isInteger(n) && n >= 100 && n <= 10000) { LONG_MS = n; return; }
+    }
+    LONG_MS_ERR = 'Long-press delay must be a whole number from 100 to 10000 ms.';
+  })();
+  var LAYOUT_MODE = (q.get('layoutMode') === 'wide') ? 'wide' : 'mirror';   // default mirror
+
+  // Editor preview mode (MD-06): the editor passes a persisted, random preview id via _preview so
+  // this surface connects to the host as a SEPARATE, stable device — never the live panel's identity
+  // (which would collide) and never the editable Device name (which would churn per keystroke). In
+  // preview we DISABLE all macro dispatch and never auto-connect: the user clicks Connect first, and
+  // is told the device must be accepted on the host and its page may differ from the panel.
+  var PREVIEW = false;
+  var PREVIEW_BAD = false;
+  (function () {
+    var pv = q.get('_preview');
+    if (pv == null) return;
+    PREVIEW = true;
+    var id = String(pv).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
+    if (!id) { PREVIEW_BAD = true; return; }   // empty/invalid metadata: refuse, never a bare shared identity
+    var previewCid = 'Bedrock Panel Preview ' + id;
+    if (previewCid === (q.get('clientId') || 'Bedrock Panel')) { PREVIEW_BAD = true; return; }   // must differ from the panel's own identity
+    CLIENT_ID = previewCid;
+  })();
+
+  // MD-07 opt-in knob: manifest declares "knob":true so the panel routes the knob to window.oqKnob,
+  // but behaviour is gated by the advanced per-page option (?knob=1). Opted out (or in preview), the
+  // handler declines every gesture so the panel keeps its default knob behaviour.
+  var KNOB_ON = /^(1|true)$/i.test(q.get('knob') || '');
 
   var deck = document.getElementById('deck');
   var overlay = document.getElementById('overlay');
@@ -39,6 +78,9 @@
   var cfg = null;              // last GET_CONFIG payload (grid + display config)
   var initialConfig = false;   // host gate: ignore buttons until first GET_CONFIG
   var dispatchReady = false;   // no action dispatch until the first GET_BUTTONS
+  var knobSel = null;          // MD-07: id of the knob-selected key (null = no selection)
+  var uiState = '';            // current overlay/readiness state
+  var gridFits = true;         // do usable (>=48px) keys fit? set by layout()
   var tiles = {};              // "row_col" -> { el, icon, label }
   var wantOpen = true;
   var backoff = 1000;
@@ -49,12 +91,29 @@
 
   // ---- helpers ------------------------------------------------------------
 
+  // Build the client WebSocket URL. Preserves a secure scheme (never silently
+  // downgrades wss/https), strips any path/query/hash (the client WS is at root),
+  // accepts bracketed IPv6, defaults the port to 8191, and returns '' for input we
+  // can't safely parse (→ the 'invalid' state, not an endless reconnect).
   function wsUrl(hostText) {
-    var t = String(hostText || '').trim();
-    t = t.replace(/^wss?:\/\//i, '').replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    var t = String(hostText == null ? '' : hostText).trim();
     if (!t) t = '127.0.0.1:8191';
-    if (!/:\d+$/.test(t)) t += ':8191';   // default Macro Deck port
-    return 'ws://' + t;
+    var secure = /^(wss|https):\/\//i.test(t);
+    t = t.replace(/^wss?:\/\//i, '').replace(/^https?:\/\//i, '');
+    if (t.indexOf('@') !== -1) return '';           // embedded credentials → reject
+    var mm = t.match(/^([^\/?#]*)([\/?#].*)?$/);
+    var authority = mm[1], rest = mm[2] || '';
+    if (rest && rest !== '/') return '';            // non-root path/query/hash → reject (don't pretend it was honored)
+    if (!authority || /\s/.test(authority)) return '';
+    var host, port;
+    var m6 = authority.match(/^\[([^\]]+)\](?::(\d+))?$/);   // [ipv6] or [ipv6]:port
+    if (m6) { host = '[' + m6[1] + ']'; port = m6[2]; }
+    else if ((authority.match(/:/g) || []).length > 1) { return ''; }   // bare IPv6 is ambiguous
+    else { var p = authority.split(':'); host = p[0]; port = p[1]; }
+    if (!host) return '';
+    if (port != null && port !== '' && !/^\d+$/.test(port)) return '';
+    if (!port) port = '8191';
+    return (secure ? 'wss://' : 'ws://') + host + ':' + port;
   }
 
   // The host's client hardcodes a data:image/jpg URI, but payloads are raw base64
@@ -76,6 +135,7 @@
   // (non-focusable, hidden from AT) so Tab and screen readers never reach keys
   // under the overlay.
   function setState(state) {
+    uiState = state;
     if (reconnectAdviceTimer) { clearTimeout(reconnectAdviceTimer); reconnectAdviceTimer = null; }
     var ready = (state === 'ready');
     deck.inert = !ready;
@@ -87,9 +147,11 @@
       return;
     }
     deck.setAttribute('aria-hidden', 'true');
+    clearKnobSel();   // a knob selection is only valid on the interactive (ready) deck
 
     overlay.className = 'overlay state-' + state;
     ovRetry.hidden = true;
+    ovRetry.textContent = 'Retry connection';
     ovHost.textContent = '';
     ovMsg.textContent = '';
     switch (state) {
@@ -116,6 +178,10 @@
         ovHost.textContent = HOST_RAW;
         ovRetry.hidden = false;
         break;
+      case 'toodense':
+        ovTitle.textContent = 'Too many buttons to show';
+        ovMsg.textContent = 'This page has more keys than fit at a usable size. Use fewer rows and columns for this page in Macro Deck.';
+        break;
       case 'reconnect':
         ovTitle.textContent = 'Connection lost';
         ovHost.textContent = HOST_RAW;
@@ -130,6 +196,24 @@
         // The address is immutable here, so Retry can't help — send them to edit it.
         ovMsg.textContent = 'Edit the host address in the Bedrock editor.';
         ovHost.textContent = HOST_RAW;
+        break;
+      case 'configError':
+        // A supplied option is invalid; not silently defaulted. Correction path is the editor.
+        ovTitle.textContent = 'Check the long-press delay';
+        ovMsg.textContent = LONG_MS_ERR + ' Edit it in the Bedrock editor.';
+        break;
+      case 'previewBad':
+        // A preview was requested without a valid identity; refuse rather than use a shared name.
+        ovTitle.textContent = 'Preview unavailable';
+        ovMsg.textContent = 'This preview didn’t receive a valid identity.';
+        break;
+      case 'previewIdle':
+        // Preview never auto-connects: the user opts in, and is told it's a separate device.
+        ovTitle.textContent = 'Preview — separate device';
+        ovMsg.textContent = 'Connects to the Macro Deck host as “' + CLIENT_ID + '”. Accept it on the host the first time. Its page may differ from the panel, and taps are disabled here.';
+        ovHost.textContent = HOST_RAW;
+        ovRetry.hidden = false;
+        ovRetry.textContent = 'Connect preview';
         break;
     }
     announce(ovTitle.textContent);
@@ -149,20 +233,38 @@
   }
   // After an incremental change, re-decide ready vs empty (so the first button
   // added to a previously-empty page becomes usable, and vice versa).
+  // A definitive GET_BUTTONS response resolves the content state from ANY prior
+  // state (including loadfail / reconnect), so a late success always recovers.
+  function resolveLoaded() {
+    if (!gridFits) { setState('toodense'); return; }   // can't show usable keys
+    setState(countAssigned() > 0 ? 'ready' : 'empty');
+  }
+  // Incremental re-evaluation (UPDATE_BUTTON / resize): only from a content or
+  // loading context, never overriding a connection overlay.
   function reconcileReady() {
     if (!dispatchReady) return;
-    setState(countAssigned() > 0 ? 'ready' : 'empty');
+    if (uiState !== 'loading' && uiState !== 'ready' && uiState !== 'empty' && uiState !== 'toodense') return;
+    resolveLoaded();
   }
 
   // ---- layout & rendering -------------------------------------------------
 
+  function clampInt(v, lo, hi, dflt) {
+    v = (typeof v === 'number' && isFinite(v)) ? Math.floor(v) : dflt;
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  // Bound malformed/hostile geometry so we never make negative sizes or a huge DOM.
   function gridDims() {
     return {
-      rows: (cfg && cfg.Rows > 0) ? cfg.Rows : 3,
-      cols: (cfg && cfg.Columns > 0) ? cfg.Columns : 5,
-      gap: (cfg && typeof cfg.ButtonSpacing === 'number') ? cfg.ButtonSpacing : 10
+      rows: (cfg && cfg.Rows > 0) ? clampInt(cfg.Rows, 1, 32, 3) : 3,
+      cols: (cfg && cfg.Columns > 0) ? clampInt(cfg.Columns, 1, 32, 5) : 5,
+      gap: (cfg && typeof cfg.ButtonSpacing === 'number' && cfg.ButtonSpacing >= 0)
+        ? Math.min(cfg.ButtonSpacing, 64) : 10
     };
   }
+
+  var MIN_KEY = 48;   // usable touch target
 
   function layout() {
     if (!cfg) return;
@@ -172,15 +274,29 @@
     var W = window.innerWidth, H = window.innerHeight;
     var availW = W - outer * 2 - deckPad * 2 - d.gap * (d.cols - 1);
     var availH = H - outer * 2 - deckPad * 2 - d.gap * (d.rows - 1);
-    var size = Math.max(48, Math.floor(Math.min(availH / d.rows, availW / d.cols)));
 
-    deck.style.gridTemplateColumns = 'repeat(' + d.cols + ', ' + size + 'px)';
-    deck.style.gridTemplateRows = 'repeat(' + d.rows + ', ' + size + 'px)';
+    var cellW, cellH;
+    if (LAYOUT_MODE === 'wide') {
+      // Rectangular cells filling width and height independently. Image layers keep
+      // their proportions via object-fit:contain (letterboxed, never stretched).
+      cellW = Math.floor(availW / d.cols);
+      cellH = Math.floor(availH / d.rows);
+    } else {
+      cellW = cellH = Math.floor(Math.min(availW / d.cols, availH / d.rows));  // square
+    }
+
+    // Record whether usable (>=48px) targets fit; reconcileReady() turns this into
+    // the 'toodense' explanatory state (vs silently clipping). Sizes never go < 48.
+    gridFits = (cellW >= MIN_KEY && cellH >= MIN_KEY);
+    var w = Math.max(MIN_KEY, cellW), h = Math.max(MIN_KEY, cellH);
+    deck.style.gridTemplateColumns = 'repeat(' + d.cols + ', ' + w + 'px)';
+    deck.style.gridTemplateRows = 'repeat(' + d.rows + ', ' + h + 'px)';
     deck.style.gap = d.gap + 'px';
 
-    var radius = (cfg && typeof cfg.ButtonRadius === 'number')
-      ? Math.min(cfg.ButtonRadius, size / 2)
-      : Math.round(size * 0.14);
+    var minDim = Math.min(w, h);
+    var radius = (cfg && typeof cfg.ButtonRadius === 'number' && cfg.ButtonRadius >= 0)
+      ? Math.min(cfg.ButtonRadius, minDim / 2)
+      : Math.round(minDim * 0.14);
     document.documentElement.style.setProperty('--tile-radius', radius + 'px');
   }
 
@@ -190,6 +306,7 @@
     cancelPress();            // close any held gesture before its element is torn down
     deck.textContent = '';
     tiles = {};
+    knobSel = null;           // selection is meaningless once the keys are torn down
     if (!cfg) return;
     layout();
     var d = gridDims();
@@ -261,6 +378,9 @@
 
   // Send only if this is still the live socket (never a replacement session).
   function sendTo(sock, obj) {
+    // Preview never dispatches: drop every BUTTON_* frame at the single choke point so pointer,
+    // keyboard, AT-click and knob paths are all read-only. Handshake/config frames still flow.
+    if (PREVIEW && obj && typeof obj.Method === 'string' && obj.Method.lastIndexOf('BUTTON_', 0) === 0) return;
     if (sock && sock === ws && sock.readyState === 1) {
       try { sock.send(JSON.stringify(obj)); } catch (e) {}
     }
@@ -360,6 +480,70 @@
     });
   }
 
+  // ---- knob (opt-in generic drop-in capability) ---------------------------
+  // Turn moves a highlight across the ASSIGNED keys (row-major, empties skipped, wrapping); a single
+  // click reveals the first key when nothing is selected yet, or presses the selected key; double
+  // click and hold are declined so the panel keeps its default behaviour there. Activation goes
+  // through the normal BUTTON_* path, so it is automatically read-only in preview.
+  function assignedIds() {
+    var d = gridDims(), out = [];
+    for (var y = 0; y < d.rows; y++) for (var x = 0; x < d.cols; x++) {
+      var id = keyId(x, y), t = tiles[id];
+      if (t && !t.el.classList.contains('empty')) out.push(id);
+    }
+    return out;
+  }
+  function clearKnobSel() {
+    if (knobSel && tiles[knobSel]) tiles[knobSel].el.classList.remove('knobsel');
+    knobSel = null;
+  }
+  function setKnobSel(id) {
+    clearKnobSel();
+    knobSel = id;
+    var t = tiles[id];
+    if (t) { t.el.classList.add('knobsel'); try { t.el.focus(); } catch (e) {} announce(t.el.getAttribute('aria-label') || 'Key selected'); }
+  }
+  // Drop a selection that no longer points at a live assigned key (e.g. after a button update).
+  function reconcileKnobSel() {
+    if (knobSel && (!tiles[knobSel] || tiles[knobSel].el.classList.contains('empty'))) clearKnobSel();
+  }
+  // Only interactive when the deck itself is (state ready + a live open socket). This mirrors the
+  // deck.inert gate that the pointer/keyboard paths get for free; oqKnob is called programmatically,
+  // so it must check explicitly or it would navigate/dispatch under a reconnect/too-dense overlay.
+  function knobInteractive() { return uiState === 'ready' && ws && ws.readyState === 1; }
+  function knobRotate(dir) {
+    if (!knobInteractive()) { clearKnobSel(); return false; }
+    var ids = assignedIds();
+    if (!ids.length) { clearKnobSel(); return false; }    // nothing to navigate -> decline to panel
+    var i = ids.indexOf(knobSel);
+    if (i < 0) i = (dir > 0 ? 0 : ids.length - 1);        // first turn: CW -> first, CCW -> last
+    else i = (i + dir + ids.length) % ids.length;         // otherwise step and wrap
+    setKnobSel(ids[i]);
+    return true;
+  }
+  function knobPress() {
+    if (!knobInteractive()) { clearKnobSel(); return false; }
+    var ids = assignedIds();
+    if (!ids.length) return false;                        // empty page -> decline
+    if (knobSel == null || !tiles[knobSel] || tiles[knobSel].el.classList.contains('empty')) {
+      setKnobSel(ids[0]);                                 // no visible selection -> reveal first, do NOT fire
+      return true;
+    }
+    if (press) return true;                               // a pointer/key gesture is mid-flight: consume, never interleave
+    // Route the activation through the ONE centralized, socket-bound controller so it shares the
+    // single-gesture guard, pressed state and timer teardown -> exactly one BUTTON_PRESS + RELEASE.
+    startPress(tiles[knobSel].el, 'knob', null, null);
+    if (press && press.source === 'knob') finishPress();
+    return true;
+  }
+  // Manifest routes the knob here; decline everything unless the user opted in and we're not a preview.
+  window.oqKnob = function (ev) {
+    if (!KNOB_ON || PREVIEW || !ev) return false;
+    if (ev.type === 'rotate') return knobRotate(ev.dir > 0 ? 1 : -1);
+    if (ev.type === 'press' && ev.index === 1) return knobPress();
+    return false;   // double click (index 2), hold (start/end), and anything else -> panel default
+  };
+
   // ---- protocol -----------------------------------------------------------
 
   function handle(msg) {
@@ -382,14 +566,15 @@
         if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
         renderButtons(msg.Buttons);
         dispatchReady = true;       // a valid (even empty) response completes loading
-        // Use actually-rendered keys, not raw list length, so an all-invalid /
-        // out-of-grid list can't look ready.
-        setState(countAssigned() > 0 ? 'ready' : 'empty');
+        // A definitive response resolves the state from any prior state (incl. a
+        // late arrival after loadfail); uses rendered keys + fit, not list length.
+        resolveLoaded();
         break;
       case 'UPDATE_BUTTON':
         if (!initialConfig) return;
         if (msg.Buttons && msg.Buttons[0]) applyButton(msg.Buttons[0]);
         reconcileReady();           // first button on an empty page becomes usable
+        reconcileKnobSel();         // drop a knob selection that a button change invalidated
         break;
       case 'UPDATE_LABEL':
         if (!initialConfig) return;
@@ -425,6 +610,8 @@
     // back to 'connecting'/'accept' on every attempt.
     var reconnecting = outageStart > 0;
 
+    if (PREVIEW_BAD) { wantOpen = false; setState('previewBad'); return; }    // no valid preview identity: never connect with a shared name
+    if (LONG_MS_ERR) { wantOpen = false; setState('configError'); return; }   // bad option: don't run at a wrong delay
     var url = wsUrl(HOST_RAW);
     if (!url) { wantOpen = false; setState('invalid'); return; }   // malformed address: no loop
     if (!reconnecting) setState('connecting');
@@ -461,8 +648,9 @@
     backoff = Math.min(Math.round(backoff * 1.7), 15000);
   }
 
-  window.addEventListener('resize', function () { if (cfg) layout(); });
+  window.addEventListener('resize', function () { if (cfg) { layout(); reconcileReady(); } });
 
   setupInput();
-  connect();
+  if (PREVIEW) { document.body.classList.add('preview'); setState(PREVIEW_BAD ? 'previewBad' : 'previewIdle'); }
+  else connect();
 })();

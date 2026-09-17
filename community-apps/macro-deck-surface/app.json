@@ -1,10 +1,15 @@
 {
   "id": "macro-deck-surface",
   "name": "Macro Deck Surface",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Turn the panel into a Macro Deck surface: renders a Macro Deck host's live button page and sends taps, long-presses and releases back over its client WebSocket.",
   "entry": "index.html",
   "served": true,
+  "knob": true,
+  "preview": {
+    "separateDevice": true,
+    "note": "Live preview is disabled for this app to avoid opening an additional connection to Macro Deck. Save and apply your settings, then view the page on your panel."
+  },
   "options": [
     {
       "key": "host",
@@ -21,11 +26,31 @@
       "help": "Name this surface shows as on the Macro Deck host when you accept it."
     },
     {
+      "key": "layoutMode",
+      "label": "Key shape",
+      "type": "select",
+      "default": "mirror",
+      "choices": [["mirror", "Square keys (host layout)"], ["wide", "Wide rectangular keys"]],
+      "help": "Square keys match the Macro Deck host and are recommended. Wide changes key shape to fill the panel width; artwork is not stretched."
+    },
+    {
       "key": "longPressMs",
-      "label": "Long-press (ms)",
-      "type": "text",
+      "label": "Long-press delay (ms)",
+      "type": "number",
+      "min": 100,
+      "max": 10000,
+      "step": 1,
       "default": "1000",
-      "help": "How long a key must be held before a long-press action is sent."
+      "advanced": true,
+      "help": "How long a key must be held before a long-press action is sent (100–10000)."
+    },
+    {
+      "key": "knob",
+      "label": "Knob key navigation",
+      "type": "bool",
+      "default": false,
+      "advanced": true,
+      "help": "When on, the panel knob moves a highlight across the assigned keys (turn) and presses the highlighted key (click). Double-click and hold keep their normal panel behavior."
     }
   ]
 }

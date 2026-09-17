@@ -42,6 +42,10 @@ body {
   padding: 18px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .04);
 }
+/* Lighter, less heavy deck shadow in the light theme. */
+body.light #deck {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .16), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
 
 /* Every grid cell is drawn as a key so the surface reads as a deck. */
 .tile {
@@ -83,6 +87,13 @@ body {
 .ov-retry:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px #0b0e13, 0 0 0 6px #f4f7fb;
+}
+/* Knob selection ring: FORCED (not tied to :focus-visible, which programmatic focus won't trigger)
+   and accent-coloured so it reads distinctly from the white keyboard-focus ring. */
+.tile.knobsel {
+  outline: none;
+  box-shadow: 0 0 0 3px #0b0e13, 0 0 0 6px var(--accent), 0 3px 8px rgba(0, 0, 0, .4);
+  z-index: 1;
 }
 /* Empty slots are disabled buttons — reset the UA disabled dimming to our tokens. */
 .tile:disabled { cursor: default; opacity: 1; }
@@ -142,7 +153,21 @@ body {
 /* Non-spinner states: an empty page and an invalid address are steady, not loading. */
 .overlay.state-empty .ov-icon,
 .overlay.state-invalid .ov-icon,
-.overlay.state-loadfail .ov-icon { display: none; }
+.overlay.state-loadfail .ov-icon,
+.overlay.state-toodense .ov-icon,
+.overlay.state-configError .ov-icon,
+.overlay.state-previewIdle .ov-icon,
+.overlay.state-previewBad .ov-icon { display: none; }
+
+/* Preview mode: a persistent, unobtrusive badge so a connected preview is never mistaken for the
+   live panel. Non-interactive; sits above the deck but never blocks touch. */
+body.preview::after {
+  content: 'PREVIEW';
+  position: fixed; top: 10px; right: 12px; z-index: 5;
+  padding: 3px 10px; border-radius: 999px;
+  font: 600 13px/1 "Segoe UI", system-ui, sans-serif; letter-spacing: .08em;
+  color: #0b0e13; background: #f2c21b; pointer-events: none;
+}
 
 .ov-host { font-size: 18px; color: var(--muted); opacity: .85; word-break: break-all; }
 
