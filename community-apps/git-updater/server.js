@@ -3,16 +3,16 @@
 // git-updater drop-in backend — a thin adapter over the vendored engine (engine/,
 // see engine/VENDORED.md). Runs in the Bedrock Panel host's main process.
 //
-// Shares config/state/logs with the STANDALONE git-updater at %APPDATA%\git-updater\:
-// the tracked-app list is managed there; this app checks and applies updates from the
-// panel. Concurrent runs are safe — the engine's cross-process pid lock (state.js)
-// makes a simultaneous standalone run wait instead of corrupting state.
+// Shares config/state/logs with the STANDALONE git-updater, in whatever directory that
+// app uses on this OS (engine/paths.js): the tracked-app list is managed there; this app
+// checks and applies updates from the panel. Concurrent runs are safe — the engine's
+// cross-process pid lock (state.js) makes a simultaneous standalone run wait instead of
+// corrupting state.
 //
 // Bridge contract: the page calls /app-api/<action> -> handle(action, {query, body}).
 // check/update start an async batch and return immediately; the page polls `status`.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const core = require('./engine/core');
@@ -21,10 +21,12 @@ const state = require('./engine/state');
 const detect = require('./engine/detect');
 const github = require('./engine/github');
 const catalog = require('./engine/catalog');
+const paths = require('./engine/paths');
 const { log } = require('./engine/log');
 
-const DATA_DIR = path.join(process.env.APPDATA || os.homedir(), 'git-updater');
-const CONFIG_PATH = process.env.GITUPDATER_CONFIG || path.join(DATA_DIR, 'config.json');
+// The engine owns where git-updater's files live per OS — resolving it here too would
+// mean the config went somewhere the state and the logs did not.
+const CONFIG_PATH = process.env.GITUPDATER_CONFIG || path.join(paths.configDir(), 'config.json');
 
 function readConfig() {
   if (!fs.existsSync(CONFIG_PATH)) return { portableRoot: '', repos: [] };
@@ -67,9 +69,41 @@ function applyResults(results, mode) {
   for (const r of results) {
     if (r.status === 'failed') setPh(r.id, { ph: 'failed', reason: r.reason, from: r.from, to: r.to });
     else if (r.status === 'current') setPh(r.id, { ph: 'current', from: r.from, to: r.to });
-    else if (mode === 'check') setPh(r.id, { ph: 'available', from: r.from, to: r.to });
+    else if (mode === 'check') setPh(r.id, { ph: 'available', from: r.from, to: r.to, note: r.note });
     else setPh(r.id, { ph: 'updated', from: r.to, to: r.to, note: r.note });
   }
+}
+
+// A check can discover that an app typed as an installer publishes no installer for this
+// OS, and correct it to portable (retypeIfNoInstaller in engine/runner.js). The runner only
+// decides; persisting is ours, exactly as the standalone's main process does it — otherwise
+// the correction is made again on every check and never sticks. Never silent: the status
+// entry carries the engine's note, and it is logged.
+function applyRetypes(results) {
+  const changes = (results || []).filter((r) => r.retyped && r.retyped.to === 'portable');
+  if (!changes.length) return;
+  const cfg = readConfig();
+  const hits = [];
+  for (const r of changes) {
+    const m = /^([^/]+)\/([^/]+)#(.+)$/.exec(r.id || '');
+    if (!m) continue;
+    const [, owner, repo, type] = m;
+    // Already tracked as portable: correcting would create a duplicate entry. Leave the
+    // installer entry alone and let the user untrack it.
+    if ((cfg.repos || []).some((x) => x.owner === owner && x.repo === repo && x.type === 'portable')) continue;
+    const entry = (cfg.repos || []).find((x) => x.owner === owner && x.repo === repo && x.type === type);
+    if (!entry) continue;
+    entry.type = 'portable';
+    entry.install = { ...(entry.install || {}), dir: r.retyped.dir };
+    // The page reloads its list when the batch ends, so move the status across to the key
+    // that list will return — otherwise the row comes back blank and the note is lost.
+    status[`${owner}/${repo}#portable`] = status[r.id];
+    delete status[r.id];
+    hits.push(`${owner}/${repo}`);
+  }
+  if (!hits.length) return;
+  saveConfigFile(cfg);
+  log(`dropin retyped to portable (no installer published): ${hits.join(', ')}`);
 }
 
 async function runBatch(mode, only, force) {
@@ -79,11 +113,13 @@ async function runBatch(mode, only, force) {
   const onProgress = (id, phase, pct) => setPh(id, { ph: phase, pct });
   try {
     if (mode === 'update') lock = state.acquireLock();
-    // ShellExecute via Electron so an interactive installer's UAC manifest works —
-    // the window opens on the PC, same as standalone.
+    // Hand the file to the OS so an interactive installer runs the way it expects:
+    // ShellExecute on Windows (its UAC manifest works), Installer.app on macOS, the
+    // desktop's package installer on Linux. The window opens on the PC, same as standalone.
     const openFile = (f) => { try { require('electron').shell.openPath(f); } catch (e) { log(`dropin openFile: ${e.message}`); } };
     const { results } = await runner.run(config, { mode: mode === 'check' ? 'check' : undefined, only, force: !!force, onProgress, openFile });
     applyResults(results, mode);
+    if (mode === 'check') applyRetypes(results);
   } catch (e) {
     log(`dropin ${mode} batch: ${e.message || e}`);
     keys.forEach((k) => { if (!status[k] || ['queued', 'checking', 'downloading', 'verifying', 'installing'].includes(status[k].ph)) setPh(k, { ph: 'failed', reason: String(e.message || e) }); });
@@ -105,7 +141,7 @@ exports.handle = async function handle(action, ctx) {
   const body = ctx && ctx.body ? JSON.parse(ctx.body.toString('utf8') || '{}') : {};
 
   if (action === 'list') {
-    detect.clearCache(); // fresh registry scan — an install may have just changed versions
+    detect.clearCache(); // fresh inventory scan — an install may have just changed versions
     const cfg = readConfig();
     const stt = state.load();
     const apps = [];
@@ -113,7 +149,7 @@ exports.handle = async function handle(action, ctx) {
       const key = appKey(r);
       let current = null; let present = false;
       if (r.type === 'installer') {
-        try { current = await detect.registryVersion(r.detect || r.repo); } catch {}
+        try { current = await detect.installedVersion(r.detect || r.repo); } catch {}
         present = !!current;
       } else {
         const rec = stt[key];
@@ -122,7 +158,7 @@ exports.handle = async function handle(action, ctx) {
       }
       apps.push({ key, owner: r.owner, repo: r.repo, type: r.type, prerelease: !!r.prerelease, current, present });
     }
-    return { ok: true, portableRoot: cfg.portableRoot || '', apps, status, running, batchMode };
+    return { ok: true, platform: process.platform, portableRoot: cfg.portableRoot || '', apps, status, running, batchMode };
   }
 
   if (action === 'status') return { ok: true, status, running, batchMode };

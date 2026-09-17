@@ -3,7 +3,7 @@
 // Pure logic, no IO. Every unit test lives against this file.
 
 // ---------------------------------------------------------------------------
-// Version compare — ported from Bedrock Panel app/appRepo.js cmpVersion(), plus
+// Version compare — ported from open-quake app/appRepo.js cmpVersion(), plus
 // leading-"v" strip and prerelease handling.
 // ---------------------------------------------------------------------------
 
@@ -17,13 +17,28 @@ function normTag(t) {
 
 // { nums:[1,2,0], pre:'rc1' } from "v1.2.0-rc1". Build metadata ("+abc") is
 // dropped: per semver it does not affect precedence.
+const nums = (s) => s.split('.').map((x) => parseInt(x, 10) || 0);
+
 function splitVer(t) {
   let s = normTag(t);
   const plus = s.indexOf('+');
   if (plus >= 0) s = s.slice(0, plus);
+  // A trailing "(build)" is Apple's own display convention — CFBundleShortVersionString
+  // followed by CFBundleVersion, e.g. Zoom reports "7.1.5 (84650)". It is metadata, not
+  // precedence, exactly like the "+build" above, and it is stripped for the same reason.
+  // Doing it BEFORE the match rather than in the fallback below keeps any prerelease:
+  // "1.2.3-rc1 (build 5)" still parses as 1.2.3-rc1.
+  s = s.replace(/\s*\([^)]*\)\s*$/, '');
   const m = s.match(/^(\d+(?:\.\d+)*)(?:-(.*))?$/);
-  if (!m) return { nums: [0], pre: '' };
-  return { nums: m[1].split('.').map((x) => parseInt(x, 10) || 0), pre: m[2] || '' };
+  if (m) return { nums: nums(m[1]), pre: m[2] || '' };
+  // Anything still unparseable. Returning zero here — which is what this used to do —
+  // reads as "older than every release", so the row says an update is available, the
+  // user installs it, the version string does not change, and the row never clears.
+  // That is the permanent update-available state 67c8c9e fixed once already, reachable
+  // through any unrecognised shape. The leading numeric run is a far better guess:
+  // "1.2.3 build 9" is version 1.2.3, not version 0.
+  const lead = s.match(/^(\d+(?:\.\d+)*)/);
+  return lead ? { nums: nums(lead[1]), pre: '' } : { nums: [0], pre: '' };
 }
 
 function cmpNums(a, b) {
@@ -56,17 +71,24 @@ function naturalCmp(a, b) {
   return 0;
 }
 
-// Some apps prefix the registry DisplayVersion with another product's version —
-// Brave: "152.1.94.117" = Chromium 152 + Brave 1.94.117, while release tags are plain
-// "1.94.117". When the installed version has MORE numeric parts than the tag scheme,
-// return its trailing parts in the tag's scheme; else null.
+// Some apps pad the registry DisplayVersion with extra parts that the release tag lacks —
+// a PREFIX (Brave: "152.1.94.117" = Chromium 152 + Brave 1.94.117, tag "1.94.117") or a
+// SUFFIX (Tesseract: "5.5.3.20260724" = 5.5.3 + build date, tag "5.5.3"). When the
+// installed version has MORE numeric parts than the tag scheme, return the leading or
+// trailing parts in the tag's scheme — whichever matches the tag best (exact match, then
+// longest shared prefix; tie -> trailing); else null.
 function alignInstalledVersion(installed, latest) {
   const i = splitVer(installed);
   const l = splitVer(latest);
-  if (l.nums.length >= 2 && i.nums.length > l.nums.length) {
-    return i.nums.slice(-l.nums.length).join('.');
-  }
-  return null;
+  if (l.nums.length < 2 || i.nums.length <= l.nums.length) return null;
+  const leading = i.nums.slice(0, l.nums.length);
+  const trailing = i.nums.slice(-l.nums.length);
+  const shared = (nums) => {
+    let n = 0;
+    while (n < nums.length && nums[n] === l.nums[n]) n++;
+    return n;
+  };
+  return (shared(leading) > shared(trailing) ? leading : trailing).join('.');
 }
 
 // >0 if a is newer than b. Handles "1.2" == "1.2.0" and prerelease < release.
@@ -120,75 +142,44 @@ function matchAsset(assets, pattern) {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-pick the right Windows asset from a release, given only "portable" or
-// "installer". This is the app doing the work so the user never picks files.
+// Auto-pick the right asset for THIS platform from a release, given only
+// "portable" or "installer". This is the app doing the work so the user never
+// picks files. The per-platform extension sets, reject regexes, architecture
+// tokens and scoring bonuses all live in src/platform/assets.js — that module is
+// pure data, so this file keeps its "no IO" guarantee.
 // ---------------------------------------------------------------------------
 
-const NON_WINDOWS =
-  /\.(deb|rpm|dmg|pkg|appimage|apk|snap|flatpak|tar\.gz|tgz|tar\.xz|tar\.bz2)$|(?:^|[-_.])(linux|darwin|mac(?:os)?|osx|x11|android|freebsd|source)(?:[-_.0-9]|$)/i;
-// Portable can be an archive OR a single portable .exe (e.g. app-portable.exe).
-const PORTABLE_EXT = /\.(zip|7z|exe)$/i;
-const INSTALLER_EXT = /\.(exe|msi)$/i;
-const SETUP_TOKEN = /(setup|install(er)?|_inst|-inst)/i;
+const { assetTable, macCompanionZips } = require('./platform/assets');
 
 // arch: machine architecture ('x64' | 'arm64' | 'ia32'). flavor: how the app is
-// ALREADY installed ('msi' | 'exe' | null) — strongly prefer the same flavor so an
-// update upgrades in place instead of installing a duplicate side-by-side.
-function scoreAsset(name, type, arch, flavor) {
-  if (NON_WINDOWS.test(name)) return -Infinity;
-  if (!(type === 'installer' ? INSTALLER_EXT : PORTABLE_EXT).test(name)) return -Infinity;
-  let s = 0;
-  if (/win(dows|64|32)?/i.test(name)) s += 4;
-  const isX64 = /(x64|amd64|x86[_-]?64|win64)/i.test(name);
-  const isArm = /(arm64|aarch64|arm)/i.test(name);
-  const isX86 = /(x86|ia32|win32|32-?bit)/i.test(name) && !isX64;
-  // Prefer the file matching the running machine's architecture; penalize mismatches.
-  if (arch === 'arm64') {
-    if (isArm) s += 3;
-    else if (isX64) s -= 1; // x64 runs on arm64 Windows via emulation, so mild penalty only
-    else if (isX86) s -= 1;
-  } else if (arch === 'ia32') {
-    if (isX86) s += 3;
-    else if (isX64) s -= 6;
-    else if (isArm) s -= 6;
-  } else {
-    // x64 (default)
-    if (isX64) s += 3;
-    else if (isArm) s -= 6;
-    else if (isX86) s += 1;
-  }
-  // Portable vs installer both can be .exe, so disambiguate by name tokens:
-  // portable wants a "portable" build and must AVOID a setup/installer; vice versa.
-  if (type === 'portable') {
-    if (/portable/i.test(name)) s += 3;
-    if (SETUP_TOKEN.test(name)) s -= 5; // a setup.exe is NOT the portable build
-    if (/\.zip$/i.test(name)) s += 2; // archives extract cleanly; a bare .exe is placed as-is
-    else if (/\.7z$/i.test(name)) s += 1;
-  } else {
-    if (SETUP_TOKEN.test(name)) s += 2;
-    if (/portable/i.test(name)) s -= 5; // a portable.exe is NOT the installer
-    if (flavor === 'exe') {
-      // Already EXE-installed: an MSI would install side-by-side, not upgrade. Avoid it.
-      if (/\.msi$/i.test(name)) s -= 6;
-      else if (/\.exe$/i.test(name)) s += 2;
-    } else {
-      // MSI-installed or fresh install: prefer .msi (silent via msiexec, upgrades in place).
-      if (/\.msi$/i.test(name)) s += 2;
-      else if (/\.exe$/i.test(name)) s += 1;
-    }
-  }
-  return s;
+// ALREADY installed (Windows 'msi' | 'exe', Linux 'deb' | 'rpm', or null) — strongly
+// prefer the same flavor so an update upgrades in place instead of installing a
+// duplicate side-by-side. table: from assetTable(), defaults to the running platform.
+function scoreAsset(name, type, arch, flavor, table) {
+  const t = table || assetTable();
+  if (t.reject.test(name)) return -Infinity;
+  if (!(type === 'installer' ? t.ext.installer : t.ext.portable).test(name)) return -Infinity;
+  // Reward naming this platform, then how well the architecture matches the running
+  // machine, then the format/flavor preferences that separate portable from installer.
+  return t.osBonus(name) + t.archScore(t.archTokens(name), arch) + t.typeScore(name, type, flavor);
 }
 
-// Returns the best-matching asset object, or throws if the release has none for Windows.
-// arch defaults to the running machine's architecture.
-function pickWindowsAsset(assets, type, arch, flavor) {
-  const list = assets || [];
+// Returns the best-matching asset object, or throws if the release has none for the
+// platform. arch defaults to the running machine's architecture, platform to the
+// running OS ('win32' | 'darwin' | 'linux').
+function pickAsset(assets, type, arch, flavor, platform) {
+  const table = assetTable(platform);
+  // Off macOS, drop a .zip that is the companion of a .dmg — it is the macOS bundle, and
+  // nothing in its NAME says so. See macCompanionZips for why this cannot be a reject
+  // pattern. Windows and Linux only: on macOS that zip is a legitimate candidate.
+  const all = assets || [];
+  const drop = table.id === 'darwin' ? new Set() : macCompanionZips(all.map((a) => a.name));
+  const list = drop.size ? all.filter((a) => !drop.has(a.name)) : all;
   const a4 = arch || (typeof process !== 'undefined' && process.arch) || 'x64';
   let best = null;
   let bestScore = -Infinity;
   for (const a of list) {
-    const sc = scoreAsset(a.name, type, a4, flavor);
+    const sc = scoreAsset(a.name, type, a4, flavor, table);
     if (sc === -Infinity) continue;
     if (sc > bestScore || (sc === bestScore && best && a.name.length < best.name.length)) {
       best = a;
@@ -199,7 +190,7 @@ function pickWindowsAsset(assets, type, arch, flavor) {
     // If the OTHER package type would match, the app just isn't shipped this way —
     // point the user at the fix instead of a dead end.
     const other = type === 'installer' ? 'portable' : 'installer';
-    const otherHit = list.some((a) => scoreAsset(a.name, other, a4, null) !== -Infinity);
+    const otherHit = list.some((a) => scoreAsset(a.name, other, a4, null, table) !== -Infinity);
     if (otherHit) {
       throw new Error(
         type === 'installer'
@@ -207,37 +198,75 @@ function pickWindowsAsset(assets, type, arch, flavor) {
           : 'this app only ships an installer — Edit the app and change its type to Installer'
       );
     }
-    throw new Error(`no Windows ${type} asset in release. Assets: ${list.map((a) => a.name).join(', ') || '(none)'}`);
+    throw new Error(
+      `no ${table.label} ${type} asset in release. Assets: ${list.map((a) => a.name).join(', ') || '(none)'}`
+    );
   }
   return best;
 }
 
-// exe -> nsis (/S), msi -> msi. Overridable via install.kind in config.json.
+// Always picks a WINDOWS asset regardless of the running OS. Kept so the Windows
+// behaviour (and its test suite) stays pinned and platform-independent.
+function pickWindowsAsset(assets, type, arch, flavor) {
+  return pickAsset(assets, type, arch, flavor, 'win32');
+}
+
+// Fallback silent-install kind when the file's bytes can't identify it.
+// Windows: .msi -> msi, else nsis. macOS: .pkg. Linux: by extension.
 function guessKind(assetName) {
-  return /\.msi$/i.test(assetName) ? 'msi' : 'nsis';
+  if (/\.msi$/i.test(assetName)) return 'msi';
+  if (/\.pkg$/i.test(assetName)) return 'pkg';
+  if (/\.deb$/i.test(assetName)) return 'deb';
+  if (/\.rpm$/i.test(assetName)) return 'rpm';
+  return 'nsis';
 }
 
 // ---------------------------------------------------------------------------
 // Installer silent-switch table. Only the kinds we actually use; extend freely.
 // ---------------------------------------------------------------------------
 
+// Each kind says what to spawn: `cmd(file)` -> [exe, args] for a silent install, and
+// `override(file, args)` -> args when the user pins their own switches in config.json.
+// Kinds that run the downloaded file itself take the override as the WHOLE switch list;
+// kinds that hand the file to a system tool must keep the file argument in place.
 const INSTALLER_SWITCHES = {
-  msi: (file) => ['msiexec', ['/i', file, '/qn', '/norestart']],
-  nsis: (file) => [file, ['/S']],
-  inno: (file) => [file, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART']],
+  // Windows
+  msi: {
+    cmd: (file) => ['msiexec', ['/i', file, '/qn', '/norestart']],
+    override: (file, args) => ['/i', file, ...args],
+  },
+  nsis: { cmd: (file) => [file, ['/S']], override: (file, args) => args },
+  inno: {
+    cmd: (file) => [file, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART']],
+    override: (file, args) => args,
+  },
+  // macOS — installer(8) writes into /Library and needs root, so this only succeeds
+  // when git-updater itself is running elevated; otherwise the caller falls back to
+  // opening the .pkg in Installer.app, which prompts for authorization normally.
+  pkg: {
+    cmd: (file) => ['installer', ['-pkg', file, '-target', '/']],
+    override: (file, args) => ['-pkg', file, ...args],
+  },
+  // Linux — both need root for the same reason.
+  deb: {
+    cmd: (file) => ['dpkg', ['-i', file]],
+    override: (file, args) => [...args, file],
+  },
+  rpm: {
+    cmd: (file) => ['rpm', ['-U', '--quiet', file]],
+    override: (file, args) => [...args, file],
+  },
 };
 
 // Returns { exe, args } to spawn. Per-repo install.args overrides the switches.
 function installerCmd(kind, file, argsOverride) {
-  const fn = INSTALLER_SWITCHES[kind];
-  if (!fn) {
+  const spec = INSTALLER_SWITCHES[kind];
+  if (!spec) {
     throw new Error(`unknown installer kind "${kind}" (known: ${Object.keys(INSTALLER_SWITCHES).join(', ')})`);
   }
-  const [exe, defaultArgs] = fn(file);
+  const [exe, defaultArgs] = spec.cmd(file);
   if (Array.isArray(argsOverride) && argsOverride.length) {
-    // msi keeps "/i <file>"; other kinds run the file directly, override is the full switch list.
-    const args = kind === 'msi' ? ['/i', file, ...argsOverride] : argsOverride;
-    return { exe, args };
+    return { exe, args: spec.override(file, argsOverride) };
   }
   return { exe, args: defaultArgs };
 }
@@ -246,7 +275,10 @@ function installerCmd(kind, file, argsOverride) {
 // Config validation.
 // ---------------------------------------------------------------------------
 
-// "C:/PortableApps" + "ShareX" -> "C:/PortableApps/ShareX"
+// "C:/PortableApps"  + "ShareX" -> "C:/PortableApps/ShareX"
+// "/home/tj/Apps"     + "ShareX" -> "/home/tj/Apps/ShareX"
+// A forward slash rather than path.join, so the separator matches whatever the user
+// typed in Settings; Windows APIs and POSIX both accept it.
 function resolvePortableDir(portableRoot, repoName) {
   return `${String(portableRoot).replace(/[\\/]+$/, '')}/${repoName}`;
 }
@@ -261,7 +293,12 @@ function validateConfig(json) {
     if (r.type !== 'portable' && r.type !== 'installer') {
       throw new Error(`${at}: "type" must be "portable" or "installer"`);
     }
-    // asset is optional: omitted -> engine auto-picks the Windows asset from `type`.
+    // tagPrefix pins release lookup to one train in a multi-product repo (e.g. "desktop-v"
+    // for bitwarden/clients, which also publishes web-v*/browser-v*/cli-v* under one repo).
+    if (r.tagPrefix != null && (typeof r.tagPrefix !== 'string' || !r.tagPrefix)) {
+      throw new Error(`${at}: "tagPrefix" must be a non-empty string`);
+    }
+    // asset is optional: omitted -> engine auto-picks this platform's asset from `type`.
     if (r.type === 'portable') {
       if (!r.install) r.install = {};
       if (!r.install.dir) {
@@ -306,6 +343,7 @@ module.exports = {
   alignInstalledVersion,
   compilePattern,
   matchAsset,
+  pickAsset,
   pickWindowsAsset,
   guessKind,
   installerCmd,

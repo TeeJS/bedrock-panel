@@ -5,9 +5,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { spawn } = require('child_process');
 const core = require('./core');
+const paths = require('./paths');
 const github = require('./github');
 const install = require('./install');
 const state = require('./state');
@@ -16,8 +16,48 @@ const { log } = require('./log');
 
 // Display id ("owner/repo") vs storage/identity key (adds the type, so the same repo
 // tracked as both portable AND installed keeps separate state instead of colliding).
+const isWin = process.platform === 'win32';
+
 const displayId = (repo) => `${repo.owner}/${repo.repo}`;
 const appKey = (repo) => `${repo.owner}/${repo.repo}#${repo.type}`;
+
+// "Scan this PC" adds every discovered app as an installer. On Linux that is wrong for
+// most repos: of the catalog entries with Linux identifiers, 20 of 40 publish only a
+// portable archive and 3 publish no binary at all, so an installer entry fails on every
+// check. The first check already holds the release payload, so the correction costs
+// nothing here — deciding it when the user ticks the app would cost one API call each,
+// against an anonymous budget of 60 an hour that this app already exhausts in practice.
+//
+// The correction is REPORTED, never silent. It changes an entry the user did not type by
+// hand, and for a package-managed app the portable copy installs ALONGSIDE the existing
+// one rather than replacing it, which the user has to be told so they can untrack it if
+// that is not what they wanted.
+//
+// Mutates `repo` in place and returns the disclosure, or null when nothing changed.
+// `platform` defaults to the running OS; it is explicit so the whole decision table is
+// testable from any host rather than only the one the suite happens to run on.
+function retypeIfNoInstaller(repo, rel, portableRoot, platform) {
+  if (repo.type !== 'installer' || repo.asset) return null;
+  try {
+    core.pickAsset(rel.assets, 'installer', null, null, platform);
+    return null; // it does publish a package — leave the entry alone
+  } catch (e) {
+    // Only this specific case. "no <platform> installer asset" means the release has
+    // nothing usable at all, which stays an error the user should see.
+    if (!/only ships portable builds/.test(e.message)) return null;
+  }
+  const dir = (repo.install && repo.install.dir) || (portableRoot && core.resolvePortableDir(portableRoot, repo.repo));
+  if (!dir) return null; // no portable folder set — the existing clear error stands
+  const from = repo.type;
+  repo.type = 'portable';
+  repo.install = { ...(repo.install || {}), dir };
+  return {
+    from,
+    to: 'portable',
+    dir,
+    note: 'switched to Portable — this app publishes no installer, so the portable copy installs alongside any existing one',
+  };
+}
 
 async function run(config, opts = {}) {
   detect.clearCache(); // fresh registry scan each run — an install may have just changed versions
@@ -28,7 +68,7 @@ async function run(config, opts = {}) {
     const id = displayId(repo);
     if (only && id.toLowerCase() !== only && appKey(repo).toLowerCase() !== only) continue;
     try {
-      results.push(await handleRepo(repo, id, st, opts));
+      results.push(await handleRepo(repo, id, st, { ...opts, portableRoot: config.portableRoot }));
     } catch (e) {
       results.push({ repo: id, id: appKey(repo), status: 'failed', reason: e.message });
       log(`FAIL ${appKey(repo)}: ${e.message}`);
@@ -50,7 +90,13 @@ async function handleRepo(repo, id, st, opts) {
   const key = appKey(repo);
   const emit = (phase, pct) => opts.onProgress && opts.onProgress(key, phase, pct);
   emit('checking');
-  const rel = await github.getLatestRelease(repo.owner, repo.repo, { prerelease: repo.prerelease });
+  const rel = await github.getLatestRelease(repo.owner, repo.repo, { prerelease: repo.prerelease, tagPrefix: repo.tagPrefix });
+  // Correct the type before anything reads it. Check-time only: an update run installs,
+  // and changing what gets installed mid-run is worse than the clear error it replaces.
+  // It has to happen ahead of the comparison below, or an entry whose installed version
+  // already matches the latest tag returns "current" and is never corrected at all.
+  const retyped = opts.mode === 'check' ? retypeIfNoInstaller(repo, rel, opts.portableRoot) : null;
+
   const latest = rel.tag_name;
   const prev = st[key] || {};
 
@@ -59,7 +105,7 @@ async function handleRepo(repo, id, st, opts) {
   let installed = null;
   if (repo.type === 'installer') {
     try {
-      installed = await detect.registryVersion(repo.detect || repo.repo);
+      installed = await detect.installedVersion(repo.detect || repo.repo);
     } catch {}
     // Scheme mismatch (e.g. Brave: registry 152.1.94.117 vs tag 1.94.117): the install
     // looks "newer" than any release, so updates would never be detected. Align the
@@ -87,22 +133,25 @@ async function handleRepo(repo, id, st, opts) {
   }
 
   const fromV = installed ? core.normTag(installed) : prev.tag && core.normTag(prev.tag);
-  if (!isNew && !opts.force) return { repo: id, id: key, status: 'current', from: fromV, to: core.normTag(latest) };
+  if (!isNew && !opts.force) {
+    return { repo: id, id: key, status: 'current', from: fromV, to: core.normTag(latest), ...(retyped ? { retyped, note: retyped.note } : {}) };
+  }
 
   const base = { repo: id, id: key, from: fromV, to: core.normTag(latest) };
 
-  if (opts.mode === 'check') return { ...base, status: 'updated' };
+  if (opts.mode === 'check') return { ...base, status: 'updated', ...(retyped ? { retyped, note: retyped.note } : {}) };
 
-  // Manual `asset` pattern overrides; otherwise auto-pick the Windows asset from the type.
-  // For installers, match the flavor of the EXISTING install (msi vs exe) so the update
-  // upgrades in place instead of installing a duplicate side-by-side.
+  // Manual `asset` pattern overrides; otherwise auto-pick this platform's asset from
+  // the type. For installers, match the flavor of the EXISTING install (msi vs exe on
+  // Windows, deb vs rpm on Linux) so the update upgrades in place instead of installing
+  // a duplicate side-by-side.
   const flavor = repo.type === 'installer' ? await detect.installedFlavor(repo.detect || repo.repo) : null;
   const asset = repo.asset
     ? core.matchAsset(rel.assets, repo.asset)
-    : core.pickWindowsAsset(rel.assets, repo.type, null, flavor);
+    : core.pickAsset(rel.assets, repo.type, null, flavor);
 
   if (opts.dryRun) {
-    const verb = /\.(zip|7z)$/i.test(asset.name) ? 'extract' : 'place';
+    const verb = /\.(zip|7z|tar\.gz|tgz|tar\.xz|tar\.bz2|tar|dmg)$/i.test(asset.name) ? 'extract' : 'place';
     const plan =
       repo.type === 'installer'
         ? `install ${asset.name} silently`
@@ -119,8 +168,10 @@ async function handleRepo(repo, id, st, opts) {
 
   log(`update ${key}: installed=${installed || '(none)'} -> latest=${core.normTag(latest)}, asset=${asset.name}`);
 
-  // Stage under %LOCALAPPDATA%, NOT %TEMP% — EDR/ASR rules flag executables run from Temp.
-  const stageBase = path.join(process.env.LOCALAPPDATA || os.homedir(), 'git-updater', 'staging');
+  // Stage under git-updater's own data dir, NOT the system temp dir — EDR/ASR rules on
+  // Windows flag executables run from %TEMP%, and macOS Gatekeeper treats a quarantined
+  // bundle there differently. src/paths.js picks the right location per platform.
+  const stageBase = path.join(paths.dataDir(), 'staging');
   fs.mkdirSync(stageBase, { recursive: true });
   // Best-effort cleanup of leftovers older than a day (kept interactive installers, crashed runs).
   try {
@@ -158,14 +209,17 @@ async function handleRepo(repo, id, st, opts) {
     if (repo.type === 'installer') {
       // Detect the installer's silent-install technology from its bytes. If it can't be
       // identified, FAIL rather than blindly running an unknown .exe with NSIS's /S switch.
-      // Open the downloaded installer's own window (it shows a normal UAC prompt).
-      // MSI: msiexec with UI (msiexec.exe itself needs no manifest elevation).
-      // EXE: opts.openFile (ShellExecute via Electron) so the setup's UAC manifest works.
+      // Open the downloaded package in its OWN installer window, where the user gets the
+      // platform's normal authorization prompt. git-updater never self-elevates.
+      //   Windows MSI: msiexec with UI (msiexec.exe itself needs no manifest elevation).
+      //   Windows EXE: opts.openFile (ShellExecute via Electron) so the setup's UAC manifest works.
+      //   macOS .pkg:  opts.openFile hands it to Installer.app, which prompts for admin.
+      //   Linux .deb/.rpm: opts.openFile hands it to the desktop's package installer.
       const interactive = (keepName) => {
         const keep = path.join(stageBase, keepName); // outlives the tmp cleanup below
         fs.copyFileSync(file, keep);
         log(`  -> opening interactive installer: ${keep}`);
-        if (/\.msi$/i.test(keep)) spawn('msiexec', ['/i', keep], { detached: true, stdio: 'ignore' }).unref();
+        if (isWin && /\.msi$/i.test(keep)) spawn('msiexec', ['/i', keep], { detached: true, stdio: 'ignore' }).unref();
         else if (opts.openFile) opts.openFile(keep);
         else return false;
         return true;
@@ -173,7 +227,9 @@ async function handleRepo(repo, id, st, opts) {
       const interactiveResult = {
         ...base,
         status: 'failed',
-        reason: 'installer window opened — approve the UAC prompt and finish it, then Check',
+        reason: isWin
+          ? 'installer window opened — approve the UAC prompt and finish it, then Check'
+          : 'installer window opened — authorize and finish it, then Check',
       };
 
       const kind = (repo.install && repo.install.kind) || install.detectInstallerKind(file);
@@ -194,6 +250,25 @@ async function handleRepo(repo, id, st, opts) {
         throw e;
       }
     } else {
+      // Re-check immediately before the swap, not just before the download. The download
+      // takes seconds to minutes, and the user may well have launched the app during it.
+      //
+      // This is the ONLY protection on macOS and Linux. On Windows the swap itself fails
+      // with EBUSY or EPERM when files are open, and install.js turns that into "close
+      // the app and Retry" — but a POSIX rename of a running application's directory
+      // SUCCEEDS. Measured on macOS with a real signed Electron app: it survived the
+      // swap for at least 30 seconds — including having its old directory DELETED
+      // underneath it — across four processes, with no crash and no crash report. A
+      // fresh read at the live path returns the new version while the process keeps
+      // executing code loaded before the swap.
+      //
+      // So this is not "it crashes". It is old code, new files, one path, and nobody
+      // has managed to provoke a failure from that mismatch. Unprovoked is not safe:
+      // whatever the app loads next comes from a version it did not start with.
+      if (await detect.isRunning(repo.process || repo.repo)) {
+        log(`SKIP ${key}: ${repo.repo} started during the download`);
+        return { ...base, status: 'failed', reason: `${repo.repo} is running — close it, then Retry` };
+      }
       // Transactional dir swap: stale files vanish with the old dir, user files carry over.
       files = await install.installPortable(file, repo.install, prev.files);
     }
@@ -215,4 +290,4 @@ async function handleRepo(repo, id, st, opts) {
   }
 }
 
-module.exports = { run };
+module.exports = { run, retypeIfNoInstaller };

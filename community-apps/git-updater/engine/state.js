@@ -4,11 +4,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const paths = require('./paths');
 
 function defaultStatePath() {
-  const base = process.env.APPDATA || path.join(os.homedir(), '.config');
-  return path.join(base, 'git-updater', 'state.json');
+  return path.join(paths.configDir(), 'state.json');
 }
 
 function load(statePath) {
@@ -76,4 +75,4 @@ function releaseLock(lock) {
   }
 }
 
-module.exports = { load, save, defaultStatePath, acquireLock, releaseLock };
+module.exports = { load, save, defaultStatePath, acquireLock, releaseLock, pidAlive };
