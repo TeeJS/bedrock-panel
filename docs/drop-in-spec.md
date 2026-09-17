@@ -87,6 +87,7 @@ uses all of them at once. See `apps/apps.json` or any `community-apps/` folder f
 | `oauth` | object | served only | App-scoped OAuth provider definition (§5.5). |
 | `proxy` | object | served only | Outbound-fetch allow-list for the app's page (§5.2). |
 | `knob` | bool | served only | `true` = the panel knob defaults to "App controlled" on this app's pages, delivering knob events to the page's `window.oqKnob` (§5.4). Default `false`. |
+| `preview` | object | served only | Preview behaviour hint. `{ "separateDevice": true, "note": "…" }` marks an app whose page connects to an EXTERNAL service as its own device, so it can't be shown as a live in-editor preview without opening a second connection. The editor then shows an informational placeholder (with `note`) instead of the live iframe and creates no connection. Omit for the ordinary live preview. |
 | `grid` | object | served only | OPTIONAL embedded editable tile grid carried by the app: `{ cols, rows, defaults }` (column/row count + default tile contents). MAY be ignored by a host that doesn't support in-app grids. |
 | `hideGridInEditor` | bool | no | When `true`, the editor hides this app's embedded-grid controls (the app manages its own layout). Default `false`. |
 | `hostCapabilities` | array | served only | Host-mediated capabilities the app requests (§5.6). Recognized values: `"pick-folder"`. Unknown values MUST be ignored (forward compatibility). Default `[]`. |
@@ -119,11 +120,13 @@ Each entry of `options` describes one user-configurable value the editor renders
 | --- | --- |
 | `key` | Option name; becomes the URL param / hash key and the `options` map key. |
 | `label` | Editor label. |
-| `type` | `text` \| `bool` \| `secret` \| `select` \| (host-defined extras). `bool` is coerced to a real boolean. |
+| `type` | `text` \| `bool` \| `secret` \| `select` \| `number` \| (host-defined extras). `bool` is coerced to a real boolean; `number` is validated against `min`/`max`/`step` (below) but still delivered to the page as a **string** (the page coerces it). |
 | `default` | Default value when unset. |
 | `choices` | **Required for `type: "select"`.** Array of `[value, label]` pairs the editor renders as a dropdown. |
-| `help` | Optional help text shown under the field in the editor. |
-| `showIf` | Optional conditional visibility: `{ key, value }` — this field only renders when the option named `key` currently equals `value`. Lets an option's own fields hide/show based on a sibling (e.g. a set of manual fields that only appear when a "use defaults" toggle is off). |
+| `min` / `max` / `step` | `type: "number"` only. Declared bounds and grid. The editor rejects a value below `min`, above `max`, or off the `step` grid (measured from `min`, else 0); `step: 1` means integer. Invalid drafts are kept (not silently defaulted) and **block Save across all pages** until corrected — the editor reveals and focuses the offending field. The page SHOULD apply matching strict validation at runtime (e.g. reject a supplied-but-invalid value rather than run at a wrong value). |
+| `advanced` | If `true`, the editor renders this option inside a collapsed **Advanced** disclosure (page options and app-settings options each get their own). The open/closed state persists across re-renders. Default `false`. |
+| `help` | Optional help text shown under the field in the editor (associated to the control via `aria-describedby`). |
+| `showIf` | Optional conditional visibility: `{ key, value }` — this field only renders when the option named `key` currently equals `value`. Lets an option's own fields hide/show based on a sibling (e.g. a set of manual fields that only appear when a "use defaults" toggle is off). A field hidden by `showIf` is skipped by the number save-gate (its draft is kept but can't block Save, since it has no visible field to correct). |
 | `serverOnly` | If `true`, the value is **never** placed in the page URL — it reaches the app only via the host-side server adapter / `/app-config` (§5.3). |
 
 `type: "secret"` values MUST be stored encrypted at rest and MUST NOT appear in the page URL;
