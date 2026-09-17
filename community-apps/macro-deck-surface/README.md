@@ -9,10 +9,11 @@ other Macro Deck client (phone, tablet, web client), just on the 1920×480 scree
 You still need the Macro Deck desktop app running somewhere on the LAN; this app is
 a **surface**, not the host.
 
-> **Ideal grid: 2 rows × 9 columns.** A **2×9** Macro Deck profile fills the Bedrock
-> Panel's 1920×480 screen edge-to-edge with square keys — the best fit for this panel.
-> Other row/column counts still work; they just leave more empty space or use smaller
-> keys. Set the profile's Rows/Columns in Macro Deck (bottom-left of its window).
+> **Best grids: 2 rows.** A **2×9** Macro Deck profile fills the Bedrock Panel's
+> 1920×480 screen edge-to-edge with square keys — the fullest fit. **2×5** and **2×3**
+> are great too: fewer, larger keys with more breathing room. Two rows suits the panel's
+> wide shape best; other counts still work, they just leave more empty space or use
+> smaller keys. Set the profile's Rows/Columns in Macro Deck (bottom-left of its window).
 
 ## Setup
 
