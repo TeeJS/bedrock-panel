@@ -104,13 +104,17 @@ un-notarized `xattr` quarantine-strip story is from the *beta* notes only.
   through argv), so CDP still attaches — don't doubt the port. Verify: editor header reads the new
   version, both device pickers populate, and the mute warning fires on the tone and mic-playback paths.
 
-## 5. Publish (T.J.-gated)
+## 5. Assets + publish (T.J.-gated)
 
-`gh release create vX.Y.Z -R TeeJS/bedrock-panel --target main --title "vX.Y.Z — <headline>" --notes-file notes.md <assets...>`
+Create the release as a **draft** early (`gh release create vX.Y.Z -R TeeJS/bedrock-panel --draft --target main --title "vX.Y.Z — <headline>" --notes-file notes.md`), each build box uploads its own artifacts to it, then publish once everything is present and notes are approved.
 - **`--target main`** (a branch name) — a short SHA fails HTTP 422 "target_commitish is invalid".
-- Assets: Windows `bedrock-panel-setup.exe` + `bedrock-panel-portable.exe`; macOS `bedrock-panel-arm64.dmg` (+ `.zip`); Linux `bedrock-panel_amd64.deb` + `bedrock-panel-x86_64.AppImage` + `latest-linux.yml`. (Upload can be done as `gh release upload vX.Y.Z <files> -R ...` onto an existing draft.)
-- The upload can exceed the 2-min foreground timeout → run in background; confirm with `gh release view vX.Y.Z -R TeeJS/bedrock-panel --json assets`.
-- `gh release create` is sometimes classifier-blocked; if so, hand T.J. the exact one-liner.
+- **Asset set (from 0.9.7 on, per T.J.: SHIP the update manifests + blockmaps, not installers-only — prior releases 0.9.5/0.9.6 were installers-only, 0.9.7 changed that).** The exact set **differs per platform**, so **CHECK `dist/` on each box** (`ls dist/`, `find dist -name '*.blockmap'`) rather than enumerating from memory — that assumption bit all three of us on 0.9.7. Typical:
+  - **Windows:** `bedrock-panel-setup.exe`, `bedrock-panel-portable.exe`, `latest.yml`, `bedrock-panel-setup.exe.blockmap` (portable has NO blockmap).
+  - **macOS:** `bedrock-panel-arm64.dmg`, `bedrock-panel-arm64.zip`, `latest-mac.yml`, `bedrock-panel-arm64.dmg.blockmap`, `bedrock-panel-arm64.zip.blockmap`.
+  - **Linux:** `bedrock-panel_amd64.deb`, `bedrock-panel-x86_64.AppImage`, `latest-linux.yml` (NO sidecar blockmaps — the AppImage's is embedded in the artifact, the `.deb` has none).
+- **VERIFY each `latest-*.yml` against its real artifacts (sha512 AND size) before upload** — load-bearing now that the manifests ship. **macOS stale-hash gotcha:** `latest-mac.yml`'s DMG entry is written by electron-builder BEFORE `build-mac.js` staples the DMG, so its dmg sha512+size are stale by the notarization ticket (~2290 B); **regenerate the dmg entry AND `bedrock-panel-arm64.dmg.blockmap` from the STAPLED dmg.** The zip entry (electron-updater's `path:`) is already correct. Windows/Linux ymls finalize after their artifacts so they match as-is — verify anyway.
+- Upload onto the draft: `gh release upload vX.Y.Z <files> -R TeeJS/bedrock-panel --clobber`; large uploads exceed the 2-min foreground timeout → background; confirm with `gh release view vX.Y.Z -R TeeJS/bedrock-panel --json assets`.
+- **Publish (finalize):** with all assets present + notes approved, flip the draft live — `gh release edit vX.Y.Z -R TeeJS/bedrock-panel --draft=false --notes-file notes.md`. This is the T.J.-gated step; he may delegate it explicitly (he did on 0.9.7). `gh` is sometimes classifier-blocked — if so, hand T.J. the exact one-liner.
 
 ## 6. After
 
@@ -119,6 +123,11 @@ Update project memories from "unreleased" to shipped (`reference_openquake_relea
 
 ## Gotchas worth re-reading (all documented above / in the repo docs)
 
+- **Verify against reality, don't assert from memory.** Query `gh release view vX.Y.Z --json assets`
+  and read the actual files/`dist/` before claiming what a prior release shipped, what a yml contains,
+  or what the asset set is. On 0.9.7 all three build agents each asserted something false from a
+  plausible memory (the prior-release asset set, the mac yml delta) and two nearly shipped a wrong
+  change — one `gh` query settled each.
 - `gh` needs `-R`; `--target main` not a SHA; last-released from `gh release list` not local tags.
 - `nsis.guid` is pinned (`6b73d4a7-2e13-5aef-9474-9432dfa413dd`) — never change it or upgrades become a
   second install.
