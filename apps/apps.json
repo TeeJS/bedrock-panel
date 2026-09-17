@@ -6222,6 +6222,31 @@
     "options": []
   },
   {
+    "id": "pages",
+    "name": "Pages",
+    "description": "Tap-to-navigate menu of all panel pages",
+    "file": "pagesview.html",
+    "served": true,
+    "options": [
+      {
+        "key": "order",
+        "label": "Order",
+        "type": "select",
+        "default": "editor",
+        "choices": [
+          [
+            "editor",
+            "Editor order"
+          ],
+          [
+            "alpha",
+            "Alphabetical"
+          ]
+        ]
+      }
+    ]
+  },
+  {
     "id": "ai-voice",
     "name": "AI Voice",
     "description": "Voice and text AI assistant",

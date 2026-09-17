@@ -3658,6 +3658,21 @@ function keyboardShortcutsSnapshot() {
   };
 }
 
+// ---- Pages menu app (tap-to-navigate list of every visible page) ----
+// gridList() already excludes hidden pages and is in config (editor) order; the app sorts
+// alphabetically client-side when its `order` option is set. activeId marks the on-screen page.
+function pagesSnapshot() { return { pages: gridList(), activeId: config.activeGridId }; }
+// Tap on a page tile -> jump to it. Same navigation path as a page-jump hotkey (persist the choice,
+// and reschedule rotation so the picked page gets its full dwell instead of flipping away at once).
+// Guarded to visible pages only, so a hidden id can never be reached through the menu.
+function gotoPageFromMenu(id) {
+  if (typeof id !== 'string') return false;
+  if (!(config.grids || []).some(g => g.id === id && !g.hidden)) return false;
+  gotoGrid(id, true);
+  if (rotateRunning) scheduleRotation();
+  return true;
+}
+
 // ---- desktop focus (panel auto-follows the PC's foreground app) ----
 function focusFollowCfg() { const f = (config.settings && config.settings.focusFollow) || {}; return { enabled: !!f.enabled, pauseRotation: !!f.pauseRotation }; }
 
@@ -3888,6 +3903,7 @@ app.whenReady().then(async () => {
       onLucidCleanup: onLucidCleanupRequest, onLucidRewrite: onLucidRewriteRequest,
       onLucidReview: onLucidReviewRequest, onLucidSetMode: onLucidSetModeRequest,
       getShortcuts: keyboardShortcutsSnapshot,
+      getPages: pagesSnapshot, onGoto: gotoPageFromMenu,
       discordApp: discordAppHost,
       obsApp: obsService,
       // Voice-panel app registry: each entry gets the full /<appId>/* route surface (see

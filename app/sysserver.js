@@ -72,6 +72,7 @@ const STATIC_FILES = {
   '/github.js': 'application/javascript; charset=utf-8',
   '/github.css': 'text/css; charset=utf-8',
   '/keyshortcutsview.js': 'application/javascript; charset=utf-8',
+  '/pagesview.js': 'application/javascript; charset=utf-8',
   '/claudevoiceview.js': 'application/javascript; charset=utf-8',
   '/livetranslateview.js': 'application/javascript; charset=utf-8',
   '/screensaverview.js': 'application/javascript; charset=utf-8',
@@ -89,6 +90,7 @@ const STATIC_FILES = {
 
 let server = null, startPromise = null, onDiagnostic = null;
 let onMedia = null, onLaunch = null, getGridTiles = null, getAppConfig = null, onOpenExternal = null, onMeetingAction = null, getShortcuts = null;
+let getPages = null, onGoto = null;   // Pages menu app: live page list + tap-to-navigate
 let githubApp = null;
 let getMeetingState = null, onMeetingRecord = null;   // meeting recorder: panel poller + start/stop/setMic remote
 let onMeetingLibrary = null, resolveMeetingAudio = null;   // recordings library + transcription/analysis remotes
@@ -100,7 +102,7 @@ let onLucidCleanup = null, onLucidRewrite = null, onLucidReview = null, onLucidS
 const lucidSubscribers = new Set();   // open SSE responses for the LucidType page (pushed by main via lucidBroadcast)
 let diagnosticsHtml = FALLBACK;
 let obsviewHtml = FALLBACK;
-let musicHtml = FALLBACK, githubHtml = FALLBACK, meetingHtml = FALLBACK, keyshortcutsHtml = FALLBACK, recorderHtml = FALLBACK, slideHtml = FALLBACK, lucidtypeHtml = FALLBACK, lucidtypeDictateHtml = FALLBACK;
+let musicHtml = FALLBACK, githubHtml = FALLBACK, meetingHtml = FALLBACK, keyshortcutsHtml = FALLBACK, recorderHtml = FALLBACK, slideHtml = FALLBACK, lucidtypeHtml = FALLBACK, lucidtypeDictateHtml = FALLBACK, pagesHtml = FALLBACK;
 // Claude Code voice app wiring (all optional, supplied via start(opts) -- see main.js).
 // Voice-panel app registry: appId (also the URL path prefix) -> { handlers, voiceToken, htmlFile,
 // htmlContent }. `handlers` is a voicepanel-host.js handlers object; every voice app shares the
@@ -756,6 +758,7 @@ async function handler(req, res) {
   if (url === '/slidecapture') return html(res, slideHtml);  // hidden slide-capture window
   if (url === '/github') return html(res, githubHtml);
   if (url === '/keyshortcuts') return html(res, keyshortcutsHtml);
+  if (url === '/pages') return html(res, pagesHtml);
   if (url === '/discord') {
     let body = FALLBACK; try { body = fs.readFileSync(path.join(__dirname, 'discordview.html'), 'utf8'); } catch (e) {}
     return html(res, body);
@@ -978,6 +981,15 @@ async function handler(req, res) {
     }
   }
   if (url === '/shortcuts') return json(res, getShortcuts ? getShortcuts() : { rotation: null, pages: [], custom: [] });
+  // Pages menu app: live list of visible pages (editor order) + the on-screen page's id.
+  if (url === '/pagelist') return json(res, getPages ? getPages() : { pages: [], activeId: null });
+  // Tap-to-navigate: jump the panel to a page by id.
+  if (url === '/goto') {
+    const id = queryValue(full, 'id');
+    let ok = false;
+    if (id && typeof onGoto === 'function') { try { ok = !!onGoto(id); } catch (e) {} }
+    return done(res, ok);
+  }
   if (url === '/grid-tiles') {
     let t = { cols: 2, rows: 2, tiles: [] };
     if (getGridTiles) { try { t = await getGridTiles(); } catch (e) {} }
@@ -1145,6 +1157,8 @@ function start(opts) {
   onLucidReview = opts.onLucidReview || null;
   onLucidSetMode = opts.onLucidSetMode || null;
   getShortcuts = opts.getShortcuts || null;
+  getPages = opts.getPages || null;
+  onGoto = opts.onGoto || null;
   discordApp = opts.discordApp || null;
   if (discordApp) {
     discordApp.start();
@@ -1202,6 +1216,7 @@ function start(opts) {
     slideHtml = readView('slidecapture.html', slideHtml);
     githubHtml = readView('github.html', githubHtml);
     keyshortcutsHtml = readView('keyshortcutsview.html', keyshortcutsHtml);
+    pagesHtml = readView('pagesview.html', pagesHtml);
     Object.values(voiceApps).forEach(v => {
       if (v.htmlFile) { try { v.htmlContent = fs.readFileSync(path.join(__dirname, v.htmlFile), 'utf8'); } catch (e) {} }
     });

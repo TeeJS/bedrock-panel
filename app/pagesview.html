@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pages</title>
+<style>
+  * { box-sizing: border-box; }
+  :root { --bg:#05080d; --fg:#e8eef6; --muted:#9fb3c8; --dim:#7e93ab; --surf:#131f2c; --surf2:#0e1822;
+    --tile-bd:#233245; --accent:#7CFFB2; }
+  body.light { --bg:#e6ecf3; --fg:#12202c; --muted:#566573; --dim:#68798a; --surf:#f3f6f9; --surf2:#e6ecf2;
+    --tile-bd:#c7d2dc; }
+  html, body { margin: 0; width: 100%; height: 100%; }
+  body { background: var(--bg); color: var(--fg); overflow: hidden; user-select: none; touch-action: manipulation;
+    font-family: "Segoe UI", system-ui, sans-serif; }
+  #wrap { display: flex; flex-direction: column; width: 100vw; height: 100vh; padding: 12px 20px 14px; gap: 8px; }
+
+  #title { flex: 0 0 auto; font-size: 26px; font-weight: 700; color: var(--fg); }
+
+  /* #card is the box the tiles must fit inside. The layout pass in pagesview.js measures this box and
+     the page count, then sizes the grid (columns, rows, gap, font) so every page fills it with no
+     scroll. #card keeps overflow-y:auto only as the graceful fallback for an extreme page count that
+     can't fit even at the minimum readable tile size. */
+  #card { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; background: var(--surf);
+    border: 1px solid var(--tile-bd); border-radius: 14px; padding: 12px; }
+  #grid { display: grid; gap: 8px; }   /* columns/rows/gap/height set by the layout pass */
+  .empty { color: var(--dim); font-size: 28px; padding: 14px 6px; }
+
+  /* One tile per page — a touch target that stretches to fill its grid cell; the label is the focal
+     text and scales with tile height (--name-fs, set by the layout pass). */
+  .tile { display: flex; align-items: center; justify-content: center; min-height: 0; padding: 6px 14px;
+    background: var(--surf2); border: 1px solid var(--tile-bd); border-radius: 12px; color: var(--fg);
+    font-family: inherit; text-align: center; cursor: pointer; width: 100%; height: 100%; overflow: hidden;
+    transition: transform .06s ease, background .12s ease, border-color .12s ease; }
+  .tile:active { transform: scale(.98); }
+  .tile:focus:not(:focus-visible) { outline: none; }
+  .tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .name { font-size: var(--name-fs, 24px); line-height: 1.15; font-weight: 600; overflow-wrap: break-word; }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="title">Pages</div>
+    <div id="card"><div id="grid"></div></div>
+  </div>
+  <script src="pagesview.js"></script>
+</body>
+</html>
