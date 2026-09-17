@@ -93,7 +93,16 @@ un-notarized `xattr` quarantine-strip story is from the *beta* notes only.
   and exits with `dlopen(): error loading libfuse.so.2` on stock Ubuntu 24.04+/26.04 until
   `libfuse2t64` is installed (`docs/building.md:403`, `docs/linux.md:21`). This is a documented,
   long-standing property of the AppImage, **not a release bug** — do not chase it or add it to the
-  notes as new. `--appimage-extract-and-run` is NOT how the artifact ships; don't diagnose from it.
+  notes as new. `--appimage-extract-and-run` is NOT how the artifact ships (its own /tmp teardown
+  produces failures that look like app bugs) — don't diagnose from it.
+- **Installing the `.deb` needs sudo, so it is T.J.'s command, not the agent's** — hand it over:
+  `sudo apt install -y <path>/dist/bedrock-panel_amd64.deb` (upgrades in place over a prior version,
+  sets up the `/usr/bin/bedrock-panel` alternative).
+- **Smoke-testing the installed app:** launch `/usr/bin/bedrock-panel --remote-debugging-port=9333` and
+  attach CDP to the `app/config.html` target. On a Wayland session the app re-execs onto X11
+  (`docs/building.md:309`) but the debug port **survives** the re-exec (the child carries the flag
+  through argv), so CDP still attaches — don't doubt the port. Verify: editor header reads the new
+  version, both device pickers populate, and the mute warning fires on the tone and mic-playback paths.
 
 ## 5. Publish (T.J.-gated)
 
