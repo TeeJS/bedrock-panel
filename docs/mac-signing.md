@@ -103,6 +103,66 @@ T.J. at the keyboard for the Apple website and the keychain password. Do not att
 and do not ask him to paste a password to you — ask him to run `store-credentials` himself, and tell
 him the profile name to use.
 
+## Unattended notarization from an agent shell (App Store Connect API key)
+
+The keychain-profile path (`.signing/notary-profile` → `bedrock-notary`) only works when the login
+keychain is unlocked in the calling shell. An AI agent's sandboxed, non-interactive shell usually
+cannot reach it: `codesign` still succeeds (the signing key's ACL allows any app) but `notarytool`
+fails with `No Keychain password item found for profile: bedrock-notary`, so the build has to be run
+from T.J.'s own Terminal. To let the agent build **and** notarize with nobody at the keyboard, switch
+notarization to an **App Store Connect API key** — a file on disk that needs no keychain.
+
+`build-mac.js` already supports it (`resolveNotary`, build-mac.js:59 — the `APPLE_API_KEY` trio →
+`notarytool --key/--key-id/--issuer`). Three steps, all config, none touch the app bits:
+
+1. **Create the key (T.J., one-time):** App Store Connect → Users and Access → Integrations →
+   App Store Connect API → generate a key with the **Developer** role (not Admin — smaller blast
+   radius, revocable anytime). Download the `.p8` (Apple allows the download **once**). Note the
+   **Key ID** (10 chars, also in the filename `AuthKey_<KEYID>.p8`) and the **Issuer ID** (UUID at the
+   top of the Integrations page). The two IDs are identifiers, not secrets; the `.p8` is the secret.
+2. **Store + reference it (agent):** put the `.p8` in `.signing/` (`chmod 600`), and set these in the
+   agent's build environment (e.g. `~/.zprofile`, which the agent shell sources):
+   ```
+   export APPLE_API_KEY="/Users/teej/github/bedrock-panel/.signing/AuthKey_<KEYID>.p8"
+   export APPLE_API_KEY_ID="<KEYID>"
+   export APPLE_API_ISSUER="<ISSUER-UUID>"
+   ```
+   Never `git add` `.signing/*`, never echo the key. `.signing/**` is gitignored **and** excluded from
+   `build.files`, so the key reaches neither GitHub nor a shipped DMG — never add a `mac.files`
+   override, which would silently drop that exclusion.
+3. **Retire the keychain profile (agent):** `resolveNotary` returns on the FIRST match and checks
+   `.signing/notary-profile` (build-mac.js:56) BEFORE the API-key trio (:59). Rename it —
+   `mv .signing/notary-profile .signing/notary-profile.disabled` — or the build keeps using the
+   keychain profile and keeps failing in an agent shell.
+
+Then prove it: run `npm run dist:mac` from the plain agent shell (no keychain unlock) and verify as
+above. As of 0.9.7 the `.p8` is in place (`.signing/AuthKey_XKQT3B9MBX.p8`) but the switch is not yet
+exercised — it still needs the Issuer ID and one unattended build to confirm before anyone relies on it.
+
+## Regenerating latest-mac.yml + dmg.blockmap after stapling
+
+electron-builder writes `latest-mac.yml` and `bedrock-panel-arm64.dmg.blockmap` **before**
+`build-mac.js` staples the DMG, so once the notarization ticket is stapled in (~2290 B) the yml's dmg
+`sha512`+`size` and the dmg `.blockmap` are stale. The `.zip` is not re-stapled, so its yml entry and
+`.blockmap` stay correct. When a release ships the manifests (0.9.7 on), regenerate the dmg side from
+the STAPLED file with electron-builder's own generator, so it is tool-identical, not hand-rolled:
+
+```js
+// node, from the repo root
+const { buildBlockMap } = require('app-builder-lib/out/targets/blockmap/blockmap.js');
+// 'gzip' is the sidecar format — validate it byte-for-byte against the known-good zip.blockmap first
+const r = await buildBlockMap('dist/bedrock-panel-arm64.dmg', 'gzip',
+                              'dist/bedrock-panel-arm64.dmg.blockmap');
+// r.sha512 (base64) and r.size are the authoritative values for latest-mac.yml's dmg entry
+```
+
+`buildBlockMap` streams the whole file, so `r.sha512` equals `openssl dgst -sha512 -binary <dmg> |
+openssl base64 -A` and `r.size` equals the on-disk size — cross-check both, then write them into the
+`- url: bedrock-panel-arm64.dmg` entry of `latest-mac.yml` (leave the zip entry and the top-level
+`path:`/`sha512:`, which point at the zip, untouched). Verify every yml entry against its real file
+before upload, and confirm the dmg still passes `stapler validate` (regenerating the sidecar reads the
+dmg, it does not modify it).
+
 ## Things that have actually gone wrong here
 
 - **electron-builder refuses the certificate-type prefix.** `.signing/mac-identity` holds the full

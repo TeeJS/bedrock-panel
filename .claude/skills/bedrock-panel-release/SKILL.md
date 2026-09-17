@@ -82,6 +82,11 @@ un-notarized `xattr` quarantine-strip story is from the *beta* notes only.
   --keychain-profile bedrock-notary`) in his own interactive terminal**, the same shell that built
   0.9.5/0.9.6. Only if it fails THERE too is the profile actually missing (re-store per
   `docs/mac-signing.md`). No Apple ID or password is handed to the agent.
+- **To make the agent build+notarize UNATTENDED (no T.J. terminal):** switch notarization to an App
+  Store Connect **API key** (`.p8`, file-based, keychain-free) — full procedure in `docs/mac-signing.md`
+  ("Unattended notarization from an agent shell"). The `.p8` is already in `.signing/`; it still needs
+  the Issuer ID, the `APPLE_API_KEY` trio in the agent env, `.signing/notary-profile` retired, and one
+  unattended build to confirm.
 - Output: `dist/bedrock-panel-arm64.dmg` (+ `.zip`). Verify: `spctl -a -t exec -vv` says *accepted,
   source=Notarized Developer ID*; `xcrun stapler validate dist/bedrock-panel-arm64.dmg` passes.
 
@@ -112,7 +117,7 @@ Create the release as a **draft** early (`gh release create vX.Y.Z -R TeeJS/bedr
   - **Windows:** `bedrock-panel-setup.exe`, `bedrock-panel-portable.exe`, `latest.yml`, `bedrock-panel-setup.exe.blockmap` (portable has NO blockmap).
   - **macOS:** `bedrock-panel-arm64.dmg`, `bedrock-panel-arm64.zip`, `latest-mac.yml`, `bedrock-panel-arm64.dmg.blockmap`, `bedrock-panel-arm64.zip.blockmap`.
   - **Linux:** `bedrock-panel_amd64.deb`, `bedrock-panel-x86_64.AppImage`, `latest-linux.yml` (NO sidecar blockmaps — the AppImage's is embedded in the artifact, the `.deb` has none).
-- **VERIFY each `latest-*.yml` against its real artifacts (sha512 AND size) before upload** — load-bearing now that the manifests ship. **macOS stale-hash gotcha:** `latest-mac.yml`'s DMG entry is written by electron-builder BEFORE `build-mac.js` staples the DMG, so its dmg sha512+size are stale by the notarization ticket (~2290 B); **regenerate the dmg entry AND `bedrock-panel-arm64.dmg.blockmap` from the STAPLED dmg.** The zip entry (electron-updater's `path:`) is already correct. Windows/Linux ymls finalize after their artifacts so they match as-is — verify anyway.
+- **VERIFY each `latest-*.yml` against its real artifacts (sha512 AND size) before upload** — load-bearing now that the manifests ship. **macOS stale-hash gotcha:** `latest-mac.yml`'s DMG entry is written by electron-builder BEFORE `build-mac.js` staples the DMG, so its dmg sha512+size are stale by the notarization ticket (~2290 B); **regenerate the dmg entry AND `bedrock-panel-arm64.dmg.blockmap` from the STAPLED dmg** — exact recipe (electron-builder's own `buildBlockMap`, `gzip` format, cross-checked against `openssl`) in `docs/mac-signing.md` ("Regenerating latest-mac.yml + dmg.blockmap after stapling"). The zip entry (electron-updater's `path:`) is already correct. Windows/Linux ymls finalize after their artifacts so they match as-is — verify anyway.
 - Upload onto the draft: `gh release upload vX.Y.Z <files> -R TeeJS/bedrock-panel --clobber`; large uploads exceed the 2-min foreground timeout → background; confirm with `gh release view vX.Y.Z -R TeeJS/bedrock-panel --json assets`.
 - **Publish (finalize):** with all assets present + notes approved, flip the draft live — `gh release edit vX.Y.Z -R TeeJS/bedrock-panel --draft=false --notes-file notes.md`. This is the T.J.-gated step; he may delegate it explicitly (he did on 0.9.7). `gh` is sometimes classifier-blocked — if so, hand T.J. the exact one-liner.
 
