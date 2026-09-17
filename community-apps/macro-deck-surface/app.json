@@ -1,7 +1,7 @@
 {
   "id": "macro-deck-surface",
   "name": "Macro Deck Surface",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Turn the panel into a Macro Deck surface: renders a Macro Deck host's live button page and sends taps, long-presses and releases back over its client WebSocket.",
   "entry": "index.html",
   "served": true,
