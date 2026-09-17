@@ -20,6 +20,9 @@ __pycache__/
 *.log
 npm-debug.log*
 
+# local-only skill (server access helper, not part of the repo)
+.claude/skills/comfyui-server/
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db
