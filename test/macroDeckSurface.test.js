@@ -227,6 +227,23 @@ test('preview with empty/invalid identity refuses (previewBad) — never a bare 
   collide.restore();
 });
 
+test('preview: the editor postMessage(oq-preview-connect) connects as the distinct preview device', () => {
+  const env = loadApp('?_preview=abc123&clientId=MyPanel');
+  assert.match(env.state(), /state-previewIdle/);
+  assert.ok(!env.ws(), 'no socket before the editor asks');
+  const parent = {};
+  global.window.parent = parent;                                  // the app only accepts a message from its parent (the editor)
+  env.win._fire('message', { source: {}, data: { type: 'oq-preview-connect' } });     // wrong source -> ignored
+  assert.ok(!env.ws(), 'a message from a non-parent source is ignored');
+  env.win._fire('message', { source: parent, data: { type: 'oq-preview-connect' } }); // editor -> connect
+  const ws = env.ws();
+  assert.ok(ws, 'socket created on the editor connect message');
+  ws._open();
+  const connected = ws.sent.find((m) => m.Method === 'CONNECTED');
+  assert.equal(connected['Client-Id'], 'Bedrock Panel Preview abc123');   // distinct id, not MyPanel
+  env.restore();
+});
+
 test('preview: every dispatch path (pointer, keyboard, AT click) is read-only', () => {
   const env = loadApp('?_preview=xyz');
   env.ids.ovRetry._fire('click');

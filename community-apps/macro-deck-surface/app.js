@@ -470,14 +470,25 @@
     deck.addEventListener('focusout', function () { if (press && press.source === 'key') cancelPress(); });
     window.addEventListener('blur', function () { if (press) cancelPress(); });
 
-    ovRetry.addEventListener('click', function () {
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      if (reconnectAdviceTimer) { clearTimeout(reconnectAdviceTimer); reconnectAdviceTimer = null; }
-      if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
-      outageStart = 0;   // explicit retry resets the outage -> fresh connect
-      backoff = 1000;
-      connect();
+    ovRetry.addEventListener('click', userConnect);
+
+    // Editor-driven preview: the Bedrock editor can't click the thumbnail-scaled Connect button, so it
+    // asks over postMessage instead. Only honour it in preview, and only from our parent (the editor).
+    window.addEventListener('message', function (e) {
+      if (!PREVIEW || PREVIEW_BAD) return;
+      if (e.source !== window.parent) return;
+      if (e.data && e.data.type === 'oq-preview-connect') userConnect();
     });
+  }
+
+  // Explicit user (or editor) request to connect / reconnect: reset the outage + backoff, then connect.
+  function userConnect() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (reconnectAdviceTimer) { clearTimeout(reconnectAdviceTimer); reconnectAdviceTimer = null; }
+    if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
+    outageStart = 0;   // explicit retry resets the outage -> fresh connect
+    backoff = 1000;
+    connect();
   }
 
   // ---- knob (opt-in generic drop-in capability) ---------------------------

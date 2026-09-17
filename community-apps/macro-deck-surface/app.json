@@ -8,7 +8,7 @@
   "knob": true,
   "preview": {
     "separateDevice": true,
-    "note": "Live preview is disabled for this app to avoid opening an additional connection to Macro Deck. Save and apply your settings, then view the page on your panel."
+    "note": "Connects to the host as a separate device (not your panel), so it won’t disturb it. Click Connect, and accept the device on the host the first time. Its page may differ from the panel, and taps are disabled here."
   },
   "options": [
     {

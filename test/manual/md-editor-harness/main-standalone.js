@@ -54,16 +54,33 @@ app.whenReady().then(async () => {
     log({ inputRendered: ok });
     if (!ok) { await shot('00-no-input'); return finish(3); }
 
-    // (P) MD-06 Option B: the macro-deck-surface page shows an honest PLACEHOLDER — no preview iframe
-    // (no editor host connection), no Connect/Expand, no over-claims.
-    await sleep(600);
-    const P = await js(`(function(){
-      var frame=document.querySelector('.apprevFrame');
-      var note=document.querySelector('.apprevNote');
-      var t=(note&&note.textContent)||'';
-      return { hasIframe:!!frame, hasPlaceholder:!!note, noteText:t, overclaims:/disturb|exactly what the panel/i.test(t) };
+    // (P) Round 2 (Approach A): the macro-deck-surface page shows a WORKING preview — an iframe loaded
+    // with a distinct _preview identity, plus reachable Connect + Expand controls. Expand must resize
+    // the SAME iframe in place (same element, unchanged src -> no reload/reconnect).
+    await sleep(700);
+    const P0 = await js(`(function(){
+      var apprev=document.querySelector('.apprev-sep');
+      var frame=apprev&&apprev.querySelector('.apprevFrame');
+      var m=frame&&frame.src?/[?&]_preview=([0-9a-f]{8,16})/.exec(frame.src):null;
+      window.__mdFrame=frame;                                  // stash to prove identity across expand
+      return { hasSepPreview:!!apprev, hasIframe:!!frame, previewId:m?m[1]:null, srcBefore:frame?frame.src:null,
+        hasConnect:!!document.querySelector('.apprevConnect'), hasExpand:!!document.querySelector('.apprevExpand'),
+        widthBefore: apprev?Math.round(apprev.getBoundingClientRect().width):null };
     })()`);
-    log({ P_previewPlaceholderB: P });
+    // Click Expand and re-measure — same frame element + same src, wider container.
+    await js(`document.querySelector('.apprevExpand').click()`);
+    await sleep(200);
+    const P1 = await js(`(function(){
+      var apprev=document.querySelector('.apprev-sep');
+      var frame=apprev&&apprev.querySelector('.apprevFrame');
+      return { sameFrameElement: frame===window.__mdFrame, srcAfter:frame?frame.src:null,
+        expandedClass: apprev?apprev.classList.contains('expanded'):null, expandLabel:(document.querySelector('.apprevExpand')||{}).textContent,
+        widthAfter: apprev?Math.round(apprev.getBoundingClientRect().width):null };
+    })()`);
+    const P = { load: P0, afterExpand: P1, srcUnchangedOnExpand: P0.srcBefore===P1.srcAfter };
+    log({ P_workingPreviewA: P });
+    await shot('P-preview-expanded');
+    await js(`document.querySelector('.apprevExpand').click()`);   // collapse again for the rest of the run
 
     await js(`(function(){var i=document.getElementById('mdopt-aopt-longPressMs');var d=i&&i.closest('details');if(d)d.open=true;})()`);
     await sleep(150);
