@@ -45,9 +45,11 @@ a **surface**, not the host.
   keys (row-major, skipping empty cells, wrapping) and a single click presses the
   highlighted key; double-click and hold keep their normal panel behavior. The
   first click just reveals the highlight without pressing.
-- **No live editor preview.** In the Bedrock editor this page shows an informational
-  placeholder instead of a live preview, to avoid opening an additional connection to
-  Macro Deck. Save and apply your settings, then view the page on your panel.
+- **Editor preview.** On a Macro Deck Surface page in the Bedrock editor, click
+  **Connect preview** to render your host's live deck right in the editor — it connects
+  as a *separate device* (`Bedrock Panel Preview …`, taps disabled), so it never
+  disturbs the panel. **Expand** enlarges it. Accept the preview device on the host the
+  first time.
 - **LAN trust only.** The Macro Deck client port is plaintext with no token; keep
   it on a trusted network.
 - Requires Macro Deck's newer build (Kestrel host + web client, port `8191`). The
