@@ -122,5 +122,9 @@ Update project memories from "unreleased" to shipped (`reference_openquake_relea
 - `gh` needs `-R`; `--target main` not a SHA; last-released from `gh release list` not local tags.
 - `nsis.guid` is pinned (`6b73d4a7-2e13-5aef-9474-9432dfa413dd`) — never change it or upgrades become a
   second install.
-- Never add `build.{win,mac,linux}.files` — a platform list REPLACES the global exclusions.
+- Never add `build.{win,mac,linux}.files` — a platform list REPLACES the global exclusions (there is
+  exactly one `files` key). This is now SECURITY-load-bearing: the global list carries `!.signing/**`,
+  and the macOS notary API key (`.p8`) lives in `.signing/`; a `mac.files` override would silently drop
+  that exclusion and ship the **private key inside a notarized, publicly downloadable DMG**. Keep all
+  exclusions in the single global `build.files`.
 - Stage only your own paths; never `git add -A` on the shared checkout.
