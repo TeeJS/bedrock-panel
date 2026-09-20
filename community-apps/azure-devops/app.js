@@ -11,6 +11,7 @@ const els = {
   organizationLabel: document.getElementById('organizationLabel'),
   projectButton: document.getElementById('projectButton'),
   projectLabel: document.getElementById('projectLabel'),
+  updatedLabel: document.getElementById('updatedLabel'),
   refreshButton: document.getElementById('refreshButton'),
   diagnosticButton: document.getElementById('diagnosticButton'),
   openDevOpsButton: document.getElementById('openDevOpsButton'),
@@ -44,6 +45,9 @@ const state = {
   refreshTimer: null,
   refreshMinutes: 5,
   cachedViews: new Map(),
+  workItemFilters: { assignee: '__me__', iteration: '__current__' },
+  workItemParentId: 0,
+  workItemParentTrail: [],
   confirmResolve: null,
   lastDiagnostic: null
 };
@@ -90,10 +94,48 @@ function tone(value) {
   return '';
 }
 
+function workItemTypeClass(value) {
+  const type = String(value || '').trim().toLowerCase();
+  if (type === 'bug') return 'type-bug';
+  if (type === 'task') return 'type-task';
+  if (type === 'product backlog item' || type === 'pbi') return 'type-pbi';
+  if (type === 'user story') return 'type-user-story';
+  if (type === 'feature') return 'type-feature';
+  if (type === 'epic') return 'type-epic';
+  if (type === 'issue') return 'type-issue';
+  if (type === 'test case') return 'type-test-case';
+  return 'type-other';
+}
+
 function setStatus(message) {
-  els.connectionStatus.textContent = message;
+  els.connectionStatus.textContent = /^Connected/.test(message)
+    ? (/cached/i.test(message) ? 'Connected · cached' : 'Connected')
+    : message;
   els.connectionStatus.classList.toggle('connected', /^Connected/.test(message));
   els.connectionStatus.classList.toggle('warning', /cached|problem|expired|required/i.test(message));
+}
+
+function resetWorkItemView() {
+  const context = state.organization && state.project ? `${state.organization.name}.${state.project.id}` : '';
+  state.workItemFilters = {
+    assignee: context ? saved(`work-items.${context}.assignee`) || '__me__' : '__me__',
+    iteration: context ? saved(`work-items.${context}.iteration`) || '__current__' : '__current__'
+  };
+  state.workItemParentId = 0;
+  state.workItemParentTrail = [];
+}
+
+function saveWorkItemFilters() {
+  if (!state.organization || !state.project) return;
+  const context = `${state.organization.name}.${state.project.id}`;
+  try {
+    localStorage.setItem(`azure-devops.work-items.${context}.assignee`, state.workItemFilters.assignee);
+    localStorage.setItem(`azure-devops.work-items.${context}.iteration`, state.workItemFilters.iteration);
+  } catch (error) {}
+}
+
+function showFetchedAt(value, stale) {
+  els.updatedLabel.textContent = value ? `${fmtDate(value)}${stale ? ' · cached' : ''}` : '—';
 }
 
 function contextMatches(version, organization, projectId) {
@@ -253,7 +295,7 @@ function openExternal(value) {
 
 function externalLink(url, label) {
   const safe = safeDevOpsUrl(url);
-  return safe ? `<a class="external-link" href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)} ↗</a>` : '';
+  return safe ? `<button class="external-link external-button" type="button" data-external-url="${escapeHtml(safe)}">${escapeHtml(label)} ↗</button>` : '';
 }
 
 function staleNote(data) {
@@ -270,6 +312,7 @@ function requestIsCurrent(ticket) {
 }
 
 function renderOverview(data) {
+  showFetchedAt(data.fetchedAt, data.stale);
   const tones = new Set(['healthy', 'warning', 'danger', 'info', 'neutral']);
   els.content.innerHTML = `<div class="overview-grid">
     ${data.cards.map(card => {
@@ -290,10 +333,27 @@ function renderOverview(data) {
   if (data.stale) showToast(data.warning || 'Showing cached Azure DevOps data.', false);
 }
 
+function detailLayer() {
+  return `<div class="detail-scrim" id="detailScrim" hidden>
+    <section class="detail-sheet" role="dialog" aria-modal="true" aria-label="Item details">
+      <button class="detail-close" type="button" data-close-detail aria-label="Close details">×</button>
+      <div class="detail" id="detailPanel"></div>
+    </section>
+  </div>`;
+}
+
+function carousel(items) {
+  return `<div class="carousel-shell">
+    <button class="carousel-arrow previous" type="button" data-carousel-step="-1" aria-label="Scroll left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+    <section class="panel"><div class="list" data-carousel>${items}</div></section>
+    <button class="carousel-arrow next" type="button" data-carousel-step="1" aria-label="Scroll right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+  </div>`;
+}
+
 function sectionShell(title, subtitle, list, detail, stale) {
   return `<div class="section-shell">
     <div class="section-heading"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle)}</p></div>${stale || ''}</div>
-    <div class="split-view"><section class="panel"><div class="list">${list}</div></section><section class="panel"><div class="detail" id="detailPanel">${detail}</div></section></div>
+    ${carousel(list)}${detailLayer()}
   </div>`;
 }
 
@@ -302,9 +362,11 @@ function emptyDetail(message) {
 }
 
 function renderRepositories(data) {
-  const list = data.repositories.length ? data.repositories.map(repo => `<button class="row-button" type="button" data-repository="${escapeHtml(repo.id)}">
-    <span><span class="row-title">${escapeHtml(repo.name)}</span><span class="row-meta">${escapeHtml(repo.defaultBranch || 'No default branch')}</span></span>
-    <span class="badge">${escapeHtml(fmtBytes(repo.size))}</span>
+  showFetchedAt(data.fetchedAt, data.stale);
+  const list = data.repositories.length ? data.repositories.map(repo => `<button class="row-button rail-card repository-card" type="button" data-repository="${escapeHtml(repo.id)}">
+    <span class="rail-card-icon">${CARD_ICONS.repositories}</span>
+    <span class="rail-card-copy"><span class="rail-eyebrow">Repository</span><span class="row-title">${escapeHtml(repo.name)}</span><span class="row-meta">${escapeHtml(repo.defaultBranch || 'No default branch')}</span></span>
+    <span class="rail-footer"><span>${escapeHtml(fmtBytes(repo.size))}</span><span class="open-copy">Details →</span></span>
   </button>`).join('') : '<div class="state"><span>No repositories in this project.</span></div>';
   els.content.innerHTML = sectionShell('Repositories', `${data.repositories.length} available`, list, emptyDetail('Choose a repository to browse branches, commits, and pull requests.'), staleNote(data));
 }
@@ -324,17 +386,58 @@ function runLabel(run) {
   return run.status === 'completed' ? (run.result || 'completed') : (run.status || 'unknown');
 }
 
+function pipelineStatusRank(pipeline) {
+  const run = pipeline && pipeline.latestRun;
+  if (!run) return 3;
+  if (String(run.status || '').toLowerCase() !== 'completed') return 0;
+  return String(run.result || '').toLowerCase() === 'succeeded' ? 2 : 1;
+}
+
+function pipelineRunTime(pipeline) {
+  const run = pipeline && pipeline.latestRun;
+  if (!run) return 0;
+  const timestamp = Date.parse(run.finishedAt || run.startedAt || run.queuedAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function comparePipelines(left, right) {
+  return pipelineStatusRank(left) - pipelineStatusRank(right)
+    || pipelineRunTime(right) - pipelineRunTime(left)
+    || String(left.name || '').localeCompare(String(right.name || ''));
+}
+
+function pipelineControl(run) {
+  const status = String(run && run.status || '').toLowerCase();
+  if (status === 'inprogress') return 'stop';
+  if (status === 'notstarted' || status === 'postponed') return 'cancel';
+  return '';
+}
+
 function renderPipelines(data) {
-  const list = data.pipelines.length ? data.pipelines.map(pipeline => `<button class="row-button" type="button" data-pipeline="${pipeline.id}" data-run="${pipeline.latestRun ? pipeline.latestRun.id : ''}">
-    <span><span class="row-title">${escapeHtml(pipeline.name)}</span><span class="row-meta">${escapeHtml(pipeline.folder || '\\')} · ${pipeline.latestRun ? escapeHtml(fmtDate(pipeline.latestRun.queuedAt)) : 'No runs'}</span></span>
-    <span class="badge ${tone(runLabel(pipeline.latestRun))}">${escapeHtml(runLabel(pipeline.latestRun))}</span>
-  </button>`).join('') : '<div class="state"><span>No pipelines in this project.</span></div>';
+  showFetchedAt(data.fetchedAt, data.stale);
+  const orderedPipelines = data.pipelines.slice().sort(comparePipelines);
+  const list = orderedPipelines.length ? orderedPipelines.map(pipeline => {
+    const run = pipeline.latestRun;
+    const control = pipelineControl(run);
+    const disabled = data.actionsEnabled ? '' : ' disabled title="Enable pipeline actions in this app’s settings"';
+    return `<article class="row-button rail-card pipeline-card ${tone(runLabel(run))}">
+      <button class="pipeline-open" type="button" data-pipeline="${pipeline.id}" data-run="${run ? run.id : ''}">
+        <span class="rail-eyebrow">Pipeline</span><span class="row-title">${escapeHtml(pipeline.name)}</span><span class="pipeline-status">${escapeHtml(runLabel(run))}</span>
+      </button>
+      <span class="rail-footer"><span>${run ? escapeHtml(fmtDate(run.queuedAt)) : 'No runs yet'}</span><span>${escapeHtml(pipeline.folder || '\\')}</span></span>
+      <span class="pipeline-card-actions">
+        <button class="pipeline-action run" type="button" data-run-pipeline="${pipeline.id}" data-ref="${escapeHtml(run && run.branch ? `refs/heads/${run.branch}` : '')}"${disabled}>Run</button>
+        ${control ? `<button class="pipeline-action ${control}" type="button" data-cancel-run="${run.id}" data-cancel-mode="${control}"${disabled}>${control === 'stop' ? 'Stop' : 'Cancel'}</button>` : ''}
+      </span>
+    </article>`;
+  }).join('') : '<div class="state"><span>No pipelines in this project.</span></div>';
   const detail = `<div class="state"><div><strong>Choose a pipeline</strong><span>Inspect its latest run${data.actionsEnabled ? ' or queue a new run' : ''}.</span></div></div>`;
   els.content.innerHTML = sectionShell('Pipelines', `${data.pipelines.length} definitions · ${data.runs.length} recent runs`, list, detail, staleNote(data));
   state.cachedViews.set(`${cacheKey('pipelines')}:data`, data);
 }
 
 function renderPipelineSummary(pipeline, actionsEnabled) {
+  showDetailPanel();
   document.getElementById('detailPanel').innerHTML = `<header><div><h2>${escapeHtml(pipeline.name)}</h2><p>${escapeHtml(pipeline.folder || '\\')} · No recent run</p></div><div class="button-group">${actionsEnabled ? `<button class="primary-button" type="button" data-run-pipeline="${pipeline.id}">Run pipeline</button>` : ''}${externalLink(pipeline.url, 'Open pipeline')}</div></header>
     <div class="state"><span>No recent run is available for this pipeline.</span></div>`;
 }
@@ -354,9 +457,11 @@ function renderRunDetail(data) {
 }
 
 function renderPullRequests(data) {
-  const list = data.pullRequests.length ? data.pullRequests.map(pr => `<button class="row-button" type="button" data-pull-request="${pr.id}">
-    <span><span class="row-title">#${pr.id} ${escapeHtml(pr.title)}</span><span class="row-meta">${escapeHtml(pr.repository)} · ${escapeHtml(pr.author)}</span></span>
-    <span class="badge ${pr.isDraft ? 'warn' : 'good'}">${pr.isDraft ? 'Draft' : 'Active'}</span>
+  showFetchedAt(data.fetchedAt, data.stale);
+  const list = data.pullRequests.length ? data.pullRequests.map(pr => `<button class="row-button rail-card pull-request-card" type="button" data-pull-request="${pr.id}">
+    <span class="rail-card-icon">${CARD_ICONS['pull-requests']}</span>
+    <span class="rail-card-copy"><span class="rail-eyebrow">Pull request #${pr.id}</span><span class="row-title">${escapeHtml(pr.title)}</span><span class="row-meta">${escapeHtml(pr.repository)}</span></span>
+    <span class="rail-footer"><span>${escapeHtml(pr.author)}</span><span class="badge ${pr.isDraft ? 'warn' : 'good'}">${pr.isDraft ? 'Draft' : 'Active'}</span></span>
   </button>`).join('') : '<div class="state"><span>No active pull requests in this project.</span></div>';
   els.content.innerHTML = sectionShell('Pull Requests', `${data.pullRequests.length} active`, list, emptyDetail('Choose a pull request to inspect its branches, reviewers, and linked work items.'), staleNote(data));
 }
@@ -378,32 +483,142 @@ function renderPullRequestDetail(data) {
     ${data.workItems.length ? `<h3>Linked work items</h3><div class="compact-list">${data.workItems.map(item => `<a class="compact-item external-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"><span>Work item #${item.id}</span><small>Open ↗</small></a>`).join('')}</div>` : ''}`;
 }
 
-function renderWorkItems(data) {
-  const list = data.workItems.length ? data.workItems.map(item => `<button class="row-button" type="button" data-work-item="${item.id}">
-    <span><span class="row-title">#${item.id} ${escapeHtml(item.title)}</span><span class="row-meta">${escapeHtml(item.type)} · ${escapeHtml(item.assignedTo || 'Unassigned')}</span></span>
-    <span class="badge ${tone(item.state)}">${escapeHtml(item.state)}</span>
-  </button>`).join('') : '<div class="state"><span>No active work items in this project.</span></div>';
-  els.content.innerHTML = sectionShell('Work Items', `${data.workItems.length} recently changed and active`, list, emptyDetail('Choose a work item to inspect its assignment and explicit links.'), staleNote(data));
+function workItemStateRank(value) {
+  const status = String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+  if (['new', 'proposed', 'todo', 'notstarted'].includes(status)) return 0;
+  if (['approved', 'ready', 'committed'].includes(status)) return 1;
+  if (['active', 'inprogress', 'doing'].includes(status)) return 2;
+  if (['resolved', 'readyfortest', 'testing'].includes(status)) return 3;
+  if (['done', 'closed', 'completed', 'removed'].includes(status)) return 9;
+  return 4;
 }
 
-function linkedRelation(relation) {
-  const value = `${relation.name} ${relation.url}`.toLowerCase();
-  if (value.includes('pull request')) return 'Pull request';
-  if (value.includes('commit')) return 'Commit';
-  if (value.includes('build')) return 'Build';
-  return relation.name || relation.rel || 'Related item';
+function workItemStateClass(value) {
+  const rank = workItemStateRank(value);
+  if (rank === 0) return 'state-new';
+  if (rank === 1) return 'state-ready';
+  if (rank === 2 || rank === 3) return 'state-active';
+  if (rank === 9) return 'state-done';
+  return 'state-other';
+}
+
+function isStoryLevel(item) {
+  const type = String(item && item.type || '').trim().toLowerCase();
+  return type === 'product backlog item' || type === 'pbi' || type === 'user story';
+}
+
+function inferredParentId(item) {
+  if (Number(item && item.parentId)) return Number(item.parentId);
+  const parent = Array.isArray(item && item.relations) ? item.relations.find(relation => {
+    const relationType = String(relation && relation.rel || '').toLowerCase();
+    const relationName = String(relation && relation.name || '').toLowerCase();
+    return relationType === 'system.linktypes.hierarchy-reverse' || relationName === 'parent';
+  }) : null;
+  const match = parent && /\/workItems\/(\d+)(?:\?|$)/i.exec(String(parent.url || ''));
+  return Number(match && match[1]) || 0;
+}
+
+function compareWorkItems(left, right) {
+  return workItemStateRank(left.state) - workItemStateRank(right.state)
+    || String(left.title || '').localeCompare(String(right.title || ''));
+}
+
+function renderWorkItems(data) {
+  showFetchedAt(data.fetchedAt, data.stale);
+  const contextReady = data.workItemContextVersion === 1;
+  data.workItems.forEach(item => { item.parentId = inferredParentId(item); });
+  const assignees = Array.from(new Set(data.workItems.map(item => item.assignedTo || '').filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const iterations = Array.from(new Set(data.workItems.map(item => item.iteration || '').filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const hasUnassigned = data.workItems.some(item => !item.assignedTo);
+  const hasNoIteration = data.workItems.some(item => !item.iteration);
+  if (state.workItemFilters.assignee === '__me__' && (!contextReady || (data.meFilterAvailable === false && !data.currentUser))) state.workItemFilters.assignee = '';
+  if (state.workItemFilters.iteration === '__current__' && (!contextReady || (data.currentIterationFilterAvailable === false && !data.currentIteration))) state.workItemFilters.iteration = '';
+  if ((state.workItemFilters.assignee === '__unassigned__' && !hasUnassigned)
+    || (state.workItemFilters.assignee && !['__me__', '__unassigned__'].includes(state.workItemFilters.assignee) && !assignees.includes(state.workItemFilters.assignee))) state.workItemFilters.assignee = '';
+  if ((state.workItemFilters.iteration === '__none__' && !hasNoIteration)
+    || (state.workItemFilters.iteration && !['__current__', '__none__'].includes(state.workItemFilters.iteration) && !iterations.includes(state.workItemFilters.iteration))) state.workItemFilters.iteration = '';
+
+  const matchesFilters = item => {
+    const assigneeMatches = !state.workItemFilters.assignee
+      || (state.workItemFilters.assignee === '__me__' ? (item.isAssignedToMe || (!!data.currentUser && item.assignedTo === data.currentUser))
+        : state.workItemFilters.assignee === '__unassigned__' ? !item.assignedTo : item.assignedTo === state.workItemFilters.assignee);
+    const iterationMatches = !state.workItemFilters.iteration
+      || (state.workItemFilters.iteration === '__current__' ? (item.isCurrentIteration || (!!data.currentIteration && item.iteration === data.currentIteration))
+        : state.workItemFilters.iteration === '__none__' ? !item.iteration : item.iteration === state.workItemFilters.iteration);
+    return assigneeMatches && iterationMatches;
+  };
+  const matching = data.workItems.filter(matchesFilters);
+  const itemsById = new Map(data.workItems.map(item => [Number(item.id), item]));
+  let parent = state.workItemParentId ? itemsById.get(Number(state.workItemParentId)) : null;
+  if (!parent) state.workItemParentId = 0;
+  const childrenFor = id => data.workItems.filter(item => Number(item.parentId) === Number(id));
+  const hasMatchingDescendant = (id, visited = new Set()) => {
+    if (visited.has(Number(id))) return false;
+    visited.add(Number(id));
+    return childrenFor(id).some(item => matchesFilters(item) || hasMatchingDescendant(item.id, visited));
+  };
+  const visibleChildrenFor = id => childrenFor(id).filter(item => matchesFilters(item) || (isStoryLevel(item) && hasMatchingDescendant(item.id)));
+  const visible = (parent
+    ? visibleChildrenFor(parent.id)
+    : data.workItems.filter(item => {
+      if (!isStoryLevel(item)) return false;
+      const knownParent = itemsById.get(Number(item.parentId));
+      return !isStoryLevel(knownParent) && (matchesFilters(item) || hasMatchingDescendant(item.id));
+    })).sort(compareWorkItems);
+
+  const option = (value, label, selected) => `<option value="${escapeHtml(value)}"${value === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+  const meName = data.currentUser || (data.workItems.find(item => item.isAssignedToMe && item.assignedTo) || {}).assignedTo;
+  const assigneeOptions = (data.meFilterAvailable === false && !meName ? '' : option('__me__', meName ? `@Me · ${meName}` : '@Me', state.workItemFilters.assignee))
+    + option('', 'All users', state.workItemFilters.assignee)
+    + (hasUnassigned ? option('__unassigned__', 'Unassigned', state.workItemFilters.assignee) : '')
+    + assignees.map(name => option(name, name, state.workItemFilters.assignee)).join('');
+  const currentName = data.currentIteration ? data.currentIteration.split('\\').pop() : '';
+  const iterationOptions = (data.currentIterationFilterAvailable === false ? '' : option('__current__', currentName ? `@CurrentIteration · ${currentName}` : '@CurrentIteration', state.workItemFilters.iteration))
+    + option('', 'All sprints', state.workItemFilters.iteration)
+    + (hasNoIteration ? option('__none__', 'No sprint', state.workItemFilters.iteration) : '')
+    + iterations.map(path => option(path, path.split('\\').pop() || path, state.workItemFilters.iteration)).join('');
+
+  const list = visible.length ? visible.map(item => {
+    const children = visibleChildrenFor(item.id).sort(compareWorkItems);
+    const story = isStoryLevel(item);
+    const typeClass = workItemTypeClass(item.type);
+    const stateClass = workItemStateClass(item.state);
+    return `<button class="row-button rail-card work-item-card ${typeClass} ${stateClass}" type="button" ${story ? `data-work-parent="${item.id}"` : `data-work-item="${item.id}"`}>
+      <span class="rail-card-icon">${CARD_ICONS['work-items']}</span>
+      <span class="rail-card-copy"><span class="rail-eyebrow"><span class="work-item-type ${typeClass}">${escapeHtml(item.type || 'Work item')}</span> #${item.id}</span><span class="row-title">${escapeHtml(item.title)}</span><span class="work-item-description">${escapeHtml(item.description || 'No description provided.')}</span><span class="row-meta">${escapeHtml(item.assignedTo || 'Unassigned')}</span></span>
+      <span class="rail-footer"><span>${story ? `${children.length} ${children.length === 1 ? 'child' : 'children'} · tap to open` : escapeHtml(item.iteration ? item.iteration.split('\\').pop() : 'No sprint')}</span><span class="badge ${stateClass}">${escapeHtml(item.state)}</span></span>
+    </button>`;
+  }).join('') : `<div class="state"><span>${parent ? 'No child tasks match these filters.' : data.workItems.length ? 'No work items match these filters.' : 'No active work items in this project.'}</span></div>`;
+  const count = parent ? `${visible.length} of ${childrenFor(parent.id).length} children` : `${visible.length} top-level · ${matching.length} matching`;
+  const hierarchy = parent
+    ? `<button class="hierarchy-back" type="button" data-work-back>← Back</button><button class="hierarchy-parent" type="button" data-work-item="${parent.id}"><strong>#${parent.id}</strong><span>${escapeHtml(parent.title)}</span></button>`
+    : '<span class="hierarchy-label">Stories &amp; backlog</span>';
+  els.content.innerHTML = `<div class="section-shell work-items-shell">
+    <div class="section-heading work-items-toolbar">
+      ${hierarchy}
+      <label><span>User</span><select id="workItemAssigneeFilter">${assigneeOptions}</select></label>
+      <label><span>Sprint</span><select id="workItemIterationFilter">${iterationOptions}</select></label>
+      <span class="filter-count">${escapeHtml(count)}</span>${contextReady ? '' : '<span class="server-note">Fully exit open-quake (including the tray), then reopen it to enable @Me and @CurrentIteration</span>'}${staleNote(data)}
+    </div>
+    ${carousel(list)}${detailLayer()}
+  </div>`;
 }
 
 function renderWorkItemDetail(data) {
   const item = data.workItem;
-  const relations = item.relations.map(relation => `<div class="compact-item"><span>${escapeHtml(linkedRelation(relation))}</span><small>${escapeHtml(relation.rel)}</small></div>`).join('') || '<p>No explicit links.</p>';
-  document.getElementById('detailPanel').innerHTML = `<header><div><h2>#${item.id} ${escapeHtml(item.title)}</h2><p>${escapeHtml(item.type)} · ${escapeHtml(item.state)}</p></div>${externalLink(item.url, 'Open work item')}</header>
-    <div class="detail-grid">
-      <div class="detail-field"><small>Assigned to</small><strong>${escapeHtml(item.assignedTo || 'Unassigned')}</strong></div>
-      <div class="detail-field"><small>Changed</small><strong>${escapeHtml(fmtDate(item.changedAt))}</strong></div>
-      <div class="detail-field"><small>Iteration</small><strong>${escapeHtml(item.iteration || '—')}</strong></div>
-      <div class="detail-field"><small>Tags</small><strong>${escapeHtml(item.tags || '—')}</strong></div>
-    </div><h3>Explicit links</h3><div class="compact-list">${relations}</div>`;
+  const stateClass = workItemStateClass(item.state);
+  const iteration = item.iteration ? item.iteration.split('\\').pop() : 'No sprint';
+  document.getElementById('detailPanel').innerHTML = `<header><div><h2>#${item.id} ${escapeHtml(item.title)}</h2>
+      <div class="work-item-detail-meta">
+        <span class="work-item-type ${workItemTypeClass(item.type)}">${escapeHtml(item.type || 'Work item')}</span>
+        <span class="badge ${stateClass}">${escapeHtml(item.state || 'No state')}</span>
+        <span><small>Assigned</small>${escapeHtml(item.assignedTo || 'Unassigned')}</span>
+        <span><small>Changed</small>${escapeHtml(fmtDate(item.changedAt))}</span>
+        <span><small>Sprint</small>${escapeHtml(iteration)}</span>
+        ${item.tags ? `<span><small>Tags</small>${escapeHtml(item.tags)}</span>` : ''}
+      </div>
+    </div>${externalLink(item.url, 'Open work item')}</header>
+    <section class="work-item-detail-description"><h3>Description</h3><p>${escapeHtml(item.description || 'No description provided.')}</p></section>`;
 }
 
 async function loadView(view, force) {
@@ -444,6 +659,7 @@ async function loadView(view, force) {
 
 async function loadDetail(action, params, renderer) {
   const ticket = beginRequest();
+  showDetailPanel();
   const panel = document.getElementById('detailPanel');
   if (panel) panel.innerHTML = '<div class="state"><span>Loading details…</span></div>';
   try {
@@ -456,6 +672,16 @@ async function loadDetail(action, params, renderer) {
     rememberDiagnostic(error.diagnostic, error.message);
     if (requestIsCurrent(ticket) && document.getElementById('detailPanel')) document.getElementById('detailPanel').innerHTML = `<div class="state"><div><strong>Details unavailable</strong><span>${escapeHtml(error.message)}</span></div></div>`;
   }
+}
+
+function showDetailPanel() {
+  const scrim = document.getElementById('detailScrim');
+  if (scrim) scrim.hidden = false;
+}
+
+function closeDetailPanel() {
+  const scrim = document.getElementById('detailScrim');
+  if (scrim) scrim.hidden = true;
 }
 
 function openPicker(title, items, selected, choose) {
@@ -507,8 +733,9 @@ async function runPipeline(pipelineId, defaultRef) {
   }
 }
 
-async function cancelRun(runId) {
-  const confirmed = await confirmAction('Cancel pipeline run', 'This asks Azure DevOps to cancel the queued or running build.', '', false);
+async function cancelRun(runId, mode) {
+  const action = mode === 'stop' ? 'Stop' : 'Cancel';
+  const confirmed = await confirmAction(`${action} pipeline run`, `This asks Azure DevOps to ${action.toLowerCase()} the queued or running build.`, '', false);
   if (!confirmed) return;
   try {
     const data = await api('cancel-run', selectedParams(), {
@@ -528,6 +755,7 @@ async function selectOrganization(organization) {
   state.project = null;
   state.projects = [];
   state.cachedViews.clear();
+  resetWorkItemView();
   updateHeader();
   showState('Loading projects', `Finding projects in ${organization.name}…`);
   try {
@@ -536,6 +764,7 @@ async function selectOrganization(organization) {
     state.projects = data.projects;
     const preferred = saved('project') || data.defaultProject;
     state.project = state.projects.find(project => project.id === preferred || project.name.toLowerCase() === String(preferred).toLowerCase()) || state.projects[0] || null;
+    resetWorkItemView();
     updateHeader();
     saveSelection();
     if (state.project) await loadView('overview');
@@ -550,6 +779,7 @@ async function selectProject(project) {
   state.contextVersion++;
   state.project = project;
   state.cachedViews.clear();
+  resetWorkItemView();
   updateHeader();
   saveSelection();
   await loadView('overview');
@@ -632,6 +862,17 @@ document.querySelector('.bottom-nav').addEventListener('click', event => {
 });
 
 els.content.addEventListener('click', event => {
+  if (event.target.id === 'detailScrim') return closeDetailPanel();
+  const closeDetailButton = event.target.closest('[data-close-detail]');
+  if (closeDetailButton) return closeDetailPanel();
+  const externalButton = event.target.closest('[data-external-url]');
+  if (externalButton) return openExternal(externalButton.dataset.externalUrl);
+  const carouselButton = event.target.closest('[data-carousel-step]');
+  if (carouselButton) {
+    const rail = els.content.querySelector('[data-carousel]');
+    if (rail) rail.scrollBy({ left: Number(carouselButton.dataset.carouselStep) * Math.max(320, rail.clientWidth * 0.72), behavior: 'smooth' });
+    return;
+  }
   const viewButton = event.target.closest('[data-view-target]');
   if (viewButton) return loadView(viewButton.dataset.viewTarget);
   if (event.target.closest('#connectButton')) return connect();
@@ -654,12 +895,39 @@ els.content.addEventListener('click', event => {
     if (!pipeline.dataset.run && selected) return renderPipelineSummary(selected, data.actionsEnabled);
     if (pipeline.dataset.run) return loadDetail('run', { run: pipeline.dataset.run }, renderRunDetail);
   }
+  const workParent = event.target.closest('[data-work-parent]');
+  if (workParent) {
+    if (state.workItemParentId) state.workItemParentTrail.push(state.workItemParentId);
+    state.workItemParentId = Number(workParent.dataset.workParent) || 0;
+    const data = state.cachedViews.get(cacheKey('work-items'));
+    if (data) renderWorkItems(data);
+    return;
+  }
+  if (event.target.closest('[data-work-back]')) {
+    state.workItemParentId = state.workItemParentTrail.pop() || 0;
+    const data = state.cachedViews.get(cacheKey('work-items'));
+    if (data) renderWorkItems(data);
+    return;
+  }
   const workItem = event.target.closest('[data-work-item]');
   if (workItem) return loadDetail('work-item', { workItem: workItem.dataset.workItem }, renderWorkItemDetail);
   const runButton = event.target.closest('[data-run-pipeline]');
   if (runButton) return runPipeline(Number(runButton.dataset.runPipeline), runButton.dataset.ref || '');
   const cancelButton = event.target.closest('[data-cancel-run]');
-  if (cancelButton) return cancelRun(Number(cancelButton.dataset.cancelRun));
+  if (cancelButton) return cancelRun(Number(cancelButton.dataset.cancelRun), cancelButton.dataset.cancelMode);
+});
+
+els.content.addEventListener('pointerdown', event => {
+  if (event.target.id === 'detailScrim') closeDetailPanel();
+});
+
+els.content.addEventListener('change', event => {
+  if (event.target.id !== 'workItemAssigneeFilter' && event.target.id !== 'workItemIterationFilter') return;
+  if (event.target.id === 'workItemAssigneeFilter') state.workItemFilters.assignee = event.target.value;
+  else state.workItemFilters.iteration = event.target.value;
+  saveWorkItemFilters();
+  const data = state.cachedViews.get(cacheKey('work-items'));
+  if (data) renderWorkItems(data);
 });
 
 window.oqKnob = function (event) {

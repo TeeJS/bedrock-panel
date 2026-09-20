@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Azure DevOps</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Azure DevOps V2</title>
+  <link rel="stylesheet" href="style.css?v=2.3.0">
 </head>
 <body>
   <main class="app-shell" id="appShell">
     <header class="topbar">
-      <div class="brand" aria-label="Azure DevOps">
-        <span class="brand-mark" aria-hidden="true">AZ</span>
-        <span><strong>Azure DevOps</strong><small id="connectionStatus">Connecting</small></span>
+      <div class="brand" aria-label="Azure DevOps V2">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <span><strong>Azure DevOps <b class="version-pill">V2</b></strong><small id="connectionStatus">Connecting</small></span>
       </div>
       <button class="context-button" id="organizationButton" type="button" aria-label="Choose organization">
         <span class="selector-copy"><small>Organization</small><strong id="organizationLabel">Choose organization</strong></span>
@@ -21,6 +21,7 @@
         <span class="selector-copy"><small>Project</small><strong id="projectLabel">Choose project</strong></span>
         <svg class="selector-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>
       </button>
+      <div class="updated-copy" aria-hidden="true"><small>Last updated</small><strong id="updatedLabel">—</strong></div>
       <button class="icon-button" id="refreshButton" type="button" aria-label="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg></button>
       <button class="icon-button diagnostic-button" id="diagnosticButton" type="button" aria-label="Open error details" title="Error details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v5m0 3h.01"/></svg></button>
     </header>
@@ -29,7 +30,7 @@
 
     <nav class="bottom-nav" aria-label="Azure DevOps sections">
       <button class="nav-button active" data-view="overview" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></svg><span>Overview</span></button>
-      <button class="nav-button" data-view="repositories" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10M8 7h4a6 6 0 0 1 6 6"/></svg><span>Repos</span></button>
+      <button class="nav-button" data-view="repositories" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10M8 7h4a6 6 0 0 1 6 6"/></svg><span>Repositories</span></button>
       <button class="nav-button" data-view="pipelines" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4Z"/></svg><span>Pipelines</span></button>
       <button class="nav-button" data-view="work-items" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.6 2.6L16.5 9"/></svg><span>Work Items</span></button>
       <button class="nav-button" id="openDevOpsButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6m0-6-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg><span>Open DevOps</span></button>
@@ -66,6 +67,6 @@
     </section>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.3.0"></script>
 </body>
 </html>

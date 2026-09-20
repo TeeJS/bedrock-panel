@@ -1,7 +1,12 @@
-# Azure DevOps drop-in setup
+# Azure DevOps V2 drop-in setup
 
 This app uses Microsoft Entra OAuth with PKCE. Azure DevOps access tokens stay in the
 Bedrock Panel main process and are never returned to the app page.
+
+The V2 work-item view opens on items assigned to the signed-in user in the current
+sprint. User stories and product backlog items act as parent cards; tap one to show its
+child tasks. Use **Stories** to return to the top level, or tap the selected parent title
+to open its full work-item details.
 
 ## 1. Register an application
 
@@ -39,7 +44,7 @@ Tenant policy may require an administrator to grant consent.
 
 ## 3. Configure and connect
 
-1. Import or install the `azure-devops` folder as an Bedrock Panel drop-in app.
+1. Import or install the `azure-devops` folder as a Bedrock Panel drop-in app.
 2. Set the client ID. Organization and project selection happens directly on the panel and the
    last selection is remembered locally.
 3. Leave **Enable pipeline run and cancel controls** off unless the device should be allowed to

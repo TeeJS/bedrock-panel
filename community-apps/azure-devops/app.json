@@ -1,8 +1,8 @@
 {
   "id": "azure-devops",
   "name": "Azure DevOps",
-  "version": "1.0.4",
-  "description": "Project-focused Azure DevOps repositories, pipelines, pull requests, and work items.",
+  "version": "2.3.0",
+  "description": "Distance-readable, touch-first Azure DevOps dashboard with swipeable repositories, pipelines, pull requests, and work items.",
   "entry": "index.html",
   "served": true,
   "server": "server.js",
