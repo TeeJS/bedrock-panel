@@ -219,9 +219,13 @@ svg { display: block; fill: none; stroke: currentColor; stroke-linecap: round; s
 .detail-field small { display: block; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .detail-field strong { display: block; margin-top: 3px; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .compact-list { display: grid; gap: 6px; }
-.compact-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; min-height: 36px; padding: 8px 10px; border-radius: 9px; background: var(--surface-2); }
+.compact-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 36px; padding: 8px 10px; border-radius: 9px; background: var(--surface-2); }
 .compact-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compact-item small { color: var(--muted); }
+/* Linked commits / work items open externally, so the row is a button routed through openExternal.
+   Strip the UA chrome so it renders identically to the plain .compact-item next to it. */
+button.compact-item { width: 100%; border: 1px solid transparent; text-align: left; cursor: pointer; }
+button.compact-item:hover, button.compact-item:focus-visible { border-color: var(--accent); outline: none; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 .primary-button, .secondary-button { min-height: 48px; padding: 9px 17px; border-radius: 11px; font-weight: 750; }
 .primary-button { color: white; border-color: var(--accent); background: var(--accent); }
 .secondary-button { background: var(--surface-2); }

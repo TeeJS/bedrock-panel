@@ -108,6 +108,7 @@ async function run() {
   assert.strictEqual(result.workItems.find(item => item.id === 102).description, 'Colour cards & status.');
   assert.strictEqual(result.workItems.find(item => item.id === 103).isCurrentIteration, false);
   assert(appSource.includes('data-external-url'), 'work-item links should use the validated external-link handler');
+  assert(!/<a [^>]*target="_blank"/.test(appSource), 'external links should route through openExternal, not raw target=_blank anchors');
   console.log('azure-devops tests passed');
 }
 

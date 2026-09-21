@@ -317,6 +317,16 @@ function externalLink(url, label) {
   return safe ? `<button class="external-link external-button" type="button" data-external-url="${escapeHtml(safe)}">${escapeHtml(label)} ↗</button>` : '';
 }
 
+// A compact-list row that opens externally. Same contract as externalLink: the URL is validated up
+// front and a rejected one renders as plain, unclickable text rather than a dead link.
+function externalRow(url, label, meta) {
+  const safe = safeDevOpsUrl(url);
+  const body = `<span>${escapeHtml(label)}</span><small>${escapeHtml(meta)}</small>`;
+  return safe
+    ? `<button class="compact-item external-link" type="button" data-external-url="${escapeHtml(safe)}">${body}</button>`
+    : `<div class="compact-item">${body}</div>`;
+}
+
 function staleNote(data) {
   if (!data || !data.stale) return '';
   return `<span class="stale-note">Showing cached data${data.warning ? ` · ${escapeHtml(data.warning)}` : ''}</span>`;
@@ -393,7 +403,7 @@ function renderRepositories(data) {
 function renderRepositoryDetail(data) {
   const repo = data.repository;
   const branches = data.branches.slice(0, 8).map(branch => `<div class="compact-item"><span>${escapeHtml(branch.name)}</span><small>${escapeHtml(branch.objectId.slice(0, 8))}</small></div>`).join('') || '<p>No branches found.</p>';
-  const commits = data.commits.slice(0, 7).map(commit => `<a class="compact-item external-link" href="${escapeHtml(safeDevOpsUrl(commit.url))}" target="_blank" rel="noopener noreferrer"><span>${escapeHtml(commit.message.split('\n')[0])}</span><small>${escapeHtml(commit.author)} · ${escapeHtml(fmtDate(commit.date))}</small></a>`).join('') || '<p>No recent commits.</p>';
+  const commits = data.commits.slice(0, 7).map(commit => externalRow(commit.url, commit.message.split('\n')[0], `${commit.author} · ${fmtDate(commit.date)}`)).join('') || '<p>No recent commits.</p>';
   document.getElementById('detailPanel').innerHTML = `<header><div><h2>${escapeHtml(repo.name)}</h2><p>${escapeHtml(repo.defaultBranch || 'No default branch')} · ${escapeHtml(fmtBytes(repo.size))}</p></div>${externalLink(repo.url, 'Open repository')}</header>
     <div class="detail-grid"><div><h3>Branches (${data.branches.length})</h3><div class="compact-list">${branches}</div></div><div><h3>Recent commits</h3><div class="compact-list">${commits}</div></div></div>
     <h3>Active pull requests (${data.pullRequests.length})</h3>
@@ -472,7 +482,7 @@ function renderRunDetail(data) {
       <div class="detail-field"><small>Queued</small><strong>${escapeHtml(fmtDate(run.queuedAt))}</strong></div>
       <div class="detail-field"><small>Commit</small><strong>${run.commitUrl ? externalLink(run.commitUrl, run.sourceVersion.slice(0, 10)) : escapeHtml(run.sourceVersion ? run.sourceVersion.slice(0, 10) : '—')}</strong></div>
     </div><h3>Stages and jobs</h3><div class="compact-list">${stages}</div>
-    ${data.workItems.length ? `<h3>Linked work items</h3><div class="compact-list">${data.workItems.map(item => `<a class="compact-item external-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"><span>Work item #${item.id}</span><small>Open ↗</small></a>`).join('')}</div>` : ''}`;
+    ${data.workItems.length ? `<h3>Linked work items</h3><div class="compact-list">${data.workItems.map(item => externalRow(item.url, `Work item #${item.id}`, 'Open ↗')).join('')}</div>` : ''}`;
 }
 
 function renderPullRequests(data) {
@@ -499,7 +509,7 @@ function renderPullRequestDetail(data) {
   document.getElementById('detailPanel').innerHTML = `<header><div><h2>#${pr.id} ${escapeHtml(pr.title)}</h2><p>${escapeHtml(pr.repository)} · ${escapeHtml(pr.author)}</p></div>${externalLink(pr.url, 'Open pull request')}</header>
     <div class="detail-grid"><div class="detail-field"><small>Source</small><strong>${escapeHtml(pr.sourceBranch)}</strong></div><div class="detail-field"><small>Target</small><strong>${escapeHtml(pr.targetBranch)}</strong></div></div>
     ${data.description ? `<p>${escapeHtml(data.description)}</p>` : ''}<h3>Reviewers</h3><div class="compact-list">${reviewers}</div>
-    ${data.workItems.length ? `<h3>Linked work items</h3><div class="compact-list">${data.workItems.map(item => `<a class="compact-item external-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"><span>Work item #${item.id}</span><small>Open ↗</small></a>`).join('')}</div>` : ''}`;
+    ${data.workItems.length ? `<h3>Linked work items</h3><div class="compact-list">${data.workItems.map(item => externalRow(item.url, `Work item #${item.id}`, 'Open ↗')).join('')}</div>` : ''}`;
 }
 
 function workItemStateRank(value) {

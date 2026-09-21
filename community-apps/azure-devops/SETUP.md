@@ -5,8 +5,9 @@ Bedrock Panel main process and are never returned to the app page.
 
 The V2 work-item view opens on items assigned to the signed-in user in the current
 sprint. User stories and product backlog items act as parent cards; tap one to show its
-child tasks. Use **Stories** to return to the top level, or tap the selected parent title
-to open its full work-item details.
+child tasks. Bugs and tasks that have no parent story in view sit alongside them at the
+top level. Use **← Back** to return to the top level, or tap the selected parent title to
+open its full work-item details.
 
 ## 1. Register an application
 
