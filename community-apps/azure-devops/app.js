@@ -107,19 +107,38 @@ function workItemTypeClass(value) {
   return 'type-other';
 }
 
+// The wide layout carries the fetch time in the header's .updated-copy block, so the status chip can
+// stay short. Below 1100px that block is `display: none`, and shortening the chip there would drop the
+// only remaining freshness indicator -- so keep the full message whenever the block is not rendered.
+function updatedLabelVisible() {
+  return !!(els.updatedLabel && els.updatedLabel.offsetParent);
+}
+
 function setStatus(message) {
-  els.connectionStatus.textContent = /^Connected/.test(message)
+  const connected = /^Connected/.test(message);
+  els.connectionStatus.textContent = connected && updatedLabelVisible()
     ? (/cached/i.test(message) ? 'Connected · cached' : 'Connected')
     : message;
-  els.connectionStatus.classList.toggle('connected', /^Connected/.test(message));
+  els.connectionStatus.classList.toggle('connected', connected);
   els.connectionStatus.classList.toggle('warning', /cached|problem|expired|required/i.test(message));
+}
+
+// "All users" / "All sprints" are the empty string, which localStorage cannot tell apart from "never
+// stored" -- a bare `saved(...) || '__me__'` would silently restore the @Me default every launch. Both
+// filters round-trip through this sentinel instead.
+const ALL_FILTER = '__all__';
+
+function storedFilter(context, name, fallback) {
+  const value = context ? saved(`work-items.${context}.${name}`) : '';
+  if (!value) return fallback;
+  return value === ALL_FILTER ? '' : value;
 }
 
 function resetWorkItemView() {
   const context = state.organization && state.project ? `${state.organization.name}.${state.project.id}` : '';
   state.workItemFilters = {
-    assignee: context ? saved(`work-items.${context}.assignee`) || '__me__' : '__me__',
-    iteration: context ? saved(`work-items.${context}.iteration`) || '__current__' : '__current__'
+    assignee: storedFilter(context, 'assignee', '__me__'),
+    iteration: storedFilter(context, 'iteration', '__current__')
   };
   state.workItemParentId = 0;
   state.workItemParentTrail = [];
@@ -129,8 +148,8 @@ function saveWorkItemFilters() {
   if (!state.organization || !state.project) return;
   const context = `${state.organization.name}.${state.project.id}`;
   try {
-    localStorage.setItem(`azure-devops.work-items.${context}.assignee`, state.workItemFilters.assignee);
-    localStorage.setItem(`azure-devops.work-items.${context}.iteration`, state.workItemFilters.iteration);
+    localStorage.setItem(`azure-devops.work-items.${context}.assignee`, state.workItemFilters.assignee || ALL_FILTER);
+    localStorage.setItem(`azure-devops.work-items.${context}.iteration`, state.workItemFilters.iteration || ALL_FILTER);
   } catch (error) {}
 }
 
@@ -561,9 +580,11 @@ function renderWorkItems(data) {
   const visible = (parent
     ? visibleChildrenFor(parent.id)
     : data.workItems.filter(item => {
-      if (!isStoryLevel(item)) return false;
-      const knownParent = itemsById.get(Number(item.parentId));
-      return !isStoryLevel(knownParent) && (matchesFilters(item) || hasMatchingDescendant(item.id));
+      // Only story-level cards drill down, so an item is reachable as a child ONLY when its parent is
+      // a story-level item in this data set. Everything else belongs at the top level: parentless Bugs,
+      // and Tasks whose parent story is Closed and therefore absent from the query.
+      if (isStoryLevel(itemsById.get(Number(item.parentId)))) return false;
+      return matchesFilters(item) || (isStoryLevel(item) && hasMatchingDescendant(item.id));
     })).sort(compareWorkItems);
 
   const option = (value, label, selected) => `<option value="${escapeHtml(value)}"${value === selected ? ' selected' : ''}>${escapeHtml(label)}</option>`;
@@ -592,7 +613,7 @@ function renderWorkItems(data) {
   const count = parent ? `${visible.length} of ${childrenFor(parent.id).length} children` : `${visible.length} top-level · ${matching.length} matching`;
   const hierarchy = parent
     ? `<button class="hierarchy-back" type="button" data-work-back>← Back</button><button class="hierarchy-parent" type="button" data-work-item="${parent.id}"><strong>#${parent.id}</strong><span>${escapeHtml(parent.title)}</span></button>`
-    : '<span class="hierarchy-label">Stories &amp; backlog</span>';
+    : '<span class="hierarchy-label">Top level</span>';
   els.content.innerHTML = `<div class="section-shell work-items-shell">
     <div class="section-heading work-items-toolbar">
       ${hierarchy}
