@@ -22,7 +22,9 @@
   var DARK = q.get('_dark') !== '0';
   var ACCENT = /^#[0-9a-fA-F]{6}$/.test(q.get('_accent') || '') ? q.get('_accent') : '#7CFFB2';
   var FORCE_PICK = q.get('pick') === '1';                       // set by the Stories button's reload
-  var OPT_STORY = FORCE_PICK ? '' : (q.get('story') || '').trim();
+  // The editor's file picker stores an absolute path; the server only ever accepts a bare
+  // filename inside the stories folder, so keep the last path component.
+  var OPT_STORY = FORCE_PICK ? '' : (q.get('story') || '').trim().split(/[\\/]/).pop();
   var WANT_SPEAK = q.get('speak') !== '0' && q.get('speak') !== 'false';
   var WANT_VOICE_IN = q.get('voiceInput') !== '0' && q.get('voiceInput') !== 'false';
   var WANT_AUTOSAVE = q.get('autosave') === '1' || q.get('autosave') === 'true';

@@ -111,6 +111,9 @@ h1, h2, p { margin: 0; }
 .form-fields label { display: grid; grid-template-rows: auto 44px; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 750; text-transform: uppercase; }
 .form-fields label span { font-weight: 500; text-transform: none; }
 .form-fields .wide { grid-column: 1 / -1; }
+.pathpick { display: flex; gap: 8px; min-width: 0; }
+.pathpick input { flex: 1; min-width: 0; }
+.pathpick button { flex: none; min-width: 104px; }
 input, select { min-width: 0; height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .form-actions button { min-width: 110px; }

@@ -78,4 +78,9 @@ test('setRoot writes the scratch config', async () => {
   assert.strictEqual(JSON.parse(fs.readFileSync(cfgPath, 'utf8')).portableRoot, 'X:\\portable');
 });
 
+test('manifest: declares the host folder picker the Settings Browse button uses', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'app.json'), 'utf8'));
+  assert.ok(Array.isArray(manifest.hostCapabilities) && manifest.hostCapabilities.includes('pick-folder'));
+});
+
 test.after(() => fs.rmSync(scratch, { recursive: true, force: true }));

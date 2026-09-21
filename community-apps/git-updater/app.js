@@ -371,6 +371,29 @@ $('#mAddSel').onclick = async () => {
 };
 
 // ── Settings view ─────────────────────────────────────────────────────────────
+// Host-mediated folder picker (app.json hostCapabilities: ["pick-folder"]). A host too old to
+// serve the route answers 404/503 — the typed path field still works, so we only say so.
+$('#mRootBrowse').onclick = async () => {
+  const btn = $('#mRootBrowse'), input = $('#mRoot');
+  btn.disabled = true;
+  $('#setErr').textContent = '';
+  try {
+    const r = await fetch('/app-host/pick-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ defaultPath: input.value.trim() }),
+    });
+    let out = null;
+    try { out = await r.json(); } catch {}
+    if (out && out.ok && typeof out.path === 'string') input.value = out.path;
+    else if (!(out && out.canceled)) {
+      $('#setErr').textContent = (out && out.error) || 'Folder picker unavailable — type the path instead.';
+    }
+  } catch (e) {
+    $('#setErr').textContent = 'Folder picker unavailable — type the path instead.';
+  } finally { btn.disabled = false; }
+};
+
 $('#mSave').onclick = async () => {
   try {
     const r = await api('setRoot', { path: $('#mRoot').value });

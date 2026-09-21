@@ -20,7 +20,7 @@
       "id": "ai-usage",
       "name": "AI Usage",
       "description": "At-a-glance usage monitor for Claude (Claude Code & Cowork), ChatGPT/Codex, and GitHub Copilot. Reads local Claude/Codex session logs and the GitHub billing API.",
-      "version": "1.0.7",
+      "version": "1.0.8",
       "zip": "ai-usage.zip",
       "server": true
     },
@@ -44,7 +44,7 @@
       "id": "dev-services",
       "name": "Dev Services",
       "description": "Configure up to 12 local HTTP/HTTPS services and see four at a glance, including listening state, port owner, expected-process mismatches, URL and folder shortcuts, and guarded process stopping on supported platforms.",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "zip": "dev-services.zip",
       "server": true
     },
@@ -76,7 +76,7 @@
       "id": "git-updater",
       "name": "git-updater",
       "description": "Panel front-end for git-updater: check and update your tracked Windows apps (portable & installed) straight from their GitHub releases. Shares its app list with the standalone git-updater — manage the list there, run updates from here.",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "zip": "git-updater.zip",
       "server": true
     },
@@ -84,7 +84,7 @@
       "id": "if-player",
       "name": "Interactive Fiction",
       "description": "Play Inform / Z-machine & Glulx text adventures with TTS narration and voice commands.",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "zip": "if-player.zip",
       "server": true
     },
@@ -188,7 +188,7 @@
       "id": "tailscale-monitor",
       "name": "Tailscale Monitor",
       "description": "See your tailnet at a glance — every machine with address, OS, exit-node role, and live online status. Reads the local Tailscale daemon (tailscale status) — no API key or login needed.",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "zip": "tailscale-monitor.zip",
       "server": true
     },

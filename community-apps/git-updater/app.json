@@ -1,9 +1,10 @@
 {
   "id": "git-updater",
   "name": "git-updater",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Panel front-end for git-updater: check and update your tracked Windows apps (portable & installed) straight from their GitHub releases. Shares its app list with the standalone git-updater — manage the list there, run updates from here.",
   "entry": "index.html",
   "served": true,
-  "server": "server.js"
+  "server": "server.js",
+  "hostCapabilities": ["pick-folder"]
 }

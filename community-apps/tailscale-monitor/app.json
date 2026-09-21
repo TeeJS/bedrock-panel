@@ -1,13 +1,13 @@
 {
   "id": "tailscale-monitor",
   "name": "Tailscale Monitor",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "See your tailnet at a glance — every machine with address, OS, exit-node role, and live online status. Reads the local Tailscale daemon (tailscale status) — no API key or login needed.",
   "entry": "index.html",
   "served": true,
   "server": "server.js",
   "options": [
-    { "key": "cliPath", "label": "tailscale CLI path", "type": "text", "default": "", "serverOnly": true, "help": "Leave blank to auto-detect (C:\\Program Files\\Tailscale\\tailscale.exe). Set only if Tailscale is installed somewhere unusual." },
+    { "key": "cliPath", "label": "tailscale CLI path", "type": "file", "default": "", "serverOnly": true, "help": "Leave blank to auto-detect (C:\\Program Files\\Tailscale\\tailscale.exe). Set only if Tailscale is installed somewhere unusual." },
     {
       "key": "refreshSeconds",
       "label": "Refresh interval",
