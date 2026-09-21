@@ -27,6 +27,24 @@ function text(value, max) {
   return String(value == null ? '' : value).trim().slice(0, max || 300);
 }
 
+function workItemDescription(value, max) {
+  return String(value == null ? '' : value)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<li(?:\s[^>]*)?>/gi, '• ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n+ */g, '\n')
+    .trim()
+    .slice(0, max || 1600);
+}
+
 function organizationName(value) {
   const name = text(value, 100);
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(name)) {
@@ -404,15 +422,23 @@ async function pipelineList(token, organization, project, force) {
 function normalizeWorkItem(item, organization, project) {
   const fields = item.fields || {};
   const assigned = fields['System.AssignedTo'];
+  const parentRelation = Array.isArray(item.relations)
+    ? item.relations.find(relation => relation && relation.rel === 'System.LinkTypes.Hierarchy-Reverse')
+    : null;
+  const parentMatch = parentRelation && /\/workItems\/(\d+)(?:\?|$)/i.exec(String(parentRelation.url || ''));
   return {
     id: Number(item.id) || 0,
     title: text(fields['System.Title'], 300),
+    description: workItemDescription(fields['System.Description'] || fields['Microsoft.VSTS.Common.AcceptanceCriteria'], 1600),
     type: text(fields['System.WorkItemType'], 100),
     state: text(fields['System.State'], 100),
     assignedTo: text(assigned && (assigned.displayName || assigned.uniqueName) || assigned, 200),
+    assignedToId: text(assigned && assigned.id, 120),
+    assignedToUniqueName: text(assigned && assigned.uniqueName, 200),
     changedAt: text(fields['System.ChangedDate'], 80),
     iteration: text(fields['System.IterationPath'], 250),
     tags: text(fields['System.Tags'], 500),
+    parentId: Number(fields['System.Parent']) || Number(parentMatch && parentMatch[1]) || 0,
     relations: Array.isArray(item.relations) ? item.relations.map(relation => ({
       rel: text(relation.rel, 100),
       url: text(relation.url, 500),
@@ -425,21 +451,56 @@ function normalizeWorkItem(item, organization, project) {
 async function workItemList(token, organization, project, force) {
   const key = `work:${organization.toLowerCase()}:${project.id}`;
   return cached(key, DEFAULT_CACHE_MS, async () => {
-    const wiql = {
-      query: "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.State] <> 'Closed' ORDER BY [System.ChangedDate] DESC"
-    };
-    const queryResult = await requestJson(projectApiUrl(organization, project.id, 'wit/wiql', { '$top': 100 }), token, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(wiql)
+    const queryIds = query => requestJson(projectApiUrl(organization, project.id, 'wit/wiql', { '$top': 100 }), token, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query })
     });
+    const [queryResult, assignedToMeResult, currentIterationResult, profileResult] = await Promise.all([
+      queryIds("SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.State] <> 'Closed' ORDER BY [System.ChangedDate] DESC"),
+      queryIds("SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.State] <> 'Closed' AND [System.AssignedTo] = @Me").catch(() => null),
+      requestJson(projectApiUrl(organization, project.id, 'work/teamsettings/iterations', { '$timeframe': 'current' }), token).catch(() => null),
+      requestJson(`${PROFILE_ORIGIN}/_apis/profile/profiles/me?api-version=${API_VERSION}`, token).catch(() => null)
+    ]);
     const ids = (Array.isArray(queryResult.workItems) ? queryResult.workItems : []).map(item => Number(item.id)).filter(Boolean).slice(0, 100);
-    if (!ids.length) return { workItems: [] };
+    if (!ids.length) return {
+      workItems: [],
+      workItemContextVersion: 1,
+      meFilterAvailable: !!assignedToMeResult || !!profileResult,
+      currentIterationFilterAvailable: !!currentIterationResult,
+      currentIteration: ''
+    };
+    const assignedToMeIds = new Set((assignedToMeResult && Array.isArray(assignedToMeResult.workItems) ? assignedToMeResult.workItems : []).map(item => Number(item.id)).filter(Boolean));
+    const teamCurrentIteration = text(valueArray(currentIterationResult)[0] && (valueArray(currentIterationResult)[0].path || valueArray(currentIterationResult)[0].name), 250);
+    const currentUserKeys = new Set([
+      text(profileResult && profileResult.id, 120),
+      text(profileResult && profileResult.displayName, 200),
+      text(profileResult && profileResult.emailAddress, 200),
+      text(profileResult && profileResult.publicAlias, 200)
+    ].filter(Boolean).map(value => value.toLowerCase()));
     const batch = await requestJson(projectApiUrl(organization, project.id, 'wit/workitemsbatch'), token, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       // Azure DevOps rejects `fields` and `$expand` together. Omitting `fields` returns the
       // standard field set while allowing the explicit relations required by the detail view.
       body: JSON.stringify({ ids, '$expand': 'Relations' })
     });
-    return { workItems: valueArray(batch).map(item => normalizeWorkItem(item, organization, project)).filter(item => item.id) };
+    const workItems = valueArray(batch).map(item => normalizeWorkItem(item, organization, project)).filter(item => item.id).map(item => Object.assign(item, {
+      isAssignedToMe: assignedToMeIds.has(item.id) || [item.assignedToId, item.assignedToUniqueName, item.assignedTo].some(value => currentUserKeys.has(String(value || '').toLowerCase()))
+    }));
+    const currentUserItem = workItems.find(item => item.isAssignedToMe && item.assignedTo);
+    const currentUser = text(profileResult && (profileResult.displayName || profileResult.emailAddress) || currentUserItem && currentUserItem.assignedTo, 200);
+    const iterationCounts = new Map();
+    workItems.filter(item => item.isAssignedToMe && item.iteration).forEach(item => iterationCounts.set(item.iteration, (iterationCounts.get(item.iteration) || 0) + 1));
+    const assignedIteration = Array.from(iterationCounts.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
+    const currentIteration = teamCurrentIteration || text(assignedIteration && assignedIteration[0], 250);
+    workItems.forEach(item => { item.isCurrentIteration = !!currentIteration && item.iteration.toLowerCase() === currentIteration.toLowerCase(); });
+    return {
+      workItems,
+      workItemContextVersion: 1,
+      meFilterAvailable: !!assignedToMeResult || !!profileResult,
+      currentIterationFilterAvailable: !!currentIteration,
+      currentIteration,
+      currentIterationSource: teamCurrentIteration ? 'team' : currentIteration ? 'assigned-items' : '',
+      currentUser
+    };
   }, force);
 }
 
