@@ -1,7 +1,7 @@
 {
   "id": "if-player",
   "name": "Interactive Fiction",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Play Inform / Z-machine & Glulx text adventures with TTS narration and voice commands.",
   "entry": "index.html",
   "served": true,
@@ -54,9 +54,9 @@
     {
       "key": "story",
       "label": "Auto-start story (optional)",
-      "type": "text",
+      "type": "file",
       "default": "",
-      "help": "Optional: a filename from the stories folder to open straight into. Leave blank to browse the on-screen list (the normal way)."
+      "help": "Optional: a story from the stories folder above to open straight into — Browse to it, or type its filename. Only its filename is used, so it must be one of the files in that folder. Leave blank to browse the on-screen list (the normal way)."
     }
   ],
   "settings": {

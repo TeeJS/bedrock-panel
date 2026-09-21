@@ -3007,7 +3007,7 @@
         ? `<label class="iconopt" style="width:auto"><input type="checkbox" ${attrs} ${v ? 'checked' : ''} style="width:auto"> ${esc(o.inline)}</label>`
         : `<input type="checkbox" ${attrs} ${v ? 'checked' : ''} style="width:auto">`;
       else if (o.type === 'secret') field = secretInput(v, attrs);
-      else if (o.type === 'folder') field = `<span class="folderopt" style="display:flex;gap:6px;flex:1"><input ${attrs} value="${esc(v)}" placeholder="${esc(o.placeholder || 'No folder chosen')}" style="flex:1"><button type="button" class="folderbrowse" data-for="${esc(o.key)}">Browse…</button></span>`;
+      else if (o.type === 'folder' || o.type === 'file') field = `<span class="folderopt" style="display:flex;gap:6px;flex:1"><input ${attrs} value="${esc(v)}" placeholder="${esc(o.placeholder || (o.type === 'file' ? 'No file chosen' : 'No folder chosen'))}" style="flex:1"><button type="button" class="folderbrowse" data-pick="${o.type}" data-for="${esc(o.key)}">Browse…</button></span>`;
       else if (o.type === 'number') {
         const na = [o.min != null ? `min="${Number(o.min)}"` : '', o.max != null ? `max="${Number(o.max)}"` : '', o.step != null ? `step="${Number(o.step)}"` : ''].filter(Boolean).join(' ');
         field = `<input type="number" inputmode="numeric" ${attrs} value="${esc(v)}" ${na}>`;
@@ -3144,10 +3144,10 @@
     el.querySelectorAll('details.advsec[data-adv]').forEach(d => d.ontoggle = () => {
       if (d.open) openAdv.add(d.dataset.adv); else openAdv.delete(d.dataset.adv);
     });
-    // type:'folder' options -> native folder picker. Sets the sibling input and fires its change so
+    // type:'folder'/'file' options -> native picker. Sets the sibling input and fires its change so
     // the normal .aopt/.aset handler above persists it (works for both per-page options and settings).
     el.querySelectorAll('.folderbrowse').forEach(btn => btn.onclick = async () => {
-      const p = await configApi.pickFolder();
+      const p = btn.dataset.pick === 'file' ? await configApi.pickFile() : await configApi.pickFolder();
       if (!p) return;
       const inp = Array.prototype.find.call(el.querySelectorAll('input'), i => i.dataset.key === btn.dataset.for);
       if (inp) { inp.value = p; inp.dispatchEvent(new Event('change', { bubbles: true })); }

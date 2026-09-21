@@ -345,6 +345,32 @@ $('#service-form').addEventListener('change', event => {
   if (field && service) service[field.dataset.field] = field.dataset.field === 'port' ? Number(field.value) : field.value;
 });
 
+// Host-mediated folder picker (app.json hostCapabilities: ["pick-folder"]). Dispatching `change`
+// lets the form's normal handler persist the pick, exactly as typing the path would.
+$('#browse-folder').addEventListener('click', async () => {
+  const button = $('#browse-folder');
+  const input = document.querySelector('[data-field="projectFolder"]');
+  if (!input) return;
+  button.disabled = true;
+  try {
+    const response = await fetch('/app-host/pick-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ defaultPath: input.value.trim() }),
+    });
+    let result = null;
+    try { result = await response.json(); } catch {}
+    if (result && result.ok && typeof result.path === 'string') {
+      input.value = result.path;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (!(result && result.canceled)) {
+      showToast((result && result.error) || 'Folder picker unavailable — type the path instead.');
+    }
+  } catch (error) {
+    showToast('Folder picker unavailable — type the path instead.');
+  } finally { button.disabled = false; }
+});
+
 $('#refresh-seconds').addEventListener('change', event => { draft.refreshSeconds = Number(event.target.value); });
 $('#add-service').addEventListener('click', () => {
   draft = core.addService(draft, {

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dev Services</title>
-  <link rel="stylesheet" href="style.css?v=1.0.1">
+  <link rel="stylesheet" href="style.css?v=1.0.2">
 </head>
 <body>
   <main class="shell">
@@ -69,7 +69,7 @@
             <label class="wide">Hostname<input data-field="host" maxlength="253" placeholder="localhost" required></label>
             <label class="wide">Path <span>(optional)</span><input data-field="path" maxlength="1024" placeholder="/dashboard"></label>
             <label>Expected process <span>(optional)</span><input data-field="expectedProcess" maxlength="260" placeholder="node.exe"></label>
-            <label>Project folder <span>(optional)</span><input data-field="projectFolder" maxlength="2048" placeholder="Absolute folder path"></label>
+            <label>Project folder <span>(optional)</span><span class="pathpick"><input data-field="projectFolder" maxlength="2048" placeholder="Absolute folder path"><button id="browse-folder" type="button">BROWSE</button></span></label>
             <div class="form-actions wide">
               <button id="move-up" type="button">↑ MOVE</button>
               <button id="move-down" type="button">↓ MOVE</button>
@@ -103,6 +103,6 @@
 
   <script src="service-core.js?v=1.0.0"></script>
   <script src="polling.js?v=1.0.0"></script>
-  <script src="app.js?v=1.0.0"></script>
+  <script src="app.js?v=1.0.2"></script>
 </body>
 </html>

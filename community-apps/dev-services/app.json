@@ -1,11 +1,12 @@
 {
   "id": "dev-services",
   "name": "Dev Services",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Configure up to 12 local HTTP/HTTPS services and see four at a glance, including listening state, port owner, expected-process mismatches, URL and folder shortcuts, and guarded process stopping on supported platforms.",
   "entry": "index.html",
   "served": true,
   "server": "server.js",
   "knob": true,
+  "hostCapabilities": ["pick-folder"],
   "options": []
 }

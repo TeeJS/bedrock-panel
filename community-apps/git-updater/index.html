@@ -134,6 +134,7 @@
 
   .frow { flex: none; display: flex; gap: 16px; align-items: stretch; }
   .frow input[type=text] { flex: 1; min-width: 0; }
+  .frow button { flex: none; min-width: 140px; font-size: 16px; }
   .seg { display: inline-flex; padding: 4px; gap: 4px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); }
   .seg button { min-height: 40px; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 7px; font-size: 16px; }
   .seg button.active { background: #21262d; color: var(--text); border-color: #444c56; }
@@ -237,6 +238,7 @@
   <div class="vbody">
     <div class="frow">
       <input type="text" id="mRoot" placeholder="C:\Users\you\portable-apps" aria-label="Portable apps folder">
+      <button type="button" id="mRootBrowse">Browse&hellip;</button>
     </div>
     <p class="fhelp">Portable apps unzip into <code>&lt;folder&gt;\&lt;repo&gt;</code>. Config, state, and logs are shared with the standalone git-updater on this PC.</p>
     <p class="ferr" id="setErr"></p>
@@ -249,6 +251,6 @@
 </div>
 
 <div id="rowMenu"></div>
-<script src="app.js"></script>
+<script src="app.js?v=1.0.2"></script>
 </body>
 </html>

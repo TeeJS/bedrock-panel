@@ -72,6 +72,9 @@ Declare `"knob": true` (served apps) to receive the panel's rotary knob: define 
 - For file apps, options are encoded into `location.hash`.
 - Mark sensitive or host-only values with `"serverOnly": true`; access those through `/app-proxy/config` or an app-local `server.js` handler.
 - Use `"type": "secret"` for passwords/API keys.
+- Use `"type": "folder"` or `"type": "file"` for any option holding a filesystem path — the editor
+  pairs those with a **Browse…** button (native directory / file picker). Never leave a path option
+  as `"text"`: it forces the user to type an absolute path by hand.
 
 Example:
 
