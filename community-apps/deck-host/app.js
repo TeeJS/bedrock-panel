@@ -219,6 +219,9 @@
       var lbl = document.createElement('div'); lbl.className = 'ov-label'; lbl.style.marginTop = '16px';
       lbl.textContent = 'Import from your plugins folder';
       list.appendChild(lbl);
+      var trust = document.createElement('div'); trust.className = 'pk-empty'; trust.style.marginTop = '4px';
+      trust.textContent = 'Imported profiles can carry keys that press keyboard shortcuts, type text, and open files or links on your PC — only import profiles you trust.';
+      list.appendChild(trust);
       imp.forEach(function (f) {
         var row = document.createElement('div'); row.className = 'prof';
         var b = document.createElement('button'); b.type = 'button'; b.className = 'grow';
