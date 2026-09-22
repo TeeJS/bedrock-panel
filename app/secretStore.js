@@ -185,6 +185,28 @@ function createSecretStore({ safeStorage, dpapi, loadApps, log = () => {} }) {
     transformSettingsSecrets(clone, encryptValue);
     return clone;
   }
+
+  // Produce the config to persist WITHOUT letting one unencryptable secret block the whole save.
+  // When encryption is available this is exactly encryptConfig (and still throws on an unexpected
+  // encrypt failure, so a genuine backend fault fails the save loudly). When encryption is
+  // unavailable — a keyring-less Linux session, a missing DPAPI module — every non-secret change must
+  // still persist, so a plaintext secret that cannot be protected is REDACTED from the on-disk copy
+  // (never written in the clear, never touched in memory) rather than throwing. Already-encrypted
+  // values pass through untouched. Returns { config, redactedSecrets } so the caller can warn.
+  function encryptConfigForSave(config) {
+    if (available()) return { config: encryptConfig(config), redactedSecrets: 0 };
+    let redactedSecrets = 0;
+    const redact = value => {
+      if (typeof value !== 'string' || value === '') return value;
+      if (value.startsWith(MARKER) || value.startsWith(MARKER2)) return value;   // already protected — keep ciphertext
+      redactedSecrets += 1;                                                        // plaintext we cannot protect — omit from disk
+      return '';
+    };
+    const clone = structuredClone(config);
+    (clone && Array.isArray(clone.grids) ? clone.grids : []).forEach(g => transformGridSecrets(g, redact));
+    transformSettingsSecrets(clone, redact);
+    return { config: clone, redactedSecrets };
+  }
   function decryptConfig(config) {
     const clone = structuredClone(config);
     (clone && Array.isArray(clone.grids) ? clone.grids : []).forEach(g => transformGridSecrets(g, decryptValue));
@@ -231,6 +253,7 @@ function createSecretStore({ safeStorage, dpapi, loadApps, log = () => {} }) {
     decryptValue,
     secretKeysForApp,
     encryptConfig,
+    encryptConfigForSave,
     decryptConfig,
     hasPlaintextSecret,
     needsRewrite,

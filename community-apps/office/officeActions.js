@@ -115,7 +115,11 @@ function officeInstallCandidates(executable, env, fs) {
     candidates.unshift(path.join(env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'ms-teams.exe'));
     candidates.unshift(path.join(env.LOCALAPPDATA, 'Microsoft', 'Teams', 'current', 'Teams.exe'));
   }
-  return candidates.filter((candidate, index, all) => index === 0 || fs.existsSync(candidate))
+  // Keep the bare executable name as an unconditional last-resort (it resolves against PATH at spawn
+  // time). Anchor on identity, not index 0 — an `unshift` of a concrete path (OneDrive, Teams) moves
+  // the bare name off index 0, and it does not exist as a literal path, so an index===0 guard would
+  // silently drop the PATH fallback.
+  return candidates.filter((candidate, index, all) => candidate === executable || fs.existsSync(candidate))
     .filter((candidate, index, all) => all.indexOf(candidate) === index);
 }
 

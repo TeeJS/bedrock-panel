@@ -55,6 +55,7 @@ class OAuthHandler {
     this.pendingDevices = new Map();
     this.callbackServer = null;
     this.refreshTimers = new Map();
+    this.refreshRetries = new Map();
   }
 
   provider(id) {
@@ -287,20 +288,52 @@ class OAuthHandler {
     const provider = this.provider(providerId);
     this.pendingDevices.delete(provider.id);
     const tokens = this.storage.getTokens(provider.id);
-    if (provider.revokeUrl && tokens && (tokens.refreshToken || tokens.accessToken)) {
-      try {
-        await this.fetchImpl(provider.revokeUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formBody({ token: tokens.refreshToken || tokens.accessToken }),
-        });
-      } catch (e) {
-        this.log('[oauth] revoke failed: ' + (e.message || e));
-      }
+    if (tokens && (tokens.refreshToken || tokens.accessToken)) {
+      try { await this.revokeAtProvider(provider, tokens); }
+      catch (e) { this.log('[oauth] revoke failed: ' + (e.message || e)); }
     }
     this.clearRefresh(provider.id);
+    this.refreshRetries.delete(provider.id);
     this.storage.deleteTokens(provider.id);
     return { ok: true };
+  }
+
+  // Invalidate the grant at the provider, not just locally — otherwise a disconnected refresh token
+  // stays replayable outside Bedrock Panel. Providers differ: Google exposes an RFC 7009 endpoint;
+  // GitHub instead requires DELETE /applications/{client_id}/grant with the OAuth App's client
+  // credentials via HTTP Basic. A GitHub app configured as a public client (no secret) cannot be
+  // revoked server-side, so we say so and remove the local copy — the best available outcome.
+  async revokeAtProvider(provider, tokens) {
+    const style = provider.revoke && provider.revoke.style;
+    if (style === 'github') {
+      const settings = this.storage.getProviderSettings(provider.id) || {};
+      const clientId = provider.clientId || settings.clientId;
+      const clientSecret = settings.clientSecret;
+      if (!clientId || !clientSecret) {
+        this.log('[oauth] cannot revoke ' + provider.id + ' at the provider without an OAuth App client secret; removed the local copy only');
+        return;
+      }
+      const apiBase = String(provider.revoke.apiBase || 'https://api.github.com').replace(/\/+$/, '');
+      const res = await this.fetchImpl(apiBase + '/applications/' + encodeURIComponent(clientId) + '/grant', {
+        method: 'DELETE',
+        headers: {
+          'Accept': 'application/vnd.github+json',
+          'Authorization': 'Basic ' + Buffer.from(clientId + ':' + clientSecret).toString('base64'),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ access_token: tokens.accessToken || tokens.refreshToken }),
+      });
+      const status = res && typeof res.status === 'number' ? res.status : 0;
+      if (status >= 400 && status !== 404) throw new Error('GitHub revoke returned HTTP ' + status);   // 404 = already gone
+      return;
+    }
+    if (provider.revokeUrl) {
+      await this.fetchImpl(provider.revokeUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody({ token: tokens.refreshToken || tokens.accessToken }),
+      });
+    }
   }
 
   status(providerId) {
@@ -318,12 +351,36 @@ class OAuthHandler {
   scheduleRefresh(providerId) {
     this.clearRefresh(providerId);
     const provider = this.provider(providerId);
+    // A healthy (re)schedule means the last refresh succeeded (or this is a fresh connect), so reset
+    // the retry backoff — the next failure starts counting from the beginning again.
+    this.refreshRetries.delete(provider.id);
     const tokens = this.storage.getTokens(provider.id);
     if (!tokens || !tokens.refreshToken || !tokens.expiresAt) return;
     const delay = Math.max(30000, Number(tokens.expiresAt) - this.now() - (provider.accessTokenExpiresSkewMs || 300000));
     this.refreshTimers.set(provider.id, setTimeout(() => {
-      this.refreshTokenIfNeeded(provider.id, true).catch(e => this.log('[oauth] refresh failed for ' + provider.id + ': ' + (e.message || e)));
+      this.refreshTokenIfNeeded(provider.id, true).catch(e => this.handleRefreshFailure(provider.id, e));
     }, delay));
+  }
+
+  // A scheduled refresh that rejects used to be logged and dropped, leaving no timer — so a single
+  // transient failure (network blip, provider 5xx) permanently stopped background refresh until the
+  // app restarted or a page happened to poll. Reschedule a bounded exponential-backoff retry instead.
+  // consent_required is a dead end without user action, so we don't spin on it.
+  handleRefreshFailure(providerId, error) {
+    const provider = this.provider(providerId);
+    if (error && error.code === 'consent_required') {
+      this.log('[oauth] refresh needs re-consent for ' + provider.id + '; not retrying automatically: ' + (error.message || error));
+      return;
+    }
+    const attempt = (this.refreshRetries.get(provider.id) || 0) + 1;
+    this.refreshRetries.set(provider.id, attempt);
+    const retryDelay = Math.min(30 * 60000, 60000 * Math.pow(2, attempt - 1));   // 1m, 2m, 4m, ... capped at 30m
+    this.log('[oauth] refresh failed for ' + provider.id + ' (attempt ' + attempt + '), retrying in ' + Math.round(retryDelay / 1000) + 's: ' + (error && error.message || error));
+    const t = this.refreshTimers.get(provider.id);
+    if (t) clearTimeout(t);
+    this.refreshTimers.set(provider.id, setTimeout(() => {
+      this.refreshTokenIfNeeded(provider.id, true).catch(e => this.handleRefreshFailure(provider.id, e));
+    }, retryDelay));
   }
 
   clearRefresh(providerId) {
@@ -339,6 +396,7 @@ class OAuthHandler {
   stop() {
     for (const t of this.refreshTimers.values()) clearTimeout(t);
     this.refreshTimers.clear();
+    this.refreshRetries.clear();
     this.pendingDevices.clear();
     if (this.callbackServer) {
       try { this.callbackServer.close(); } catch (e) {}

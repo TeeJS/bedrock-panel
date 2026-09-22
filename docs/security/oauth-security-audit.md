@@ -4,6 +4,8 @@
 **Repository:** Bedrock Panel  
 **Audit type:** source, local Git history, Electron boundary, and packaging review; no live authentication was performed
 
+> **Status update (2026-08-11):** OAUTH-001, the single High finding below, has since been **resolved**. It is the same issue tracked as **SEC-001** in [`security-audit.md`](security-audit.md), which records the resolution: the global loopback token/connect routes were removed, Microsoft Graph calls and OAuth credentials stay in the main process, and served apps now use a rotating, expiring, memory-only session capability. The point-in-time counts and finding text below are preserved as the original audit record; see each finding's **Status** line for its current state.
+
 ## Executive Summary
 
 The OAuth authorization-code implementation has a sound cryptographic core: it uses the system browser, transaction-specific high-entropy state and PKCE values, S256 challenges, HTTPS token endpoints, encrypted token persistence, expiry-aware refresh, and sender checks on IPC. The loopback services bind to IPv4 loopback, and the general local HTTP service has strong Host and same-origin checks.
@@ -94,6 +96,8 @@ The application is a native/public Electron client. The currently enabled provid
 ### OAUTH-001 — Served apps and renderer bridges can retrieve refresh tokens
 
 **Severity:** High
+
+**Status:** Resolved (2026-08-11) — same finding as SEC-001 in [`security-audit.md`](security-audit.md). The global `/api/oauth-tokens.json` and connect routes were removed, refresh tokens now stay in the main process, and served apps receive only a rotating, expiring, memory-only session capability. The affected-component line paths below are pre-remediation.
 
 **Affected components:** `src/auth/oauth-handler.js:182-193`; `app/main.js:522-528`, `app/main.js:1627-1630`; `app/sysserver.js:340-354`; `app/panel-preload.js:22`; `app/config-preload.js:14`; `app/office.js:18-27`.
 
