@@ -32,7 +32,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const http = require('http');
 const { EventEmitter } = require('events');
-const { spawn, exec } = require('child_process');
+const { spawn } = require('child_process');
 
 // ZERO npm dependencies. A drop-in installed under %APPDATA% is outside every node_modules tree, so
 // requiring ws/adm-zip is fragile there; this file uses only Node builtins -- a built-in zip reader
@@ -561,6 +561,17 @@ function sendToKeyHelper(obj) {
   });
 }
 
+// Decide how an "Open" target is launched, as pure data so it can be unit-tested without Electron.
+// A URL opens in the browser; anything else is treated as a filesystem path/app for the OS default
+// handler. There is deliberately no shell-command branch: "Open" opens things, and a target string
+// (including one carried by an imported profile) must never be able to run a command.
+function openTargetIntent(target) {
+  const t = String(target || '').trim();
+  if (!t) return { kind: 'none' };
+  if (/^https?:\/\//i.test(t)) return { kind: 'url', value: t };
+  return { kind: 'path', value: t };
+}
+
 async function executeBuiltin(ctx, c) {
   const ks = keyState.get(ctx) || keyState.set(ctx, {}).get(ctx);
   const done = (ok, error) => { if (ok) ks.ok = Date.now(); else ks.alert = Date.now(); bump(); return ok ? { ok: true } : { ok: false, error: error || 'failed' }; };
@@ -588,13 +599,17 @@ async function executeBuiltin(ctx, c) {
       return done(r === 'ok', r);
     }
     if (c.builtin === 'open') {
-      let t = String(cfg.target || '').trim();
-      if (!t) return done(false, 'nothing to open');
-      if (/^https?:\/\//i.test(t)) { require('electron').shell.openExternal(t); return done(true); }
-      if (/^cmd(\.exe)?\s+\/c\s+/i.test(t)) t = t.replace(/^cmd(\.exe)?\s+\/c\s+/i, '');
-      else t = 'start "" "' + t + '"';
-      exec(t, { windowsHide: true }, () => {});
-      return done(true);
+      const intent = openTargetIntent(cfg.target);
+      if (intent.kind === 'none') return done(false, 'nothing to open');
+      const electron = require('electron');
+      // Open via native Electron APIs, never a cmd.exe shell. The old code built
+      // `start "" "<target>"` and ran it through `exec`, so a target containing a double quote broke
+      // out into an injected command — and a `cmd /c <command>` prefix ran an arbitrary shell command
+      // outright. Because the target can come from an imported .streamDeckProfile, that turned a
+      // "layout import" into code execution. openExternal/openPath take the string as data.
+      if (intent.kind === 'url') { electron.shell.openExternal(intent.value); return done(true); }
+      const err = await electron.shell.openPath(intent.value);   // '' on success, a message on failure
+      return err ? done(false, err) : done(true);
     }
     if (c.builtin === 'website') {
       const u = String(cfg.url || '').trim();
@@ -1105,4 +1120,5 @@ function _shutdown() {
 module.exports = { handle, _shutdown,
   // test hooks: fake the keystroke helper / verify the page-dir encoding without real input
   _setKeyHelper(fn) { keyHelperOverride = fn; },
-  _uuidToPageDir: uuidToPageDir };
+  _uuidToPageDir: uuidToPageDir,
+  _openTargetIntent: openTargetIntent };
