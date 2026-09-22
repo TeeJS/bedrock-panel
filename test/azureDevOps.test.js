@@ -63,8 +63,8 @@ test('community catalog and importable zip contain the Azure DevOps drop-in', ()
   assert.deepEqual(entry, {
     id: 'azure-devops',
     name: 'Azure DevOps',
-    description: 'Project-focused Azure DevOps repositories, pipelines, pull requests, and work items.',
-    version: '1.0.4',
+    description: 'Distance-readable, touch-first Azure DevOps dashboard with swipeable repositories, pipelines, pull requests, and work items.',
+    version: '2.3.0',
     zip: 'azure-devops.zip',
     server: true
   });
@@ -77,8 +77,8 @@ test('community catalog and importable zip contain the Azure DevOps drop-in', ()
 test('app assets are relative and the panel defines exactly four overview slots', () => {
   const html = fs.readFileSync(path.join(appDir, 'index.html'), 'utf8');
   const data = manifest();
-  assert.match(html, /href="style\.css"/);
-  assert.match(html, /src="app\.js"/);
+  assert.match(html, /href="style\.css(?:\?v=[\w.]+)?"/);
+  assert.match(html, /src="app\.js(?:\?v=[\w.]+)?"/);
   assert.match(html, /<svg[^>]*viewBox="0 0 24 24"/);
   assert.doesNotMatch(html, /(?:src|href)="\//);
   assert.equal(data.options.filter(option => /^card[1-4]$/.test(option.key)).length, 0);
