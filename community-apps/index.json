@@ -180,7 +180,7 @@
       "id": "deck-host",
       "name": "Stream Deck Host",
       "description": "Run Elgato Stream Deck plugins and profiles on the panel — real *.sdPlugin packages, plus .streamDeckProfile imports with working Hotkey/Text/Open keys.",
-      "version": "1.4.3",
+      "version": "1.4.4",
       "zip": "deck-host.zip",
       "server": true
     },

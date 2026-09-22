@@ -1,7 +1,7 @@
 {
   "id": "deck-host",
   "name": "Stream Deck Host",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Run Elgato Stream Deck plugins and profiles on the panel — real *.sdPlugin packages, plus .streamDeckProfile imports with working Hotkey/Text/Open keys.",
   "entry": "index.html",
   "served": true,
