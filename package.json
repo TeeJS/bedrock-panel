@@ -62,7 +62,6 @@
       "!build-smtc.js",
       "!build-mac.js",
       "!build-mac-helpers.js",
-      "!build-mac-helpers.js",
       "!sign.js",
       "!afterpack.js",
       "!.signing/**",
@@ -74,7 +73,14 @@
       "packaging/linux/70-bedrock-panel.rules",
       "!test/**",
       "!X/**",
-      "!.claude/**"
+      "!.claude/**",
+      "!.busy-shots/**",
+      "!.impeccable/**",
+      "!.oq-start.log",
+      "!AGENTS.md",
+      "!PROJECT.md",
+      "!my-meeting-analysis-prompt.md",
+      "!**/__pycache__/**"
     ],
     "npmRebuild": false,
     "afterPack": "./afterpack.js",

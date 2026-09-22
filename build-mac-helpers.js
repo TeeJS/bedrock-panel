@@ -23,7 +23,16 @@ const LIB_DIR = path.join(SRC_DIR, 'lib');
 const OUT_DIR = path.join(ROOT, 'app', 'native', 'mac');
 const MIN_MACOS = '14.0';   // CoreAudio process objects (mic monitor) need 14.2 at runtime; the binaries load on 14.0
 const log = m => console.log('[build:mac] ' + m);
-const bail = m => { console.warn('[build:mac] ' + m + ' — skipping macOS helper compilation.'); process.exit(0); };
+// During `npm run dist:mac` the signed package MUST contain freshly built helpers, so anything that
+// would prevent that is a hard failure there. Detected from the npm script name.
+const RELEASE = /^dist(:|$)/.test(process.env.npm_lifecycle_event || '');
+// A missing toolchain is non-fatal for development; in a release build it is fatal.
+const skip = m => {
+  if (RELEASE) { console.error('[build:mac] ' + m + ' — cannot produce a release build without the macOS helpers.'); process.exit(1); }
+  console.warn('[build:mac] ' + m + ' — skipping macOS helper compilation.'); process.exit(0);
+};
+// A compile or lipo failure is ALWAYS fatal, so a stale helper can never ride silently into a build.
+const fail = m => { console.error('[build:mac] ' + m); process.exit(1); };
 
 if (process.platform !== 'darwin') process.exit(0);
 
@@ -57,7 +66,7 @@ if (!stale.length) { log('up to date'); process.exit(0); }
 // Run the tools through xcrun so the Command Line Tools' SDK is found (a bare swiftc has no SDKROOT
 // and fails with 'unable to load standard library').
 const XCRUN = '/usr/bin/xcrun';
-try { execFileSync(XCRUN, ['-f', 'swiftc'], { stdio: 'ignore' }); } catch (e) { bail('swiftc not found — install the Xcode Command Line Tools (xcode-select --install)'); }
+try { execFileSync(XCRUN, ['-f', 'swiftc'], { stdio: 'ignore' }); } catch (e) { skip('swiftc not found — install the Xcode Command Line Tools (xcode-select --install)'); }
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 for (const t of stale) {
@@ -67,11 +76,11 @@ for (const t of stale) {
     const args = ['-O', '-parse-as-library', '-target', arch + '-apple-macos' + MIN_MACOS, '-o', slice, t.src, ...libs];
     if (t.plist) args.push('-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker', path.join(SRC_DIR, t.plist));
     log('compiling ' + t.name + ' (' + arch + ')');
-    try { execFileSync(XCRUN, ['swiftc', ...args], { stdio: 'inherit' }); } catch (e) { bail('compile failed: ' + t.name); }
+    try { execFileSync(XCRUN, ['swiftc', ...args], { stdio: 'inherit' }); } catch (e) { fail('compile failed: ' + t.name); }
     slices.push(slice);
   }
   if (slices.length > 1) {
-    try { execFileSync(XCRUN, ['lipo', '-create', ...slices, '-output', t.out], { stdio: 'inherit' }); } catch (e) { bail('lipo failed: ' + t.name); }
+    try { execFileSync(XCRUN, ['lipo', '-create', ...slices, '-output', t.out], { stdio: 'inherit' }); } catch (e) { fail('lipo failed: ' + t.name); }
     for (const s of slices) { try { fs.unlinkSync(s); } catch (e) {} }
   }
   // Apple Silicon refuses to run an unsigned executable, and a lipo output may not carry the linker's
