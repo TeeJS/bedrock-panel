@@ -90,6 +90,10 @@ function extractZip(buf, destDir) {
 
 // ---- built-in minimal WebSocket server (RFC 6455: handshake, text frames, ping, close) --------
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+// Cap a single WebSocket message (one frame, or a reassembled fragment run) so a buggy or runaway
+// plugin can't grow host memory without bound by declaring a huge frame length or streaming endless
+// fragments. Elgato plugin messages (setImage base64 included) are well under this.
+const MAX_WS_MESSAGE = 16 * 1024 * 1024;
 class MiniSocket extends EventEmitter {
   constructor(socket) {
     super();
@@ -97,6 +101,7 @@ class MiniSocket extends EventEmitter {
     this.readyState = 1;   // OPEN (mirrors the ws module's constant)
     this._buf = Buffer.alloc(0);
     this._frags = [];
+    this._fragBytes = 0;
     this.lastSeen = Date.now();
     socket.on('data', d => { this.lastSeen = Date.now(); this._buf = Buffer.concat([this._buf, d]); this._pump(); });
     const closed = () => { if (this.readyState !== 3) { this.readyState = 3; this.emit('close'); } };
@@ -110,6 +115,7 @@ class MiniSocket extends EventEmitter {
       let len = b[1] & 0x7f, o = 2;
       if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); o = 4; }
       else if (len === 127) { if (b.length < 10) return; len = Number(b.readBigUInt64BE(2)); o = 10; }
+      if (!(len >= 0) || len > MAX_WS_MESSAGE) { this.terminate(); return; }   // reject a garbage/oversized frame before buffering its payload
       const maskLen = masked ? 4 : 0;
       if (b.length < o + maskLen + len) return;
       let payload = Buffer.from(b.subarray(o + maskLen, o + maskLen + len));
@@ -119,8 +125,9 @@ class MiniSocket extends EventEmitter {
       if (op === 9) { this._frame(0x0a, payload); continue; }         // ping -> pong
       if (op === 0x0a) continue;                                       // pong
       if (op === 1 || op === 2 || op === 0) {                          // text/binary/continuation
-        this._frags.push(payload);
-        if (fin) { const whole = Buffer.concat(this._frags); this._frags = []; this.emit('message', whole); }
+        this._frags.push(payload); this._fragBytes += payload.length;
+        if (this._fragBytes > MAX_WS_MESSAGE) { this._frags = []; this._fragBytes = 0; this.terminate(); return; }   // fragment run too large
+        if (fin) { const whole = Buffer.concat(this._frags); this._frags = []; this._fragBytes = 0; this.emit('message', whole); }
       }
     }
   }
@@ -754,7 +761,14 @@ function appearEventSettings(ctx) { const e = appearEvent('didReceiveSettings', 
 // ---- plugin processes -------------------------------------------------------------------------
 let lastOptions = null;
 async function startPlugin(p) {
-  if (p.proc) return;   // never double-spawn (a pending backoff timer + a manual restart can race here)
+  // Guard the async gap: p.proc isn't assigned until after `await ensureWss()`, so on the first-ever
+  // launch (server not yet bound) a second call — a backoff timer firing alongside a manual restart —
+  // would slip past a bare `if (p.proc)` check and spawn a duplicate. `starting` closes that window.
+  if (p.proc || p.starting) return;
+  p.starting = true;
+  try { await _startPlugin(p); } finally { p.starting = false; }
+}
+async function _startPlugin(p) {
   if (p.restartTimer) { clearTimeout(p.restartTimer); p.restartTimer = null; }
   const cp = codePathOf(p);
   if (!cp || cp.unsupported) { p.status = 'unsupported'; p.error = (cp && cp.unsupported) || 'no CodePath'; return; }
@@ -1121,4 +1135,5 @@ module.exports = { handle, _shutdown,
   // test hooks: fake the keystroke helper / verify the page-dir encoding without real input
   _setKeyHelper(fn) { keyHelperOverride = fn; },
   _uuidToPageDir: uuidToPageDir,
-  _openTargetIntent: openTargetIntent };
+  _openTargetIntent: openTargetIntent,
+  _MiniSocket: MiniSocket, _MAX_WS_MESSAGE: MAX_WS_MESSAGE };
