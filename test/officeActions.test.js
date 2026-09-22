@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createOfficeActions } = require('../community-apps/office/officeActions');
+const { createOfficeActions, officeInstallCandidates } = require('../community-apps/office/officeActions');
 
 function harness(options, overrides) {
   const calls = { apps: [], urls: [], combos: [], focus: [], running: [] };
@@ -209,4 +209,27 @@ test('Teams meeting action rejects non-Teams and non-meeting URLs', async () => 
   assert.equal(foreign.ok, false);
   assert.equal(teamsHome.ok, false);
   assert.deepEqual(calls.urls, []);
+});
+
+test('officeInstallCandidates keeps the bare exe PATH fallback after an unshift (OneDrive regression)', () => {
+  const env = { LOCALAPPDATA: 'C:\\Users\\x\\AppData\\Local' };
+  // Nothing on disk: before the fix the index-0 guard protected the unshifted concrete path and
+  // filtered the bare name out, leaving no PATH fallback at all. Now the bare name survives.
+  const none = officeInstallCandidates('OneDrive.exe', env, { existsSync: () => false });
+  assert.ok(none.includes('OneDrive.exe'), 'bare OneDrive.exe PATH fallback survives when nothing exists on disk');
+
+  // When the concrete LOCALAPPDATA path exists, it is offered before the bare fallback.
+  const concrete = 'C:\\Users\\x\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe';
+  const withConcrete = officeInstallCandidates('OneDrive.exe', env, { existsSync: p => p === concrete });
+  assert.equal(withConcrete[0], concrete, 'concrete path tried first');
+  assert.ok(withConcrete.includes('OneDrive.exe'), 'bare fallback still present after the concrete path');
+  assert.ok(withConcrete.indexOf('OneDrive.exe') > withConcrete.indexOf(concrete), 'bare fallback comes after the concrete path');
+});
+
+test('officeInstallCandidates keeps existing concrete paths and drops non-existent ones', () => {
+  const real = 'C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE';
+  const list = officeInstallCandidates('WINWORD.EXE', { ProgramFiles: 'C:\\Program Files' }, { existsSync: p => p === real });
+  assert.ok(list.includes('WINWORD.EXE'), 'bare fallback kept');
+  assert.ok(list.includes(real), 'existing concrete path kept');
+  assert.ok(!list.includes('C:\\Program Files\\Microsoft Office\\Office16\\WINWORD.EXE'), 'non-existent concrete path dropped');
 });

@@ -9,6 +9,7 @@ const providers = {
     deviceCodeUrl: 'https://github.com/login/device/code',
     tokenUrl: 'https://github.com/login/oauth/access_token',
     revokeUrl: '',
+    revoke: { style: 'github', apiBase: 'https://api.github.com' },
     scopes: ['repo', 'offline_access'],
     suggestedScopes: ['repo', 'offline_access'],
     redirectUri: REDIRECT_URI,

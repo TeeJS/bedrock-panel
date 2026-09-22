@@ -1476,6 +1476,7 @@ function activeServedAppConfig(appId) {
 // Persist config with secret fields encrypted at rest. encryptConfig clones, so the in-memory
 // `config` keeps its plaintext secrets — consumers (renderer HA token, Basic/header auth, served
 // app config) read the live plaintext. Encryption is fail-closed: the existing file is left intact.
+let secretRedactionWarned = false;   // one-time loud warning when secrets can't be encrypted at save time
 function saveConfig() {
   const temporaryPath = CONFIG_PATH + '.tmp';
   try {
@@ -1486,9 +1487,18 @@ function saveConfig() {
     const persisted = (saverActive && saverIdle.isScreensaverGrid(activeGrid()))
       ? Object.assign({}, config, { activeGridId: saverIdle.saverRestoreTarget(config, saverPrevGridId) || config.activeGridId })
       : config;
-    const serialized = JSON.stringify(secretStore.encryptConfig(persisted), null, 2);
+    // Persist non-secret config even when secrets can't be encrypted, instead of failing the whole
+    // save — a keyring-less session must still be able to change pages, options, layout, etc. A
+    // plaintext secret that can't be protected is redacted from disk (kept in memory for this
+    // session); warn loudly, once, so the user knows to fix the keyring and re-enter it.
+    const { config: toPersist, redactedSecrets } = secretStore.encryptConfigForSave(persisted);
+    const serialized = JSON.stringify(toPersist, null, 2);
     fs.writeFileSync(temporaryPath, serialized);
     fs.renameSync(temporaryPath, CONFIG_PATH);
+    if (redactedSecrets && !secretRedactionWarned) {
+      secretRedactionWarned = true;
+      console.warn('[secretStore] ' + redactedSecrets + ' secret(s) could not be encrypted (no keyring/secure backend) and were NOT written to config.json. They remain active for this session only. Install/unlock a keyring, restart, and re-enter them in the editor to store them securely.');
+    }
     notifyEditorConfigChanged();
     return true;
   } catch (e) {

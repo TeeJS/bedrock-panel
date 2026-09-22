@@ -116,7 +116,7 @@
       "id": "office",
       "name": "Microsoft 365",
       "description": "Microsoft 365 calendar, presence, app launcher, and configurable desktop shortcuts.",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "zip": "office.zip",
       "server": true
     },
