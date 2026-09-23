@@ -1,7 +1,20 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { repoRawBase, indexUrl, zipUrl, cmpVersion, parseIndex, isAllowedRepoUrl, githubContentsCoords, githubContentsUrl } = require('../app/appRepo');
+const { canonicalRepoUrl, repoRawBase, indexUrl, zipUrl, cmpVersion, parseIndex, isAllowedRepoUrl, githubContentsCoords, githubContentsUrl } = require('../app/appRepo');
+
+test('canonicalRepoUrl maps the pre-rename repo URL to bedrock-panel', () => {
+  assert.equal(canonicalRepoUrl('https://github.com/TeeJS/open-quake/tree/main/community-apps'),
+    'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps');
+  assert.equal(canonicalRepoUrl('https://raw.githubusercontent.com/teejs/open-quake/main/community-apps'),
+    'https://raw.githubusercontent.com/teejs/bedrock-panel/main/community-apps');
+  assert.equal(canonicalRepoUrl('https://github.com/TeeJS/open-quake'), 'https://github.com/TeeJS/bedrock-panel');
+  // A different repo that merely starts with the old name is left alone
+  assert.equal(canonicalRepoUrl('https://github.com/TeeJS/open-quake-apps-private/tree/main/community-apps'),
+    'https://github.com/TeeJS/open-quake-apps-private/tree/main/community-apps');
+  assert.equal(canonicalRepoUrl('https://github.com/someone/open-quake/tree/main/x'), 'https://github.com/someone/open-quake/tree/main/x');
+  assert.equal(canonicalRepoUrl(null), '');
+});
 
 test('githubContentsCoords parses tree, blob, and raw URLs', () => {
   assert.deepEqual(githubContentsCoords('https://github.com/TeeJS/open-quake-apps-private/tree/main/community-apps'),

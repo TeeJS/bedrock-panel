@@ -20,6 +20,15 @@ function repoRawBase(url) {
   return '';
 }
 
+// The repo was renamed TeeJS/open-quake -> TeeJS/bedrock-panel. Pre-rename installs saved the old URL
+// (settings and per-app sources), and raw.githubusercontent.com serves a FROZEN pre-rename catalog for
+// it rather than redirecting -- so update checks silently never see new versions. Map it to the new
+// name. Anchored on the exact repo segment: TeeJS/open-quake-apps-private is a different repo.
+function canonicalRepoUrl(url) {
+  return String(url == null ? '' : url)
+    .replace(/^(\s*https?:\/\/(?:www\.)?(?:github\.com|raw\.githubusercontent\.com)\/TeeJS\/)open-quake(?=\/|\s*$)/i, '$1bedrock-panel');
+}
+
 function indexUrl(base) { return repoRawBase(base) + '/index.json'; }
 
 // Parse a github.com tree/blob URL (or a raw.githubusercontent base) into Contents-API coordinates
@@ -90,4 +99,4 @@ function parseIndex(json) {
   return out;
 }
 
-module.exports = { repoRawBase, indexUrl, zipUrl, cmpVersion, parseIndex, isAllowedRepoUrl, githubContentsCoords, githubContentsUrl };
+module.exports = { canonicalRepoUrl, repoRawBase, indexUrl, zipUrl, cmpVersion, parseIndex, isAllowedRepoUrl, githubContentsCoords, githubContentsUrl };
