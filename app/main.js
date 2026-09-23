@@ -1118,16 +1118,22 @@ function deleteDropInApp(id) {
 // entry marks an app as repo-installed and records the installed version, which the update check
 // compares against the repo's index.json.
 const DEFAULT_APP_REPO = 'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps';
-const LEGACY_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';   // saved by pre-rename installs; GitHub redirects it, but treat it as the default
 const APP_ZIP_MAX = 25 * 1024 * 1024;
 function appSourcesPath() { return path.join(dropInDir(), '.oqsources.json'); }
-function readAppSources() { try { return JSON.parse(fs.readFileSync(appSourcesPath(), 'utf8')) || {}; } catch (e) { return {}; } }
+// Source URLs are canonicalized on read, so pre-rename entries check the live repo (and get rewritten
+// on the app's next install/update).
+function readAppSources() {
+  let s = {};
+  try { s = JSON.parse(fs.readFileSync(appSourcesPath(), 'utf8')) || {}; } catch (e) { return {}; }
+  for (const id of Object.keys(s)) { if (s[id] && typeof s[id].url === 'string') s[id].url = appRepo.canonicalRepoUrl(s[id].url); }
+  return s;
+}
 function setAppSource(id, entry) {
   const s = readAppSources();
   if (entry) s[id] = entry; else delete s[id];
   try { ensureDropInDir(); fs.writeFileSync(appSourcesPath(), JSON.stringify(s, null, 2)); return true; } catch (e) { return false; }
 }
-function appRepoSetting() { const u = (config.settings && typeof config.settings.appRepo === 'string' && config.settings.appRepo.trim()) || DEFAULT_APP_REPO; return u === LEGACY_APP_REPO ? DEFAULT_APP_REPO : u; }
+function appRepoSetting() { return appRepo.canonicalRepoUrl((config.settings && typeof config.settings.appRepo === 'string' && config.settings.appRepo.trim()) || DEFAULT_APP_REPO); }
 
 // GET a URL as JSON via Electron's net stack (inherits system proxy/CA), with caller-supplied
 // headers. Mirrors app/haClient.js.
@@ -1211,6 +1217,7 @@ async function fetchGithubRawJson(url, token) {
   return fetchJsonWithHeaders(url, Object.assign({ 'User-Agent': 'bedrock-panel/' + app.getVersion() }, githubApiHeaders(token)));
 }
 async function fetchRepoIndex(settingUrl) {
+  settingUrl = appRepo.canonicalRepoUrl(settingUrl);   // covers editor-supplied repo lists too
   if (!appRepo.isAllowedRepoUrl(settingUrl)) return { error: 'Only github.com app repositories are allowed for now.' };
   const base = appRepo.repoRawBase(settingUrl);
   if (!base) return { error: 'The app-repository URL is not a valid http(s) URL.' };

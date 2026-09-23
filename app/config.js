@@ -4143,6 +4143,10 @@
   // ---- settings page ----
   const DEFAULT_APP_REPO = 'https://github.com/TeeJS/bedrock-panel/tree/main/community-apps';
   const LEGACY_APP_REPO = 'https://github.com/TeeJS/open-quake/tree/main/community-apps';   // saved by pre-rename installs
+  // Mirror of appRepo.canonicalRepoUrl (app/appRepo.js; this renderer can't require it): the pre-rename
+  // TeeJS/open-quake URL -> TeeJS/bedrock-panel, so old settings and app sources match the live repo.
+  const canonicalRepoUrl = u => String(u == null ? '' : u)
+    .replace(/^(\s*https?:\/\/(?:www\.)?(?:github\.com|raw\.githubusercontent\.com)\/TeeJS\/)open-quake(?=\/|\s*$)/i, '$1bedrock-panel');
   const DEFAULT_SETTINGS = { launchMode: 'editor', micOnLaunch: false, reservedDisplay: IS_MAC, panelFarRight: IS_MAC, panelInput: true, keepDisplayAwake: false, offlineIcons: false, appRepo: DEFAULT_APP_REPO, appRepos: [], multiRepo: false, autoPageOnImport: true };
   function appSettings() { return Object.assign({}, DEFAULT_SETTINGS, config.settings || {}); }
   function renderSettings() {
@@ -4873,14 +4877,14 @@ ${IS_MAC ? `
 
     if (tab === 'dropin') {
       // Repositories the user can browse/install from. Migrate the legacy single `appRepo` into the array.
-      const repos = (Array.isArray(config.settings && config.settings.appRepos) && config.settings.appRepos.length)
+      const repos = ((Array.isArray(config.settings && config.settings.appRepos) && config.settings.appRepos.length)
         ? config.settings.appRepos.slice()
-        : [(config.settings && config.settings.appRepo) || DEFAULT_APP_REPO];
+        : [(config.settings && config.settings.appRepo) || DEFAULT_APP_REPO]).map(canonicalRepoUrl);
       let multi = !!(config.settings && config.settings.multiRepo);
       const isGithubRepo = u => /^https?:\/\/(github\.com|raw\.githubusercontent\.com)\//i.test(String(u || '').trim());
       const persistRepos = () => { setS('appRepos', repos.slice()); setS('appRepo', repos[0] || DEFAULT_APP_REPO); };
       const diMsg = (t, bad) => { const m = document.getElementById('diMsg'); if (m) { m.textContent = t || ''; m.style.color = bad ? '#c98' : '#7e93ab'; } };
-      const repoIndexOf = src => (src ? repos.indexOf(src) : -1);
+      const repoIndexOf = src => (src ? repos.indexOf(canonicalRepoUrl(src)) : -1);
       const metaOf = a => [a.id, a.served ? 'served' : null, a.hasServer ? 'server' : null, a.managed ? null : 'read-only'].filter(Boolean).join(' · ');
       const fmtAgo = ts => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); if (s < 60) return 'just now'; if (s < 3600) return Math.round(s / 60) + ' min ago'; return Math.round(s / 3600) + ' h ago'; };
       // Human-readable repository names (editor-only, stored parallel to appRepos). References stay keyed by
