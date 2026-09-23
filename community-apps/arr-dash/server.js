@@ -2,6 +2,8 @@
 
 const REQUEST_TIMEOUT_MS = 8000;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+// Big enough that a season pack doesn't crowd everything else out of the queue.
+const QUEUE_PAGE_SIZE = 100;
 
 // Youtarr session token cache (7-day tokens; re-login on 401).
 let youtarrToken = null;
@@ -91,6 +93,51 @@ function calendarEntry(kind, item) {
   return { title: (item.artist ? item.artist.artistName + ' — ' : '') + item.title, when: item.releaseDate || null };
 }
 
+// Failed = the *arr says so; stuck = finished downloading but can't import, or
+// warned with a concrete message (a bare warning is usually just a slow download).
+function queueProblem(record) {
+  const state = String(record.trackedDownloadState || '').toLowerCase();
+  const status = String(record.trackedDownloadStatus || '').toLowerCase();
+  const messages = (record.statusMessages || []).flatMap(m => m.messages || [m.title]).filter(Boolean);
+  const detail = String(record.errorMessage || messages[0] || '').slice(0, 160);
+  if (state === 'failed' || state === 'failedpending' || state === 'importfailed' || status === 'error' || String(record.status || '').toLowerCase() === 'failed') {
+    return { state: 'failed', label: 'Failed', detail };
+  }
+  if (state === 'importblocked') return { state: 'stuck', label: 'Import blocked', detail };
+  if (state === 'importpending') return { state: 'stuck', label: 'Import pending', detail };
+  if (status === 'warning' && detail) return { state: 'stuck', label: 'Warning', detail };
+  return null;
+}
+
+// One season pack (or multi-track album) = many queue records sharing a downloadId.
+function groupQueue(kind, records) {
+  const groups = new Map();
+  for (const record of records) {
+    const key = record.downloadId || 'id:' + record.id;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(record);
+  }
+  return Array.from(groups.values()).map(group => {
+    const first = group[0];
+    let title = arrTitle(kind, first);
+    if (kind === 'sonarr' && group.length > 1 && first.series) {
+      const seasons = new Set(group.map(r => r.episode ? r.episode.seasonNumber : r.seasonNumber));
+      title = first.series.title + (seasons.size === 1 ? ' S' + String(Array.from(seasons)[0]).padStart(2, '0') : '')
+        + ' · ' + group.length + ' episodes';
+    }
+    // Worst problem in the group wins (failed > stuck)
+    const problems = group.map(queueProblem).filter(Boolean);
+    const problem = problems.find(p => p.state === 'failed') || problems[0] || null;
+    return {
+      title,
+      progress: first.size > 0 ? Math.round((first.size - first.sizeleft) / first.size * 100) : null,
+      timeleft: first.timeleft || null,
+      status: first.status || null,
+      problem,
+    };
+  });
+}
+
 async function fetchArr(kind, base, apiKey) {
   const cfg = ARR_APPS[kind];
   const headers = { 'X-Api-Key': apiKey, Accept: 'application/json' };
@@ -98,32 +145,34 @@ async function fetchArr(kind, base, apiKey) {
 
   const start = new Date();
   const end = new Date(start.getTime() + 24 * 3600 * 1000);
-  const [queue, queueStatus, health, diskspace, missing, calendar, history] = await Promise.all([
-    get('queue?page=1&pageSize=20&' + cfg.queueExtras),
+  const [queue, queueStatus, health, diskspace, missing, cutoff, calendar, history] = await Promise.all([
+    get('queue?page=1&pageSize=' + QUEUE_PAGE_SIZE + '&' + cfg.queueExtras),
     get('queue/status'),
     get('health'),
     get('diskspace'),
     get('wanted/missing?page=1&pageSize=1'),
+    get('wanted/cutoff?page=1&pageSize=1').catch(() => ({})),
     get('calendar?start=' + start.toISOString() + '&end=' + end.toISOString() + (kind === 'sonarr' ? '&includeSeries=true' : '')).catch(() => []),
     get('history?page=1&pageSize=5&sortKey=date&sortDirection=descending&' + cfg.historyExtras).catch(() => ({})),
   ]);
 
+  const records = queue.records || [];
+  const items = groupQueue(kind, records);
+  // Count grouped downloads when we saw the whole queue; otherwise fall back to the raw total.
+  const wholeQueue = (queue.totalRecords || 0) <= records.length;
+
   return {
     up: true,
-    queueCount: queueStatus.totalCount || 0,
+    queueCount: wholeQueue ? items.length : (queueStatus.totalCount || 0),
     queueErrors: (queueStatus.errors ? 1 : 0) + (queueStatus.unknownErrors ? 1 : 0),
     queueWarnings: (queueStatus.warnings ? 1 : 0) + (queueStatus.unknownWarnings ? 1 : 0),
     missing: missing.totalRecords || 0,
+    cutoffUnmet: cutoff.totalRecords || 0,
     health: (Array.isArray(health) ? health : [])
       .filter(h => !HEALTH_IGNORE.some(rx => rx.test(h.message || '')))
       .map(h => ({ type: h.type, message: h.message })),
     disks: (Array.isArray(diskspace) ? diskspace : []).map(d => ({ path: d.path, free: d.freeSpace, total: d.totalSpace })),
-    items: (queue.records || []).map(r => ({
-      title: arrTitle(kind, r),
-      progress: r.size > 0 ? Math.round((r.size - r.sizeleft) / r.size * 100) : null,
-      timeleft: r.timeleft || null,
-      status: r.status || null,
-    })),
+    items,
     calendar: (Array.isArray(calendar) ? calendar : []).map(i => calendarEntry(kind, i)).filter(e => e.when),
     history: (history.records || []).map(r => ({
       title: arrTitle(kind, r),
