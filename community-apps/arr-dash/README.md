@@ -8,13 +8,19 @@ next 24 hours. Read-only: it watches your servers, it doesn't drive them.
 ## Layout
 
 - **Left — service rail.** One row per configured service, in its app's brand
-  color: status headline (queue count + missing/wanted, SAB speed, Youtarr jobs,
-  LidaTube up/down). A service that can't be reached shows **Down** with a red ✕
-  through its dot. Unconfigured services are hidden.
+  color: status headline (queue count + missing/wanted + upgrades available, SAB
+  speed, Youtarr jobs, LidaTube up/down). A service that can't be reached shows
+  **Down** with a red ✕ through its dot. Unconfigured services are hidden.
 - **Center — active downloads.** All services' in-progress downloads merged into
-  one list, sorted by progress, with per-item progress bars and ETAs.
-- **Right — health & disk.** Health warnings/errors, disk-space bars (deduped
-  across services), and the next 24 hours of upcoming episodes/movies/albums.
+  one list, sorted by progress, with per-item progress bars and ETAs. A season
+  pack shows as one row (*Show S02 · 10 episodes*). Downloads the *arr reports
+  as **Failed** (red) or stuck (**Import blocked** / **Import pending**, amber)
+  are labelled in place of the ETA.
+- **Right — needs attention & disk.** One feed of everything that needs you,
+  errors first: services down, *arr health warnings, failed/stuck downloads, and
+  disks over 80% (amber) or 90% (red) full. Then disk-space bars (deduped across
+  services, colored by the same thresholds) and the next 24 hours of upcoming
+  episodes/movies/albums.
 
 **Tap a service name** to focus it: the center shows only that app's downloads
 plus its last 5 history entries, the right column filters to that app, and an

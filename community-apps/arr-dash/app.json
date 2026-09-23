@@ -1,7 +1,7 @@
 {
   "id": "arr-dash",
   "name": "*arr Dashboard",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "At-a-glance dashboard for Sonarr, Radarr, Lidarr, SABnzbd, Youtarr, and LidaTube — downloads, health, disk space, and upcoming releases.",
   "entry": "index.html",
   "served": true,
