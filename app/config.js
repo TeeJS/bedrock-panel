@@ -739,6 +739,20 @@
         </div></div>
       <details class="hint"><summary>When <b>Desktop focus</b> is on (Settings → Software), the panel switches to this page whenever one of these apps becomes the focused window on the PC.</summary> Matched by process name, not window title.</details>`;
   }
+  // ---- Meeting tab: app-list pickers (slide-capture filter, both Call apps lists) ----
+  // Same control as the Focus trigger above: chips (✕ removes), type-in + Add, and a running-apps
+  // pulldown. Chips are filled and wired by wireAppList() in the Meeting tab.
+  function appListHtml(prefix, placeholder) {
+    return `<div style="flex:1; min-width:0">
+          <div id="${prefix}Chips" class="chips"></div>
+          <div class="row" style="margin:6px 0 0">
+            <input id="${prefix}Input" placeholder="${esc(placeholder)}" style="flex:1">
+            <button id="${prefix}Add" type="button">Add</button>
+          </div>
+          <span id="${prefix}Msg" class="hint" style="display:block; margin:4px 0 0; color:#FF6B6B"></span>
+          <select id="${prefix}Pick" style="margin-top:6px; max-width:360px"><option value="">Add a running app…</option></select>
+        </div>`;
+  }
   // ---- Keyboard Shortcuts app: global Custom cheat-sheet (customShortcuts) ----
   // Edited right on the app's own page-config screen (App tab, like World Clock's city picks),
   // but the data itself is a single shared list across every page that has this app — NOT a
@@ -4414,9 +4428,9 @@ ${IS_MAC ? `
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meAuto" ${me.autoRecord ? 'checked' : ''}> Start recording automatically when a call begins</label></div>
       <details class="hint"><summary>Detects when an app below has an active call (its microphone goes live) and starts recording — even if the panel is on another app.</summary> It never triggers on Claude voice or other microphone use.</details>
       <div id="meAutoDeps"${me.autoRecord ? '' : ' style="display:none"'}>
-      <div class="row"><label>Call apps</label>
-        <input id="meApps" value="${esc(me.recordApps)}" style="flex:1"></div>
-      <p class="hint">Comma-separated Windows process names that count as a call, e.g. Zoom.exe, Teams.exe, ms-teams.exe.</p>
+      <div class="row" style="align-items:flex-start"><label>Call apps</label>
+        ${appListHtml('meApps', IS_MAC ? 'app name, e.g. zoom' : 'process name, e.g. Zoom.exe')}</div>
+      <p class="hint">Apps that count as a call. Pick from the running apps, or type a process name and press Add.</p>
       </div>
       <div class="row" style="margin-top:12px"><label>Stop after silence</label>
         <input type="number" id="meSilence" min="0" step="1" value="${Number(me.silenceStopMin) || 0}" style="width:90px"> <span class="hint" style="margin:0 0 0 8px">minutes (0 = never)</span></div>
@@ -4426,9 +4440,9 @@ ${IS_MAC ? `
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meBusy" ${me.busyEnabled ? 'checked' : ''}> Show a busy indicator while you are on a call</label></div>
       <details class="hint"><summary>Turns a busy light red while an app below has your microphone, and back to free when the call ends — replacing the light vendor's own software.</summary> Uses the same detection as auto-record, so it never triggers on Claude voice or other microphone use. Also publishes your status to Home Assistant if you enable it below.</details>
       <div id="meBusyDeps"${me.busyEnabled ? '' : ' style="display:none"'}>
-        <div class="row"><label>Call apps</label>
-          <input id="meBusyApps" value="${esc(me.busyApps)}" style="flex:1"></div>
-        <p class="hint">Comma-separated Windows process names that count as being on a call. This list is separate from the auto-record list above — you may want the light for calls you do not record.</p>
+        <div class="row" style="align-items:flex-start"><label>Call apps</label>
+          ${appListHtml('meBusyApps', IS_MAC ? 'app name, e.g. zoom' : 'process name, e.g. Zoom.exe')}</div>
+        <p class="hint">Apps that count as being on a call. This list is separate from the auto-record list above — you may want the light for calls you do not record.</p>
         <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meBusyRec" ${me.busyOnRecording ? 'checked' : ''}> Also show busy while Bedrock Panel is recording</label></div>
         <div class="row" style="margin-top:12px"><label>Return to free after</label>
           <input type="number" id="meBusyDelay" min="0" max="120" step="1" value="${Number(me.busyOffDelaySec) || 0}" style="width:90px"> <span class="hint" style="margin:0 0 0 8px">seconds</span></div>
@@ -4521,9 +4535,9 @@ ${IS_MAC ? `
         <div class="row"><label>Manual capture hotkey</label>
           <input id="meSlideHkManual" value="${esc(me.slideHotkeyManual)}" placeholder="Ctrl+Alt+C" style="width:180px"></div>
         <p class="hint">Global hotkeys (each needs Ctrl and/or Alt, and all three must differ). Leave one blank to disable it. <span id="meSlideHkWarn" style="color:#FF6B6B"></span></p>
-        <div class="row" style="margin-top:10px"><label>Limit window picker to app</label>
-          <select id="meSlideFilterPick" style="width:280px"><option value="">(All apps)</option></select></div>
-        <p class="hint">Pick the APP here (e.g. ms-teams); the panel's Select-window picker then lists only that app's windows.</p>
+        <div class="row" style="margin-top:10px; align-items:flex-start"><label>Limit window picker to apps</label>
+          ${appListHtml('meSlideFilter', 'process name, e.g. ms-teams')}</div>
+        <p class="hint">Pick the APPS here (e.g. ms-teams); the panel's Select-window picker then lists only their windows. No apps = every window.</p>
         <div class="row" style="margin-top:10px"><label>Auto-stop after inactive</label>
           <input type="number" id="meSlideIdle" min="0" max="600" step="1" value="${me.slideIdleStopMin}" style="width:120px">
           <span class="hint" style="margin:0 0 0 8px">minutes (0 = never)</span></div>
@@ -5969,6 +5983,66 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       }
     } else if (tab === 'meeting') {
       const saveMe = patch => { if (!config.settings) config.settings = {}; config.settings.meeting = Object.assign(currentMe(), patch); markDirty(); };
+      // App-list pickers (see appListHtml). The saved value stays a comma-separated string, so
+      // existing configs load unchanged. The per-platform rules — how the list is split, what a
+      // running or typed app is saved as, how two names compare — live in appListTokens.js.
+      const appLists = window.appListTokens.forPlatform(IS_MAC ? 'darwin' : IS_LINUX ? 'linux' : 'win32');
+      const runningApps = window.bedrockConfig.listRunningApps().then(a => (a || []).filter(x => x && x.processName), () => []);
+      function wireAppList(prefix, field, rules, empty) {
+        const chips = document.getElementById(prefix + 'Chips');
+        const input = document.getElementById(prefix + 'Input');
+        const add = document.getElementById(prefix + 'Add');
+        const msg = document.getElementById(prefix + 'Msg');
+        const pick = document.getElementById(prefix + 'Pick');
+        if (!chips) return;
+        const items = () => rules.parse(currentMe()[field]);
+        let running = [];
+        const fillPick = () => {
+          const have = new Set(items().map(rules.key));
+          const choices = running.map(a => ({ app: a, token: rules.fromApp(a) }))
+            .filter(c => c.token && !have.has(rules.key(c.token)));   // '' = can't be saved on this platform
+          pick.innerHTML = '<option value="">Add a running app…</option>'
+            + choices.map(c => `<option value="${esc(c.token)}">${esc(rules.label(c.app, c.token))}</option>`).join('');
+          pick.style.display = running.length ? '' : 'none';   // no running-app list on this system (Linux, or no helper)
+        };
+        const redraw = () => {
+          const list = items();
+          chips.innerHTML = list.length
+            ? list.map((a, i) => `<span class="chip">${esc(a)}<button type="button" data-rm="${i}" title="Remove">✕</button></span>`).join('')
+            : `<span class="hint" style="margin:0">${empty}</span>`;
+          fillPick();
+        };
+        const addTokens = tokens => {
+          const list = items(), before = list.length;
+          for (const t of tokens) if (!list.some(a => rules.key(a) === rules.key(t))) list.push(t);
+          if (list.length === before) return;   // all duplicates — nothing changed
+          saveMe({ [field]: list.join(',') });
+          redraw();
+        };
+        chips.addEventListener('click', e => {
+          const btn = e.target.closest('button[data-rm]');
+          if (!btn) return;
+          const list = items();
+          list.splice(parseInt(btn.getAttribute('data-rm'), 10), 1);
+          saveMe({ [field]: list.join(',') });
+          redraw();
+        });
+        add.onclick = () => {
+          const r = rules.fromTyped(input.value);
+          msg.textContent = r.error || '';
+          if (r.error) return;                  // keep the text so it can be fixed
+          if (r.tokens.length) addTokens(r.tokens);
+          input.value = ''; input.focus();
+        };
+        input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add.onclick(); } };
+        pick.onchange = () => { if (pick.value) { msg.textContent = ''; addTokens([pick.value]); } pick.value = ''; };
+        redraw();
+        runningApps.then(apps => { running = apps; fillPick(); });
+      }
+      // An empty recordApps falls back to main.js MEETING_DEFAULTS; an empty busyApps really is empty.
+      wireAppList('meApps', 'recordApps', appLists.callApps, 'No apps — the default list is used: Zoom.exe, Teams.exe, ms-teams.exe.');
+      wireAppList('meBusyApps', 'busyApps', appLists.callApps, 'No apps — the busy light never turns on for a call.');
+      wireAppList('meSlideFilter', 'slideAppFilter', appLists.slideFilter, 'No apps chosen — the picker lists every window.');
       document.getElementById('meFolder').oninput = e => saveMe({ folder: e.target.value.trim() });
       document.getElementById('meFolderBrowse').onclick = async () => {
         const p = await configApi.pickFolder();
@@ -6037,23 +6111,6 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       document.getElementById('meSlide').onchange = e => { saveMe({ slideCaptureEnabled: e.target.checked }); syncSlideEnabled(e.target.checked); };
       document.getElementById('meSlideAuto').onchange = e => saveMe({ slideAutoStartOnSelect: e.target.checked });
       document.getElementById('meSlideNotify').onchange = e => saveMe({ slideNotifications: e.target.checked });
-      // "Limit window picker to app": mirrors the original Slide Capture app's combo exactly —
-      // "(All apps)" + distinct process NAMES (never window titles; you pick the APP here, the
-      // panel picker is where you pick the window). Selection persists visibly in the dropdown.
-      const slideFilterPick = document.getElementById('meSlideFilterPick');
-      window.bedrockConfig.listRunningApps().then(apps => {
-        const cur = currentMe().slideAppFilter || '';
-        const names = (apps || []).map(a => a.processName).filter(Boolean);
-        if (cur && !names.some(n => n.toLowerCase() === cur.toLowerCase())) names.push(cur);   // saved app not running — keep it selectable
-        names.sort((a, b) => a.localeCompare(b));
-        for (const n of names) {
-          const opt = document.createElement('option');
-          opt.value = n; opt.textContent = n;
-          slideFilterPick.appendChild(opt);
-        }
-        slideFilterPick.value = names.includes(cur) ? cur : '';
-      });
-      slideFilterPick.onchange = () => saveMe({ slideAppFilter: slideFilterPick.value });
       document.getElementById('meSlideIdle').onchange = e => saveMe({ slideIdleStopMin: Math.max(0, Math.min(600, parseInt(e.target.value, 10) || 0)) });
       // Hotkeys: each (if set) must include Ctrl and/or Alt, and the three must be distinct. A bad
       // combo isn't saved — the field reverts and the reason shows — so we never register junk.
@@ -6168,7 +6225,6 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       const busyDeps = document.getElementById('meBusyDeps');
       const syncBusyEnabled = on => { if (busyDeps) busyDeps.style.display = on ? '' : 'none'; };
       document.getElementById('meBusy').onchange = e => { saveMe({ busyEnabled: e.target.checked }); syncBusyEnabled(e.target.checked); };
-      document.getElementById('meBusyApps').oninput = e => saveMe({ busyApps: e.target.value });
       document.getElementById('meBusyRec').onchange = e => saveMe({ busyOnRecording: e.target.checked });
       document.getElementById('meBusyDelay').oninput = e => saveMe({ busyOffDelaySec: Math.max(0, parseInt(e.target.value, 10) || 0) });
       document.getElementById('meBusyLight').onchange = e => saveMe({ busyLightEnabled: e.target.checked });
@@ -6296,7 +6352,6 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       })();
 
       document.getElementById('meAuto').onchange = e => { saveMe({ autoRecord: e.target.checked }); const deps = document.getElementById('meAutoDeps'); if (deps) deps.style.display = e.target.checked ? '' : 'none'; };
-      document.getElementById('meApps').oninput = e => saveMe({ recordApps: e.target.value });
       document.getElementById('meSilence').onchange = e => saveMe({ silenceStopMin: Math.max(0, parseInt(e.target.value, 10) || 0) });
       document.getElementById('meEcho').onchange = e => saveMe({ echoGate: e.target.checked });
       // Audio-source override: OFF (no meeting mic saved) inherits the app-wide Settings > General >

@@ -95,6 +95,7 @@ enum AppAliases {
         if let e = executable { out.insert(normalize(e)) }
         if let b = bundleId {
             out.insert(b.lowercased())
+            out.insert(normalize(b))   // a saved bundle id ending ".app" is normalized before matching
             if let last = b.split(separator: ".").last { out.insert(String(last).lowercased()) }
         }
         return out
