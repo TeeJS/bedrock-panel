@@ -61,7 +61,7 @@ test('foreground-watch menu mode presses a menu item through Accessibility and a
 
 test('foreground-watch keeps the PascalCase rows and OK/NOTFOUND words', () => {
   const s = src('foreground-watch.swift');
-  for (const key of ['"Hwnd"', '"ProcessName"', '"MainWindowTitle"', '"Minimized"']) assert.match(s, new RegExp(key.replace(/"/g, '\\"')), key + ' is read by app/desktopFocus.js');
+  for (const key of ['"Hwnd"', '"ProcessName"', '"MainWindowTitle"', '"Minimized"', '"BundleId"']) assert.match(s, new RegExp(key.replace(/"/g, '\\"')), key + ' is read by app/desktopFocus.js');
   assert.match(s, /Out\.line\("OK"\)/);
   assert.match(s, /Out\.line\("NOTFOUND"\)/);
 });

@@ -21,6 +21,18 @@ const path = require('path');
 const fs = require('fs');
 const engine = require('./slideCaptureEngine');
 
+// 'ms-teams, chrome' -> Set { 'ms-teams', 'chrome' }. Comma/semicolon only — never whitespace —
+// because macOS process names carry spaces ("Microsoft Teams"). A pre-list single value parses
+// as a one-app set, so existing configs need no migration.
+function parseAppFilter(csv) {
+  const out = new Set();
+  String(csv == null ? '' : csv).split(/[,;]+/).forEach(part => {
+    const name = part.trim().toLowerCase();
+    if (name) out.add(name);
+  });
+  return out;
+}
+
 function createSlideCapture(deps) {
   const log = deps.log || (() => {});
   let win = null, ready = false, pendingStart = null;
@@ -97,13 +109,13 @@ function createSlideCapture(deps) {
     // don't need getSources at all.
     let wins = [];
     try { wins = (deps.listApps ? await deps.listApps() : []) || []; } catch (e) { log('window enumeration failed: ' + e.message); return []; }
-    const filter = String(settings().slideAppFilter || '').trim().toLowerCase();
+    const filter = parseAppFilter(settings().slideAppFilter);
     const out = [];
     for (const w of wins) {
       if (!w || !w.hwnd || !w.title) continue;
-      // The filter is the APP picked in Settings (exact process name) — the panel lists every
-      // window that app owns and nothing else. Blank filter = every window.
-      if (filter && String(w.processName || '').toLowerCase() !== filter) continue;
+      // The filter is the APP(s) picked in Settings (exact process names) — the panel lists every
+      // window those apps own and nothing else. Blank filter = every window.
+      if (filter.size && !filter.has(String(w.processName || '').toLowerCase())) continue;
       out.push({ id: 'window:' + w.hwnd + ':0', name: w.title, proc: w.processName || '', min: !!w.minimized });
     }
     return out;
@@ -246,4 +258,4 @@ function createSlideCapture(deps) {
   };
 }
 
-module.exports = { createSlideCapture };
+module.exports = { createSlideCapture, parseAppFilter };

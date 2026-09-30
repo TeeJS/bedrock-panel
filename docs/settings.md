@@ -142,14 +142,21 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   models fit it, and an analysis that would be truncated fails loudly instead of writing half
   notes.
 - **Auto-record / Call apps / Stop after silence / Echo-gate** — unchanged recording
-  behavior options.
+  behavior options. **Call apps** is a chip list: pick from **Add a running app…** (on
+  Windows it stores the name with `.exe`, e.g. `ms-teams.exe`, which is what call
+  detection matches) or type a process name and press **Add**; ✕ removes one. Names with
+  spaces can't be matched, because every reader of the list splits it on spaces — on macOS
+  the pulldown saves such an app by its bundle ID instead (Microsoft Teams →
+  `com.microsoft.teams2`), and a typed name with a space is refused. Leaving it empty uses
+  the default list (Zoom.exe, Teams.exe, ms-teams.exe).
 - **Busy status** — off by default. Turns a busy light red while a call app has your
   microphone, and back to free when the call ends, replacing the light vendor's own
   software. It uses the same app-scoped detection as auto-record, so it never triggers
   on Claude voice or other microphone use.
   - **Call apps** is a *separate* list from the auto-record one above, because the calls
     worth showing a light for are usually more than the calls worth recording (Discord,
-    Slack and Webex are in the default list; the recorder's is not).
+    Slack and Webex are in the default list; the recorder's is not). Same chip list and
+    running-apps pulldown as the auto-record one; empty means no app turns the light on.
   - **Also show busy while Bedrock Panel is recording** keeps the light on for a recording
     you started by hand, after the call app has let go of the microphone.
   - **Return to free after** is a short delay before going free. Teams releases and
@@ -282,8 +289,9 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   **Automatically start capture when a window is selected**; **Show a notification when a
   slide is captured**; three **global hotkeys** (toggle capture / select window / manual
   capture — each needs Ctrl and/or Alt, all three distinct, blank disables one); **Limit
-  window picker to app** (a process-name substring, e.g. `ms-teams`; blank shows every
-  window); and **Auto-stop after inactive** minutes (0 = never; the clock resets on each
+  window picker to apps** (a chip list of process names, e.g. `ms-teams` and `chrome`,
+  picked from **Add a running app…** or typed; the panel picker lists windows from any of
+  them; no apps shows every window); and **Auto-stop after inactive** minutes (0 = never; the clock resets on each
   capture). Slides save into a `<recording>-screenshots\` sidecar folder that travels and
   renames with the WAV.
 

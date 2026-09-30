@@ -76,6 +76,9 @@ import AppKit
                 "ProcessName": a.localizedName ?? owner,
                 "MainWindowTitle": title.isEmpty ? owner : title,
                 "Minimized": !onscreen,
+                // Space-free id for the editor's Call apps picker ("Microsoft Teams" can't be saved
+                // there — every reader splits the list on spaces); mic-session-monitor matches it.
+                "BundleId": a.bundleIdentifier ?? "",
             ])
         }
         Out.line(Out.json(rows))

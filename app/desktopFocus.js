@@ -88,7 +88,7 @@ function listAllWindows() {
       const out = [];
       for (const r of rows) {
         if (!r || !r.ProcessName) continue;
-        out.push({ processName: r.ProcessName, title: r.MainWindowTitle || '', hwnd: r.Hwnd || 0, minimized: !!r.Minimized });
+        out.push({ processName: r.ProcessName, title: r.MainWindowTitle || '', hwnd: r.Hwnd || 0, minimized: !!r.Minimized, bundleId: r.BundleId || '' });   // BundleId: macOS only
       }
       resolve(out);
     });
@@ -104,7 +104,7 @@ function listRunningApps() {
     for (const r of rows) {
       if (!r.processName || seen.has(r.processName)) continue;
       seen.add(r.processName);
-      out.push({ processName: r.processName, title: r.title || '' });
+      out.push({ processName: r.processName, title: r.title || '', bundleId: r.bundleId || '' });
     }
     out.sort((a, b) => a.processName.localeCompare(b.processName));
     return out;
