@@ -38,3 +38,18 @@ test('isSttNoisePhrase drops whole-utterance hallucinations but keeps real sente
   assert.equal(isSttNoisePhrase('thanks for watching the demo'), false);   // substring, not whole utterance
   assert.equal(isSttNoisePhrase('Send the report to Dana.'), false);
 });
+
+test('isSttNoisePhrase drops the stock fillers Whisper invents on noise, alone or strung together', () => {
+  for (const t of ['Thank you.', 'Thank you so much.', 'Cool.', 'you', 'Bye-bye.', 'Mm-hmm.', 'Thanks!',
+    'Cool. Thank you so much.', 'Thank you. Thank you.', 'Subtitles by the Amara.org community',
+    'I\u2019ll see you next time.']) {
+    assert.equal(isSttNoisePhrase(t), true, t);
+  }
+});
+
+test('isSttNoisePhrase keeps bare answers and any utterance with real content', () => {
+  for (const t of ['Yeah.', 'Okay.', 'Yes.', 'No.', 'Yeah. Thank you.', 'Thank you, run it again.',
+    'Cool, now sort by name.', 'So what changed?', '\u6771\u4eac so', '', '   ', '...']) {
+    assert.equal(isSttNoisePhrase(t), false, t);
+  }
+});

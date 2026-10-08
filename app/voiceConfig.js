@@ -242,12 +242,26 @@ function resolveAiProfile(settings, id) {
   return list.find(p => p && p.id === id) || list[0];
 }
 
-// Whisper near-silence hallucinations to drop (exact whole-utterance match after normalization, so a
-// real sentence that merely contains these words still passes). Mirrors voicepanel-host.js.
-const STT_NOISE_PHRASES = ['thanks for watching'];
+// Whisper hallucinates stock phrases on background noise/near-silence -- sign-offs and subtitle
+// credits from its YouTube training data, plus fillers. An utterance is dropped only when EVERY
+// sentence in it is one of these (case/punctuation-insensitive), so a real sentence that merely
+// contains the words still passes. Bare answers ("yeah", "okay", "yes", "no") are deliberately NOT
+// here: in a voice conversation they reply to the assistant's question. Shared by the voice panels
+// (voicepanel-host.js) and Live Translate.
+const STT_NOISE_PHRASES = new Set([
+  'thanks for watching', 'thank you for watching', 'thanks for listening', 'thank you for listening',
+  'please subscribe', 'like and subscribe', 'subtitles by the amara org community',
+  'see you next time', 'see you in the next video', "i'll see you next time",
+  'thank you', 'thank you so much', 'thank you very much', 'thanks', 'thanks so much',
+  'you', 'bye', 'bye bye', 'cool', 'so',
+  'uh', 'um', 'hmm', 'mm', 'mhm', 'mm hmm', 'uh huh', 'ah', 'oh', 'huh',
+]);
 function isSttNoisePhrase(text) {
-  const norm = String(text || '').toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim();
-  return STT_NOISE_PHRASES.includes(norm);
+  // Split on sentence-ending punctuation only ("amara.org" stays whole); keep every script's letters
+  // so non-English speech never normalizes down to a listed English phrase.
+  const parts = String(text || '').toLowerCase().replace(/\u2019/g, "'").split(/[.!?]+(?=\s|$)/)
+    .map(p => p.replace(/[^\p{L}\p{N}' ]/gu, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  return parts.length > 0 && parts.every(p => STT_NOISE_PHRASES.has(p));
 }
 
 module.exports = {

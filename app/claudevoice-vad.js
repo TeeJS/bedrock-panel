@@ -18,22 +18,43 @@ function createVAD(opts) {
   const SAMPLE_RATE = 16000;
   const threshold = opts.threshold || 0.02;        // RMS amplitude above which audio counts as speech
   let hangoverMs = opts.hangoverMs || 800;          // sustained silence before an utterance is considered over (user-tunable)
-  const minSpeechMs = opts.minSpeechMs || 250;      // ignore blips shorter than this (taps, clicks, breath)
+  // Measured as VOICED time (20ms frames above the threshold), not wall-clock: the wall-clock span
+  // always includes the hangover, so a lone click or knock used to clear any minimum and reach
+  // Whisper, which hallucinates a stock phrase ("Thank you.") for it.
+  const minSpeechMs = opts.minSpeechMs || 150;      // ignore blips with less voiced audio than this (taps, clicks, knocks)
   // 0 = off (the voice pages' behavior). When set, a continuous speaker who never pauses gets
   // force-cut at this duration — the utterance ships and capture continues seamlessly — so live
   // translation can't stall waiting for a pause that never comes.
   const maxUtteranceMs = opts.maxUtteranceMs || 0;
   const bufferSize = 4096;
+  const FRAME = SAMPLE_RATE / 50;   // 20ms -- the unit voiced time is counted in (a buffer is 256ms)
 
   let stream = null, audioCtx = null, source = null, processor = null, silentGain = null;
   let speaking = false, speechStartedAt = 0, hangoverTimer = null;
   let chunks = [];   // Float32Array pieces captured since the current utterance began
+  let voicedSamples = 0;   // samples in above-threshold frames since the current utterance began
+  let continued = false;   // this utterance is the tail of a force-cut one -- ship it however short
   let inputDeviceId = '';   // '' = system default; set via setInputDevice() before start()
 
   function rms(float32) {
     let sum = 0;
     for (let i = 0; i < float32.length; i++) sum += float32[i] * float32[i];
     return Math.sqrt(sum / float32.length);
+  }
+  function countVoiced(float32) {
+    let n = 0;
+    for (let i = 0; i < float32.length; i += FRAME) {
+      const end = Math.min(i + FRAME, float32.length);
+      let sum = 0;
+      for (let j = i; j < end; j++) sum += float32[j] * float32[j];
+      if (Math.sqrt(sum / (end - i)) >= threshold) n += end - i;
+    }
+    return n;
+  }
+  function voicedMs() { return voicedSamples * 1000 / SAMPLE_RATE; }
+  function capture(data) {
+    chunks.push(new Float32Array(data));   // copy -- `data` is a reused buffer, would be clobbered next callback
+    voicedSamples += countVoiced(data);
   }
   function toPCM16(float32Chunks) {
     let total = 0; for (const c of float32Chunks) total += c.length;
@@ -77,27 +98,31 @@ function createVAD(opts) {
           speaking = true;
           speechStartedAt = Date.now();
           chunks = [];
+          voicedSamples = 0;
+          continued = false;
           if (onSpeechStart) onSpeechStart();
         }
         clearTimeout(hangoverTimer);
         hangoverTimer = null;
-        chunks.push(new Float32Array(data));   // copy -- `data` is a reused buffer, would be clobbered next callback
+        capture(data);
         if (maxUtteranceMs && Date.now() - speechStartedAt >= maxUtteranceMs) {
           const captured = chunks; chunks = [];   // force-cut mid-speech: ship it, keep capturing
+          voicedSamples = 0;
+          continued = true;
           speechStartedAt = Date.now();
           if (onSpeechEnd) onSpeechEnd(toPCM16(captured));
         }
       } else if (speaking && !hangoverTimer) {
-        chunks.push(new Float32Array(data));   // keep a little trailing silence too, cheap and harmless
+        capture(data);   // keep a little trailing silence too, cheap and harmless
         hangoverTimer = setTimeout(() => {
           hangoverTimer = null;
           speaking = false;
-          const durationMs = Date.now() - speechStartedAt;
+          const enough = continued || voicedMs() >= minSpeechMs;
           const captured = chunks; chunks = [];
-          if (durationMs >= minSpeechMs && onSpeechEnd) onSpeechEnd(toPCM16(captured));
+          if (enough && onSpeechEnd) onSpeechEnd(toPCM16(captured));
         }, hangoverMs);
       } else if (speaking) {
-        chunks.push(new Float32Array(data));
+        capture(data);
       }
     };
   }
