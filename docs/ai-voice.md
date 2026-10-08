@@ -191,6 +191,10 @@ small hand-rolled TCP client.
   terminal first (the editor warns on the page options when it can't find it).
 - **Turn fails immediately, no reply** — CLI backends: no project directory set, or the CLI isn't
   authenticated (run it once from a terminal). API endpoint: URL/key/model not set on the page.
+- **"Failed to authenticate: OAuth session expired and could not be refreshed"** (Claude Code) —
+  the CLI's own sign-in lapsed; the panel uses whatever account `claude` is signed in with. Open a
+  terminal on the PC, run `claude`, type `/login`, finish the browser sign-in, then send the turn
+  again. The status line now says this itself.
 - **Voice does nothing on tap** — check the device mic is on (tray → mic).
 - **No transcription / no speech playback** — check **Settings → TTS/STT**; confirm the services
   are reachable (with tts-sst, check its tray status — on first run it's downloading models).
