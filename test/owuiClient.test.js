@@ -252,6 +252,25 @@ test('runToolChat: cancel stops the server-side task and still deletes the chat'
   assert.equal(f.seen.deleted.length, 1);
 });
 
+test('runToolChat: a cancel that lands while the start is in flight still stops the task once it exists', async () => {
+  const f = fakeOwui({ polls: 1000 });
+  let job;
+  const slowStart = (req, res, body) => {
+    if (req.method === 'POST' && req.url === '/api/chat/completions') {
+      job.cancel();                                       // the user interrupts mid-request
+      return setTimeout(() => f.handler(req, res, body), 30);
+    }
+    f.handler(req, res, body);
+  };
+  await withServer(slowStart, async base => {
+    job = runToolChat({ origin: base, apiKey: 'sk-tools', model: 'm', pollMs: 5, messages: [{ role: 'user', content: 'hi' }] });
+    await assert.rejects(job.promise, e => e.cancelled === true);
+    await settle(); await settle();
+  });
+  assert.equal(f.seen.stopped.length, 2);                 // cancel()'s early stop, then one after the start landed
+  assert.equal(f.seen.deleted.length, 1);
+});
+
 test('runToolChat: a refused chat creation reports its HTTP status', async () => {
   await withServer((req, res) => { res.writeHead(401); res.end('{"detail":"Not authenticated"}'); }, async base => {
     const job = runToolChat({ origin: base, apiKey: 'bad', model: 'm', messages: [{ role: 'user', content: 'hi' }] });

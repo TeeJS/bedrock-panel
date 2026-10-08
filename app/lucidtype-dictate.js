@@ -67,7 +67,7 @@
         },
         function (level) { stats.frames++; if (level > stats.peak) stats.peak = level; }
       ).then(function () {
-        if (!running || vad !== mine) return;
+        if (!running || vad !== mine) { try { mine.stop(); } catch (e) {} return; }   // stopped while the mic opened
         var info = mine.info();
         status({ type: 'started', mic: info.label, wanted: wanted, matched: !wanted || !!id, context: info.state, rate: info.sampleRate });
         clearTimeout(hearingTimer);

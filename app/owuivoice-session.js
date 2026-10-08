@@ -79,6 +79,8 @@ function createToolMarkupFilter() {
     toolNames: () => names.slice(),
   };
 }
+// A model with tools or skills attached in Open WebUI takes the server-side tool-calling path.
+function hasTools(info) { return !!info && ((info.toolIds || []).length > 0 || (info.skillIds || []).length > 0); }
 // A finished answer from the tool path: drop collapsed <details> blocks (older Open WebUI
 // versions serialize tool calls and reasoning that way) and any leftover tool-call markup.
 function cleanAnswer(text) {
@@ -121,15 +123,11 @@ function createOwuiVoiceAdapter({ resolveOwui, log, client }) {
   function fetchModels() {
     const ep = endpoint();
     if (!ep) { modelsReady = null; return; }
-    const key = String(cfg().apiKey || '');
-    const load = owui.listModelInfo
-      ? owui.listModelInfo(ep.modelsUrl, key)
-      : owui.listModels(ep.modelsUrl, key).then(ids => ids.map(id => ({ id, toolIds: [], skillIds: [] })));
-    modelsReady = load.then(list => {
+    modelsReady = owui.listModelInfo(ep.modelsUrl, String(cfg().apiKey || '')).then(list => {
       modelList = list.map(m => m.id);
       modelInfo = {};
       for (const m of list) modelInfo[m.id] = m;
-      const tooled = list.filter(m => (m.toolIds && m.toolIds.length) || (m.skillIds && m.skillIds.length)).map(m => m.id);
+      const tooled = list.filter(hasTools).map(m => m.id);
       say('model list loaded (' + list.length + (tooled.length ? '; with tools: ' + tooled.join(', ') : '') + ')');
       emitter.emit('models-changed', {});
     }, e => say('model list unavailable: ' + ((e && e.message) || e)));
@@ -203,7 +201,7 @@ function createOwuiVoiceAdapter({ resolveOwui, log, client }) {
     const ep = endpoint();
     if (!ep) { failTurn(new Error('Open WebUI connection not configured')); return; }
     const info = modelInfo[model];
-    if (info && ((info.toolIds && info.toolIds.length) || (info.skillIds && info.skillIds.length)) && owui.runToolChat) {
+    if (hasTools(info)) {
       runToolTurn(me, ep, model, messages, info);
     } else {
       runStreamTurn(me, ep, model, messages);

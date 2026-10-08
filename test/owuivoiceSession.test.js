@@ -18,17 +18,17 @@ function makeAdapter(cfg, opts) {
   const client = {
     normalizeOwuiUrl,
     // default: an empty list, answered on the next microtask (a turn waits for it: it says which models have tools)
-    listModels: () => (opts.models ? Promise.resolve(opts.models) : opts.modelsNever ? new Promise(() => {}) : Promise.resolve([])),
+    listModelInfo: () => {
+      if (opts.modelsNever) return new Promise(() => {});
+      const list = opts.modelInfo || (opts.models || []).map(id => ({ id, toolIds: [], skillIds: [] }));
+      return (opts.modelsLater || Promise.resolve()).then(() => list);
+    },
     streamChat: (url, body, apiKey, timeoutMs, h) => {
       const rec = { url, body, apiKey, h, destroyed: false };
       streams.push(rec);
       return { destroy() { rec.destroyed = true; } };
     },
   };
-  if (opts.modelInfo) {
-    // Workspace models with tools/skills attached, as /api/models reports them (info.meta).
-    client.listModelInfo = () => (opts.modelsLater || Promise.resolve()).then(() => opts.modelInfo);
-  }
   const toolRuns = [];   // [{ opts, resolve, reject, cancelled }]
   client.runToolChat = o => {
     const rec = { opts: o, cancelled: false };

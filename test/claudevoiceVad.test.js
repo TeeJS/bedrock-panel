@@ -12,11 +12,15 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'app', 'claudevoice-vad.j
 const RATE = 16000, BUF = 4096;
 
 // Loads the page script against a fake Web Audio graph and returns a driver that feeds 256ms buffers.
-async function loadVad(opts, ctxState, neverResume) {
+async function loadVad(opts, ctxState, neverResume, gumGate) {
   let processor = null, resumed = 0;
+  const tracksStopped = [];
   const sandbox = {
     console, setTimeout, clearTimeout, Date, Float32Array, Int16Array, Math,
-    navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [], getAudioTracks: () => [{ label: 'Jabra' }] }) } },
+    navigator: { mediaDevices: { getUserMedia: async () => {
+      if (gumGate) await gumGate;
+      return { getTracks: () => [{ stop() { tracksStopped.push(1); } }], getAudioTracks: () => [{ label: 'Jabra' }] };
+    } } },
     window: {},
   };
   sandbox.window.AudioContext = function () {
@@ -33,9 +37,10 @@ async function loadVad(opts, ctxState, neverResume) {
   vm.runInNewContext(SRC, sandbox, { filename: 'claudevoice-vad.js' });
   const vad = sandbox.window.createClaudeVoiceVAD(opts);
   const shipped = [];
-  await vad.start(() => {}, pcm => shipped.push(pcm.length), () => {});
+  const started = vad.start(() => {}, pcm => shipped.push(pcm.length), () => {});
+  if (!gumGate) await started;
   return {
-    vad, shipped, resumed: () => resumed,
+    vad, shipped, started, resumed: () => resumed, tracksStopped, hasProcessor: () => !!processor,
     // One 256ms buffer whose first `loudMs` are a 0.3-amplitude tone and the rest silence.
     feed(loudMs) {
       const data = new Float32Array(BUF);
@@ -78,20 +83,54 @@ test('voiced time accumulates across buffers within one utterance', async (t) =>
   d.vad.stop();
 });
 
-test('the short tail of a force-cut utterance still ships', async (t) => {
+test('the short tail of a force-cut utterance still ships, but a tail of only noise does not', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const d = await loadVad({ hangoverMs: 400, maxUtteranceMs: 500 });
-  d.feed(256);
-  t.mock.timers.tick(256);
-  d.feed(256);
-  t.mock.timers.tick(256);
-  d.feed(256);   // 512ms in: force-cut ships the first part
+  const cut = () => { d.feed(256); t.mock.timers.tick(256); d.feed(256); t.mock.timers.tick(256); d.feed(256); };
+  cut();         // 512ms in: force-cut ships the first part
   assert.equal(d.shipped.length, 1);
-  d.feed(20);    // a sliver of voicing after the cut, then the speaker stops
+  d.feed(60);    // the last syllable after the cut, then the speaker stops
   d.feed(0);
   t.mock.timers.tick(400);
   assert.equal(d.shipped.length, 2);
+  cut();
+  assert.equal(d.shipped.length, 3);
+  d.feed(20);    // a breath or click after the cut: nothing for Whisper to transcribe
+  d.feed(0);
+  t.mock.timers.tick(400);
+  assert.equal(d.shipped.length, 3);
   d.vad.stop();
+});
+
+test('a quiet one-syllable word (about 100ms voiced) ships', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const d = await loadVad({ hangoverMs: 400 });
+  d.feed(110);
+  d.feed(0);
+  t.mock.timers.tick(400);
+  assert.equal(d.shipped.length, 1);
+  d.vad.stop();
+});
+
+test('stop() while the mic is still opening releases it instead of leaving a capture running', async () => {
+  let open;
+  const gate = new Promise(r => { open = r; });
+  const d = await loadVad({}, 'running', false, gate);
+  d.vad.stop();                  // the user stopped before getUserMedia answered
+  open();
+  await d.started;               // resolves quietly, no TypeError
+  assert.equal(d.tracksStopped.length, 1);
+  assert.equal(d.hasProcessor(), false);
+});
+
+test('stop() during the resume wait does not crash start()', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const d = await loadVad({}, 'suspended', true, Promise.resolve());
+  for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r));
+  d.vad.stop();                  // closes the context while start() waits on resume()
+  t.mock.timers.tick(500);
+  await d.started;               // no "Cannot read properties of null"
+  assert.equal(d.hasProcessor(), false);
 });
 
 test('a context that comes up suspended is resumed, and info() reports what was opened', async () => {

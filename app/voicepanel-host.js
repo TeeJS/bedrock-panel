@@ -22,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const speechLib = require('./claudevoice-speech');   // pure: sentence cutter + sanitizer + per-turn WAV pipeline
 const wyoming = require('./claudevoice-wyoming');    // pure: Wyoming STT/TTS protocol client
-const { resolveAiProfile, isSttNoisePhrase } = require('./voiceConfig'); // pure: AI-profile library lookup (Smart Profiles) + Whisper noise-phrase filter
+const { resolveAiProfile, isVoiceChatNoise } = require('./voiceConfig'); // pure: AI-profile library lookup (Smart Profiles) + Whisper noise-phrase filter
 const { createPanelReview, PANEL_SYSTEM_PROMPT, PANEL_PROFILE } = require('./panelGenerate'); // pure: Panel Builder review
 const routinesLib = require('./routines');            // pure: saved AI routines (shape + auto-name)
 
@@ -525,7 +525,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       const text = await wyoming.transcribe({ host, port, audio: pcmBuffer, rate: 16000, width: 2, channels: 1, log: say });
       // Whisper's near-silence hallucinations (see voiceConfig.js) return ok+empty text, which the
       // page treats as "heard nothing".
-      if (isSttNoisePhrase(text)) {
+      if (isVoiceChatNoise(text)) {
         say('STT dropped a known noise-hallucination phrase: ' + JSON.stringify(text));
         return { ok: true, text: '' };
       }

@@ -55,6 +55,9 @@ test('a capture window that never confirms is rebuilt once, then the failure is 
   assert.equal(st.dictating, false);
   assert.equal(st.noticeLevel, 'error');
   assert.match(st.notice, /isn't responding/);
+  assert.equal(windows[1].destroyed, true);           // a merely slow renderer can't keep the mic open
+  c.start();
+  assert.deepEqual(windows[2].sent, ['start']);       // the next start gets a fresh window
 });
 
 test('a confirmed start disarms the watchdog and only the live window is listened to', (t) => {
@@ -141,4 +144,17 @@ test('a page that fails to load is replaced on the next command', (t) => {
   assert.equal(windows[0].destroyed, true);
   c.start();
   assert.deepEqual(windows[1].sent, ['start']);
+});
+
+test('a missing-mic warning comes back after a passing "nothing heard" notice clears', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { c } = make();
+  c.start();
+  c.onCaptureStatus({ type: 'started', mic: 'Default mic', wanted: 'Jabra', matched: false, context: 'running', rate: 16000 });
+  c.onCaptureStatus({ type: 'silent', mic: 'Default mic', peak: 0.003 });
+  assert.match(c.state().notice, /Nothing heard/);
+  await c.onUtterance(Buffer.alloc(32000));
+  assert.match(c.state().notice, /Couldn't find "Jabra"/);
+  c.stop(); c.start();
+  assert.equal(c.state().notice, '');                 // a new session starts clean
 });

@@ -21,7 +21,9 @@ function createVAD(opts) {
   // Measured as VOICED time (20ms frames above the threshold), not wall-clock: the wall-clock span
   // always includes the hangover, so a lone click or knock used to clear any minimum and reach
   // Whisper, which hallucinates a stock phrase ("Thank you.") for it.
-  const minSpeechMs = opts.minSpeechMs || 150;      // ignore blips with less voiced audio than this (taps, clicks, knocks)
+  // 100ms rejects clicks and knocks (under ~60ms voiced) but keeps a soft one-syllable "yes" or "no".
+  const minSpeechMs = opts.minSpeechMs || 100;      // ignore blips with less voiced audio than this (taps, clicks, knocks)
+  const TAIL_MIN_MS = 40;   // a force-cut utterance's tail ships with less, but not with none (that is only noise)
   // 0 = off (the voice pages' behavior). When set, a continuous speaker who never pauses gets
   // force-cut at this duration — the utterance ships and capture continues seamlessly — so live
   // translation can't stall waiting for a pause that never comes.
@@ -33,7 +35,8 @@ function createVAD(opts) {
   let speaking = false, speechStartedAt = 0, hangoverTimer = null;
   let chunks = [];   // Float32Array pieces captured since the current utterance began
   let voicedSamples = 0;   // samples in above-threshold frames since the current utterance began
-  let continued = false;   // this utterance is the tail of a force-cut one -- ship it however short
+  let continued = false;   // this utterance is the tail of a force-cut one -- held to TAIL_MIN_MS only
+  let gen = 0;             // bumped by every start() and stop(): a start() that a stop() overtook stands down
   let inputDeviceId = '';   // '' = system default; set via setInputDevice() before start()
 
   function rms(float32) {
@@ -77,7 +80,11 @@ function createVAD(opts) {
     // default rather than failing the whole conversation toggle.
     const audio = { channelCount: 1, sampleRate: SAMPLE_RATE };
     if (inputDeviceId) audio.deviceId = { ideal: inputDeviceId };
-    stream = await navigator.mediaDevices.getUserMedia({ audio });
+    const mine = ++gen;
+    const opened = await navigator.mediaDevices.getUserMedia({ audio });
+    // stop() ran while the mic was opening: release it rather than start an orphan capture.
+    if (mine !== gen) { try { opened.getTracks().forEach(t => t.stop()); } catch (e) {} return; }
+    stream = opened;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
     // A suspended context delivers no audio at all, silently. One started without a user gesture can
     // come up that way (LucidType's hidden capture window starts from a hotkey/main-process command).
@@ -85,6 +92,7 @@ function createVAD(opts) {
     // info().state says 'suspended' rather than start() hanging.
     if (audioCtx.state === 'suspended') {
       try { await Promise.race([audioCtx.resume(), new Promise(r => setTimeout(r, 500))]); } catch (e) {}
+      if (mine !== gen) return;   // stop() ran during the wait and already released both
     }
     source = audioCtx.createMediaStreamSource(stream);
     processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
@@ -124,7 +132,7 @@ function createVAD(opts) {
         hangoverTimer = setTimeout(() => {
           hangoverTimer = null;
           speaking = false;
-          const enough = continued || voicedMs() >= minSpeechMs;
+          const enough = voicedMs() >= (continued ? Math.min(TAIL_MIN_MS, minSpeechMs) : minSpeechMs);
           const captured = chunks; chunks = [];
           if (enough && onSpeechEnd) onSpeechEnd(toPCM16(captured));
         }, hangoverMs);
@@ -135,6 +143,7 @@ function createVAD(opts) {
   }
 
   function stop() {
+    gen++;
     clearTimeout(hangoverTimer); hangoverTimer = null;
     speaking = false; chunks = [];
     try { if (processor) processor.disconnect(); } catch (e) {}

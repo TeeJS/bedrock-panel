@@ -36,13 +36,22 @@ function createLucidDictation(deps) {
   // Why dictation isn't producing text. kind says what clears it: 'hearing' clears when a clip
   // arrives, 'stt' on the next successful transcript, the rest on the next start.
   let notice = { text: '', level: '', kind: '' };   // level: 'error' | 'warn'
+  let micNotice = null;   // this session's mic warning, shown again once a passing notice clears
   let startMsg = null, ackTimer = null, retried = false;   // start-confirmation watchdog
 
   function state() { return { dictating, transcript, seq, pending, review: Object.assign({}, review), notice: notice.text, noticeLevel: notice.level }; }
   function notify() { try { if (d.onState) d.onState(state()); } catch (e) {} }
   function bump() { seq = (seq + 1) % 2147483647; notify(); }
-  function setNotice(kind, level, text) { notice = { text, level, kind }; bump(); }
-  function clearNotice(kind) { if (notice.text && (!kind || notice.kind === kind)) setNotice('', '', ''); }
+  function setNotice(kind, level, text) {
+    notice = { text, level, kind };
+    if (kind === 'mic') micNotice = notice;
+    bump();
+  }
+  function clearNotice(kind) {
+    if (!notice.text || (kind && notice.kind !== kind)) return;
+    notice = micNotice && kind !== 'mic' ? micNotice : { text: '', level: '', kind: '' };
+    bump();
+  }
 
   // Throw the capture window away so the next command builds a fresh one: it crashed, its page never
   // loaded, or it stopped answering. Sending to a dead renderer drops the message without an error.
@@ -102,6 +111,7 @@ function createLucidDictation(deps) {
       }
       log('capture window still not responding after a rebuild — giving up');
       dictating = false; startMsg = null;
+      discardWindow();   // a renderer that was only slow must not keep the mic open; next start builds fresh
       setNotice('capture', 'error', 'The microphone capture isn\'t responding. Restart Bedrock Panel; if it keeps happening, send main.log.');
     }, ACK_TIMEOUT_MS);
   }
@@ -165,6 +175,7 @@ function createLucidDictation(deps) {
     if (mode !== 'append') transcript = '';              // 'clear' (default): fresh box; 'append': keep + add to existing text
     dictating = true;
     notice = { text: '', level: '', kind: '' };
+    micNotice = null;
     retried = false;
     startMsg = { type: 'start', micDevice: s.micDevice || '', silenceMs: s.silenceMs || 400, beep: !!s.notifyBeep };
     sendCmd(startMsg);

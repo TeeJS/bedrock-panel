@@ -45,6 +45,9 @@ function normalizeOwuiUrl(raw) {
   };
 }
 
+// "no response after 30 s" / "after 10 min" -- the short bookkeeping calls time out in seconds.
+function waited(ms) { return ms < 60000 ? Math.round(ms / 1000) + ' s' : Math.round(ms / 60000) + ' min'; }
+
 function requestOpts(u, apiKey, timeoutMs, extraHeaders, method) {
   const headers = Object.assign({}, extraHeaders);
   if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
@@ -74,7 +77,7 @@ function requestJson(method, url, body, apiKey, timeoutMs, transport) {
       res.on('data', d => { out += d; });
       res.on('end', () => resolve({ status: res.statusCode, text: out }));
     });
-    req.on('timeout', () => req.destroy(new Error('no response after ' + Math.round(t / 60000) + ' min')));
+    req.on('timeout', () => req.destroy(new Error('no response after ' + waited(t))));
     req.on('error', e => reject(new Error(e.message || 'request failed')));
     req.end(payload || undefined);
   });
@@ -138,7 +141,7 @@ function streamChat(url, body, apiKey, timeoutMs, handlers, transport) {
     res.on('end', () => finishOk(finishReason));
     res.on('error', e => finishErr(new Error(e.message || 'stream failed')));
   });
-  req.on('timeout', () => req.destroy(new Error('no response after ' + Math.round(t / 60000) + ' min')));
+  req.on('timeout', () => req.destroy(new Error('no response after ' + waited(t))));
   req.on('error', e => finishErr(new Error(e.message || 'request failed')));
   req.end(payload);
 
@@ -212,7 +215,8 @@ function runToolChat(opts) {
   const timeoutMs = o.timeoutMs || DEFAULT_TIMEOUT_MS;
   const api = p => o.origin + p;
   const call = (method, p, body) => requestJson(method, api(p), body, key, SHORT_TIMEOUT_MS, tr);
-  let chatId = null, cancelled = false, wake = null;
+  let chatId = null, cancelled = false, wake = null, started = false, answered = false, stopped = false;
+  const stopTask = () => call('POST', '/api/tasks/chat/' + encodeURIComponent(chatId) + '/stop', {}).catch(() => {});
   const cancelErr = () => { const e = new Error('cancelled'); e.cancelled = true; return e; };
   const sleep = ms => new Promise(r => { const t = setTimeout(r, ms); wake = () => { clearTimeout(t); r(); }; });
 
@@ -241,8 +245,9 @@ function runToolChat(opts) {
       };
       if (o.toolIds && o.toolIds.length) body.tool_ids = o.toolIds;
       if (o.skillIds && o.skillIds.length) body.skill_ids = o.skillIds;
-      const started = await call('POST', '/api/chat/completions', body);
-      if (started.status !== 200) throw httpError('Open WebUI refused the request', started);
+      const begun = await call('POST', '/api/chat/completions', body);
+      if (begun.status !== 200) throw httpError('Open WebUI refused the request', begun);
+      started = true;
 
       const deadline = Date.now() + timeoutMs;
       for (;;) {
@@ -252,7 +257,7 @@ function runToolChat(opts) {
         if (t.status !== 200) throw httpError('could not check on the Open WebUI task', t);
         const tasks = jsonOf(t);
         if (!tasks || !Array.isArray(tasks.task_ids) || tasks.task_ids.length === 0) break;
-        if (Date.now() > deadline) throw new Error('no response after ' + Math.round(timeoutMs / 60000) + ' min');
+        if (Date.now() > deadline) throw new Error('no response after ' + waited(timeoutMs));
       }
 
       const read = await call('GET', '/api/v1/chats/' + chatPath);
@@ -261,14 +266,18 @@ function runToolChat(opts) {
       const msgs = full && full.chat && full.chat.history && full.chat.history.messages;
       const msg = (msgs && msgs[asstId]) || {};
       const text = typeof msg.content === 'string' ? msg.content : '';
+      answered = true;
       if (!text.trim()) {
         const err = msg.error && typeof msg.error === 'object' ? (msg.error.content || msg.error.detail) : msg.error;
         throw new Error(err ? 'Open WebUI: ' + String(err) : 'Open WebUI finished without an answer');
       }
       return { text };
     } finally {
-      // The chat only carried this turn; leave nothing behind in the user's chat list.
-      call('DELETE', '/api/v1/chats/' + chatPath).catch(() => {});
+      // Leaving early (cancelled, timed out, a poll failed) after the task started: stop it here, as
+      // cancel()'s own stop may have landed before Open WebUI registered the task. Then delete the
+      // chat, which only carried this turn, so nothing is left in the user's chat list.
+      const cleanup = started && !answered && !stopped ? stopTask() : Promise.resolve();
+      cleanup.then(() => call('DELETE', '/api/v1/chats/' + chatPath)).catch(() => {});
     }
   })();
 
@@ -278,7 +287,7 @@ function runToolChat(opts) {
       if (cancelled) return;
       cancelled = true;
       if (wake) wake();
-      if (chatId) call('POST', '/api/tasks/chat/' + encodeURIComponent(chatId) + '/stop', {}).catch(() => {});
+      if (chatId) { stopTask(); stopped = started; }   // before the start landed there's no task yet to stop
     },
   };
 }

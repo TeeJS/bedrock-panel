@@ -6,7 +6,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveLucidEndpoints, isSttNoisePhrase } = require('../app/voiceConfig');
+const { resolveLucidEndpoints, isSttNoisePhrase, isVoiceChatNoise } = require('../app/voiceConfig');
 
 const GLOBAL = { voice: { sttHost: 'stt.lan', sttPort: '10300', ttsHost: 'tts.lan', ttsPort: '10200' } };
 
@@ -39,17 +39,27 @@ test('isSttNoisePhrase drops whole-utterance hallucinations but keeps real sente
   assert.equal(isSttNoisePhrase('Send the report to Dana.'), false);
 });
 
-test('isSttNoisePhrase drops the stock fillers Whisper invents on noise, alone or strung together', () => {
-  for (const t of ['Thank you.', 'Thank you so much.', 'Cool.', 'you', 'Bye-bye.', 'Mm-hmm.', 'Thanks!',
-    'Cool. Thank you so much.', 'Thank you. Thank you.', 'Subtitles by the Amara.org community',
-    'I\u2019ll see you next time.']) {
+test('isSttNoisePhrase (dictation, translation) drops only what is never content', () => {
+  for (const t of ['you', 'Mm-hmm.', 'Uh.', 'Subtitles by the Amara.org community', 'I\u2019ll see you next time.',
+    'Thanks for watching! Please subscribe.']) {
     assert.equal(isSttNoisePhrase(t), true, t);
+  }
+  // A dictated or translated "Thank you." is real speech.
+  for (const t of ['Thank you.', 'Thanks!', 'Bye.', 'Cool.', 'Thank you so much.', 'Yeah.', 'No.', '', '...']) {
+    assert.equal(isSttNoisePhrase(t), false, t);
   }
 });
 
-test('isSttNoisePhrase keeps bare answers and any utterance with real content', () => {
+test('isVoiceChatNoise (AI Voice) also drops the sign-offs Whisper invents, alone or strung together', () => {
+  for (const t of ['Thank you.', 'Thank you so much.', 'Cool.', 'you', 'Bye-bye.', 'Mm-hmm.', 'Thanks!',
+    'Cool. Thank you so much.', 'Thank you. Thank you.', 'Subtitles by the Amara.org community']) {
+    assert.equal(isVoiceChatNoise(t), true, t);
+  }
+});
+
+test('isVoiceChatNoise keeps bare answers and any utterance with real content', () => {
   for (const t of ['Yeah.', 'Okay.', 'Yes.', 'No.', 'Yeah. Thank you.', 'Thank you, run it again.',
     'Cool, now sort by name.', 'So what changed?', '\u6771\u4eac so', '', '   ', '...']) {
-    assert.equal(isSttNoisePhrase(t), false, t);
+    assert.equal(isVoiceChatNoise(t), false, t);
   }
 });
