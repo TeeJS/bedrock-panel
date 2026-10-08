@@ -79,6 +79,13 @@ function createVAD(opts) {
     if (inputDeviceId) audio.deviceId = { ideal: inputDeviceId };
     stream = await navigator.mediaDevices.getUserMedia({ audio });
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+    // A suspended context delivers no audio at all, silently. One started without a user gesture can
+    // come up that way (LucidType's hidden capture window starts from a hotkey/main-process command).
+    // resume() stays pending while the browser refuses, so it is capped: start() carries on and
+    // info().state says 'suspended' rather than start() hanging.
+    if (audioCtx.state === 'suspended') {
+      try { await Promise.race([audioCtx.resume(), new Promise(r => setTimeout(r, 500))]); } catch (e) {}
+    }
     source = audioCtx.createMediaStreamSource(stream);
     processor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
     // ScriptProcessorNode needs a path to the destination to fire reliably in some engines; route
@@ -145,7 +152,15 @@ function createVAD(opts) {
   // live conversation itself so the change applies immediately).
   function setInputDevice(id) { inputDeviceId = id || ''; }
 
-  return { start, stop, setHangoverMs, setInputDevice };
+  // What start() actually opened, for diagnostics: the device label the OS reports, the context's
+  // state and rate, and the level speech has to reach.
+  function info() {
+    const track = stream && stream.getAudioTracks ? stream.getAudioTracks()[0] : null;
+    return { label: (track && track.label) || '', state: audioCtx ? audioCtx.state : 'closed',
+      sampleRate: audioCtx ? audioCtx.sampleRate : 0, threshold };
+  }
+
+  return { start, stop, setHangoverMs, setInputDevice, info };
 }
 
 window.createClaudeVoiceVAD = createVAD;

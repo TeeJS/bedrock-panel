@@ -2342,6 +2342,7 @@ function lucidStateForPanel() {
   const ep = lucidtypeVoiceEndpoints();
   const s = lucidtypeSettings();
   return { dictating: !!st.dictating, transcript: st.transcript || '', seq: st.seq || 0,
+    notice: st.notice || '', noticeLevel: st.noticeLevel || '',
     review: st.review || { active: false }, rewriteMode: s.rewriteMode || 'professional',
     sttHost: ep.sttHost, sttPort: ep.sttPort, mic: s.micDevice || '', micDef: audioDefaults().micLabel };
 }
@@ -4092,8 +4093,16 @@ app.whenReady().then(async () => {
         log: msg => console.log('[lucidtype] ' + msg),
       });
       lucidDictation.ensureWindow();   // arm the hidden window so a hotkey can start dictation instantly
-      ipcMain.on('lucid-pcm', (e, bytes) => { try { if (lucidDictation && bytes) lucidDictation.onUtterance(Buffer.from(bytes)); } catch (er) {} });
-      ipcMain.on('lucid-log', (e, msg) => console.log('[lucidtype] ' + msg));
+      // Only the current capture window is serviced (a rebuilt window's dead predecessor is ignored).
+      ipcMain.on('lucid-pcm', (e, bytes) => {
+        if (!lucidDictation || !lucidDictation.ownsSender(e.sender)) return;
+        try { if (bytes) lucidDictation.onUtterance(Buffer.from(bytes)); } catch (er) { console.log('[lucidtype] utterance handler error: ' + er.message); }
+      });
+      ipcMain.on('lucid-status', (e, st) => {
+        if (!lucidDictation || !lucidDictation.ownsSender(e.sender)) return;
+        try { lucidDictation.onCaptureStatus(st); } catch (er) { console.log('[lucidtype] status handler error: ' + er.message); }
+      });
+      ipcMain.on('lucid-log', (e, msg) => { if (lucidDictation && lucidDictation.ownsSender(e.sender)) console.log('[lucidtype] ' + String(msg).slice(0, 500)); });
     } catch (e) { reportBootFailure('dictation', e); disposeStage(lucidDictation); lucidDictation = null; }
 
     // Transcription pipeline: library (list/delete), diarizer upload queue, and CLI analysis.

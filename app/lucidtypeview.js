@@ -178,6 +178,13 @@ function applyState(st) {
     lastSeq = st.seq;
   }
 
+  // Why dictation isn't producing text (mic failed, nothing heard, speech server down...), in the
+  // header's status slot; red for errors, yellow for warnings.
+  var statusEl = $('status'), notice = st.notice || '';
+  if (statusEl.textContent !== notice) statusEl.textContent = notice;
+  statusEl.classList.toggle('error', !!notice && st.noticeLevel === 'error');
+  statusEl.classList.toggle('warn', !!notice && st.noticeLevel !== 'error');
+
   curMic = st.mic || '';   // this page's own pick ('' = inherit); remembered for the settings picker
   globalMic = st.micDef || '';   // app-wide default label, so the picker's top entry shows what it points at
   rewriteMode = st.rewriteMode || 'professional';

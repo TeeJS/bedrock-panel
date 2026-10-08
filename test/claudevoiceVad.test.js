@@ -12,15 +12,17 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'app', 'claudevoice-vad.j
 const RATE = 16000, BUF = 4096;
 
 // Loads the page script against a fake Web Audio graph and returns a driver that feeds 256ms buffers.
-async function loadVad(opts) {
-  let processor = null;
+async function loadVad(opts, ctxState, neverResume) {
+  let processor = null, resumed = 0;
   const sandbox = {
     console, setTimeout, clearTimeout, Date, Float32Array, Int16Array, Math,
-    navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) } },
+    navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [], getAudioTracks: () => [{ label: 'Jabra' }] }) } },
     window: {},
   };
   sandbox.window.AudioContext = function () {
     return {
+      state: ctxState || 'running', sampleRate: RATE,
+      resume() { resumed++; if (neverResume) return new Promise(() => {}); this.state = 'running'; return Promise.resolve(); },
       destination: {},
       createMediaStreamSource: () => ({ connect() {}, disconnect() {} }),
       createScriptProcessor: () => (processor = { connect() {}, disconnect() {}, onaudioprocess: null }),
@@ -33,7 +35,7 @@ async function loadVad(opts) {
   const shipped = [];
   await vad.start(() => {}, pcm => shipped.push(pcm.length), () => {});
   return {
-    vad, shipped,
+    vad, shipped, resumed: () => resumed,
     // One 256ms buffer whose first `loudMs` are a 0.3-amplitude tone and the rest silence.
     feed(loudMs) {
       const data = new Float32Array(BUF);
@@ -89,5 +91,25 @@ test('the short tail of a force-cut utterance still ships', async (t) => {
   d.feed(0);
   t.mock.timers.tick(400);
   assert.equal(d.shipped.length, 2);
+  d.vad.stop();
+});
+
+test('a context that comes up suspended is resumed, and info() reports what was opened', async () => {
+  const d = await loadVad({}, 'suspended');
+  assert.equal(d.resumed(), 1);
+  assert.deepEqual({ ...d.vad.info() }, { label: 'Jabra', state: 'running', sampleRate: RATE, threshold: 0.02 });
+  d.vad.stop();
+  assert.equal(d.vad.info().state, 'closed');
+});
+
+test('a context the browser refuses to resume does not hang start()', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let done = false;
+  const pending = loadVad({}, 'suspended', true).then(d => { done = true; return d; });
+  for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r));
+  assert.equal(done, false);
+  t.mock.timers.tick(500);
+  const d = await pending;
+  assert.equal(d.vad.info().state, 'suspended');   // reported, so LucidType can say so
   d.vad.stop();
 });
