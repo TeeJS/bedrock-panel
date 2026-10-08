@@ -22,19 +22,9 @@ const fs = require('fs');
 const path = require('path');
 const speechLib = require('./claudevoice-speech');   // pure: sentence cutter + sanitizer + per-turn WAV pipeline
 const wyoming = require('./claudevoice-wyoming');    // pure: Wyoming STT/TTS protocol client
-const { resolveAiProfile } = require('./voiceConfig'); // pure: AI-profile library lookup (Smart Profiles)
+const { resolveAiProfile, isVoiceChatNoise } = require('./voiceConfig'); // pure: AI-profile library lookup (Smart Profiles) + Whisper noise-phrase filter
 const { createPanelReview, PANEL_SYSTEM_PROMPT, PANEL_PROFILE } = require('./panelGenerate'); // pure: Panel Builder review
 const routinesLib = require('./routines');            // pure: saved AI routines (shape + auto-name)
-
-// Whisper hallucinates stock phrases on background noise/near-silence ("thanks for watching" is the
-// classic, from YouTube training data). Exact-phrase blocklist, compared case/punctuation-insensitively --
-// deliberately NOT a fuzzy match, so real dictation containing these words inside a sentence still goes
-// through. Dropped utterances return ok+empty text, which the page treats as "heard nothing".
-const STT_NOISE_PHRASES = ['thanks for watching'];
-function isSttNoisePhrase(text) {
-  const norm = String(text || '').toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim();
-  return STT_NOISE_PHRASES.includes(norm);
-}
 
 // deps: { activeServedAppConfig(appId), activeGrid(), getConfig(), saveConfig(),
 //         setRingState(state), clearRingOverride(), getDocumentsPath() }
@@ -533,7 +523,9 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (!host || !port) return { ok: false, error: 'STT host/port not configured (Settings → TTS/STT)' };
     try {
       const text = await wyoming.transcribe({ host, port, audio: pcmBuffer, rate: 16000, width: 2, channels: 1, log: say });
-      if (isSttNoisePhrase(text)) {
+      // Whisper's near-silence hallucinations (see voiceConfig.js) return ok+empty text, which the
+      // page treats as "heard nothing".
+      if (isVoiceChatNoise(text)) {
         say('STT dropped a known noise-hallucination phrase: ' + JSON.stringify(text));
         return { ok: true, text: '' };
       }

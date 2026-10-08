@@ -52,6 +52,15 @@ Bedrock Panel panel.
 -->
 `;
 
+// A turn's error as the panel shows it. When the CLI's own sign-in has lapsed (OAuth refresh
+// failed, logged out, bad key) the fix is in a terminal, not on the panel, so say how rather than
+// passing the bare CLI message through.
+const SIGN_IN_FAILURE = /failed to authenticate|oauth (session|token)[^.]*(expired|invalid|revoked)|login expired|not logged in|please run \/login|invalid api key/i;
+function claudeTurnError(result) {
+  const msg = String(result || 'error');
+  return SIGN_IN_FAILURE.test(msg) ? msg + ' — sign Claude Code back in: open a terminal on this PC, run claude, then type /login' : msg;
+}
+
 function createClaudeVoiceAdapter({ getServerPort, getUserDataPath, log }) {
   const say = log || (() => {});
   const emitter = new EventEmitter();
@@ -91,7 +100,7 @@ function createClaudeVoiceAdapter({ getServerPort, getUserDataPath, log }) {
     if (event.type === 'result') {
       emitter.emit('turn-complete', {
         text: typeof event.result === 'string' ? event.result : null,
-        error: event.is_error ? (event.result || 'error') : null,
+        error: event.is_error ? claudeTurnError(event.result) : null,
       });
       return;
     }
@@ -210,4 +219,4 @@ function createClaudeVoiceAdapter({ getServerPort, getUserDataPath, log }) {
   };
 }
 
-module.exports = { createClaudeVoiceAdapter };
+module.exports = { createClaudeVoiceAdapter, claudeTurnError };

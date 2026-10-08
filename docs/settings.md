@@ -329,7 +329,12 @@ One connection shared by the meeting **Analysis AI** (Meeting tab) and the
   `/api/models` from the origin itself.
 - **API key** — created in Open WebUI under avatar → Settings → Account → API Keys (an admin may
   need to enable API keys first). Stored **encrypted at rest**, same secret store as the HA token.
-- **Default model** — used wherever no per-page model is picked.
+- **Default model** — used wherever no per-page model is picked. Enter the model's **ID** (shown in
+  grey beside its name under Workspace → Models, e.g. `basis-admin` for "ERP Admin"); Open WebUI
+  matches IDs, not display names. AI Voice pages (Model button) and LucidType (**Override model**)
+  can pick their own model; meeting analysis can't, so when **Meeting → Analysis AI** is
+  **Open WebUI** it always uses this default — a general model suits that better than a
+  tool-heavy workspace model.
 - **Test connection** — saves any pending edits, then hits `/api/models` and reports the live
   model count or a clear error (server down vs. bad key).
 

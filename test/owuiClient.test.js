@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { normalizeOwuiUrl, postJson, streamChat, listModels } = require('../app/owuiClient');
+const { normalizeOwuiUrl, postJson, streamChat, listModels, listModelInfo, runToolChat } = require('../app/owuiClient');
 
 test('normalizeOwuiUrl: every pasted form derives the same /api endpoints from the origin', () => {
   const want = origin => ({ origin, chatUrl: origin + '/api/chat/completions', modelsUrl: origin + '/api/models' });
@@ -156,4 +156,124 @@ test('listModels: accepts {data}, {models}, and bare-array shapes; 401 throws wi
     listModels('http://x/api/models', 'bad', async () => ({ ok: false, status: 401 })),
     e => e.statusCode === 401,
   );
+});
+
+test('listModelInfo: reads the tools and skills attached to workspace models', async () => {
+  const fake = body => async () => ({ ok: true, status: 200, json: async () => body });
+  const list = await listModelInfo('http://x/api/models', 'k', fake({ data: [
+    { id: 'basis-admin', info: { meta: { toolIds: ['server:mcp:6', 'server:mcp:4', 7], skillIds: ['term-tasks'] } } },
+    { id: 'qwen3.8-27b', info: { meta: {} } },
+    { id: 'gemma' },
+    'plain',
+  ] }));
+  assert.deepEqual(list, [
+    { id: 'basis-admin', toolIds: ['server:mcp:6', 'server:mcp:4'], skillIds: ['term-tasks'] },
+    { id: 'qwen3.8-27b', toolIds: [], skillIds: [] },
+    { id: 'gemma', toolIds: [], skillIds: [] },
+    { id: 'plain', toolIds: [], skillIds: [] },
+  ]);
+});
+
+// A small stand-in for Open WebUI's server-side tool-calling routes.
+function fakeOwui(opts) {
+  const o = opts || {};
+  const seen = { completion: null, deleted: [], stopped: [], polls: 0 };
+  let asstId = null, pollsLeft = o.polls == null ? 2 : o.polls;
+  const handler = (req, res, body) => {
+    const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
+    assert.equal(req.headers.authorization, 'Bearer sk-tools');
+    if (req.method === 'POST' && req.url === '/api/v1/chats/new') {
+      const chat = JSON.parse(body).chat;
+      asstId = chat.history.currentId;
+      assert.equal(chat.history.messages[asstId].parentId !== undefined, true);
+      return json(200, { id: 'chat-1' });
+    }
+    if (req.method === 'POST' && req.url === '/api/chat/completions') {
+      seen.completion = JSON.parse(body);
+      return json(200, { status: true, task_ids: ['t1'], chat_id: 'chat-1' });
+    }
+    if (req.method === 'GET' && req.url === '/api/tasks/chat/chat-1') {
+      seen.polls++;
+      return json(200, { task_ids: pollsLeft-- > 0 ? ['t1'] : [] });
+    }
+    if (req.method === 'GET' && req.url === '/api/v1/chats/chat-1') {
+      return json(200, { id: 'chat-1', chat: { history: { messages: { [asstId]: o.message || { content: 'Dana Ruiz, supervisor M. Ito.', done: true } } } } });
+    }
+    if (req.method === 'POST' && req.url === '/api/tasks/chat/chat-1/stop') { seen.stopped.push(true); return json(200, {}); }
+    if (req.method === 'DELETE' && req.url === '/api/v1/chats/chat-1') { seen.deleted.push(true); return json(200, true); }
+    json(404, { detail: 'not found ' + req.method + ' ' + req.url });
+  };
+  return { handler, seen };
+}
+const settle = () => new Promise(r => setTimeout(r, 30));
+
+test('runToolChat: creates a chat, starts the tool loop on it, waits for the task, reads the answer, deletes the chat', async () => {
+  const f = fakeOwui();
+  await withServer(f.handler, async base => {
+    const job = runToolChat({ origin: base, apiKey: 'sk-tools', model: 'basis-admin', pollMs: 5,
+      messages: [{ role: 'system', content: 'Be brief.' }, { role: 'user', content: 'who is 10448?' }],
+      toolIds: ['server:mcp:6'], skillIds: ['term-tasks'] });
+    assert.deepEqual(await job.promise, { text: 'Dana Ruiz, supervisor M. Ito.' });
+    await settle();
+  });
+  const c = f.seen.completion;
+  assert.equal(c.stream, true);                              // the native tool loop is streaming-only
+  assert.equal(c.chat_id, 'chat-1');
+  assert.ok(c.id && c.session_id);                           // the assistant message, and async start
+  assert.deepEqual(c.tool_ids, ['server:mcp:6']);
+  assert.deepEqual(c.skill_ids, ['term-tasks']);
+  assert.equal('tools' in c, false);                         // a tools array would switch server-side tools off
+  assert.deepEqual(c.messages.map(m => m.role), ['system', 'user']);
+  assert.deepEqual(c.background_tasks, { title_generation: false, tags_generation: false, follow_up_generation: false });
+  assert.equal(f.seen.polls, 3);
+  assert.equal(f.seen.deleted.length, 1);
+});
+
+test('runToolChat: the server-side error stored on the message is what the caller gets', async () => {
+  const f = fakeOwui({ polls: 0, message: { content: '', error: { content: "Failed to connect to MCP server '4'" } } });
+  await withServer(f.handler, async base => {
+    const job = runToolChat({ origin: base, apiKey: 'sk-tools', model: 'm', pollMs: 5, messages: [{ role: 'user', content: 'hi' }] });
+    await assert.rejects(job.promise, /Open WebUI: Failed to connect to MCP server '4'/);
+    await settle();
+  });
+  assert.equal(f.seen.deleted.length, 1);                    // cleaned up on failure too
+});
+
+test('runToolChat: cancel stops the server-side task and still deletes the chat', async () => {
+  const f = fakeOwui({ polls: 1000 });
+  await withServer(f.handler, async base => {
+    const job = runToolChat({ origin: base, apiKey: 'sk-tools', model: 'm', pollMs: 20, messages: [{ role: 'user', content: 'hi' }] });
+    await new Promise(r => setTimeout(r, 60));
+    job.cancel();
+    await assert.rejects(job.promise, e => e.cancelled === true);
+    await settle();
+  });
+  assert.equal(f.seen.stopped.length, 1);
+  assert.equal(f.seen.deleted.length, 1);
+});
+
+test('runToolChat: a cancel that lands while the start is in flight still stops the task once it exists', async () => {
+  const f = fakeOwui({ polls: 1000 });
+  let job;
+  const slowStart = (req, res, body) => {
+    if (req.method === 'POST' && req.url === '/api/chat/completions') {
+      job.cancel();                                       // the user interrupts mid-request
+      return setTimeout(() => f.handler(req, res, body), 30);
+    }
+    f.handler(req, res, body);
+  };
+  await withServer(slowStart, async base => {
+    job = runToolChat({ origin: base, apiKey: 'sk-tools', model: 'm', pollMs: 5, messages: [{ role: 'user', content: 'hi' }] });
+    await assert.rejects(job.promise, e => e.cancelled === true);
+    await settle(); await settle();
+  });
+  assert.equal(f.seen.stopped.length, 2);                 // cancel()'s early stop, then one after the start landed
+  assert.equal(f.seen.deleted.length, 1);
+});
+
+test('runToolChat: a refused chat creation reports its HTTP status', async () => {
+  await withServer((req, res) => { res.writeHead(401); res.end('{"detail":"Not authenticated"}'); }, async base => {
+    const job = runToolChat({ origin: base, apiKey: 'bad', model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+    await assert.rejects(job.promise, e => e.statusCode === 401 && /create the Open WebUI chat/.test(e.message));
+  });
 });

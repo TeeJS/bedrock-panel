@@ -10,7 +10,7 @@ AI Voice**, then pick a **Backend** on the page's options:
 | **Claude Code** | full `claude` CLI agent session — tools, CLAUDE.md, touch approvals | the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code), signed in |
 | **Codex** | full `codex` CLI agent session | the Codex CLI, signed in |
 | **Copilot** | full `copilot` CLI agent session | the Copilot CLI, signed in |
-| **Open WebUI** | plain chat against your own Open WebUI server | the connection on **Settings → Auth** |
+| **Open WebUI** | chat against your own Open WebUI server — including the tools and skills attached to a workspace model | the connection on **Settings → Auth** |
 | **API endpoint** | plain chat against any OpenAI-compatible API — OpenAI, DeepSeek, OpenRouter, a local LiteLLM/Ollama | a base URL + API key (this page's options) |
 
 Pages are per-instance: add several AI Voice pages with different backends (a Claude page and a
@@ -18,8 +18,9 @@ GPT page side by side), each with its own settings and jump shortcut.
 
 The CLI backends are the same kind of session you'd get from a terminal — same config files, same
 tools, same subscription auth (no API billing). The panel starts and owns its own session; it
-doesn't attach to a terminal session. The chat backends (Open WebUI / API endpoint) are plain
-conversation — no tools, no file access; those two hide the folder and Mode buttons entirely.
+doesn't attach to a terminal session. The chat backends (Open WebUI / API endpoint) have no file
+access and hide the folder and Mode buttons entirely. The API endpoint is plain conversation;
+Open WebUI runs whatever tools you attached to the model inside Open WebUI (below).
 
 ## Setup
 
@@ -48,7 +49,17 @@ API endpoint adds:
 | **Model** | e.g. `gpt-4o-mini`, `deepseek-v4-flash`, or whatever your endpoint serves |
 
 Open WebUI has no per-page connection fields — it chats against the URL/key/default model
-configured once on **Settings → Auth** (shared with the meeting Analysis AI).
+configured once on **Settings → Auth** (shared with the meeting Analysis AI). Use the model's
+**ID** (the grey name next to it under Workspace → Models, e.g. `basis-admin`), not its display name.
+
+**Tools on Open WebUI.** When the chosen model has tools, MCP servers, or skills attached in
+Open WebUI (Workspace → Models → the model's Tools/Skills), each turn runs through Open WebUI's
+server-side tool calling: Open WebUI calls the tools with the API key's user and permissions,
+then the whole answer arrives at once — no word-by-word streaming on those turns. To do that the
+panel creates a temporary chat per turn and deletes it afterwards, so nothing piles up in your
+Open WebUI chat list. Models without tools stream as before. If a model without tools writes a tool
+call out as text anyway, the panel hides it (it is never shown or spoken) and says so on the
+status line.
 
 ### Permission modes
 
@@ -102,7 +113,8 @@ and its input — never truncated — and large **Approve** / **Deny** buttons.
   external hook — see the safety notes below.
 - **Codex / Copilot**: approvals are in-band protocol requests; the overlay also offers **✓ Always**
   (approve and stop asking for the rest of the session) where the protocol supports it.
-- **Open WebUI / API endpoint**: nothing ever asks — a chat API can't run tools.
+- **Open WebUI / API endpoint**: nothing ever asks. The API endpoint can't run tools; Open WebUI
+  runs a model's attached tools on its own server without asking the panel.
 
 ### The Claude hook — how it works, and why it's safe for your terminal sessions too
 
@@ -179,6 +191,10 @@ small hand-rolled TCP client.
   terminal first (the editor warns on the page options when it can't find it).
 - **Turn fails immediately, no reply** — CLI backends: no project directory set, or the CLI isn't
   authenticated (run it once from a terminal). API endpoint: URL/key/model not set on the page.
+- **"Failed to authenticate: OAuth session expired and could not be refreshed"** (Claude Code) —
+  the CLI's own sign-in lapsed; the panel uses whatever account `claude` is signed in with. Open a
+  terminal on the PC, run `claude`, type `/login`, finish the browser sign-in, then send the turn
+  again. The status line now says this itself.
 - **Voice does nothing on tap** — check the device mic is on (tray → mic).
 - **No transcription / no speech playback** — check **Settings → TTS/STT**; confirm the services
   are reachable (with tts-sst, check its tray status — on first run it's downloading models).

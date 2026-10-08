@@ -242,13 +242,37 @@ function resolveAiProfile(settings, id) {
   return list.find(p => p && p.id === id) || list[0];
 }
 
-// Whisper near-silence hallucinations to drop (exact whole-utterance match after normalization, so a
-// real sentence that merely contains these words still passes). Mirrors voicepanel-host.js.
-const STT_NOISE_PHRASES = ['thanks for watching'];
-function isSttNoisePhrase(text) {
-  const norm = String(text || '').toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/\s+/g, ' ').trim();
-  return STT_NOISE_PHRASES.includes(norm);
+// Whisper hallucinates stock phrases on background noise/near-silence -- subtitle credits and
+// sign-offs from its YouTube training data, plus fillers. An utterance is dropped only when EVERY
+// sentence in it is a listed phrase (case/punctuation-insensitive), so a real sentence that merely
+// contains the words still passes.
+//
+// Two lists, because "Thank you." on its own is real speech in dictation and in a translated
+// meeting but noise in a chat with an assistant:
+//   - isSttNoisePhrase (LucidType, Live Translate): only what is never content -- video credits,
+//     a lone "you", and filler sounds.
+//   - isVoiceChatNoise (the AI Voice panels): that plus conversational sign-offs ("thank you",
+//     "thanks", "bye", "cool", "so"). Bare answers ("yeah", "okay", "yes", "no") stay in both:
+//     they reply to the assistant's question.
+const STT_NOISE_PHRASES = new Set([
+  'thanks for watching', 'thank you for watching', 'thanks for listening', 'thank you for listening',
+  'please subscribe', 'like and subscribe', 'subtitles by the amara org community',
+  'see you next time', 'see you in the next video', "i'll see you next time",
+  'you', 'uh', 'um', 'hmm', 'mm', 'mhm', 'mm hmm', 'uh huh', 'ah', 'oh', 'huh',
+]);
+const CHAT_NOISE_PHRASES = new Set([...STT_NOISE_PHRASES,
+  'thank you', 'thank you so much', 'thank you very much', 'thanks', 'thanks so much',
+  'bye', 'bye bye', 'cool', 'so',
+]);
+function onlyPhrasesFrom(list, text) {
+  // Split on sentence-ending punctuation only ("amara.org" stays whole); keep every script's letters
+  // so non-English speech never normalizes down to a listed English phrase.
+  const parts = String(text || '').toLowerCase().replace(/\u2019/g, "'").split(/[.!?]+(?=\s|$)/)
+    .map(p => p.replace(/[^\p{L}\p{N}' ]/gu, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  return parts.length > 0 && parts.every(p => list.has(p));
 }
+function isSttNoisePhrase(text) { return onlyPhrasesFrom(STT_NOISE_PHRASES, text); }
+function isVoiceChatNoise(text) { return onlyPhrasesFrom(CHAT_NOISE_PHRASES, text); }
 
 module.exports = {
-  VOICE_APPS, LEGACY_VOICE_APPS, VOICE_DEFAULTS, MAC_SPEECH, LINUX_SPEECH, macSpeechWanted, linuxSpeechWanted, linuxSttWanted, DEFAULT_AI_PROFILES, ensureAiProfiles, ensurePanelProfile, ensureRoutines, resolveAiProfile, voiceSettings, resolveVoiceEndpoints, resolveLucidEndpoints, migrateVoiceConfig, isSttNoisePhrase };
+  VOICE_APPS, LEGACY_VOICE_APPS, VOICE_DEFAULTS, MAC_SPEECH, LINUX_SPEECH, macSpeechWanted, linuxSpeechWanted, linuxSttWanted, DEFAULT_AI_PROFILES, ensureAiProfiles, ensurePanelProfile, ensureRoutines, resolveAiProfile, voiceSettings, resolveVoiceEndpoints, resolveLucidEndpoints, migrateVoiceConfig, isSttNoisePhrase, isVoiceChatNoise };
