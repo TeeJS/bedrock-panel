@@ -2,6 +2,7 @@
   const IS_MAC = /^Mac/.test(navigator.platform || '');   // editor-only platform switch (no IPC): hides Windows-only controls on macOS
   const IS_LINUX = /Linux/.test(navigator.platform || '') && !IS_MAC;   // same idea for Linux; the two were one "not Windows" branch before
   const IS_WINDOWS = !IS_MAC && !IS_LINUX;
+  if (IS_MAC) document.documentElement.classList.add('mac');   // html.mac: config.html scopes the always-visible scrollbars to macOS
   let macPermFocusHooked = false;   // one window-focus listener for the macOS permissions block, however often Settings re-renders
   let linuxUdevFocusHooked = false;   // same, for the Linux device-access block: re-check after the user runs the command
   const VOICE_APPS = ['ai-voice'];   // apps with STT/TTS voice (one app, five backends)

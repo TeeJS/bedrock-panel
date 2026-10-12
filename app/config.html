@@ -16,6 +16,15 @@
   /* Sidebar: header, filter, and add controls stay fixed; only the page list scrolls */
   .grids { width: 240px; flex: none; display: flex; flex-direction: column; overflow: hidden; background: #0d1219; }
   .grids .pagelists { flex: 1 1 auto; min-height: 0; overflow: auto; margin-top: 8px; }
+  /* macOS draws overlay scrollbars that stay hidden until a scroll, so the page list (and every other
+     scroll region) looked like it ended at the fold. Styling ::-webkit-scrollbar makes Chromium draw a
+     classic, always-visible bar instead, which is what Windows shows natively. Scoped to html.mac (set
+     at the top of config.js) so Windows and Linux keep their native bars. */
+  html.mac ::-webkit-scrollbar { width: 10px; height: 10px; }
+  html.mac ::-webkit-scrollbar-track { background: #0a111a; }
+  html.mac ::-webkit-scrollbar-thumb { background: #2a3a50; border-radius: 5px; border: 2px solid #0a111a; }
+  html.mac ::-webkit-scrollbar-thumb:hover { background: #3b4f6b; }
+  html.mac ::-webkit-scrollbar-corner { background: #0a111a; }
   #pageFilter { background: #0a111a; font-size: 13px; padding: 6px 9px; }
   /* page-type filter: pulldown of type checkboxes under the search box */
   .kindwrap { position: relative; margin-top: 6px; }
