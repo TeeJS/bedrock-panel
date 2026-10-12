@@ -561,7 +561,11 @@
       (label ? navigator.mediaDevices.enumerateDevices() : Promise.resolve([])).then(devs => {
         const m = (devs || []).find(d => d.kind === 'audioinput' && d.label === label);
         grant.getTracks().forEach(t => t.stop());
-        return navigator.mediaDevices.getUserMedia({ audio: m ? { deviceId: { ideal: m.deviceId } } : true });
+        // `exact`, not `ideal`: Chromium opens the Windows default for an `ideal` id, which would
+        // make this test meter the wrong mic. An unopenable device falls back to the default.
+        if (!m) return navigator.mediaDevices.getUserMedia({ audio: true });
+        return navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: m.deviceId } } })
+          .catch(e => { if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw e; return navigator.mediaDevices.getUserMedia({ audio: true }); });
       }));
   }
   // getMicLabel()/getSpkLabel() return the EFFECTIVE labels ('' = system default) at click time.

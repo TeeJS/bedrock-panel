@@ -269,7 +269,9 @@ function openSoniox(apiKey) {
   soniWs.onerror = function () { setStatus('error', 'Soniox connection error.'); };
 }
 function startSoniCapture() {
-  navigator.mediaDevices.getUserMedia({ audio: micDeviceId ? { deviceId: { ideal: micDeviceId } } : true }).then(function (stream) {
+  // exact deviceId with a default fallback (claudevoice-vad.js): `ideal` opened the Windows default.
+  window.openMicStream(navigator.mediaDevices, true, micDeviceId).then(function (opened) {
+    var stream = opened.stream;
     if (!listening) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
     soniStream = stream;
     soniCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });

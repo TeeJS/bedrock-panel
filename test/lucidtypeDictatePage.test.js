@@ -13,7 +13,7 @@ const flush = () => new Promise(r => setImmediate(r));
 
 // Like Chromium, the fake names devices only while a capture is live; once every track is stopped
 // enumerateDevices returns them nameless.
-function load({ devices = [], startError = null } = {}) {
+function load({ devices = [], startError = null, fellBack = false } = {}) {
   const statuses = [], logs = [], pcm = [];
   let onCmd = null, vadInst = null, live = 0;
   const sandbox = {
@@ -35,7 +35,7 @@ function load({ devices = [], startError = null } = {}) {
           setInputDevice(id) { this.deviceId = id; },
           async start(a, b, c) { if (startError) throw startError; this.cbs = { end: b, level: c }; },
           stop() { this.stopped = true; },
-          info() { return { label: this.deviceId === 'jab' ? 'Jabra' : 'Default mic', state: 'running', sampleRate: 16000, threshold: 0.02 }; },
+          info() { return { label: this.deviceId === 'jab' && !fellBack ? 'Jabra' : 'Default mic', fellBack, state: 'running', sampleRate: 16000, threshold: 0.02 }; },
         };
         return vadInst;
       },
@@ -60,6 +60,15 @@ test('start reports the mic it opened and whether the saved label matched', asyn
   await flush(); await flush();
   assert.equal(q.statuses[0].matched, false);
   assert.equal(q.statuses[0].mic, 'Default mic');
+
+  // The saved mic was found but could not be opened (unplugged between listing and opening): the
+  // detector fell back to the default, and that counts as "not matched" so the header says so.
+  const r = load({ devices: [{ kind: 'audioinput', label: 'Jabra', deviceId: 'jab' }], fellBack: true });
+  r.cmd({ type: 'start', micDevice: 'Jabra' });
+  await flush(); await flush();
+  assert.equal(r.vad().deviceId, 'jab');
+  assert.equal(r.statuses[0].matched, false);
+  assert.equal(r.statuses[0].mic, 'Default mic');
 });
 
 test('a mic that fails to open is reported, not just logged', async () => {
