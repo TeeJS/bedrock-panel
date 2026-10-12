@@ -127,7 +127,10 @@ CoreGraphics Input Monitoring / Screen Recording preflight and prompt Electron d
 the app that launched it, whose Info.plist must carry `NSCalendarsFullAccessUsageDescription` **and**
 whose hardened-runtime entitlements must include `com.apple.security.personal-information.calendars`
 — without the entitlement tccd never shows the prompt and logs "Policy disallows prompt"; both live
-in `packaging/mac/`).
+in `packaging/mac/`), and **app-icon** (the Finder icon of an app as a PNG for "App icon" tiles —
+Electron's own `app.getFileIcon` at the `large` size crashes the process on macOS 26+, so the Mac
+renders it through AppKit; it also takes the bare name a tile launches with, so `outlook` gets
+Microsoft Outlook's icon).
 Still Windows-only, each reporting itself unavailable: touchscreen setup and album-art thumbnails
 (art comes from Spotify's oEmbed or the iTunes lookup).
 `app/nativeHelpers.js` is the one table that maps a feature to its per-platform binary.

@@ -49,6 +49,7 @@ const TARGETS = [
   { name: 'privacy' },
   { name: 'speech-server', plist: 'speech-server.plist' },   // TCC aborts a speech-recognition caller without its own usage string
   { name: 'calendar-meeting', plist: 'calendar-meeting.plist' },   // EventKit meeting info (the outlook-meeting.exe contract); same TCC rule for Calendars
+  { name: 'app-icon' },   // Finder icon of an app as PNG (app.getFileIcon 'large' crashes on macOS 26+, issue #67)
 ].map(t => Object.assign(t, { src: path.join(SRC_DIR, t.name + '.swift'), out: path.join(OUT_DIR, t.name) }));
 
 const dist = process.argv.includes('--dist') || process.env.BEDROCK_MAC_ARCH === 'universal';

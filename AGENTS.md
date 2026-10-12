@@ -21,8 +21,9 @@ related components, but verify conclusions against current source. The implement
 - C#/.NET Framework helpers provide Windows SMTC and reserved-display integration. Their macOS
   counterparts are the Swift helpers in `native/mac/` (system volume, foreground app and window
   focus, mic-session auto-record, now-playing and transport, reserved display, the panel display's
-  place in the arrangement, and the Input Monitoring / Screen Recording prompts); Outlook meeting info
-  stays Windows-only. `app/nativeHelpers.js` maps each feature to its per-platform binary,
+  place in the arrangement, the Input Monitoring / Screen Recording prompts, and app icons — Electron's
+  `app.getFileIcon` at `large` crashes on macOS 26+, so never call it on a Mac; go through
+  `app/appIcon.js`); Outlook meeting info stays Windows-only. `app/nativeHelpers.js` maps each feature to its per-platform binary,
   and `app/macPermissions.js` owns the macOS permission status/prompts.
 - `electron-builder` produces Windows portable and NSIS artifacts (Azure Trusted Signing when the
   local signing setup is available) and, via `npm run dist:mac`, an ad-hoc-signed macOS dmg/zip
