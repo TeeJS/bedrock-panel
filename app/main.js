@@ -2410,17 +2410,23 @@ function toggleLucidDictation() { if (lucidDictation) lucidDictation.toggle(); }
 // Apply-text hotkey — mirrors the on-screen Apply. If a Cleanup/Rewrite review is open (Apply button
 // showing), accept its proposal into the box (which also copies it to the clipboard). Otherwise just
 // copy the box text to the clipboard so it can be pasted anywhere. No auto-paste at the cursor.
-function lucidApply() {
-  if (!lucidDictation) return { ok: false, error: 'not ready' };
+// Every outcome is logged with its source (hotkey or panel button), so main.log answers "did Apply
+// fire, and what did it do" -- it used to be silent on everything but a clipboard failure.
+function lucidApply(source) {
+  const via = '[lucidtype] apply (' + (source || 'panel') + '): ';
+  if (!lucidDictation) { console.log(via + 'not ready'); return { ok: false, error: 'not ready' }; }
   // "Apply text stops recording" (default on): end an in-progress dictation before applying.
-  if (lucidtypeSettings().applyStopsRecording && lucidDictation.isDictating()) lucidDictation.stop();
+  const stopFirst = !!lucidtypeSettings().applyStopsRecording;
+  if (stopFirst && lucidDictation.isDictating()) { lucidDictation.stop(); console.log(via + 'stopped dictation first'); }
   const st = lucidDictation.state();
   if (st.review && st.review.active) {
-    if (st.review.status !== 'ready') return { ok: false, error: 'review not ready' };
+    if (st.review.status !== 'ready') { console.log(via + 'review open but not ready (' + st.review.status + ')'); return { ok: false, error: 'review not ready' }; }
+    console.log(via + 'accepted the review proposal (' + String(st.review.proposed || '').length + ' chars)');
     return onLucidReviewRequest('apply', st.review.proposed);
   }
   const text = lucidDictation.currentText();
-  if (!text) return { ok: false, error: 'nothing to apply' };
+  if (!text) { console.log(via + 'nothing to apply (box empty' + (st.dictating ? ', still dictating' : '') + ')'); return { ok: false, error: 'nothing to apply' }; }
+  console.log(via + 'copied ' + text.length + ' chars to the clipboard' + (st.dictating && !stopFirst ? ' (dictation left running: "Apply also stops recording" is off)' : ''));
   clipboardWrite(text).catch(e => console.log('[lucidtype] clipboard write failed: ' + e.message));
   return { ok: true };
 }
@@ -3455,9 +3461,12 @@ function registerHotkey(combo, label, fn) {
   try {
     const ok = shortcuts.register(combo, () => {
       if (process.platform === 'win32') modifiersInAccelerator(combo).forEach(m => mediaKeys.keyUp(m));
+      console.log('shortcut fired:', combo, label);
       fn();
     });
-    if (!ok) console.log('shortcut already in use, not registered:', combo, label);
+    // Successes are logged too (one line per combo, on launch and every editor save), so main.log
+    // shows exactly which combos are live rather than only the ones that failed.
+    console.log(ok ? 'shortcut registered:' : 'shortcut already in use, not registered:', combo, label);
   } catch (e) { console.log('shortcut register error:', combo, '-', e.message); }
 }
 // Per-page global hotkeys: register each page's `shortcut` so pressing it (system-wide) jumps the panel
@@ -3512,7 +3521,7 @@ function applyShortcuts() {
   // dictation starts from any app and Apply pastes into whatever window is foreground.
   const lt = lucidtypeSettings();
   registerHotkey(lt.dictationHotkey, '-> lucidtype dictation', () => toggleLucidDictation());
-  registerHotkey(lt.applyHotkey, '-> lucidtype apply', () => lucidApply());
+  registerHotkey(lt.applyHotkey, '-> lucidtype apply', () => lucidApply('hotkey'));
   registerHotkey(lt.cleanupHotkey, '-> lucidtype cleanup', () => { if (lucidDictation) lucidDictation.runCleanup(); });
   registerHotkey(lt.rewriteHotkey, '-> lucidtype rewrite', () => { if (lucidDictation) lucidDictation.runRewrite(); });
   registerSlideHotkeys();   // last, after the unregisterAll above, so a settings change re-arms them
