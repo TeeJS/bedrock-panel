@@ -2306,6 +2306,13 @@ function meetingSettings() { return Object.assign({}, MEETING_DEFAULTS, (config.
 const AUDIO_DEFAULTS = { micLabel: '', spkLabel: '' };
 function audioDefaults() { return Object.assign({}, AUDIO_DEFAULTS, (config.settings || {}).audio || {}); }
 function effMicLabel(perApp) { const v = perApp == null ? '' : String(perApp); return v !== '' ? v : audioDefaults().micLabel; }
+// The mic a web page on the panel should get when it asks for one without naming a device: the
+// showing page's own Audio override, else the app-wide default. '' = leave Chromium's default.
+function dashboardMicLabel() {
+  const g = activeGrid();
+  if (!g || (g.kind !== 'web' && g.kind !== 'app')) return '';
+  return effMicLabel(g.options && g.options.micDevice);
+}
 function effSpkLabel(perApp) { const v = perApp == null ? '' : String(perApp); return v !== '' ? v : audioDefaults().spkLabel; }
 // Query fragment giving an audio-using served page its global defaults, so the page can show an
 // "App-wide default (<name>)" option and resolve effective = rawPerApp || def entirely client-side.
@@ -4203,6 +4210,15 @@ app.whenReady().then(async () => {
   // wget --http-user do by default) works against both kinds of backend.
   dashSession = session.fromPartition('persist:dashboards');
   dashSession.setPermissionRequestHandler(handleDashboardPermissionRequest);
+  // Web pages that ask for "a microphone" get the one chosen in Bedrock Panel rather than the
+  // Windows default (dashboard-preload.js). Answered only for pages in this session.
+  try { dashSession.registerPreloadScript({ type: 'frame', id: 'bedrock-dashboard-mic', filePath: path.join(__dirname, 'dashboard-preload.js') }); }
+  catch (e) { console.log('[audio] dashboard mic preload not registered: ' + e.message); }
+  ipcMain.on('dash-mic-label', e => {
+    let label = '';
+    try { if (e.sender && e.sender.session === dashSession) label = dashboardMicLabel(); } catch (er) {}
+    e.returnValue = label;
+  });
   dashSession.webRequest.onBeforeSendHeaders((details, cb) => {
     const g = activeGrid();
     if (g && g.kind === 'web' && g.auth && hostMatches(g.url, details.url)) {

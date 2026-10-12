@@ -708,7 +708,7 @@
         <input id="gVoiceTtsHost" value="${esc(optVal(g, 'voiceTtsHost', ''))}" placeholder="127.0.0.1" style="flex:1">
         <input id="gVoiceTtsPort" value="${esc(optVal(g, 'voiceTtsPort', ''))}" placeholder="10200" style="width:90px;margin-left:8px"></div>` : ''}
       <p class="hint">Off = use the global <b>Settings → TTS/STT</b> servers. On = this page dials its own STT/TTS host + port.</p>` : ''}
-      ${(g.app === 'lucidtype' || g.app === 'livetranslate') ? `
+      ${(g.app === 'lucidtype' || g.app === 'livetranslate' || g.kind === 'web') ? `
       <div class="row" style="margin-top:8px"><label style="width:auto">Audio</label>
         <label class="iconopt" style="width:auto"><input type="checkbox" id="gAudioOn" ${optVal(g, 'micDevice', '') !== '' ? 'checked' : ''}> Override default audio sources</label></div>
       <div id="gAudioRows" style="display:${optVal(g, 'micDevice', '') !== '' ? '' : 'none'}">
@@ -716,7 +716,7 @@
           <select id="gAudioMic" style="flex:1"></select></div>
         ${micTestHtml('gAudio')}
       </div>
-      <p class="hint">Off = use the app-wide default from <b>Settings → General → Audio</b>. On = this page uses its own microphone.</p>` : ''}
+      <p class="hint">Off = use the app-wide default from <b>Settings → General → Audio</b>. On = this page uses its own microphone.${g.kind === 'web' ? ' Used when the page asks for a microphone without picking one itself; takes effect the next time the page loads.' : ''}</p>` : ''}
       ${focusRowHtml(g)}
       ${advCloneHtml(g)}
     </details>`;
@@ -1314,7 +1314,7 @@
     const vSetOpt = (key, el) => { const inp = document.getElementById(el); if (inp) inp.oninput = e => { if (!g.options) g.options = {}; g.options[key] = e.target.value.trim(); markDirty(); }; };
     vSetOpt('voiceSttHost', 'gVoiceSttHost'); vSetOpt('voiceSttPort', 'gVoiceSttPort');
     vSetOpt('voiceTtsHost', 'gVoiceTtsHost'); vSetOpt('voiceTtsPort', 'gVoiceTtsPort');
-    // Per-page audio-source override (lucidtype / livetranslate). Derived model: micDevice === '' means
+    // Per-page audio-source override (lucidtype / livetranslate / web pages). Derived model: micDevice === '' means
     // "inherit the app-wide default"; a non-empty label is this page's own mic. The checkbox shows/hides
     // the picker WITHOUT a re-render (like ltUseEndpoint) so toggling on before a device is picked doesn't
     // fight the derived checkbox state. Unchecking clears micDevice back to inherit and stops any test.

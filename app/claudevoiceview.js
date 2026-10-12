@@ -527,9 +527,8 @@ var micDeviceId = '', spkDeviceId = '';
 var allDevices = [];
 var devicesReady = false;
 function matchDevices() {
-  var mic = allDevices.find(function (d) { return d.kind === 'audioinput' && d.label === effMicLabel(); });
   var spk = allDevices.find(function (d) { return d.kind === 'audiooutput' && d.label === effSpkLabel(); });
-  micDeviceId = mic ? mic.deviceId : '';   // resolved device missing -> system default (never a hard fail)
+  micDeviceId = window.matchMicLabel(allDevices, effMicLabel());   // missing device -> '' = system default (never a hard fail)
   spkDeviceId = spk ? spk.deviceId : '';
 }
 function ensureDeviceIds(force) {

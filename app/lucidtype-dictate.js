@@ -14,16 +14,17 @@
   var stats = null;              // this session: { frames, peak, sent } -- level callbacks, loudest RMS, clips shipped
   var hearingTimer = null;
 
-  // Map a saved mic *label* (LucidType stores labels, like the Meeting picker) to a deviceId. Labels
-  // are only populated after a getUserMedia grant, so unlock once, enumerate, then match.
+  // Map a saved mic *label* (LucidType stores labels, like the Meeting picker) to a deviceId. Chromium
+  // only names devices while a capture is live, so list them BEFORE stopping the momentary stream:
+  // listing after the stop returned nameless devices, nothing matched, and dictation silently fell
+  // back to the Windows default mic (the AI Voice and meeting pages already list while live).
   function resolveDeviceId(label) {
     if (!label) return Promise.resolve('');
     return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (tmp) {
-      tmp.getTracks().forEach(function (t) { t.stop(); });
       return navigator.mediaDevices.enumerateDevices().then(function (list) {
-        var m = list.find(function (d) { return d.kind === 'audioinput' && d.label === label; });
-        return m ? m.deviceId : '';
-      });
+        tmp.getTracks().forEach(function (t) { t.stop(); });
+        return window.matchMicLabel(list, label);
+      }, function (e) { tmp.getTracks().forEach(function (t) { t.stop(); }); throw e; });
     }).catch(function () { return ''; });
   }
 

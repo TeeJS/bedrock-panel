@@ -116,6 +116,27 @@ protection and what the knob does in monitor mode):
 The ring is driven over the device's QMK VIA lighting channel; settings are stored in
 `%APPDATA%\bedrock-panel` and re-applied on connect.
 
+## Audio
+
+**Settings → General → Audio** picks the **default microphone** and **default speaker** for the
+whole app. **Show levels** watches the input live, **Test microphone** records five seconds and plays
+them back, and **Test speaker** plays a short tone. These are Bedrock Panel's own defaults: a page
+uses them even when Windows (or macOS/Linux) has a different system default.
+
+Which mic a page uses:
+
+- **LucidType, Live Translate and web pages** — the default above, unless the page's **Advanced
+  settings → Audio → Override default audio sources** is on, in which case it uses the mic chosen
+  there.
+- **AI Voice** and the **meeting recorder** — the default above, unless a different mic is picked in
+  the page's own settings (on the panel, or on the **Meeting** tab).
+- **Web pages** (dashboards such as a voice app on your own server) get Bedrock Panel's mic when they
+  ask for "a microphone" without choosing one themselves; a page that offers its own mic picker keeps
+  its choice. A change applies the next time the page loads.
+
+Mics are matched by name. If the chosen mic is unplugged, the page falls back to the system default,
+and LucidType says so in its header.
+
 ## Meeting
 
 Recording and transcription for the Meeting panel (details in [meeting.md](meeting.md)):

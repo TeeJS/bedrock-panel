@@ -70,8 +70,7 @@ var micDeviceId = '';
 var allDevices = [];
 var devicesReady = false;
 function matchDevices() {
-  var mic = allDevices.find(function (d) { return d.kind === 'audioinput' && d.label === effMicLabel(); });
-  micDeviceId = mic ? mic.deviceId : '';
+  micDeviceId = window.matchMicLabel(allDevices, effMicLabel());   // '' = system default (claudevoice-vad.js)
 }
 function ensureDeviceIds(force) {
   if (devicesReady && !force) return Promise.resolve();

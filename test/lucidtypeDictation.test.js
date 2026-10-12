@@ -152,7 +152,7 @@ test('a missing-mic warning comes back after a passing "nothing heard" notice cl
   c.start();
   c.onCaptureStatus({ type: 'started', mic: 'Default mic', wanted: 'Jabra', matched: false, context: 'running', rate: 16000 });
   c.onCaptureStatus({ type: 'silent', mic: 'Default mic', peak: 0.003 });
-  assert.match(c.state().notice, /Nothing heard/);
+  assert.match(c.state().notice, /Couldn't find "Jabra" — listening on Default mic instead\. Nothing has been heard from it yet\./);
   await c.onUtterance(Buffer.alloc(32000));
   assert.match(c.state().notice, /Couldn't find "Jabra"/);
   c.stop(); c.start();

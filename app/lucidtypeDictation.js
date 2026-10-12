@@ -139,7 +139,10 @@ function createLucidDictation(deps) {
       setNotice('hearing', 'error', 'No audio is arriving from ' + mic + '. Stop and start dictation again.');
     } else if (st.type === 'silent') {
       log('nothing above the speech level from "' + mic + '" yet (loudest ' + Number(st.peak || 0).toFixed(3) + ')');
-      setNotice('hearing', 'warn', 'Nothing heard from ' + mic + ' yet. If you\'re talking, check it\'s the right mic and not muted.');
+      // A missing saved mic is the likelier cause, so keep saying that rather than replacing it.
+      setNotice('hearing', 'warn', micNotice
+        ? micNotice.text + ' Nothing has been heard from it yet.'
+        : 'Nothing heard from ' + mic + ' yet. If you\'re talking, check it\'s the right mic and not muted.');
     }
   }
 
