@@ -82,15 +82,28 @@ class SystemAudioCapture {
     this.state = 'starting';
     const gen = ++this.gen;
 
+    const micAudio = this.opts.micConstraints || {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
+    // A named mic is asked for with `deviceId: { exact }` (an `ideal` id makes Chromium open the
+    // Windows default instead). If that device can't be opened (unplugged, not readable), record
+    // from the system default rather than failing the recording; a permission error still fails.
+    const openMic = async () => {
+      try { return await navigator.mediaDevices.getUserMedia({ audio: micAudio }); }
+      catch (e) {
+        const n = e && e.name;
+        if (!(micAudio && micAudio.deviceId) || n === 'NotAllowedError' || n === 'SecurityError') throw e;
+        const plain = Object.assign({}, micAudio); delete plain.deviceId;
+        this.micFellBack = true;
+        return navigator.mediaDevices.getUserMedia({ audio: plain });
+      }
+    };
+    this.micFellBack = false;
     const results = await Promise.allSettled([
       usingHeadphones(),
-      navigator.mediaDevices.getUserMedia({
-        audio: this.opts.micConstraints || {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      }),
+      openMic(),
       (async () => {
         // Ask for video too (Electron requires it), then discard it — we only
         // want the loopback audio track the main-process handler attaches.

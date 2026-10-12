@@ -38,6 +38,7 @@ function createVAD(opts) {
   let continued = false;   // this utterance is the tail of a force-cut one -- held to TAIL_MIN_MS only
   let gen = 0;             // bumped by every start() and stop(): a start() that a stop() overtook stands down
   let inputDeviceId = '';   // '' = system default; set via setInputDevice() before start()
+  let fellBack = false;     // start() could not open inputDeviceId and is on the system default instead
 
   function rms(float32) {
     let sum = 0;
@@ -76,15 +77,13 @@ function createVAD(opts) {
   // drives the mic visualizer's ripples, which should react to ANY sound the mic hears, not just
   // audio that crosses the utterance threshold.
   async function start(onSpeechStart, onSpeechEnd, onLevel) {
-    // deviceId as `ideal`, never `exact`: if the picked mic was unplugged, fall back to the system
-    // default rather than failing the whole conversation toggle.
     const audio = { channelCount: 1, sampleRate: SAMPLE_RATE };
-    if (inputDeviceId) audio.deviceId = { ideal: inputDeviceId };
     const mine = ++gen;
-    const opened = await navigator.mediaDevices.getUserMedia({ audio });
+    const { stream: opened, fellBack: fb } = await openMicStream(navigator.mediaDevices, audio, inputDeviceId);
     // stop() ran while the mic was opening: release it rather than start an orphan capture.
     if (mine !== gen) { try { opened.getTracks().forEach(t => t.stop()); } catch (e) {} return; }
     stream = opened;
+    fellBack = fb;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
     // A suspended context delivers no audio at all, silently. One started without a user gesture can
     // come up that way (LucidType's hidden capture window starts from a hotkey/main-process command).
@@ -161,15 +160,36 @@ function createVAD(opts) {
   // live conversation itself so the change applies immediately).
   function setInputDevice(id) { inputDeviceId = id || ''; }
 
-  // What start() actually opened, for diagnostics: the device label the OS reports, the context's
+  // What start() actually opened, for diagnostics: the device label the OS reports, whether the
+  // asked-for device could not be opened (so this is the system default instead), the context's
   // state and rate, and the level speech has to reach.
   function info() {
     const track = stream && stream.getAudioTracks ? stream.getAudioTracks()[0] : null;
-    return { label: (track && track.label) || '', state: audioCtx ? audioCtx.state : 'closed',
+    return { label: (track && track.label) || '', fellBack, state: audioCtx ? audioCtx.state : 'closed',
       sampleRate: audioCtx ? audioCtx.sampleRate : 0, threshold };
   }
 
   return { start, stop, setHangoverMs, setInputDevice, info };
+}
+
+// Open a microphone by deviceId. The id goes in as `exact`: with `ideal`, Chromium (Electron 44,
+// Windows) opens the system default device instead of the one asked for, so a mic chosen in
+// Bedrock Panel only ever "worked" while it was also the Windows default. `ideal` was there so an
+// unplugged mic would fall back to the default rather than fail; that is kept by retrying without
+// a deviceId when the exact open fails for a device reason (unplugged, over-constrained, not
+// readable). A permission failure is not a device failure and still throws.
+// Resolves { stream, fellBack }; fellBack is true when the retry opened the default instead.
+function openMicStream(mediaDevices, audio, deviceId) {
+  const base = Object.assign({}, audio === true ? {} : (audio || {}));
+  delete base.deviceId;
+  const plain = Object.keys(base).length ? base : true;
+  if (!deviceId) return mediaDevices.getUserMedia({ audio: plain }).then(stream => ({ stream, fellBack: false }));
+  const deviceMiss = e => { const n = e && e.name; return n !== 'NotAllowedError' && n !== 'SecurityError'; };
+  return mediaDevices.getUserMedia({ audio: Object.assign({}, base, { deviceId: { exact: deviceId } }) })
+    .then(stream => ({ stream, fellBack: false }), e => {
+      if (!deviceMiss(e)) throw e;
+      return mediaDevices.getUserMedia({ audio: plain }).then(stream => ({ stream, fellBack: true }));
+    });
 }
 
 // Mics are saved by NAME (a deviceId differs per page origin and resets with site data). Windows also
@@ -196,3 +216,4 @@ function matchMicLabel(devices, label) {
 
 window.createClaudeVoiceVAD = createVAD;
 window.matchMicLabel = matchMicLabel;
+window.openMicStream = openMicStream;

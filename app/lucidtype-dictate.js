@@ -70,7 +70,8 @@
       ).then(function () {
         if (!running || vad !== mine) { try { mine.stop(); } catch (e) {} return; }   // stopped while the mic opened
         var info = mine.info();
-        status({ type: 'started', mic: info.label, wanted: wanted, matched: !wanted || !!id, context: info.state, rate: info.sampleRate });
+        // matched = the saved mic was found AND is the one open now (not the default after a fallback)
+        status({ type: 'started', mic: info.label, wanted: wanted, matched: !wanted || (!!id && !info.fellBack), context: info.state, rate: info.sampleRate });
         clearTimeout(hearingTimer);
         hearingTimer = setTimeout(checkHearing, HEARING_CHECK_MS);
       });

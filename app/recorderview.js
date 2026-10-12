@@ -56,9 +56,10 @@ function startCapture() {
       noiseSuppression: true,
       autoGainControl: true,
     };
-    // deviceId as `ideal`, never `exact`: an unplugged mic falls back to the system
-    // default rather than failing the whole recording.
-    if (deviceId) micConstraints.deviceId = { ideal: deviceId };
+    // `exact`: with `ideal`, Chromium opens the Windows default mic instead of this one. An
+    // unplugged mic still falls back to the system default — SystemAudioCapture retries without
+    // the deviceId when the exact open fails for a device reason.
+    if (deviceId) micConstraints.deviceId = { exact: deviceId };
 
     var c = new window.SystemAudioCapture({
       sampleRate: curSampleRate,

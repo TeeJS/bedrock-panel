@@ -137,7 +137,7 @@ test('stop() during the resume wait does not crash start()', async (t) => {
 test('a context that comes up suspended is resumed, and info() reports what was opened', async () => {
   const d = await loadVad({}, 'suspended');
   assert.equal(d.resumed(), 1);
-  assert.deepEqual({ ...d.vad.info() }, { label: 'Jabra', state: 'running', sampleRate: RATE, threshold: 0.02 });
+  assert.deepEqual({ ...d.vad.info() }, { label: 'Jabra', fellBack: false, state: 'running', sampleRate: RATE, threshold: 0.02 });
   d.vad.stop();
   assert.equal(d.vad.info().state, 'closed');
 });
@@ -152,6 +152,67 @@ test('a context the browser refuses to resume does not hang start()', async (t) 
   const d = await pending;
   assert.equal(d.vad.info().state, 'suspended');   // reported, so LucidType can say so
   d.vad.stop();
+});
+
+// openMicStream against a scripted mediaDevices: records every constraint set it is asked for.
+function loadOpenMic(behaviour) {
+  const asked = [];
+  const sandbox = { console, setTimeout, clearTimeout, Date, Float32Array, Int16Array, Math, window: {},
+    navigator: { mediaDevices: { getUserMedia: async c => { asked.push(JSON.parse(JSON.stringify(c.audio))); return behaviour(c.audio); } } } };   // plain copies: sandbox objects have another realm's prototypes
+  vm.runInNewContext(SRC, sandbox, { filename: 'claudevoice-vad.js' });
+  return { open: (audio, id) => sandbox.window.openMicStream(sandbox.navigator.mediaDevices, audio, id), asked };
+}
+const stream = label => ({ getAudioTracks: () => [{ label }], getTracks: () => [] });
+const err = name => Object.assign(new Error(name), { name });
+
+test('openMicStream asks for the chosen mic with an exact deviceId (ideal opened the Windows default)', async () => {
+  const m = loadOpenMic(a => stream(a.deviceId ? 'Jabra' : 'Default - Insta360'));
+  const r = await m.open({ channelCount: 1, sampleRate: RATE }, 'jab');
+  assert.deepEqual(m.asked, [{ channelCount: 1, sampleRate: RATE, deviceId: { exact: 'jab' } }]);
+  assert.equal(r.stream.getAudioTracks()[0].label, 'Jabra');
+  assert.equal(r.fellBack, false);
+});
+
+test('openMicStream falls back to the system default when the chosen mic cannot be opened, and says so', async () => {
+  for (const name of ['OverconstrainedError', 'NotFoundError', 'NotReadableError']) {
+    const m = loadOpenMic(a => { if (a.deviceId) throw err(name); return stream('Default - Insta360'); });
+    const r = await m.open({ channelCount: 1, sampleRate: RATE }, 'gone');
+    assert.deepEqual(m.asked, [{ channelCount: 1, sampleRate: RATE, deviceId: { exact: 'gone' } }, { channelCount: 1, sampleRate: RATE }], name);
+    assert.equal(r.stream.getAudioTracks()[0].label, 'Default - Insta360', name);
+    assert.equal(r.fellBack, true, name);
+  }
+});
+
+test('openMicStream does not hide a permission failure behind the fallback', async () => {
+  const m = loadOpenMic(() => { throw err('NotAllowedError'); });
+  await assert.rejects(m.open({ channelCount: 1 }, 'jab'), { name: 'NotAllowedError' });
+  assert.equal(m.asked.length, 1);
+});
+
+test('openMicStream with no deviceId opens the default once, with the other constraints kept', async () => {
+  const m = loadOpenMic(() => stream('Default - Insta360'));
+  const r = await m.open({ channelCount: 1, sampleRate: RATE }, '');
+  assert.deepEqual(m.asked, [{ channelCount: 1, sampleRate: RATE }]);
+  assert.equal(r.fellBack, false);
+  const n = loadOpenMic(() => stream('Default - Insta360'));
+  await n.open(true, '');
+  assert.deepEqual(n.asked, [true]);
+});
+
+test('the detector reports a fallback through info().fellBack so pages can show it', async () => {
+  // Same driver as the other detector tests, but the fake mic refuses the exact id.
+  const sandbox = { console, setTimeout, clearTimeout, Date, Float32Array, Int16Array, Math, window: {},
+    navigator: { mediaDevices: { getUserMedia: async c => { if (c.audio.deviceId) throw err('NotFoundError'); return stream('Default - Insta360'); } } } };
+  sandbox.window.AudioContext = function () { return { state: 'running', sampleRate: RATE, destination: {}, resume: () => Promise.resolve(),
+    createMediaStreamSource: () => ({ connect() {}, disconnect() {} }), createScriptProcessor: () => ({ connect() {}, disconnect() {} }),
+    createGain: () => ({ gain: { value: 1 }, connect() {}, disconnect() {} }), close() {} }; };
+  vm.runInNewContext(SRC, sandbox, { filename: 'claudevoice-vad.js' });
+  const vad = sandbox.window.createClaudeVoiceVAD({});
+  vad.setInputDevice('gone');
+  await vad.start(() => {}, () => {}, () => {});
+  assert.equal(vad.info().fellBack, true);
+  assert.equal(vad.info().label, 'Default - Insta360');
+  vad.stop();
 });
 
 test('matchMicLabel finds a saved mic by name across Windows default entries and id suffixes', async () => {
