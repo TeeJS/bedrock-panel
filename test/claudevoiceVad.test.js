@@ -41,6 +41,7 @@ async function loadVad(opts, ctxState, neverResume, gumGate) {
   if (!gumGate) await started;
   return {
     vad, shipped, started, resumed: () => resumed, tracksStopped, hasProcessor: () => !!processor,
+    match: sandbox.window.matchMicLabel,
     // One 256ms buffer whose first `loudMs` are a 0.3-amplitude tone and the rest silence.
     feed(loudMs) {
       const data = new Float32Array(BUF);
@@ -150,5 +151,25 @@ test('a context the browser refuses to resume does not hang start()', async (t) 
   t.mock.timers.tick(500);
   const d = await pending;
   assert.equal(d.vad.info().state, 'suspended');   // reported, so LucidType can say so
+  d.vad.stop();
+});
+
+test('matchMicLabel finds a saved mic by name across Windows default entries and id suffixes', async () => {
+  const d = await loadVad({});
+  const match = d.match;
+  const devices = [
+    { kind: 'audioinput', label: 'Default - Microphone (3- Insta360 Link) (2e1a:4c01)', deviceId: 'default' },
+    { kind: 'audioinput', label: 'Communications - Microphone (Jabra SPEAK 410 USB) (0b0e:0412)', deviceId: 'communications' },
+    { kind: 'audioinput', label: 'Microphone (3- Insta360 Link) (2e1a:4c01)', deviceId: 'cam' },
+    { kind: 'audioinput', label: 'Microphone (Jabra SPEAK 410 USB) (0b0e:0412)', deviceId: 'jab' },
+    { kind: 'audiooutput', label: 'Speakers (Jabra SPEAK 410 USB) (0b0e:0412)', deviceId: 'spk' },
+  ];
+  assert.equal(match(devices, 'Microphone (Jabra SPEAK 410 USB) (0b0e:0412)'), 'jab');
+  assert.equal(match(devices, 'Default - Microphone (3- Insta360 Link) (2e1a:4c01)'), 'cam');   // the real device, not the moving "default" alias
+  assert.equal(match(devices, 'Microphone (Jabra SPEAK 410 USB)'), 'jab');                      // saved without the id suffix
+  assert.equal(match(devices, 'microphone (jabra speak 410 usb) (0b0e:0412)'), 'jab');
+  assert.equal(match(devices, 'Microphone (Blue Yeti)'), '');                                   // unplugged: system default
+  assert.equal(match(devices, ''), '');
+  assert.equal(match(devices.map(x => Object.assign({}, x, { label: '' })), 'Microphone (Jabra SPEAK 410 USB) (0b0e:0412)'), '');
   d.vad.stop();
 });

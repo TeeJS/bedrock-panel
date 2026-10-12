@@ -172,4 +172,27 @@ function createVAD(opts) {
   return { start, stop, setHangoverMs, setInputDevice, info };
 }
 
+// Mics are saved by NAME (a deviceId differs per page origin and resets with site data). Windows also
+// lists the system default and communications mics as extra "Default - <name>" / "Communications -
+// <name>" entries, and a USB mic's name ends in its "(vid:pid)". So: the exact name on a real device
+// first, then the same name without those prefixes, then without the id suffix. '' = no match, which
+// callers treat as the system default.
+function matchMicLabel(devices, label) {
+  const want = String(label || '');
+  if (!want) return '';
+  const inputs = (devices || []).filter(d => d && d.kind === 'audioinput' && d.label);
+  const real = d => d.deviceId !== 'default' && d.deviceId !== 'communications';
+  const bare = s => String(s).replace(/^(default|communications)\s*-\s*/i, '').trim().toLowerCase();
+  const noId = s => bare(s).replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, '');
+  const exact = inputs.find(d => d.label === want && real(d));
+  if (exact) return exact.deviceId;
+  for (const key of [bare, noId]) {
+    const hit = inputs.find(d => real(d) && key(d.label) === key(want));
+    if (hit) return hit.deviceId;
+  }
+  const virtual = inputs.find(d => d.label === want);   // only the "Default - …" entry carries this name
+  return virtual ? virtual.deviceId : '';
+}
+
 window.createClaudeVoiceVAD = createVAD;
+window.matchMicLabel = matchMicLabel;
