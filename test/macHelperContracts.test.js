@@ -195,7 +195,7 @@ test('app-icon renders the Finder icon through AppKit (never Electron\'s crashin
   assert.match(s, /exit\(1\)/, 'nothing resolves -> exit 1 and the JS falls back');
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'build-mac-helpers.js'), 'utf8'), /name: 'app-icon'/);
   const helpers = require('../app/nativeHelpers');
-  assert.match(helpers.helperPath('appIcon', 'darwin'), /mac\/app-icon$/);
+  assert.match(helpers.helperPath('appIcon', 'darwin'), /mac[\\/]app-icon$/);
   assert.equal(helpers.helperPath('appIcon', 'win32'), null, 'Windows keeps Electron\'s getFileIcon');
   const js = fs.readFileSync(path.join(__dirname, '..', 'app', 'appIcon.js'), 'utf8');
   assert.match(js, /String\(MAC_ICON_PX\)/, 'argv: <path-or-name> <pixels>');
