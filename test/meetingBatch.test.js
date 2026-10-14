@@ -35,7 +35,7 @@ function setup(options = {}) {
       return { ok: true };
     },
   };
-  const batch = createMeetingBatch({ library, transcriber, analyzer, now: () => 123,
+  const batch = createMeetingBatch({ library, transcriber, analyzer, now: options.now || (() => 123),
     getBusyFiles: options.getBusyFiles,
     pollMs: 1,
     sleep: async () => {
@@ -60,19 +60,19 @@ async function finish(batch) {
 const listing = (files = [], dirs = []) => ({ ok: true, files, dirs });
 const transcript = name => ({ name, analyzed: false });
 
-test('transcribes WAVs, waits through post hook, then finds new and old nested transcripts', async () => {
+test('date mode waits through transcription/post hook then analyzes only current-month files', async () => {
   let created = false;
   const s = setup({
+    now: () => Date.UTC(2026, 9, 14, 12),
     list: (kind, dir) => {
       if (kind === 'unprocessed') return listing([{ name: 'new.WAV' }, { name: 'new.json' }]);
       if (!dir) {
         assert.equal(created, true, 'processed scan waits for transcription');
-        return listing([transcript('old-diarizer-response.json'), { name: 'old.json' },
-          { name: 'done-diarizer-response.json', analyzed: true }], ['2026']);
+        return Object.assign(listing([transcript('root-diarizer-response.json')], ['2026']), { byDate: true });
       }
-      if (dir === '2026') return listing([], ['10']);
-      if (dir === '2026/10') return listing([transcript('2026/10/new-diarizer-response.json')], ['details']);
-      return listing([transcript('2026/10/details/nested-diarizer-response.json')], ['too-deep']);
+      assert.equal(dir, '2026/10', 'no archive/details directory is scanned');
+      return listing([transcript('2026/10/new-diarizer-response.json'), transcript('2026/10/old-diarizer-response.json'),
+        { name: '2026/10/new.json' }, { name: '2026/10/done-diarizer-response.json', analyzed: true }], ['details']);
     },
     tick: ({ tx, an, ticks }) => {
       if (ticks === 1) { tx.completed++; tx.queue = []; tx.phase = 'post'; }
@@ -85,10 +85,35 @@ test('transcribes WAVs, waits through post hook, then finds new and old nested t
   const st = await finish(s.batch);
   assert.equal(st.phase, 'done');
   assert.equal(st.transcribed, 1);
-  assert.equal(st.analyzed, 3);
+  assert.equal(st.analyzed, 2);
   assert.deepEqual(s.calls.filter(c => c[0] === 'analyze').map(c => c[1]),
-    ['old-diarizer-response.json', '2026/10/new-diarizer-response.json', '2026/10/details/nested-diarizer-response.json']);
-  assert.equal(s.calls.some(c => c.includes('2026/10/details/too-deep')), false);
+    ['2026/10/new-diarizer-response.json', '2026/10/old-diarizer-response.json']);
+  assert.deepEqual(s.calls.filter(c => c[0] === 'list' && c[1] === 'processed').map(c => c[2]), ['', '2026/10']);
+});
+
+test('non-date mode analyzes root only and ignores navigable subfolders', async () => {
+  const s = setup({ list: (kind, dir) => {
+    assert.equal(dir, '');
+    return kind === 'unprocessed' ? listing() : Object.assign(listing([
+      transcript('root-diarizer-response.json'), { name: 'done-diarizer-response.json', analyzed: true }, { name: 'sidecar.json' },
+    ], ['2026', 'details']), { byDate: false });
+  } });
+  s.batch.start();
+  const st = await finish(s.batch);
+  assert.equal(st.analyzed, 1);
+  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze').map(c => c[1]), ['root-diarizer-response.json']);
+});
+
+test('date mode with no current-month files completes without falling back to archive/root', async () => {
+  const s = setup({ now: () => Date.UTC(2026, 0, 14, 12), list: (kind, dir) => {
+    if (kind === 'unprocessed') return listing();
+    if (!dir) return Object.assign(listing([transcript('root-diarizer-response.json')], ['2025']), { byDate: true });
+    assert.equal(dir, '2026/01');
+    return listing();
+  } });
+  s.batch.start();
+  assert.equal((await finish(s.batch)).analyzed, 0);
+  assert.equal(s.calls.some(c => c[0] === 'analyze'), false);
 });
 
 test('no WAVs still analyzes stragglers; a second click shares the active batch', async () => {

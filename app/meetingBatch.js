@@ -23,18 +23,15 @@ function createMeetingBatch(deps) {
   }
 
   function transcripts() {
-    const names = new Set();
-    function walk(dir, depth) {
-      const result = list('processed', dir);
-      for (const file of result.files) {
-        if (/-diarizer-response\.json$/i.test(file.name) && file.analyzed === false) names.add(file.name);
-      }
-      if (depth < 3) {
-        for (const child of result.dirs) walk(dir ? dir + '/' + child : child, depth + 1);
-      }
+    let result = list('processed', '');
+    // Match the Analysis overlay's initial directory, without sweeping archive/details folders.
+    if (result.byDate) {
+      const date = new Date(now());
+      const dir = String(date.getFullYear()) + '/' + String(date.getMonth() + 1).padStart(2, '0');
+      result = list('processed', dir);
     }
-    walk('', 0);
-    return Array.from(names);
+    return result.files.filter(file => /-diarizer-response\.json$/i.test(file.name) && file.analyzed === false)
+      .map(file => file.name);
   }
 
   async function stage(service, names, enqueue, busy, doneKey, errorKey, haltOnAuth) {

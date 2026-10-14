@@ -64,7 +64,9 @@ can send them to a diarizing transcription server, then to an AI for meeting not
 - **Batch** — one tap does the whole pipeline: every unprocessed recording is queued for
   transcription (a recording still in progress or being finalized is left alone and picked
   up by the next batch), and once that queue has fully drained (including the server
-  start/stop hooks) every transcript not yet analyzed is queued for analysis. The space left of the
+  start/stop hooks) every transcript marked **Not analyzed** in the folder the Analysis
+  screen opens into (the current `YYYY/MM` folder when Organize by date is on, the
+  Processed root otherwise; subfolders are not searched) is queued for analysis. The space left of the
   button reads **Batching…** while it runs and **Batch completed** (or **Batch completed
   (N failed)**) when it ends; the button is disabled meanwhile. The batch runs in the
   main process, so leaving the page or reloading the panel doesn't stop it. If the
