@@ -184,3 +184,21 @@ test('calendar-meeting speaks the outlook-meeting.exe contract from macOS Calend
     assert.match(ent, /com\.apple\.security\.personal-information\.calendars<\/key>\s*<true\/>/, f + ': hardened runtime needs the Calendars entitlement or tccd refuses to prompt ("Policy disallows prompt")');
   }
 });
+
+test('app-icon renders the Finder icon through AppKit (never Electron\'s crashing getFileIcon) and takes the `open -a` name', () => {
+  const s = src('app-icon.swift');
+  assert.match(s, /NSWorkspace\.shared\.icon\(forFile: path\)/, 'the icon macOS itself shows for the bundle');
+  assert.match(s, /rep\.representation\(using: \.png, properties: \[:\]\)/, 'PNG on stdout is what app/appIcon.js base64-encodes');
+  assert.match(s, /FileHandle\.standardOutput\.write\(data\)/);
+  assert.match(s, /AppAliases\.bundleIds\[bare\.lowercased\(\)\]/, 'Windows tokens resolve through the shared alias table');
+  assert.match(s, /urlForApplication\(withBundleIdentifier: id\)/);
+  assert.match(s, /exit\(1\)/, 'nothing resolves -> exit 1 and the JS falls back');
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'build-mac-helpers.js'), 'utf8'), /name: 'app-icon'/);
+  const helpers = require('../app/nativeHelpers');
+  assert.match(helpers.helperPath('appIcon', 'darwin'), /mac\/app-icon$/);
+  assert.equal(helpers.helperPath('appIcon', 'win32'), null, 'Windows keeps Electron\'s getFileIcon');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'app', 'appIcon.js'), 'utf8');
+  assert.match(js, /String\(MAC_ICON_PX\)/, 'argv: <path-or-name> <pixels>');
+  assert.match(js, /platform !== 'darwin'\) return await viaElectron\(value, 'large', deps\)/, 'large only off macOS');
+  assert.equal((js.match(/'large', deps\)/g) || []).length, 1, 'no darwin branch may request the large icon');
+});

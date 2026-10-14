@@ -249,6 +249,7 @@ const EMOJI_INDEX = Object.entries(emojilib).map(([em, kws]) => [em, kws.join(' 
 const MultiKnob = require('./multiKnob');                                           // owns Aris68Connector + BedrockConnector; routes to whichever device is plugged in
 const http = require('http');
 const actionRunner = require('./actionRunner');
+const appIcon = require('./appIcon');
 const { createMediaKeys } = require('./mediaKeys');
 const linuxPointer = require('./linuxPointer');
 const { createSecretStore } = require('./secretStore');
@@ -2068,14 +2069,20 @@ async function resolveGridIcons(grid) {
   return Object.assign({}, out, { _knob: knob });
 }
 
-// Extract a program's own icon as a data: URL (best-effort; null if it can't be resolved).
-async function getAppIconDataUrl(value) {
-  try {
-    const p = await resolveAppPath(value);
-    if (!p) return null;
-    const img = await app.getFileIcon(p, { size: 'large' });
-    return (!img || img.isEmpty()) ? null : img.toDataURL();
-  } catch (e) { return null; }
+// Extract a program's own icon as a data: URL (best-effort; null if it can't be resolved). The
+// policy lives in app/appIcon.js: Electron's getFileIcon on Windows/Linux, the app-icon helper on a
+// Mac (getFileIcon's 'large' size crashes the process on macOS 26+, issue #67).
+const APP_ICON_EXE = helperPath('appIcon');   // null off macOS; may also be unbuilt (-> Electron 'normal' fallback)
+function getAppIconDataUrl(value) {
+  return appIcon.getAppIconDataUrl(value, {
+    platform: process.platform,
+    helper: (APP_ICON_EXE && fs.existsSync(APP_ICON_EXE)) ? APP_ICON_EXE : null,
+    execFile,
+    resolveAppPath,
+    getFileIcon: (p, opts) => app.getFileIcon(p, opts),
+    macAppName: actionRunner.macAppName,
+    hasPathSeparator: actionRunner.hasPathSeparator,
+  });
 }
 
 // Turn an app value into a real file path: full paths used as-is; bare names resolved via `where`.
