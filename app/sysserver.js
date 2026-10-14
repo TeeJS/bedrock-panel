@@ -682,6 +682,8 @@ const MEETING_LIBRARY_OPS = {
   '/meeting-transcribe/state': 'transcribeState',
   '/meeting-analyze/start': 'analyzeStart',
   '/meeting-analyze/state': 'analyzeState',
+  '/meeting-batch/start': 'batchStart',
+  '/meeting-batch/state': 'batchState',
   '/meeting-analysis': 'analysisResult',
 };
 

@@ -78,6 +78,7 @@ function createMeetingRecorder(deps) {
 
   // WAV write state.
   let stream = null;
+  const finalizingFiles = new Set();   // stop() returns before buffered writes/header patch finish
   let dataBytes = 0;
   let lastLoudAt = 0;
   let silenceStopMs = 0;       // 0 = disabled
@@ -207,6 +208,7 @@ function createMeetingRecorder(deps) {
     if (stream) {
       const closing = stream;
       const bytes = dataBytes;
+      finalizingFiles.add(done);
       stream = null;
       closing.end(() => {
         // Patch RIFF ChunkSize (offset 4) and data Subchunk2Size (offset 40) now the total is known.
@@ -220,6 +222,7 @@ function createMeetingRecorder(deps) {
         log('recording stopped (' + (reason || 'manual') + '), ' + bytes + ' data bytes -> ' + done);
         // File is closed and header-patched — safe for callers to rename/move it now.
         try { if (deps.onRecordingComplete) deps.onRecordingComplete(path.basename(done)); } catch (e) {}
+        finally { finalizingFiles.delete(done); }
       });
     }
     startedAt = null;
@@ -261,6 +264,13 @@ function createMeetingRecorder(deps) {
     };
   }
 
+  // Main-process consumers must not upload/move a WAV until both capture and finalization end.
+  function getBusyFiles() {
+    const files = new Set(Array.from(finalizingFiles, p => path.basename(p)));
+    if (filePath) files.add(path.basename(filePath));
+    return Array.from(files);
+  }
+
   function emitState() { try { if (deps.onState) deps.onState(getState()); } catch (e) {} }
 
   function dispose() {
@@ -270,7 +280,7 @@ function createMeetingRecorder(deps) {
   }
 
   return {
-    ensureWindow, start, stop, autoStart, autoStop, setMic, getState, dispose,
+    ensureWindow, start, stop, autoStart, autoStop, setMic, getState, getBusyFiles, dispose,
     isRecorderSender,
     onReady, onPcm, onEnded, onError, onRecorderState,
   };

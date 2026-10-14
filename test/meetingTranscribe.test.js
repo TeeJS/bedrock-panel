@@ -96,6 +96,26 @@ test('diarizer {detail} error: WAV stays in unprocessed, error recorded, queue c
   ]);
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'bad.wav')), true);     // stays for retry
   assert.equal(fs.existsSync(path.join(s.processed, 'good.wav')), true);
+  assert.equal(st.completed, 1);
+  assert.equal(st.failed, 1);
+});
+
+test('lifetime outcome counters survive eviction from recent history', async () => {
+  let call = 0;
+  const s = setup(null, async () => (++call === 1
+    ? { status: 400, text: JSON.stringify({ detail: 'unsupported audio' }) }
+    : { status: 200, text: JSON.stringify(GOOD_RESPONSE) }));
+  for (let i = 0; i < 25; i++) {
+    const name = 'meeting-' + i + '.wav';
+    addWav(s.unprocessed, name);
+    s.tx.enqueue(name);
+  }
+  await drained(s.tx);
+  const st = s.tx.getState();
+  assert.equal(st.recent.length, 20);
+  assert.equal(st.recent.some(job => job.status === 'error'), false);
+  assert.equal(st.completed, 24);
+  assert.equal(st.failed, 1);
 });
 
 test('network failure surfaces as an error state', async () => {
@@ -288,6 +308,8 @@ test('hooks: pre-command failure errors every queued job; WAVs stay for retry', 
   await drained(tx);
   const st = tx.getState();
   assert.equal(st.recent.length, 2);
+  assert.equal(st.completed, 0);
+  assert.equal(st.failed, 2);
   st.recent.forEach(j => {
     assert.equal(j.status, 'error');
     assert.match(j.error, /transcription-server start failed: ssh: connect refused/);
