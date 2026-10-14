@@ -71,6 +71,40 @@ test('lifetime analysis counters retain earlier failures after later success', a
   assert.equal(st.completed, 1);
   assert.equal(st.failed, 1);
 });
+
+test('nonzero exit with empty stderr surfaces the bounded stdout tail', async () => {
+  const tail = 'diagnostic '.repeat(40) + 'provider unavailable';
+  const s = setup(() => ({ code: 1, stdout: 'discarded-prefix\n' + tail + '\n', stderr: '' }), 'claude');
+  s.an.start('m.json');
+  for (let i = 0; i < 100 && s.an.getState().running; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  const st = s.an.getState();
+  assert.equal(st.running, false);
+  assert.equal(st.error.error, 'exited 1: ' + tail.slice(-300));
+  assert.ok(!st.error.authRequired);   // flag only present on sign-in failures
+});
+
+test('Claude auth failure asks for sign-in and clearQueue removes only pending analysis', async () => {
+  const logs = [];
+  const s = setup(() => ({ code: 1,
+    stdout: 'Failed to authenticate: OAuth session expired and could not be refreshed\n', stderr: '',
+  }), 'claude', null, { log: message => logs.push(message) });
+  for (const name of ['next.json', 'last.json']) fs.writeFileSync(path.join(s.processed, name), JSON.stringify({ segments: [] }));
+  s.an.start('m.json');
+  s.an.start('next.json');
+  s.an.start('last.json');
+  assert.equal(s.an.clearQueue(), 2);
+  assert.deepEqual(s.an.getState().queue, []);
+  assert.equal(s.an.getState().running, true);
+  assert.equal(s.an.clearQueue(), 0);
+  for (let i = 0; i < 100 && s.an.getState().running; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  const st = s.an.getState();
+  assert.equal(st.error.authRequired, true);
+  assert.equal(st.error.error, 'Claude needs sign-in. On this PC run: claude auth login — then try again.');
+  assert.equal(st.failed, 1);
+  assert.equal(st.completed, 0);
+  assert.equal(s.spawns.length, 1);
+  assert.equal(logs.some(line => line.includes('OAuth session expired')), true);
+});
 // Fake `copilot --acp`: a minimal ACP JSON-RPC responder over the same PassThrough-based fake
 // process shape as fakeSpawnFactory, but request/response driven (copilot's session/prompt only
 // resolves at end of turn -- see copilotvoice-session.js's runCopilotBatchPrompt) rather than a

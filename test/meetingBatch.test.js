@@ -27,6 +27,7 @@ function setup(options = {}) {
   };
   const analyzer = {
     getState: () => Object.assign({}, an),
+    clearQueue() { calls.push(['clearAnalysisQueue']); return an.queue.splice(0).length; },
     start(name) {
       calls.push(['analyze', name]);
       if (options.rejectAn) return { ok: false, error: 'not found' };
@@ -181,4 +182,63 @@ test('listing failure ends with coordinator error and permits retry', async () =
   s.batch.start();
   assert.equal((await finish(s.batch)).phase, 'done');
   assert.equal(s.batch.getState().error, null);
+});
+
+test('new authentication failure halts batch and clears pending analysis, without cancelling active job', async () => {
+  let failAuth = true;
+  const s = setup({
+    list: kind => kind === 'unprocessed' ? listing() : listing([
+      transcript('a-diarizer-response.json'), transcript('b-diarizer-response.json'), transcript('c-diarizer-response.json'),
+    ]),
+    tick: ({ an }) => {
+      if (failAuth) {
+        an.failed++;
+        an.queue.shift();
+        an.running = true;   // queue pump may already have started another job by the next poll
+        an.error = { authRequired: true, finishedAt: 123,
+          error: 'Claude needs sign-in. On this PC run: claude auth login — then try again.' };
+      } else {
+        an.completed += an.queue.splice(0).length;
+        an.running = false;
+        an.error = null;
+      }
+    },
+  });
+  s.batch.start();
+  let st = await finish(s.batch);
+  assert.deepEqual([st.phase, st.halted, st.analyzed, st.analyzeErrors], ['error', true, 0, 1]);
+  assert.equal(st.error, 'Claude needs sign-in. On this PC run: claude auth login');
+  assert.deepEqual(s.an.queue, []);
+  assert.equal(s.an.running, true, 'queue clearing does not claim to cancel the active job');
+  assert.equal(s.calls.filter(c => c[0] === 'clearAnalysisQueue').length, 1);
+  failAuth = false;
+  s.an.running = false;
+  s.batch.start();
+  st = await finish(s.batch);
+  assert.deepEqual([st.phase, st.halted, st.error, st.analyzed, st.analyzeErrors], ['done', false, null, 3, 0]);
+});
+
+test('a stale auth marker, even with the same timestamp, does not halt a fresh analysis stage', async () => {
+  const s = setup({ list: kind => kind === 'unprocessed' ? listing() : listing([transcript('a-diarizer-response.json')]) });
+  s.an.error = { authRequired: true, finishedAt: 123 };
+  s.batch.start();
+  const st = await finish(s.batch);
+  assert.deepEqual([st.phase, st.halted, st.analyzed], ['done', false, 1]);
+  assert.equal(s.calls.some(c => c[0] === 'clearAnalysisQueue'), false);
+});
+
+test('halting another provider preserves its sign-in guidance', async () => {
+  const message = 'Codex needs sign-in. Sign in to it on this PC, then try again.';
+  const s = setup({
+    list: kind => kind === 'unprocessed' ? listing() : listing([transcript('a-diarizer-response.json')]),
+    tick: ({ an }) => {
+      an.failed++;
+      an.queue.shift();
+      an.error = { authRequired: true, finishedAt: 123, error: message };
+    },
+  });
+  s.batch.start();
+  const st = await finish(s.batch);
+  assert.equal(st.halted, true);
+  assert.equal(st.error, message);
 });

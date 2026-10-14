@@ -11,7 +11,7 @@ function createMeetingBatch(deps) {
   const getBusyFiles = deps.getBusyFiles || (() => []);
   let state = {
     ok: true, running: false, phase: 'idle', startedAt: null, finishedAt: null,
-    transcribed: 0, transcribeErrors: 0, analyzed: 0, analyzeErrors: 0, error: null,
+    transcribed: 0, transcribeErrors: 0, analyzed: 0, analyzeErrors: 0, error: null, halted: false,
   };
 
   function getState() { return Object.assign({}, state); }
@@ -37,7 +37,8 @@ function createMeetingBatch(deps) {
     return Array.from(names);
   }
 
-  async function stage(service, names, enqueue, busy, doneKey, errorKey) {
+  async function stage(service, names, enqueue, busy, doneKey, errorKey, haltOnAuth) {
+    const stageStartedAt = now();
     const initial = service.getState();
     let rejected = 0;
     for (const name of new Set(names)) {
@@ -48,6 +49,16 @@ function createMeetingBatch(deps) {
       const current = service.getState();
       state[doneKey] = current.completed - initial.completed;
       state[errorKey] = rejected + current.failed - initial.failed;
+      if (haltOnAuth && current.failed > initial.failed && current.error && current.error.authRequired
+          && current.error.finishedAt >= stageStartedAt) {
+        // Pending jobs are removed; an already running job has no cancellation API.
+        service.clearQueue();
+        state.phase = 'error';
+        state.halted = true;
+        state.error = String(current.error.error || 'Analysis needs sign-in. Sign in on this PC, then try again.')
+          .replace(/ — then try again\.$/, '');
+        return;
+      }
       if (!busy(current)) return;
       await sleep(pollMs);
     }
@@ -62,7 +73,8 @@ function createMeetingBatch(deps) {
         s => !!(s.current || s.phase || s.queue.length), 'transcribed', 'transcribeErrors');
       state.phase = 'analyzing';
       await stage(analyzer, transcripts(), name => analyzer.start(name),
-        s => !!(s.running || s.queue.length), 'analyzed', 'analyzeErrors');
+        s => !!(s.running || s.queue.length), 'analyzed', 'analyzeErrors', true);
+      if (state.halted) return;
       state.phase = 'done';
     } catch (e) {
       state.phase = 'error';
@@ -77,7 +89,7 @@ function createMeetingBatch(deps) {
     if (state.running) return getState();
     state = {
       ok: true, running: true, phase: 'transcribing', startedAt: now(), finishedAt: null,
-      transcribed: 0, transcribeErrors: 0, analyzed: 0, analyzeErrors: 0, error: null,
+      transcribed: 0, transcribeErrors: 0, analyzed: 0, analyzeErrors: 0, error: null, halted: false,
     };
     // Reserve the running state synchronously, but always return before doing the scan/work.
     Promise.resolve().then(run);

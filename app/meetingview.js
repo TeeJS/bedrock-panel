@@ -769,7 +769,7 @@ var batchStarting = false;   // a start is in flight — a stale state fetch mus
 var batchRev = 0;            // bumped per poll and per tap: a poll answered after a later tap is discarded
 function batchText(st) {
   if (st.running) return 'Batching…';
-  if (st.phase === 'error') return 'Batch failed: ' + (st.error || 'unknown error');
+  if (st.phase === 'error') return (st.halted ? 'Batch stopped: ' : 'Batch failed: ') + (st.error || 'unknown error');
   if (st.phase === 'done') {
     var failed = (st.transcribeErrors || 0) + (st.analyzeErrors || 0);
     return failed ? 'Batch completed (' + failed + ' failed)' : 'Batch completed';

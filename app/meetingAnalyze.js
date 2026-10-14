@@ -22,6 +22,15 @@ const owuiClientMod = require('./owuiClient');
 const joplinNotesMod = require('./joplinNotes');
 
 const ANALYZE_TIMEOUT_MS = 10 * 60 * 1000;   // generous; a transcript is small but CLIs cold-start
+// CLI sign-in failures (Claude prints these on stdout: "Failed to authenticate: OAuth session expired
+// and could not be refreshed"; Codex/Copilot use "not logged in" wording). Matched case-insensitively.
+const AUTH_FAILURE_RE = /failed to authenticate|not logged in|please run \/login|oauth[^\n]*expired|invalid api key/i;
+// Only Claude's sign-in command is verified (`claude auth login`); other backends get a generic line.
+function authRequiredMsg(ai) {
+  if (ai === 'claude') return 'Claude needs sign-in. On this PC run: claude auth login — then try again.';
+  const label = { codex: 'Codex', copilot: 'Copilot', owui: 'Open WebUI' }[ai] || 'The analysis AI';
+  return label + ' needs sign-in. Sign in to it on this PC, then try again.';
+}
 
 // Analysis markdown lives beside the transcript, named after the recording: the raw diarizer
 // response is <base>-diarizer-response.json (legacy plain <base>.json still accepted), the
@@ -180,7 +189,16 @@ function createMeetingAnalyzer(deps) {
     log('analysis started (' + ai + '): ' + n);
     runJob(n, ai, jsonPath)
       .then(() => { completed++; lastDone = { name: n, finishedAt: now() }; lastError = null; log('analysis done: ' + n); })
-      .catch(e => { failed++; lastError = { name: n, error: (e && e.message) || 'failed', finishedAt: now() }; log('analysis failed: ' + n + ' — ' + lastError.error); })
+      .catch(e => {
+        failed++;
+        const raw = (e && e.message) || 'failed';
+        log('analysis failed: ' + n + ' — ' + raw);
+        // The CLI's "session expired" lands on stdout and reads as noise on a 480px panel; swap it
+        // for the one instruction that fixes it. authRequired lets the batch coordinator stop early.
+        lastError = AUTH_FAILURE_RE.test(raw)
+          ? { name: n, error: authRequiredMsg(ai), authRequired: true, finishedAt: now() }
+          : { name: n, error: raw, finishedAt: now() };
+      })
       .finally(() => {
         running = null;
         if (!queue.length) flushTaskList();   // batch drained — write the post-analysis task list
@@ -487,7 +505,14 @@ function createMeetingAnalyzer(deps) {
       proc.on('error', e => finish(reject, new Error('spawn failed: ' + e.message)));
       proc.on('close', code => {
         if (code === 0) finish(resolve, { stdout: out });
-        else finish(reject, new Error('exited ' + code + (err.trim() ? ': ' + err.trim().slice(0, 300) : '')));
+        else {
+          // The Claude CLI reports auth failures on stdout with nothing on stderr — fall back to it
+          // so the panel shows the reason instead of a bare "exited 1".
+          // stderr keeps its head (first 300 chars); the stdout fallback takes the TAIL, since a
+          // CLI prints its banner first and the failure reason last.
+          const detail = err.trim() ? err.trim().slice(0, 300) : out.trim().slice(-300);
+          finish(reject, new Error('exited ' + code + (detail ? ': ' + detail : '')));
+        }
       });
       proc.stdin.on('error', () => {});   // EPIPE if the CLI dies early — close handler reports it
       proc.stdin.end(stdinText);
@@ -506,7 +531,15 @@ function createMeetingAnalyzer(deps) {
     return { ok: false, error: 'not analyzed' };
   }
 
-  return { start, getState, result };
+  // Drop every pending job (the running one finishes on its own). Returns how many were dropped;
+  // used by the batch coordinator to stop a sweep once the CLI reports it needs sign-in.
+  function clearQueue() {
+    const n = queue.length;
+    queue.length = 0;
+    return n;
+  }
+
+  return { start, getState, result, clearQueue };
 }
 
 module.exports = { createMeetingAnalyzer, slimTranscript, highlightsBlock };
