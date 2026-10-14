@@ -42,6 +42,8 @@ test('library routes dispatch to the right op with query params', async () => {
     ['/meeting-transcribe/state', 'transcribeState', '', ''],
     ['/meeting-analyze/start?name=a.json', 'analyzeStart', '', 'a.json'],
     ['/meeting-analyze/state', 'analyzeState', '', ''],
+    ['/meeting-batch/start', 'batchStart', '', ''],
+    ['/meeting-batch/state', 'batchState', '', ''],
     ['/meeting-analysis?name=a.json', 'analysisResult', '', 'a.json'],
   ];
   for (const [route, op, kind, name] of cases) {

@@ -762,6 +762,43 @@ $('libClose').onclick = function () {
   clearInterval(libTimer); libTimer = null;
 };
 
+// ---- Batch: transcribe everything unprocessed, then analyze every unanalyzed transcript ----
+// The coordinator lives in the main process (meetingBatch.js), so a reload, a page switch, or a
+// batch started from another panel just shows up here: batchPoll rides the global 1 s poll loop.
+var batchStarting = false;   // a start is in flight — a stale state fetch must not re-enable the button
+var batchRev = 0;            // bumped per poll and per tap: a poll answered after a later tap is discarded
+function batchText(st) {
+  if (st.running) return 'Batching…';
+  if (st.phase === 'error') return 'Batch failed: ' + (st.error || 'unknown error');
+  if (st.phase === 'done') {
+    var failed = (st.transcribeErrors || 0) + (st.analyzeErrors || 0);
+    return failed ? 'Batch completed (' + failed + ' failed)' : 'Batch completed';
+  }
+  return '';
+}
+function renderBatch(st) {
+  var el = $('batchStatus');
+  el.textContent = batchText(st);
+  el.classList.toggle('err', st.phase === 'error' || !!(st.transcribeErrors || st.analyzeErrors));
+  $('btnBatch').disabled = batchStarting || !!st.running;
+}
+function batchPoll() {
+  var rev = ++batchRev;
+  fetchJson('/meeting-batch/state').then(function (st) { if (st && st.ok && !batchStarting && rev === batchRev) renderBatch(st); }).catch(function () {});
+}
+$('btnBatch').onclick = function () {
+  if (batchStarting) return;
+  batchStarting = true; batchRev++; $('btnBatch').disabled = true;
+  fetchJson('/meeting-batch/start')
+    .then(function (st) {
+      batchStarting = false;
+      if (!st || st.ok === false) { statusShow((st && st.error) || 'Could not start batch', true); $('btnBatch').disabled = false; return; }
+      renderBatch(st);
+    })
+    .catch(function () { batchStarting = false; statusShow('Could not start batch', true); $('btnBatch').disabled = false; });
+};
+batchPoll();   // a batch started before this page loaded keeps showing its state
+
 // ---- Analysis: run the AI over a transcript, read the result ----
 var anTimer = null, anState = null, anLastFinished = 0;
 var anRows = {};            // json name -> { btnA, btnV, sub, analyzed }
@@ -914,4 +951,4 @@ statusReady();
 syncMic();
 $('volPct').innerHTML = '<span class="ic">' + ICON.speaker + '</span>';   // boot state: volume not yet read
 pollState();
-setInterval(function () { tick(); pollState(); }, 1000);
+setInterval(function () { tick(); pollState(); batchPoll(); }, 1000);

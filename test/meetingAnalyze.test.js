@@ -52,6 +52,25 @@ function setup(behavior, aiSetting, finders, extraDeps) {
   return { processed, spawns, an };
 }
 function settle() { return new Promise(r => setTimeout(r, 50)); }
+
+test('lifetime analysis counters retain earlier failures after later success', async () => {
+  let call = 0;
+  const s = setup(() => (++call === 1 ? { code: 1, stderr: 'failure' } : { stdout: '# Notes' }), 'claude');
+  fs.writeFileSync(path.join(s.processed, 'next.json'), JSON.stringify({ segments: [] }));
+  s.an.start('m.json');
+  s.an.start('next.json');
+  for (let i = 0; i < 100; i++) {
+    const state = s.an.getState();
+    if (!state.running && !state.queue.length) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  const st = s.an.getState();
+  assert.equal(st.running, false);
+  assert.equal(st.error, null);
+  assert.equal(st.lastDone.name, 'next.json');
+  assert.equal(st.completed, 1);
+  assert.equal(st.failed, 1);
+});
 // Fake `copilot --acp`: a minimal ACP JSON-RPC responder over the same PassThrough-based fake
 // process shape as fakeSpawnFactory, but request/response driven (copilot's session/prompt only
 // resolves at end of turn -- see copilotvoice-session.js's runCopilotBatchPrompt) rather than a

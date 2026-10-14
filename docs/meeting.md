@@ -58,9 +58,15 @@ can send them to a diarizing transcription server, then to an AI for meeting not
 
 - Recordings land in the **Unprocessed Recordings** folder (Settings → Meeting; default
   `Documents\Bedrock Panel Meetings\unprocessed`).
-- The top row reads **Analysis | Unprocessed | Record**; both screens open as their own
-  full page with per-row select boxes, **Select all**, and act-on-selected buttons in
-  the header.
+- The top row reads **Batch | Analysis | Unprocessed | Record**; the two screens open as
+  their own full page with per-row select boxes, **Select all**, and act-on-selected
+  buttons in the header.
+- **Batch** — one tap does the whole pipeline: every unprocessed recording is queued for
+  transcription, and once that queue has fully drained (including the server start/stop
+  hooks) every transcript not yet analyzed is queued for analysis. The space left of the
+  button reads **Batching…** while it runs and **Batch completed** (or **Batch completed
+  (N failed)**) when it ends; the button is disabled meanwhile. The batch runs in the
+  main process, so leaving the page or reloading the panel doesn't stop it.
 - **Unprocessed** — list, play, transcribe, and delete recordings in one screen. Each
   row has **Transcribe / Play / Delete**; the header adds **Transcribe selected** and
   **Delete selected** (deletes are two-tap: `Delete` → `Confirm?`). Transcription sends

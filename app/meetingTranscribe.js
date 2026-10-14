@@ -100,7 +100,12 @@ function createMeetingTranscriber(deps) {
     catch (e) { await fsp.copyFile(src, dest); await fsp.unlink(src); }
   };
   // Record a finished-file entry at the head of `recent`, capped to the most recent RECENT_MAX.
-  const pushRecent = entry => { recent.unshift(entry); if (recent.length > RECENT_MAX) recent.length = RECENT_MAX; };
+  const pushRecent = entry => {
+    if (entry.status === 'done') completed++;
+    else failed++;
+    recent.unshift(entry);
+    if (recent.length > RECENT_MAX) recent.length = RECENT_MAX;
+  };
   const fetchImpl = deps.fetchImpl || fetch;         // health probe only (short, cheap)
   const httpPost = deps.httpPost || httpPostWav;     // the long-running upload
   const resolveFolders = deps.resolveFolders;   // () => { unprocessed, processed }
@@ -128,6 +133,7 @@ function createMeetingTranscriber(deps) {
   const queue = [];          // names waiting
   let current = null;        // { name, startedAt } while a job runs
   const recent = [];         // newest first: { name, status: 'done'|'error', error?, finishedAt }
+  let completed = 0, failed = 0;   // lifetime outcomes, independent of the bounded recent list
   let health = 'unknown';    // 'ok' | 'down' | 'unknown' — never fabricated, stays unknown until a probe answers
   let healthAt = 0;
   let healthBusy = false;
@@ -156,6 +162,8 @@ function createMeetingTranscriber(deps) {
       current: current ? { name: current.name, status: 'running', startedAt: current.startedAt } : null,
       queue: queue.slice(),
       recent: recent.slice(),
+      completed,
+      failed,
     };
   }
 

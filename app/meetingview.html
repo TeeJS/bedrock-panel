@@ -35,6 +35,10 @@
   .seg.active { background:var(--accent); color:var(--accent-fg,#04121f); }
   #status { font-size:16px; color:var(--dim); font-weight:600; }
   #spacer { flex:1; }
+  /* Batch progress/outcome sits in the empty topbar space left of the Batch button; same voice as #status */
+  #batchStatus { font-size:16px; color:var(--dim); font-weight:600; white-space:nowrap; max-width:360px; overflow:hidden; text-overflow:ellipsis; }
+  #batchStatus:empty { display:none; }
+  #batchStatus.err { color:var(--danger); }
   #recHost { display:flex; }
   #recToggle { display:flex; align-items:center; gap:12px; height:48px; padding:0 22px; border-radius:11px;
     background:var(--surf); color:var(--fg); font-size:18px; font-weight:700; }
@@ -313,6 +317,8 @@
       <button class="topBtn colBtn press foc" id="btnBusyPanel" type="button">Busy</button>
       <div id="status">Ready</div>
       <div id="spacer"></div>
+      <div id="batchStatus"></div>
+      <button class="topBtn press foc" id="btnBatch" type="button">Batch</button>
       <button class="topBtn press foc" id="btnAnalysis" type="button">Analysis</button>
       <button class="topBtn press foc" id="btnUnprocessed" type="button">Unprocessed</button>
       <div id="recHost"></div>

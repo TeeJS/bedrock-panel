@@ -141,6 +141,7 @@ function createMeetingAnalyzer(deps) {
   let running = null;    // { name, ai, startedAt } while a job runs
   let lastError = null;  // { name, error, finishedAt }
   let lastDone = null;   // { name, finishedAt }
+  let completed = 0, failed = 0;   // lifetime outcomes, never lost when lastError is cleared
   let lastJoplin = null; // { name, ok, error?, applied?, skipped?, finishedAt } for the panel
 
   function getState() {
@@ -152,6 +153,8 @@ function createMeetingAnalyzer(deps) {
       queue: queue.slice(),
       error: lastError,
       lastDone,
+      completed,
+      failed,
       joplin: lastJoplin,
     };
   }
@@ -176,8 +179,8 @@ function createMeetingAnalyzer(deps) {
     running = { name: n, ai, startedAt: now() };
     log('analysis started (' + ai + '): ' + n);
     runJob(n, ai, jsonPath)
-      .then(() => { lastDone = { name: n, finishedAt: now() }; lastError = null; log('analysis done: ' + n); })
-      .catch(e => { lastError = { name: n, error: (e && e.message) || 'failed', finishedAt: now() }; log('analysis failed: ' + n + ' — ' + lastError.error); })
+      .then(() => { completed++; lastDone = { name: n, finishedAt: now() }; lastError = null; log('analysis done: ' + n); })
+      .catch(e => { failed++; lastError = { name: n, error: (e && e.message) || 'failed', finishedAt: now() }; log('analysis failed: ' + n + ' — ' + lastError.error); })
       .finally(() => {
         running = null;
         if (!queue.length) flushTaskList();   // batch drained — write the post-analysis task list

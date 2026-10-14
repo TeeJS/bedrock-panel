@@ -357,6 +357,7 @@ const completedRecordings = new Set();   // basenames whose finalize (header pat
 let meetingLibrary = null;    // recordings list/delete/resolve for the panel's library screens
 let meetingTranscriber = null; // FIFO diarizer-upload queue (meetingTranscribe.js)
 let meetingAnalyzer = null;   // transcript → markdown analysis via claude/codex CLI (meetingAnalyze.js)
+let meetingBatch = null;      // one-tap transcribe-everything-then-analyze-everything coordinator (meetingBatch.js)
 let micMonitorProc = null;    // native app-scoped mic-in-use monitor child process
 let sysVolCache = null, sysVolProc = null, sysVolIdleTimer = null;   // cache of the real system volume (0-100), fed by the persistent watcher
 let lastRingEffect = LED_DEFAULT.effect; // remembered so the tray on/off toggle can restore the prior effect
@@ -2807,6 +2808,8 @@ function onMeetingLibraryRequest(op, params) {
     if (op === 'transcribeState') return meetingTranscriber ? meetingTranscriber.getState() : { ok: false, error: 'transcriber unavailable' };
     if (op === 'analyzeStart') return meetingAnalyzer ? meetingAnalyzer.start(p.name) : { ok: false, error: 'analyzer unavailable' };
     if (op === 'analyzeState') return meetingAnalyzer ? meetingAnalyzer.getState() : { ok: false, error: 'analyzer unavailable' };
+    if (op === 'batchStart') return meetingBatch ? meetingBatch.start() : { ok: false, error: 'batch unavailable' };
+    if (op === 'batchState') return meetingBatch ? meetingBatch.getState() : { ok: false, error: 'batch unavailable' };
     if (op === 'analysisResult') return meetingAnalyzer ? meetingAnalyzer.result(p.name) : { ok: false, error: 'analyzer unavailable' };
     return { ok: false, error: 'unknown library op: ' + op };
   } catch (e) { return { ok: false, error: e.message }; }
@@ -4193,7 +4196,13 @@ app.whenReady().then(async () => {
         },
         log: msg => console.log('[meeting] ' + msg),
       });
-    } catch (e) { reportBootFailure('transcription', e); meetingLibrary = null; meetingTranscriber = null; meetingAnalyzer = null; }
+      meetingBatch = require('./meetingBatch').createMeetingBatch({
+        library: meetingLibrary, transcriber: meetingTranscriber, analyzer: meetingAnalyzer,
+        // A recording in progress (or still being finalized) is an ordinary .wav in unprocessed —
+        // the batch must not sweep it up. Guarded: a boot without the recorder still allows Batch.
+        getBusyFiles: () => (meetingRecorder && meetingRecorder.getBusyFiles) ? meetingRecorder.getBusyFiles() : [],
+      });
+    } catch (e) { reportBootFailure('transcription', e); meetingLibrary = null; meetingTranscriber = null; meetingAnalyzer = null; meetingBatch = null; }
   } catch (e) {
     // Name the stage that failed (not a generic 'local panel services') and make it VISIBLE — a
     // silent catch here made a partial boot failure indistinguishable from a working launch.
