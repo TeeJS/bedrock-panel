@@ -783,6 +783,7 @@ function renderBatch(st) {
   $('btnBatch').disabled = batchStarting || !!st.running;
 }
 function batchPoll() {
+  if (batchStarting) return;   // a poll straddling the start request would read the pre-start state
   var rev = ++batchRev;
   fetchJson('/meeting-batch/state').then(function (st) { if (st && st.ok && !batchStarting && rev === batchRev) renderBatch(st); }).catch(function () {});
 }
