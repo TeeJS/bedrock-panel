@@ -161,3 +161,10 @@ test('merge preserves unknown policy fields and matched item extensions without 
   assert.equal(merged.action_items[0].task, 'New words');
   assert.equal(merged.bedrock.revision, 2);
 });
+
+test('person slug collisions remain separate and produce an explicit review warning', () => {
+  const built = fm.buildFrontmatter({ base: 'import', sources: { meta: { required_attendees: ['Ann E.', 'Ann E'] } } });
+  assert.equal(new Set(built.frontmatter.people).size, 2);
+  assert.equal(built.frontmatter.bedrock.slug_collisions.length, 1);
+  assert.ok(built.warnings.some(w => /slug collision requires review/i.test(w)));
+});

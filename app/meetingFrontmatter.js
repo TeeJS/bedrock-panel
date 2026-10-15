@@ -387,6 +387,7 @@ function buildFrontmatter(inputs = {}) {
   const durationSec = Number.isFinite(wav) && wav >= 0 ? wav / 1000 : end || null;
   const durationSource = Number.isFinite(wav) && wav >= 0 ? 'wav' : end ? 'diarizer' : 'unknown';
   const warnings = [];
+  if (collisions.length) warnings.push('Person slug collision requires review: ' + collisions.map(c => c.names.join(' / ')).join('; '));
   let date = capture.started_at || sources.date || inputs.date || inputs.previous?.date;
   const bedrock = { schema: 1, duration_source: durationSource, extraction: inputs.malformed || inputs.parsed?.malformed ? 'malformed' : 'ok', evidence: 'limited' };
   if (!date) {
