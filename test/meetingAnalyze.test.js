@@ -309,7 +309,7 @@ test('queue: second transcript waits its turn; rel-path names work', async () =>
   assert.equal(an.start('a.json').ok, true);
   const second = an.start('2026/08/b.json');
   assert.equal(second.ok, true);                       // queued, not rejected
-  assert.deepEqual(second.queue, ['2026/08/b.json']);
+  assert.deepEqual(second.queue, [{ name: '2026/08/b.json', kind: 'processed' }]);
   assert.equal(an.start('2026/08/b.json').ok, false);  // dedupe
   await drained(an);
   assert.equal(an.getState().running, false);

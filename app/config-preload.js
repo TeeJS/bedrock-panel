@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   pickProgram() { return ipcRenderer.invoke('pickProgram'); },
   pickFile() { return ipcRenderer.invoke('pickFile'); },
   pickFolder() { return ipcRenderer.invoke('pickFolder'); },
+  meetingFoldersCheck(fields) { return ipcRenderer.invoke('meetingFoldersCheck', fields); },
   listDropInApps() { return ipcRenderer.invoke('listDropInApps'); },
   openExternal(url) { ipcRenderer.send('openExternal', url); },
   exportDropInApp(id) { return ipcRenderer.invoke('exportDropInApp', id); },

@@ -2301,7 +2301,7 @@ async function meetingActionInner(platform, action) {
 // Settings live under config.settings.meeting (global, like config.settings.monitor) so auto-record
 // works regardless of which app the panel is showing — the meeting page's per-grid options only
 // exist while it's the active app, which is useless for background recording.
-const MEETING_DEFAULTS = { folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: process.platform === 'darwin' ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' };
+const MEETING_DEFAULTS = { folder: '', transcribedFolder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: process.platform === 'darwin' ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' };
 function meetingSettings() { return Object.assign({}, MEETING_DEFAULTS, (config.settings || {}).meeting || {}); }
 // ---- Software-wide audio defaults (Settings > General > Audio) ----
 // One default mic + speaker for the whole app, stored as device LABELS ('' = OS system default) --
@@ -2479,14 +2479,33 @@ function setLucidTrayRecording(on) {
 const MEETINGS_ROOT = 'Bedrock Panel Meetings', LEGACY_MEETINGS_ROOT = 'OpenQuake Meetings';
 const TRANSLATIONS_ROOT = 'Bedrock Panel Translations', LEGACY_TRANSLATIONS_ROOT = 'OpenQuake Translations';
 function defaultMeetingFolder() { return path.join(app.getPath('documents'), MEETINGS_ROOT, 'unprocessed'); }
-function defaultProcessedFolder() { return path.join(app.getPath('documents'), MEETINGS_ROOT, 'processed'); }
-// Blank folder settings mean "use the default", same convention as the recorder.
+function defaultProcessedFolder() { return path.join(app.getPath('documents'), MEETINGS_ROOT, 'processed'); }   // name kept: existing installs' default folder
+function defaultTranscribedFolder() { return path.join(app.getPath('documents'), MEETINGS_ROOT, 'transcribed'); }
+// Blank folder settings mean "use the default", same convention as the recorder. Three stages:
+// unprocessed (to transcribe) -> transcribed (to analyze) -> processed (finished meeting files only).
 function resolveMeetingFolders() {
   const m = meetingSettings();
   return {
     unprocessed: String(m.folder || '').trim() || defaultMeetingFolder(),
+    transcribed: String(m.transcribedFolder || '').trim() || defaultTranscribedFolder(),
     processed: String(m.processedFolder || '').trim() || defaultProcessedFolder(),
   };
+}
+// The three roots must be distinct and must not nest: deleting a transcript set from `transcribed`
+// or moving sources into `processed` would otherwise reach into another stage's files. Returns an
+// error string, or '' when the layout is safe. Checked where files are deleted or moved.
+function meetingFoldersError(folders) {
+  return require('./meetingFolders').foldersError(folders || resolveMeetingFolders());
+}
+// The same check for the Settings page: the three fields as typed (blank = the default), so the
+// error shows while the user is still looking at the fields rather than at the next Analyze.
+function meetingFoldersCheck(fields) {
+  const f = fields || {};
+  return meetingFoldersError({
+    unprocessed: String(f.unprocessed || '').trim() || defaultMeetingFolder(),
+    transcribed: String(f.transcribed || '').trim() || defaultTranscribedFolder(),
+    processed: String(f.processed || '').trim() || defaultProcessedFolder(),
+  });
 }
 // Analysis prompt: the user-editable copy lives in userData, seeded from the bundled template on
 // first use. The analyzer prefers it whenever it exists.
@@ -2802,16 +2821,34 @@ function appendMeetingNameToRecording(wavName) {
 function onMeetingLibraryRequest(op, params) {
   const p = params || {};
   try {
-    if (op === 'files') return meetingLibrary ? meetingLibrary.listFiles(p.kind, p.dir) : { ok: false, error: 'library unavailable' };
-    if (op === 'delete') return meetingLibrary ? meetingLibrary.deleteFile(p.kind, p.name) : { ok: false, error: 'library unavailable' };
+    if (op === 'files') {
+      if (p.kind === 'transcribed' || p.kind === 'processed') {
+        const bad = meetingFoldersError();
+        if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };
+      }
+      return meetingLibrary ? meetingLibrary.listFiles(p.kind, p.dir) : { ok: false, error: 'library unavailable' };
+    }
+    if (op === 'delete') {
+      const bad = meetingFoldersError();
+      if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };
+      return meetingLibrary ? meetingLibrary.deleteFile(p.kind, p.name) : { ok: false, error: 'library unavailable' };
+    }
     if (op === 'transcribeStart') return meetingTranscriber ? meetingTranscriber.enqueue(p.name) : { ok: false, error: 'transcriber unavailable' };
     if (op === 'transcribeState') return meetingTranscriber ? meetingTranscriber.getState() : { ok: false, error: 'transcriber unavailable' };
-    if (op === 'analyzeStart') return meetingAnalyzer ? meetingAnalyzer.start(p.name) : { ok: false, error: 'analyzer unavailable' };
+    if (op === 'analyzeStart') {
+      const bad = meetingFoldersError();
+      if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };
+      return meetingAnalyzer ? meetingAnalyzer.start(p.name, p.kind === 'transcribed' ? 'transcribed' : 'processed') : { ok: false, error: 'analyzer unavailable' };
+    }
     if (op === 'analyzeState') return meetingAnalyzer ? meetingAnalyzer.getState() : { ok: false, error: 'analyzer unavailable' };
     if (op === 'analyzeApplyProposed') return meetingAnalyzer ? meetingAnalyzer.applyProposed(p.name) : { ok: false, error: 'analyzer unavailable' };
-    if (op === 'batchStart') return meetingBatch ? meetingBatch.start() : { ok: false, error: 'batch unavailable' };
+    if (op === 'batchStart') {
+      const bad = meetingFoldersError();
+      if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };
+      return meetingBatch ? meetingBatch.start() : { ok: false, error: 'batch unavailable' };
+    }
     if (op === 'batchState') return meetingBatch ? meetingBatch.getState() : { ok: false, error: 'batch unavailable' };
-    if (op === 'analysisResult') return meetingAnalyzer ? meetingAnalyzer.result(p.name, p.proposed === '1') : { ok: false, error: 'analyzer unavailable' };
+    if (op === 'analysisResult') return meetingAnalyzer ? meetingAnalyzer.result(p.name, p.proposed === '1', p.kind === 'transcribed' ? 'transcribed' : 'processed') : { ok: false, error: 'analyzer unavailable' };
     return { ok: false, error: 'unknown library op: ' + op };
   } catch (e) { return { ok: false, error: e.message }; }
 }
@@ -4144,6 +4181,8 @@ app.whenReady().then(async () => {
         resolveFolders: resolveMeetingFolders,
         organizeByDate: () => !!meetingSettings().processedByDate,
         log: msg => console.log('[meeting] ' + msg),
+        // Delete in transcribed refuses while the analyzer has that transcript running or queued.
+        isBusy: name => !!(meetingAnalyzer && meetingAnalyzer.isBusy(name, 'transcribed')),
       });
       meetingTranscriber = require('./meetingTranscribe').createMeetingTranscriber({
         resolveFolders: resolveMeetingFolders,
@@ -4187,7 +4226,8 @@ app.whenReady().then(async () => {
           const m = meetingSettings();
           // Sources always file into details/ now (one meeting file per recording); the old
           // separateTranscript / useDetailsFolder flags are ignored if still present in a config.
-          return { separateRecurring: !!m.separateRecurring, separateTranscript: false, useDetailsFolder: true };
+          // byDate: a meeting published from transcribed lands in completed\YYYY\MM (by the meeting's date).
+          return { separateRecurring: !!m.separateRecurring, byDate: !!m.processedByDate, separateTranscript: false, useDetailsFolder: true };
         },
         resolveTaskList: () => {
           const m = meetingSettings();
@@ -4851,6 +4891,8 @@ app.whenReady().then(async () => {
   // both in one dialog, so the editor offers two buttons.
   ipcMain.handle('pickFile', (e) => pickOne(e, { properties: ['openFile'], filters: [{ name: 'All Files', extensions: ['*'] }] }));
   ipcMain.handle('pickFolder', (e) => pickOne(e, { properties: ['openDirectory'] }));
+  // Settings → Meeting: the three stage folders as typed; '' when they are distinct and not nested.
+  ipcMain.handle('meetingFoldersCheck', (e, fields) => isFrom(e, configWin) ? meetingFoldersCheck(fields) : '');
   // Screensaver "Open photos/videos folder": resolve the effective folder (custom or the app's
   // own default for that kind), create it if needed, and show it in Explorer. Directory-only —
   // never opens (= executes) a file.

@@ -146,10 +146,16 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   renamed to that on first launch when the setting is blank; custom paths are never touched. Recordings from before v0.4.8 that sat in
   the root of that folder are moved into `unprocessed\`
   automatically at launch, only when this setting is blank.)
-- **Processed Recordings** — where transcribed recordings and their transcripts are
-  moved. Blank = `Documents\Bedrock Panel Meetings\processed`.
-- **Organize by date** — files each processed recording into `YYYY\MM\` subfolders under
-  the Processed folder, keyed to the date it was processed.
+- **Transcribed Recordings** — transcribed but not yet analyzed: the WAV, its transcript,
+  sidecars, captions and screenshots wait here in one flat folder until you analyze them.
+  Blank = `Documents\Bedrock Panel Meetings\transcribed`.
+- **Completed Meetings** — finished meeting files only (`<recording>.md` with the sources in
+  `details\`); the folder to open as an Obsidian vault. Blank =
+  `Documents\Bedrock Panel Meetings\processed`. The three folders must be separate — none may be
+  equal to or inside another; the panel refuses to analyze or delete while they overlap.
+- **Organize by date** — files each completed meeting into `YYYY\MM\` subfolders under the
+  Completed folder, by the meeting's calendar date (or the recording date when there is no
+  calendar entry) — never the day it was processed.
 - **Microphone** — the mic recorded as your channel. This must be the same mic you use
   with Teams; it can also be changed from the panel's Settings row.
 - **Transcription Server** — the tts-sst / meeting-diarizer URL (either the base URL or
