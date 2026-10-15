@@ -2833,7 +2833,11 @@ function onMeetingLibraryRequest(op, params) {
       if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };
       return meetingLibrary ? meetingLibrary.deleteFile(p.kind, p.name) : { ok: false, error: 'library unavailable' };
     }
-    if (op === 'transcribeStart') return meetingTranscriber ? meetingTranscriber.enqueue(p.name) : { ok: false, error: 'transcriber unavailable' };
+    if (op === 'transcribeStart') {
+      const bad = meetingFoldersError();
+      if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };
+      return meetingTranscriber ? meetingTranscriber.enqueue(p.name) : { ok: false, error: 'transcriber unavailable' };
+    }
     if (op === 'transcribeState') return meetingTranscriber ? meetingTranscriber.getState() : { ok: false, error: 'transcriber unavailable' };
     if (op === 'analyzeStart') {
       const bad = meetingFoldersError();
@@ -4186,6 +4190,7 @@ app.whenReady().then(async () => {
       });
       meetingTranscriber = require('./meetingTranscribe').createMeetingTranscriber({
         resolveFolders: resolveMeetingFolders,
+        foldersError: () => meetingFoldersError(),   // re-checked when a queued job starts (settings can change mid-batch)
         resolveBaseUrl: resolveTranscribeBaseUrl,
         // macOS: transcribe on this Mac (native/mac/speech-server transcribe-file — Apple's on-device
         // speech, the operator's mic channel labelled with their name, system audio "Others") when the
@@ -4219,6 +4224,7 @@ app.whenReady().then(async () => {
       });
       meetingAnalyzer = require('./meetingAnalyze').createMeetingAnalyzer({
         resolveFolders: resolveMeetingFolders,
+        foldersError: () => meetingFoldersError(),   // re-checked when a queued job starts (settings can change mid-batch)
         resolveAi: () => meetingSettings().analysisAi,
         resolveOwui: owuiSettings,
         promptPath: () => fs.existsSync(userMeetingPromptPath()) ? userMeetingPromptPath() : path.join(__dirname, 'meeting-analysis-prompt.md'),

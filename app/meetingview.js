@@ -827,7 +827,13 @@ var anSel = selMake('anSelAll', 'anGoSel');
 var anKind = 'transcribed';
 var anDir = '';   // current subfolder inside completed ('' = root); one folder shown at a time
 var anAutoDate = false;   // set on entering Completed: auto-descend to the current YYYY/MM when Organize-by-date is on
+// Every listing is a generation: a response for an older root or folder is dropped, and each row's
+// handlers close over the root they were listed from, so a toggle mid-fetch can never send a
+// waiting transcript's Analyze with the other root's kind.
+var anGen = 0;
 function anSetKind(kind) {
+  anGen++;
+  $('anList').innerHTML = ''; anRows = {}; selReset(anSel, []); selSync(anSel);   // the old root's rows go at once
   anKind = kind === 'processed' ? 'processed' : 'transcribed';
   var completed = anKind === 'processed';
   $('anTitle').textContent = completed ? 'Completed' : 'Analysis';
@@ -839,15 +845,17 @@ function anSetKind(kind) {
   $('anList').scrollTop = 0;
 }
 function renderAnList() {
-  var url = '/meeting-files?kind=' + anKind + (anKind === 'processed' && anDir ? '&dir=' + encodeURIComponent(anDir) : '');
+  var kind = anKind, dir = anDir, gen = ++anGen;
+  var url = '/meeting-files?kind=' + kind + (kind === 'processed' && dir ? '&dir=' + encodeURIComponent(dir) : '');
   var keepScroll = $('anList').scrollTop;   // batch completions re-render every so often — don't yank the view
   fetchJson(url).then(function (r) {
+    if (gen !== anGen) return;   // a newer listing (other root or folder) superseded this one
     if (r && r.ok === false) {   // e.g. the three folders overlap: say so, list nothing
       var n0 = $('anNote'); n0.textContent = r.error || 'Could not list'; n0.classList.add('err');
       $('anList').innerHTML = '<div class="ovEmpty">' + escHtml(r.error || 'Could not list') + '</div>'; anRows = {}; selReset(anSel, []); selSync(anSel);
       return;
     }
-    if (anKind === 'processed' && anAutoDate && !anDir && r && r.byDate) {   // Organize-by-date: open straight into <completed>/YYYY/MM
+    if (kind === 'processed' && anAutoDate && !dir && r && r.byDate) {   // Organize-by-date: open straight into <completed>/YYYY/MM
       anAutoDate = false;
       var now = new Date();
       anDir = now.getFullYear() + '/' + ('0' + (now.getMonth() + 1)).slice(-2);
@@ -856,8 +864,8 @@ function renderAnList() {
     }
     anAutoDate = false;
     var el = $('anList'); el.innerHTML = ''; anRows = {};
-    $('anPath').textContent = 'Completed' + (anDir ? ' › ' + anDir.split('/').join(' › ') : '');
-    $('anUp').disabled = !anDir;
+    $('anPath').textContent = 'Completed' + (dir ? ' › ' + dir.split('/').join(' › ') : '');
+    $('anUp').disabled = !dir;
     var files = (r && r.files) || [];
     var dirs = (r && r.dirs) || [];
     // Only diarizer transcripts are analyzable — plain .json files here are Outlook meeting-info
@@ -872,17 +880,17 @@ function renderAnList() {
     selReset(anSel, jsons.map(function (f) { return f.name; }));
     // details/ holds sources and revisions, _system/ holds migration and export bookkeeping — neither is a place with meetings
     dirs = dirs.filter(function (d) { return !/^(details|_system)$/i.test(d) && d[0] !== '.' && d[0] !== '_'; });
-    if (anKind !== 'processed') dirs = [];   // the waiting room is flat: no folders, ever
+    if (kind !== 'processed') dirs = [];   // the waiting room is flat: no folders, ever
     dirs.forEach(function (d) {
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'fileRow folder press foc';
       b.innerHTML = '<div class="meta"><div class="fname">&#128193; ' + escHtml(d) + '</div></div><span class="chev">&rsaquo;</span>';
-      b.onclick = function () { anDir = anDir ? anDir + '/' + d : d; $('anList').scrollTop = 0; renderAnList(); };
+      b.onclick = function () { anDir = dir ? dir + '/' + d : d; $('anList').scrollTop = 0; renderAnList(); };
       el.appendChild(b);
     });
     if (!jsons.length) {
-      if (!dirs.length) el.innerHTML = '<div class="ovEmpty">' + (anKind === 'processed'
-        ? 'No completed meetings here' + (anDir ? '.' : ' yet.')
+      if (!dirs.length) el.innerHTML = '<div class="ovEmpty">' + (kind === 'processed'
+        ? 'No completed meetings here' + (dir ? '.' : ' yet.')
         : 'Nothing waiting for analysis — transcribe a recording first.') + '</div>';
       selSync(anSel); return;
     }
@@ -892,7 +900,7 @@ function renderAnList() {
       var base = f.base || f.name.replace(/(-diarizer-response)?\.json$/i, '').replace(/(-analysis)?\.md$/i, '');
       var rel = splitRel(base);
       var analyzed = !!f.analyzed;
-      var waiting = anKind !== 'processed';
+      var waiting = kind !== 'processed';
       var subText = f.warning ? f.warning
         : f.proposed ? 'New analysis awaiting your review'
         : waiting || f.status === 'processing' ? 'Transcribed, not analyzed' + (f.durationMs ? ' · ' + fmtDur(f.durationMs) : '')
@@ -908,7 +916,7 @@ function renderAnList() {
       btnA.disabled = !!f.readOnly || noSource;
       btnA.onclick = function () {
         btnA.disabled = true;
-        fetchJson('/meeting-analyze/start?kind=' + anKind + '&name=' + encodeURIComponent(f.name))
+        fetchJson('/meeting-analyze/start?kind=' + kind + '&name=' + encodeURIComponent(f.name))
           .then(function (r2) {
             if (r2 && r2.ok === false) {
               var s2 = meta.querySelector('.fsub'); s2.textContent = r2.error || 'Could not start'; s2.classList.add('err');
@@ -945,15 +953,15 @@ function renderAnList() {
       } else {
         btnV = rowBtn('View');
         btnV.disabled = !analyzed;
-        btnV.onclick = function () { openAnalysisView(f.name, rel.base); };
+        btnV.onclick = function () { openAnalysisView(f.name, rel.base, false, kind); };
         row.appendChild(btnV);
         if (f.proposed) {   // a re-analysis kept aside because the notes had been edited by hand: review it, then apply from the viewer
           var btnP = rowBtn('Review new', 'primary');
-          btnP.onclick = function () { openAnalysisView(f.name, rel.base, true); };
+          btnP.onclick = function () { openAnalysisView(f.name, rel.base, true, kind); };
           row.appendChild(btnP);
         }
       }
-      anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed, jsonName: f.jsonName || null, readOnly: !!f.readOnly || noSource };
+      anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed, jsonName: f.jsonName || null, readOnly: !!f.readOnly || noSource, kind: kind };
       el.appendChild(row);
     });
     updateAnButtons();
@@ -970,10 +978,10 @@ function updateAnButtons() {
     // name may exist in both); a completed row is keyed by its meeting .md, so match on the row's
     // transcript name when the library gave us one, within this screen's root only.
     var key = r.jsonName || name;
-    var active = anState.running && (anState.kind || 'processed') === anKind && (anState.name === key || anState.name === name);
+    var active = anState.running && (anState.kind || 'processed') === r.kind && (anState.name === key || anState.name === name);
     var queued = (anState.queue || []).some(function (q) {
       var qn = (q && typeof q === 'object') ? q.name : q, qk = (q && typeof q === 'object' && q.kind) || 'processed';
-      return qk === anKind && (qn === key || qn === name);
+      return qk === r.kind && (qn === key || qn === name);
     });
     if (active) { r.btnA.textContent = 'Analyzing…'; r.btnA.disabled = true; }
     else if (queued) { r.btnA.textContent = 'Queued'; r.btnA.disabled = true; }
@@ -1001,8 +1009,8 @@ function stripFrontmatter(md) {
   return m && m.index === 0 ? String(md).slice(m[0].length) : String(md || '');
 }
 var anViewProposalFor = null;   // the row name whose PROPOSED analysis is on screen (Apply shows only then)
-function openAnalysisView(jsonName, title, proposed) {
-  fetchJson('/meeting-analysis?kind=' + anKind + '&name=' + encodeURIComponent(jsonName) + (proposed ? '&proposed=1' : '')).then(function (r) {
+function openAnalysisView(jsonName, title, proposed, kind) {
+  fetchJson('/meeting-analysis?kind=' + (kind || anKind) + '&name=' + encodeURIComponent(jsonName) + (proposed ? '&proposed=1' : '')).then(function (r) {
     if (!r || !r.ok) { var n = $('anNote'); n.textContent = (r && r.error) || 'Could not load analysis'; n.classList.add('err'); return; }
     anViewProposalFor = proposed ? jsonName : null;
     $('anViewTitle').textContent = title + (proposed ? ' — new analysis (review)' : '');

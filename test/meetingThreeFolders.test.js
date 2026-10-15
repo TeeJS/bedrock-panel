@@ -425,6 +425,26 @@ test('every job names its root: queue identity, isBusy, and transcribed names ar
   assert.ok(fs.existsSync(path.join(s.processed, 'old', s.base + '.md')), 'the completed-kind job published in its own folder');
 });
 
+test('roots re-checked as each queued job starts: an overlap introduced meanwhile fails the job, nothing moves', async () => {
+  let bad = '';
+  const s = setup({ deps: { foldersError: () => bad } });
+  // queue two; the first runs clean, then the settings "change" before the second starts
+  const other = s.base.replace('G1', 'G2');
+  fs.writeFileSync(path.join(s.transcribed, other + '-diarizer-response.json'), JSON.stringify({ segments: SEGMENTS }));
+  fs.writeFileSync(path.join(s.transcribed, other + '.capture.json'), JSON.stringify({ schema: 1, started_at: CAP_START }));
+  s.an.start(s.json, 'transcribed');
+  s.an.start(other + '-diarizer-response.json', 'transcribed');
+  bad = 'Transcribed folder is inside the Completed folder';
+  await drained(s.an);
+  const st = s.an.getState();
+  assert.match(st.error.error, /meeting folders misconfigured: Transcribed folder is inside/);
+  assert.equal(st.error.name, other + '-diarizer-response.json');
+  assert.equal(st.completed, 1);
+  assert.equal(st.failed, 1);
+  assert.ok(fs.existsSync(path.join(s.transcribed, other + '-diarizer-response.json')), 'the refused job\'s sources stay put');
+  assert.equal(s.counter.n, 1, 'no model call for the refused job');
+});
+
 test('a transcribed job never carries sources through a date folder first: nothing but the final home is written', async () => {
   const s = setup({ recurring: true, filing: { separateRecurring: true } });
   s.an.start(s.json, 'transcribed');

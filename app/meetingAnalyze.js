@@ -253,6 +253,7 @@ function createMeetingAnalyzer(deps) {
   let lastJoplin = null; // { name, ok, error?, applied?, skipped?, finishedAt } for the panel
   let lastProposed = null; // { name, path, finishedAt } — a re-analysis saved for review instead of replacing edited notes
   const resolveMyName = deps.resolveMyName || null;   // () => the operator's enrolled name (Settings → Meeting → My name)
+  const foldersError = deps.foldersError || (() => '');   // () => '' or why the three roots overlap; re-checked as each job starts
 
   function getState() {
     return {
@@ -333,7 +334,10 @@ function createMeetingAnalyzer(deps) {
     const ai = ['codex', 'copilot', 'owui'].includes(aiSetting) ? aiSetting : 'claude';
     running = { name: n, kind, ai, startedAt: now() };
     log('analysis started (' + ai + ', ' + kind + '): ' + n);
-    runJob(n, ai, jsonPath, kind)
+    // Settings can change while a batch is queued: the roots are checked again as each job starts,
+    // so an overlap introduced meanwhile fails the job instead of filing into another stage.
+    const bad = foldersError();
+    (bad ? Promise.reject(new Error('meeting folders misconfigured: ' + bad)) : runJob(n, ai, jsonPath, kind))
       .then(r => {
         completed++;
         lastDone = Object.assign({ name: n, kind, finishedAt: now() }, r || {});
