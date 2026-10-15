@@ -102,7 +102,7 @@ test('structured tail becomes validated frontmatter; prose and transcript stay; 
   assert.equal(fs.existsSync(path.join(s.processed, 'details', s.json)), true);
 });
 
-test('a malformed tail keeps the prose and marks extraction malformed instead of dropping items', async () => {
+test('a malformed, notes-only reply keeps the prose, marks extraction malformed, and still carries the full transcript from the diarizer', async () => {
   const s = setup(['# Meeting Analysis\n## Summary\nno tail at all\n## Action Items\n- Carl: do the thing\n']);
   s.an.start(s.json);
   await drained(s.an);
@@ -111,6 +111,51 @@ test('a malformed tail keeps the prose and marks extraction malformed instead of
   assert.equal(fm.data.bedrock.extraction, 'malformed');
   assert.deepEqual(fm.data.action_items, []);
   assert.match(fm.body, /- Carl: do the thing/);
+  // the model wrote no transcript, so the file is never "complete" without one: raw diarizer turns appended
+  assert.match(fm.body, /## Transcript\n\[T\.J\. Schmitz 0:00\] good morning everyone/);
+  assert.match(fm.body, /\[Speaker A 0:04\] thanks lets start/);
+  assert.equal(fm.data.bedrock.transcript_source, 'diarizer');
+  assert.equal(fm.data.bedrock.evidence, 'limited');
+});
+
+test('task-list hand-off happens once per meeting, with a pending identity persisted before the list is written', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-tl-'));
+  const s = setup([output('First pass.'), output('Second pass.')], { resolveTaskList: () => ({ enabled: true, folder }) });
+  const flushed = () => new Promise(r => setTimeout(r, 200));   // the list is written after the queue drains
+  s.an.start(s.json); await drained(s.an); await flushed();
+  let lists = fs.readdirSync(folder).filter(f => f.endsWith('.md'));
+  assert.equal(lists.length, 1);
+  const tl = readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.exports.task_list;
+  assert.equal(tl.state, 'succeeded');
+  assert.equal(tl.file, lists[0]);
+  s.an.start('details/' + s.json); await drained(s.an); await flushed();
+  lists = fs.readdirSync(folder).filter(f => f.endsWith('.md'));
+  assert.equal(lists.length, 1);                                        // the re-analysis was not handed off again
+  assert.equal(readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.exports.task_list.file, tl.file);
+});
+
+test('applying a proposal whose base notes changed afterwards is refused', async () => {
+  const s = setup([output('First pass.'), output('Second pass.')]);
+  s.an.start(s.json); await drained(s.an);
+  fs.writeFileSync(s.md, fs.readFileSync(s.md, 'utf8').replace('First pass.', 'First pass, edited.'));
+  s.an.start('details/' + s.json); await drained(s.an);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', s.base + '.proposed.md')), true);
+  const later = fs.readFileSync(s.md, 'utf8').replace('status: "open"', 'status: "done"');   // the user completes an item after the proposal was made
+  fs.writeFileSync(s.md, later);
+  const r = await s.an.applyProposed(s.base + '.md');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /changed after this proposal/);
+  assert.equal(fs.readFileSync(s.md, 'utf8'), later);                    // nothing replaced, the completion kept
+});
+
+test('a differing file already at a source destination stops the job before anything is published', async () => {
+  const s = setup([output('First pass.')]);
+  fs.mkdirSync(path.join(s.processed, 'details'), { recursive: true });
+  fs.writeFileSync(path.join(s.processed, 'details', s.json), JSON.stringify({ segments: [{ speaker: 'X', start: 0, end: 1, text: 'an older different transcript' }] }));
+  s.an.start(s.json); await drained(s.an);
+  assert.match(s.an.getState().error.error, /source filing conflict/);
+  assert.equal(fs.existsSync(s.md), false);
+  assert.match(fs.readFileSync(path.join(s.processed, 'details', s.json), 'utf8'), /older different/);   // untouched
 });
 
 test('re-analysis: revision bumps, previous file kept as rev1, ids and done status carried, user section preserved', async () => {

@@ -542,7 +542,9 @@ test('owui route: one POST to /api/chat/completions with the slimmed transcript,
   assert.match(user.content, /UNKNOWN: who said this/);
   assert.ok(!user.content.includes('"segments"'), 'raw JSON keys must not reach the model');
   assert.ok(!user.content.includes('{'), 'no JSON braces in the slimmed transcript');
-  assert.equal(bodyOf(fs.readFileSync(path.join(s.processed, 'm.md'), 'utf8')), '# OWUI notes');
+  const owuiBody = bodyOf(fs.readFileSync(path.join(s.processed, 'm.md'), 'utf8'));
+  assert.match(owuiBody, /^# OWUI notes/);
+  assert.match(owuiBody, /## Transcript\n\[T\.J\. Schmitz 0:01\] hello there/);   // no transcript in the reply -> diarizer turns appended
   assert.equal(s.an.getState().error, null);
 });
 

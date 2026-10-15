@@ -877,7 +877,10 @@ function renderAnList() {
       var meta = document.createElement('div'); meta.className = 'meta';
       meta.innerHTML = '<div class="fname">' + escHtml(rel.base) + '</div><div class="fsub' + (f.warning ? ' err' : '') + '">' + escHtml(subText) + '</div>';
       var btnA = rowBtn(analyzed ? 'Re-analyze' : 'Analyze', analyzed ? '' : 'primary');
-      btnA.disabled = !!f.readOnly;   // a file the app must not rewrite (unreadable frontmatter, protected) is view-only
+      // view-only: a file the app must not rewrite (unreadable frontmatter, protected), or a row the
+      // library found no transcript for (nothing to analyze)
+      var noSource = f.jsonName === null && f.base !== undefined;
+      btnA.disabled = !!f.readOnly || noSource;
       btnA.onclick = function () {
         btnA.disabled = true;
         fetchJson('/meeting-analyze/start?name=' + encodeURIComponent(f.name))
@@ -907,7 +910,7 @@ function renderAnList() {
         };
         row.appendChild(btnP);
       }
-      anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed, jsonName: f.jsonName || null, readOnly: !!f.readOnly };
+      anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed, jsonName: f.jsonName || null, readOnly: !!f.readOnly || noSource };
       el.appendChild(row);
     });
     updateAnButtons();

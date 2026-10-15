@@ -111,7 +111,10 @@ async function createAnalysisNote({ url, token, notebook, title, body, id, fetch
   if (!nb) throw new Error('notebook "' + nbWanted + '" not found in Joplin — create it there first');
 
   const noteBody = { title, body, parent_id: nb.id };
-  if (id && /^[0-9a-f]{32}$/i.test(String(id))) noteBody.id = String(id).toLowerCase();
+  if (id !== undefined && id !== null) {
+    if (!/^[0-9a-f]{32}$/i.test(String(id))) throw new Error('Joplin note id must be 32 hex characters');   // never silently create an untracked note
+    noteBody.id = String(id).toLowerCase();
+  }
   const note = await api(origin, token, 'POST', 'notes', { body: noteBody, fetchImpl });
   if (!note || !note.id) throw new Error('Joplin did not return a note id');
 
