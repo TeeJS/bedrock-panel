@@ -225,3 +225,15 @@ test('unsupported frontmatter is visible read-only and capture metadata is exclu
   assert.equal(lib.deleteFile('unprocessed', 'm.wav').ok, true);
   assert.equal(fs.existsSync(path.join(dirs.unprocessed, 'm.capture.json')), false);
 });
+
+test('meeting source resolution and browsing refuse a junction outside the chosen root', t => {
+  const dirs = tempDirs();
+  const outside = path.join(dirs.root, 'outside'); fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'secret-diarizer-response.json'), '{"segments":[]}');
+  try { fs.symlinkSync(outside, path.join(dirs.processed, 'escape'), process.platform === 'win32' ? 'junction' : 'dir'); }
+  catch (e) { if (['EPERM', 'EACCES', 'ENOTSUP'].includes(e.code)) { t.skip('junction unavailable'); return; } throw e; }
+  const lib = createMeetingLibrary({ resolveFolders: () => dirs });
+  assert.equal(lib.resolvePath('processed', 'escape/secret-diarizer-response.json'), null);
+  assert.equal(lib.listFiles('processed', 'escape').ok, false);
+  assert.equal(lib.listFiles('processed').dirs.includes('escape'), false);
+});

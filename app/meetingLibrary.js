@@ -151,6 +151,7 @@ function createMeetingLibrary(deps) {
     if (!dir || !n) return null;
     const p = path.resolve(dir, n);
     if (!p.startsWith(path.resolve(dir) + path.sep)) return null;
+    if (fsMod.existsSync(p) && !contained(p, dir)) return null;
     return p;
   }
 
@@ -168,6 +169,7 @@ function createMeetingLibrary(deps) {
       rel = parts.join('/');
     }
     const depth = rel ? rel.split('/').length : 0;
+    if (rel && fsMod.existsSync(path.join(base, rel)) && !contained(path.join(base, rel), base)) return { ok: false, error: 'bad dir' };
     let entries = [];
     const byDate = kind === 'processed' && !!organizeByDate();   // panel auto-opens the current YYYY/MM
     try { entries = fsMod.readdirSync(rel ? path.join(base, rel) : base, { withFileTypes: true }); }
