@@ -315,7 +315,7 @@ function createMeetingTranscriber(deps) {
     const destDir = folders.transcribed;
     await fsp.mkdir(destDir, { recursive: true });
     const base = name.replace(/\.wav$/i, '');
-    const suffixes = ['.wav', '-diarizer-response.json', '.json', '.capture.json', '.vtt', '-screenshots', '.md'];
+    const suffixes = ['.wav', '-diarizer-response.json', '.json', '.capture.json', '.completed.json', '.vtt', '-screenshots', '.md'];
     let finalBase = base;
     for (let i = 1; suffixes.some(suffix => fsMod.existsSync(path.join(destDir, finalBase + suffix))); i++) {
       finalBase = base + '_' + i;

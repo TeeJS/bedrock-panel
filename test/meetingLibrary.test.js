@@ -271,7 +271,7 @@ test('transcribed Delete removes the exact source set, keeps similar names and r
   const dirs = tempDirs();
   let busy = true;
   const lib = createMeetingLibrary({ resolveFolders: () => dirs, isBusy: name => busy && name === 'm-diarizer-response.json' });
-  const names = ['m-diarizer-response.json', 'm.wav', 'm.json', 'm.capture.json', 'm.vtt', 'm_1.wav', 'm-extra.json', 'm.md'];
+  const names = ['m-diarizer-response.json', 'm.wav', 'm.json', 'm.capture.json', 'm.completed.json', 'm.vtt', 'm_1.wav', 'm-extra.json', 'm.md'];
   for (const name of names) fs.writeFileSync(path.join(dirs.transcribed, name), 'original');
   fs.mkdirSync(path.join(dirs.transcribed, 'm-screenshots'));
   fs.writeFileSync(path.join(dirs.transcribed, 'm-screenshots', 'slide.png'), 'PNG');

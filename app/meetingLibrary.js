@@ -262,7 +262,7 @@ function createMeetingLibrary(deps) {
     const transcript = resolvePath('transcribed', n);
     if (!root || !transcript || !fsMod.existsSync(transcript)) return { ok: false, error: 'not found' };
     const base = n.replace(/-diarizer-response\.json$/i, '');
-    const targets = [n, base + '.wav', base + '.json', base + '.capture.json', base + '.vtt', base + '-screenshots']
+    const targets = [n, base + '.wav', base + '.json', base + '.capture.json', base + '.completed.json', base + '.vtt', base + '-screenshots']
       .map(leaf => path.join(root, leaf)).filter(file => fsMod.existsSync(file));
     // Preflight the entire exact set before any deletion, including nested screenshots.
     // Refuse links, even ones pointing inside the root: they are not owned source files.

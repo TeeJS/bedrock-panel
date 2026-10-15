@@ -379,14 +379,15 @@ test('exact captions move with the collision-renamed source set; similar names s
   fs.writeFileSync(path.join(s.transcribed, 'm.vtt'), 'OLD CAPTIONS');
   fs.writeFileSync(path.join(s.transcribed, 'm_1.capture.json'), 'OLD CAPTURE');
   fs.mkdirSync(path.join(s.transcribed, 'm_2-screenshots'));
+  fs.writeFileSync(path.join(s.transcribed, 'm_3.completed.json'), '{"md":"2026/03/m.md"}');
   addWav(s.unprocessed, 'm.wav');
   fs.writeFileSync(path.join(s.unprocessed, 'm.vtt'), 'WEBVTT\nExact meeting captions');
   fs.writeFileSync(path.join(s.unprocessed, 'm-other.vtt'), 'Other meeting captions');
   s.tx.enqueue('m.wav'); await drained(s.tx);
   assert.equal(s.tx.getState().recent[0].status, 'done');
-  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm_3.vtt'), 'utf8'), 'WEBVTT\nExact meeting captions');
-  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_3-diarizer-response.json')), true);
-  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_3.wav')), true);
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm_4.vtt'), 'utf8'), 'WEBVTT\nExact meeting captions');
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_4-diarizer-response.json')), true);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_4.wav')), true);
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.vtt')), false);
   assert.equal(fs.readFileSync(path.join(s.transcribed, 'm.vtt'), 'utf8'), 'OLD CAPTIONS');
   assert.equal(fs.readFileSync(path.join(s.unprocessed, 'm-other.vtt'), 'utf8'), 'Other meeting captions');
