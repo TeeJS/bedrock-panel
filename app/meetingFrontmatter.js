@@ -411,9 +411,11 @@ function buildFrontmatter(inputs = {}) {
     speaker_map: (parsed.speaker_map || []).map(s => ({ speaker_label: s.speaker_label, name: people[attendees.indexOf(s.name)] || slug(s.name), confidence: 'medium', source: 'llm' })), bedrock };
   for (const speaker of reports) {
     if (!speaker.identified || !speaker.label || /^(?:UNKNOWN|Speaker\s+[A-Z0-9]+)$/i.test(speaker.label)) continue;
-    if (data.speaker_map.some(s => s.speaker_label === speaker.label)) continue;
     // An enrolled name alone does not prove the channel; keep voice enrollment provenance.
-    data.speaker_map.push({ speaker_label: speaker.label, name: people[attendees.indexOf(speaker.label)] || slug(speaker.label), confidence: 'high', source: 'enrollment' });
+    const attribution = { speaker_label: speaker.label, name: people[attendees.indexOf(speaker.label)] || slug(speaker.label), confidence: 'high', source: 'enrollment' };
+    const existing = data.speaker_map.findIndex(s => s.speaker_label === speaker.label);
+    if (existing < 0) data.speaker_map.push(attribution);
+    else data.speaker_map[existing] = attribution;
   }
   if (settings.myName) data.recorded_by = slug(settings.myName);
   if (meta.start) data.bedrock.scheduled_start = String(meta.start);

@@ -132,6 +132,8 @@ test('builder uses capture time, measured/estimated/unknown duration and never c
   assert.equal(result.frontmatter.captured_at, undefined); assert.equal(result.frontmatter.calendar_event, undefined);
   assert.equal(result.frontmatter.speaker_map[0].source, 'enrollment');
   assert.equal(fm.validateFrontmatter(result.frontmatter).ok, true);
+  inputs.parsed = { speaker_map: [{ speaker_label: 'Ann', name: 'Wrong model guess', confidence: 'medium', source: 'llm' }] };
+  assert.deepEqual(fm.buildFrontmatter(inputs).frontmatter.speaker_map[0], { speaker_label: 'Ann', name: 'ann', confidence: 'high', source: 'enrollment' });
   inputs.sources.wavDurationMs = null;
   result = fm.buildFrontmatter(inputs);
   assert.equal(result.frontmatter.bedrock.duration_source, 'diarizer');
