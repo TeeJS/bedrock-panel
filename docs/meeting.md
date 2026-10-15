@@ -86,7 +86,8 @@ can send them to a diarizing transcription server, then to an AI for meeting not
 - **Analysis** (top row) — browses the Processed folder one directory at a time (tap a
   folder to enter it, **⬆ Up** to go back; no recursive sweep), and runs the chosen
   **Analysis AI** (Settings → Meeting: Claude, ChatGPT Codex, or GitHub Copilot — the locally
-  installed CLI, using its own login — or **Open WebUI**, your own server via the Auth-tab
+  installed CLI, using its own login, run with every tool, MCP server and customization disabled
+  so nothing said in a meeting can reach a shell — or **Open WebUI**, your own server via the Auth-tab
   connection with a slimmed `Speaker: text` transcript) over a transcript, filing the result as
   `<name>-analysis.md` next to it. **View** renders it on the panel.
 - **Settings** (utility rail, replaces the old Full screen row) — picks the recording

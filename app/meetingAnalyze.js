@@ -22,6 +22,16 @@ const owuiClientMod = require('./owuiClient');
 const joplinNotesMod = require('./joplinNotes');
 
 const ANALYZE_TIMEOUT_MS = 10 * 60 * 1000;   // generous; a transcript is small but CLIs cold-start
+// Unattended analysis must never let transcript text reach a tool. These flag sets are what the
+// comment above actually means, verified against the installed CLIs on 2026-10-15:
+//   claude 2.1.292:  `--tools ""` disables every built-in tool, `--strict-mcp-config` with no
+//     --mcp-config loads zero MCP servers, `--safe-mode` disables CLAUDE.md/skills/plugins/hooks,
+//     `--no-session-persistence` writes nothing to disk. Smoke: a prompt asking it to list files
+//     with a tool answered "NO TOOLS AVAILABLE".
+//   codex-cli 0.154.0: `--sandbox read-only` + `--ephemeral`; the cwd is a fresh empty temp dir.
+// Exported so the tests pin the exact child-process arguments.
+const CLAUDE_ISOLATION_ARGS = Object.freeze(['--safe-mode', '--tools', '', '--strict-mcp-config', '--no-session-persistence']);
+const CODEX_ISOLATION_ARGS = Object.freeze(['--sandbox', 'read-only', '--ephemeral']);
 // CLI sign-in failures (Claude prints these on stdout: "Failed to authenticate: OAuth session expired
 // and could not be refreshed"; Codex/Copilot use "not logged in" wording). Matched case-insensitively.
 const AUTH_FAILURE_RE = /failed to authenticate|not logged in|please run \/login|oauth[^\n]*expired|invalid api key/i;
@@ -418,7 +428,8 @@ function createMeetingAnalyzer(deps) {
     const exe = findClaudeExe();
     if (!exe) return Promise.reject(new Error('Claude CLI not found on PATH'));
     // `claude -p` with no positional prompt reads the whole prompt from stdin; response on stdout.
-    return runProc(exe, ['-p'], input, false).then(r => r.stdout);
+    // CLAUDE_ISOLATION_ARGS is what makes "tools denied" true (see the constant for the smoke test).
+    return runProc(exe, ['-p'].concat(CLAUDE_ISOLATION_ARGS), input, false).then(r => r.stdout);
   }
 
   async function runCodex(input) {
@@ -426,12 +437,19 @@ function createMeetingAnalyzer(deps) {
     // codex exec: `-` = read instructions from stdin; --output-last-message captures just the final
     // reply (stdout carries progress noise); --skip-git-repo-check because the processed folder is
     // not a repo. shell:true because npm's codex shim is a .cmd on Windows (codexvoice-session:249).
-    const outFile = path.join(os.tmpdir(), 'oqx-analysis-' + now() + '.md');
+    // Isolation (CODEX_ISOLATION_ARGS): read-only sandbox, no persisted session, and the working
+    // directory is a fresh empty temp folder so even read-only commands see nothing of ours.
+    const stamp = now();
+    const workDir = path.join(os.tmpdir(), 'oqx-analysis-' + stamp + '-cwd');
+    const outFile = path.join(os.tmpdir(), 'oqx-analysis-' + stamp + '.md');
     try {
-      await runProc('"' + findCodexExe() + '"', ['exec', '-', '--skip-git-repo-check', '--output-last-message', outFile], input, true);
+      await fsp.mkdir(workDir, { recursive: true });
+      await runProc('"' + findCodexExe() + '"',
+        ['exec', '-', '--skip-git-repo-check'].concat(CODEX_ISOLATION_ARGS, ['-C', workDir, '--output-last-message', outFile]), input, true);
       return await fsp.readFile(outFile, 'utf8');
     } finally {
       try { await fsp.unlink(outFile); } catch (e) {}
+      try { await fsp.rm(workDir, { recursive: true, force: true }); } catch (e) {}
     }
   }
 
@@ -542,4 +560,4 @@ function createMeetingAnalyzer(deps) {
   return { start, getState, result, clearQueue };
 }
 
-module.exports = { createMeetingAnalyzer, slimTranscript, highlightsBlock };
+module.exports = { createMeetingAnalyzer, slimTranscript, highlightsBlock, CLAUDE_ISOLATION_ARGS, CODEX_ISOLATION_ARGS };

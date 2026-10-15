@@ -9,7 +9,7 @@ const { PassThrough } = require('node:stream');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createMeetingAnalyzer, slimTranscript, highlightsBlock } = require('../app/meetingAnalyze');
+const { createMeetingAnalyzer, slimTranscript, highlightsBlock, CLAUDE_ISOLATION_ARGS, CODEX_ISOLATION_ARGS } = require('../app/meetingAnalyze');
 const { normalizeOwuiUrl } = require('../app/owuiClient');
 
 // Fake child process: capture stdin, emit stdout, exit with a code on the next tick.
@@ -165,7 +165,10 @@ test('claude route: -p, transcript on stdin, stdout filed as .md', async () => {
   assert.equal(s.an.start('m.json').ok, true);
   await drained(s.an);
   assert.equal(s.spawns[0].cmd, 'claude.exe');
-  assert.deepEqual(s.spawns[0].args, ['-p']);
+  // Exact isolation set: print mode, no customizations, no built-in tools, no MCP, no session file.
+  assert.deepEqual(s.spawns[0].args, ['-p', '--safe-mode', '--tools', '', '--strict-mcp-config', '--no-session-persistence']);
+  assert.deepEqual(s.spawns[0].args.slice(1), [...CLAUDE_ISOLATION_ARGS]);
+  assert.equal(s.spawns[0].opts.shell, false);
   assert.match(s.spawns[0].stdin, /Meeting Analysis/);        // prompt text
   assert.match(s.spawns[0].stdin, /"segments"/);              // transcript JSON
   assert.equal(fs.readFileSync(path.join(s.processed, 'm-analysis.md'), 'utf8'), '# Meeting Analysis\nok');
@@ -180,9 +183,14 @@ test('codex route: exec with stdin marker + output-last-message file', async () 
   s.an.start('m.json');
   await drained(s.an);
   assert.equal(s.spawns[0].cmd, '"codex.cmd"');   // resolved path, quoted for the shell
-  assert.equal(s.spawns[0].args[0], 'exec');
-  assert.equal(s.spawns[0].args[1], '-');
-  assert.ok(s.spawns[0].args.includes('--skip-git-repo-check'));
+  const a = s.spawns[0].args;
+  assert.deepEqual(a.slice(0, 3), ['exec', '-', '--skip-git-repo-check']);
+  // Exact isolation set: read-only sandbox, no persisted session, cwd is a fresh empty temp dir.
+  assert.deepEqual(a.slice(3, 3 + CODEX_ISOLATION_ARGS.length), [...CODEX_ISOLATION_ARGS]);
+  assert.deepEqual(a.slice(3, 6), ['--sandbox', 'read-only', '--ephemeral']);
+  assert.equal(a[6], '-C');
+  assert.match(a[7], /oqx-analysis-\d+-cwd$/);
+  assert.equal(a[8], '--output-last-message');
   assert.equal(s.spawns[0].opts.shell, true);
   assert.equal(fs.readFileSync(path.join(s.processed, 'm-analysis.md'), 'utf8'), 'codex analysis');
 });
