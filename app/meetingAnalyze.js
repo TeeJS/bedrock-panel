@@ -566,8 +566,9 @@ function createMeetingAnalyzer(deps) {
     const n = safeRelPath(name);
     if (!n || !/\.md$/i.test(n)) return { ok: false, error: 'bad name' };
     const processed = resolveFolders().processed;
-    const mdFile = path.join(processed, n);
-    const base = path.basename(n).replace(/(-analysis)?\.md$/i, '');
+    // Always land on the canonical <base>.md, even when the row was a legacy -analysis.md.
+    const base = path.basename(n).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/\.md$/i, '');
+    const mdFile = path.join(path.dirname(path.join(processed, n)), base + '.md');
     const detDir = path.join(path.dirname(mdFile), 'details');
     const proposedPath = path.join(detDir, base + '.proposed.md');
     if (!fsMod.existsSync(proposedPath)) return { ok: false, error: 'no proposal to apply' };
@@ -789,21 +790,37 @@ function createMeetingAnalyzer(deps) {
         if (it.sidecar && fsMod.existsSync(it.sidecar)) lines.push('    - Meeting metadata: `' + rel(it.sidecar) + '`');
       }
       lines.push('');
-      let dest = path.join(folder, stamp + '.md');
-      for (let i = 1; fsMod.existsSync(dest); i++) dest = path.join(folder, stamp + '_' + i + '.md');
       // The hand-off identity is persisted on each meeting file as `pending` BEFORE the list is
-      // written and flipped to `succeeded` after, so a crash in between leaves a visible pending
-      // state rather than a meeting that gets handed off twice.
-      const mark = async state => {
-        for (const it of items) {
-          try { await patchFrontmatter(it.md, d => { d.bedrock = d.bedrock || {}; d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: { file: path.basename(dest), state } }); }); }
-          catch (e) { log('task-list export note (' + state + ') skipped for ' + path.basename(it.md) + ': ' + e.message); }
-        }
-      };
-      await mark('pending');
+      // written and flipped to `succeeded` after. A crash in between leaves `pending` with the
+      // list's file name, and the next batch REUSES that name (overwriting the partial list)
+      // instead of allocating a fresh one — one hand-off per meeting, even across a crash.
+      let dest = null;
+      for (const it of items) {
+        try {
+          const tl = readFrontmatter(await fsp.readFile(it.md, 'utf8')).data.bedrock.exports.task_list;
+          if (tl && tl.state === 'pending' && tl.file) { dest = path.join(folder, path.basename(String(tl.file))); break; }
+        } catch (e) { /* no readable export state: a fresh name below */ }
+      }
+      if (!dest) {
+        dest = path.join(folder, stamp + '.md');
+        for (let i = 1; fsMod.existsSync(dest); i++) dest = path.join(folder, stamp + '_' + i + '.md');
+      }
+      // A meeting whose pending identity cannot be persisted is left out of this list (it stays
+      // in batchDone's place for the next run) rather than handed off without a durable record.
+      const listed = [];
+      for (const it of items) {
+        try {
+          await patchFrontmatter(it.md, d => { d.bedrock = d.bedrock || {}; d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: { file: path.basename(dest), state: 'pending' } }); });
+          listed.push(it);
+        } catch (e) { log('task-list hand-off deferred for ' + path.basename(it.md) + ' (could not record it): ' + e.message); }
+      }
+      if (!listed.length) return;
       await fsp.writeFile(dest, lines.join('\n'));
-      log('task list written: ' + dest + ' (' + items.length + ' meeting(s))');
-      await mark('succeeded');
+      log('task list written: ' + dest + ' (' + listed.length + ' meeting(s))');
+      for (const it of listed) {
+        try { await patchFrontmatter(it.md, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: { file: path.basename(dest), state: 'succeeded' } }); }); }
+        catch (e) { log('task-list export left pending for ' + path.basename(it.md) + ': ' + e.message); }
+      }
     } catch (e) { log('task-list write failed: ' + e.message); }
   }
 
@@ -934,9 +951,14 @@ function createMeetingAnalyzer(deps) {
 
   // Read a finished analysis for the panel's View action. The .md may live beside the transcript
   // or (details layout) one folder up; legacy plain <base>.md still accepted.
-  function result(name) {
+  function result(name, proposed) {
     const n = safeRelPath(name);
     if (!n) return { ok: false, error: 'bad name' };
+    if (proposed) {   // the reviewable new analysis kept beside the sources
+      const base = path.posix.basename(n).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/(-diarizer-response)?\.(?:md|json)$/i, '');
+      const p = path.join(resolveFolders().processed, path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n), 'details', base + '.proposed.md');
+      try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8'), proposed: true }; } catch (e) { return { ok: false, error: 'no proposal to review' }; }
+    }
     const jsonAbs = path.join(resolveFolders().processed, n).replace(/\.md$/i, '.json');
     for (const p of [mdTargetFor(jsonAbs), mdPathFor(jsonAbs), mdPathFor(jsonAbs).replace(/-analysis\.md$/i, '.md')]) {
       try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8') }; } catch (e) { /* next */ }

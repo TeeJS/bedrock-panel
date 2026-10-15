@@ -897,17 +897,9 @@ function renderAnList() {
       btnV.disabled = !analyzed;
       btnV.onclick = function () { openAnalysisView(f.name, rel.base); };
       row.appendChild(meta); row.appendChild(btnA); row.appendChild(btnV);
-      if (f.proposed) {   // a re-analysis that was kept aside because the notes had been edited by hand
-        var btnP = rowBtn('Apply new', 'primary');
-        btnP.onclick = function () {
-          btnP.disabled = true;
-          fetchJson('/meeting-analyze/apply-proposed?name=' + encodeURIComponent(f.name))
-            .then(function (r2) {
-              if (r2 && r2.ok === false) { var s3 = meta.querySelector('.fsub'); s3.textContent = r2.error || 'Could not apply'; s3.classList.add('err'); btnP.disabled = false; return; }
-              renderAnList();
-            })
-            .catch(function () { btnP.disabled = false; });
-        };
+      if (f.proposed) {   // a re-analysis kept aside because the notes had been edited by hand: review it, then apply from the viewer
+        var btnP = rowBtn('Review new', 'primary');
+        btnP.onclick = function () { openAnalysisView(f.name, rel.base, true); };
         row.appendChild(btnP);
       }
       anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed, jsonName: f.jsonName || null, readOnly: !!f.readOnly || noSource };
@@ -953,15 +945,32 @@ function stripFrontmatter(md) {
   var m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(String(md || ''));
   return m && m.index === 0 ? String(md).slice(m[0].length) : String(md || '');
 }
-function openAnalysisView(jsonName, title) {
-  fetchJson('/meeting-analysis?name=' + encodeURIComponent(jsonName)).then(function (r) {
+var anViewProposalFor = null;   // the row name whose PROPOSED analysis is on screen (Apply shows only then)
+function openAnalysisView(jsonName, title, proposed) {
+  fetchJson('/meeting-analysis?name=' + encodeURIComponent(jsonName) + (proposed ? '&proposed=1' : '')).then(function (r) {
     if (!r || !r.ok) { var n = $('anNote'); n.textContent = (r && r.error) || 'Could not load analysis'; n.classList.add('err'); return; }
-    $('anViewTitle').textContent = title;
+    anViewProposalFor = proposed ? jsonName : null;
+    $('anViewTitle').textContent = title + (proposed ? ' — new analysis (review)' : '');
+    $('anViewNote').textContent = proposed ? 'Your edited notes are kept until you apply this version' : '';
+    $('anViewApply').style.display = proposed ? '' : 'none';
+    $('anViewApply').disabled = false;
     $('anView').innerHTML = renderMarkdown(stripFrontmatter(r.markdown));
     $('anView').scrollTop = 0;
     $('anViewOverlay').classList.add('show');
   }).catch(function () {});
 }
+$('anViewApply').onclick = function () {
+  if (!anViewProposalFor) return;
+  $('anViewApply').disabled = true;
+  fetchJson('/meeting-analyze/apply-proposed?name=' + encodeURIComponent(anViewProposalFor))
+    .then(function (r) {
+      if (!r || r.ok === false) { $('anViewNote').textContent = (r && r.error) || 'Could not apply'; $('anViewApply').disabled = false; return; }
+      $('anViewOverlay').classList.remove('show');
+      anViewProposalFor = null;
+      renderAnList();
+    })
+    .catch(function () { $('anViewApply').disabled = false; });
+};
 $('anUp').onclick = function () {
   if (!anDir) return;
   var parts = anDir.split('/'); parts.pop();

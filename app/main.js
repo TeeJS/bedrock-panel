@@ -2811,7 +2811,7 @@ function onMeetingLibraryRequest(op, params) {
     if (op === 'analyzeApplyProposed') return meetingAnalyzer ? meetingAnalyzer.applyProposed(p.name) : { ok: false, error: 'analyzer unavailable' };
     if (op === 'batchStart') return meetingBatch ? meetingBatch.start() : { ok: false, error: 'batch unavailable' };
     if (op === 'batchState') return meetingBatch ? meetingBatch.getState() : { ok: false, error: 'batch unavailable' };
-    if (op === 'analysisResult') return meetingAnalyzer ? meetingAnalyzer.result(p.name) : { ok: false, error: 'analyzer unavailable' };
+    if (op === 'analysisResult') return meetingAnalyzer ? meetingAnalyzer.result(p.name, p.proposed === '1') : { ok: false, error: 'analyzer unavailable' };
     return { ok: false, error: 'unknown library op: ' + op };
   } catch (e) { return { ok: false, error: e.message }; }
 }

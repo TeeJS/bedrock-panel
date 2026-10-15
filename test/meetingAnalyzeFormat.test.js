@@ -134,6 +134,37 @@ test('task-list hand-off happens once per meeting, with a pending identity persi
   assert.equal(readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.exports.task_list.file, tl.file);
 });
 
+test('task-list recovery: a crash after the list was written but before success reuses the pending file name', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-tl2-'));
+  const s = setup([output('First pass.'), output('Second pass.')], { resolveTaskList: () => ({ enabled: true, folder }) });
+  const flushed = () => new Promise(r => setTimeout(r, 200));
+  s.an.start(s.json); await drained(s.an); await flushed();
+  const first = fs.readdirSync(folder).filter(f => f.endsWith('.md'))[0];
+  // simulate the crash window: the list exists, but the meeting still says pending
+  fs.writeFileSync(s.md, fs.readFileSync(s.md, 'utf8').replace('state: "succeeded"', 'state: "pending"'));
+  s.an.start('details/' + s.json); await drained(s.an); await flushed();
+  const lists = fs.readdirSync(folder).filter(f => f.endsWith('.md'));
+  assert.deepEqual(lists, [first]);                                      // reused, not a second list
+  assert.deepEqual(readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.exports.task_list, { file: first, state: 'succeeded' });
+});
+
+test('a proposal made for a legacy -analysis.md row applies onto the canonical <base>.md and retires the legacy file', async () => {
+  const s = setup([output('New format.')]);
+  const legacy = path.join(s.processed, s.base + '-analysis.md');
+  fs.writeFileSync(legacy, '# Meeting Analysis\nold notes without frontmatter\n');
+  s.an.start(s.json); await drained(s.an);
+  const review = s.an.result(s.base + '-analysis.md', true);
+  assert.equal(review.ok, true);
+  assert.match(review.markdown, /New format\./);
+  const r = await s.an.applyProposed(s.base + '-analysis.md');
+  assert.equal(r.ok, true, r.error);
+  assert.equal(fs.existsSync(s.md), true);
+  assert.equal(fs.existsSync(legacy), false);
+  assert.match(fs.readFileSync(path.join(s.processed, 'details', s.base + '.rev0.md'), 'utf8'), /old notes without frontmatter/);
+  assert.equal(readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.revision, 1);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', s.base + '.proposed.md')), false);
+});
+
 test('applying a proposal whose base notes changed afterwards is refused', async () => {
   const s = setup([output('First pass.'), output('Second pass.')]);
   s.an.start(s.json); await drained(s.an);
