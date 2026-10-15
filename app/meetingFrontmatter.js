@@ -303,6 +303,7 @@ function parseStructuredTail(markdown) {
     else if (section === 'speaker_map') {
       const match = /^(.+?)\s*(?:→|->)\s*(.+?)\s*\((.+)\)$/.exec(value);
       if (!match) { errors.push('invalid speaker mapping'); continue; }
+      if (/^(?:unresolved|unknown|none|n\/a)$/i.test(match[2].trim())) continue;
       structured.speaker_map.push({ speaker_label: match[1].trim(), name: match[2].trim(), confidence: 'medium', source: 'llm', evidence: match[3] });
     } else if (section === 'turns') {
       const match = /^(\d+):\s*segments?\s+(\d+)(?:\s*-\s*(\d+))?$/.exec(value);

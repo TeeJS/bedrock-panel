@@ -199,6 +199,7 @@ test('logical meetings deduplicate new/legacy names, use status and resolve deta
   fs.writeFileSync(path.join(dirs.processed, 'done.rev1.md'), '# backup');
   fs.writeFileSync(path.join(dirs.processed, 'done.proposed.md'), '# proposed');
   fs.writeFileSync(path.join(dirs.processed, 'details', 'todo-diarizer-response.json'), '{"segments":[]}');
+  fs.writeFileSync(path.join(dirs.processed, 'details', 'todo.proposed.md'), '# Proposed new notes');
   fs.writeFileSync(path.join(dirs.processed, 'details', 'hidden.md'), '# not a meeting');
   fs.writeFileSync(path.join(dirs.processed, 'orphan-diarizer-response.json'), '{"segments":[]}');
   fs.writeFileSync(path.join(dirs.processed, 'm.capture.json'), '{}');
@@ -207,6 +208,8 @@ test('logical meetings deduplicate new/legacy names, use status and resolve deta
   assert.deepEqual(result.meetings.map(f => f.name).sort(), ['done.md', 'legacy-analysis.md', 'orphan-diarizer-response.json', 'todo.md']);
   const todo = result.meetings.find(f => f.base === 'todo');
   assert.equal(todo.analyzed, false); assert.equal(todo.jsonName, 'details/todo-diarizer-response.json');
+  assert.equal(todo.proposed, true);
+  assert.equal(result.meetings.find(f => f.base === 'done').proposed, false);
   assert.equal(result.meetings.find(f => f.base === 'done').analyzed, true);
   assert.equal(result.meetings.find(f => f.base === 'legacy').legacy, true);
   assert.equal(lib.listMeetings().dirs.includes('details'), false);

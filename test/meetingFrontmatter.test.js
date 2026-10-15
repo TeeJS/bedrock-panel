@@ -99,6 +99,9 @@ test('unassigned action stays in intents and explicit none remains valid empty e
   const unnamed = fm.parseStructuredTail(tail({ 'ACTION ITEMS': '- @Speaker A: Check it' }));
   assert.equal(unnamed.structured.action_items.length, 0);
   assert.equal(unnamed.structured.intents[0].who, undefined);
+  const unresolved = fm.parseStructuredTail(tail({ 'SPEAKER MAP': '- Speaker A -> unresolved (no evidence)' }));
+  assert.equal(unresolved.malformed, false);
+  assert.deepEqual(unresolved.structured.speaker_map, []);
 });
 
 test('missing/ambiguous/malformed tail stays visibly preserved rather than becoming verified empty', () => {

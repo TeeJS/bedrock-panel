@@ -130,14 +130,16 @@ function createMeetingLibrary(deps) {
       const filename = path.basename(file.name), meeting = meetingBase(filename), key = meeting.toLowerCase();
       const canonical = filename.toLowerCase() === (meeting + '.md').toLowerCase();
       if (records.has(key) && (!canonical || records.get(key).canonical)) continue;
-      records.set(key, Object.assign({}, file, noteState(path.join(base, file.name)), { base: meeting, jsonName: resolveJson(meeting), canonical }));
+      const proposal = path.join(dir, 'details', meeting + '.proposed.md');
+      const proposed = contained(proposal, base) && fsMod.statSync(proposal).isFile();
+      records.set(key, Object.assign({}, file, noteState(path.join(base, file.name)), { base: meeting, jsonName: resolveJson(meeting), canonical, proposed }));
     }
     // Keep pre-pivot transcripts visible without writing files or walking archive folders.
     for (const file of files) {
       if (!/-diarizer-response\.json$/i.test(file.name)) continue;
       const meeting = meetingBase(path.basename(file.name)), key = meeting.toLowerCase();
       if (!records.has(key)) records.set(key, Object.assign({}, file, { base: meeting, jsonName: file.name, analyzed: false,
-        status: 'processing', legacy: true, readOnly: false, warning: 'Legacy transcript awaiting analysis', canonical: false }));
+        status: 'processing', legacy: true, readOnly: false, proposed: false, warning: 'Legacy transcript awaiting analysis', canonical: false }));
     }
     return [...records.values()].map(({ canonical, ...record }) => record).sort((a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name));
   }
