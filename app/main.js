@@ -4184,7 +4184,9 @@ app.whenReady().then(async () => {
         promptPath: () => fs.existsSync(userMeetingPromptPath()) ? userMeetingPromptPath() : path.join(__dirname, 'meeting-analysis-prompt.md'),
         filingOptions: () => {
           const m = meetingSettings();
-          return { separateRecurring: !!m.separateRecurring, separateTranscript: !!m.separateTranscript, useDetailsFolder: !!m.useDetailsFolder };
+          // Sources always file into details/ now (one meeting file per recording); the old
+          // separateTranscript / useDetailsFolder flags are ignored if still present in a config.
+          return { separateRecurring: !!m.separateRecurring, separateTranscript: false, useDetailsFolder: true };
         },
         resolveTaskList: () => {
           const m = meetingSettings();

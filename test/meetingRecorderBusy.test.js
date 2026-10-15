@@ -18,8 +18,10 @@ function setup(onRecordingComplete, patchFails) {
     on() {}
     loadURL() {}
   }
+  const files = {};
   const disk = {
     mkdirSync() {},
+    writeFileSync(p, data) { files[p] = String(data); },
     createWriteStream() { return { write() {}, end(callback) { endings.push(callback); } }; },
     openSync() { if (patchFails) throw new Error('patch failed'); return 1; },
     writeSync(fd, buffer, offset, length, position) { writes.push(position); },
@@ -39,8 +41,22 @@ function setup(onRecordingComplete, patchFails) {
   });
   recorder.ensureWindow();
   recorder.onReady();
-  return { recorder, endings, writes };
+  return { recorder, endings, writes, files };
 }
+
+test('record start writes a capture sidecar with the local-offset start time beside the wav', () => {
+  const s = setup(() => {});
+  const wav = s.recorder.start('manual', 'ms-teams.exe').file;
+  const sidecar = Object.keys(s.files).find(p => p.endsWith('.capture.json'));
+  assert.ok(sidecar, 'capture sidecar written');
+  assert.equal(path.basename(sidecar), path.basename(wav).replace(/\.wav$/i, '') + '.capture.json');
+  const data = JSON.parse(s.files[sidecar]);
+  assert.equal(data.schema, 1);
+  assert.match(data.started_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);   // ISO-8601 with offset, never Z
+  assert.equal(data.app, 'ms-teams.exe');
+  assert.equal(data.reason, 'manual');
+  assert.equal(typeof data.tz, 'string');
+});
 
 test('busy filenames cover active capture and finalization until after completion callback', () => {
   let duringComplete;

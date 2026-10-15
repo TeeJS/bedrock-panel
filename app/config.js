@@ -4574,8 +4574,6 @@ ${IS_MAC ? `
       <details class="hint"><summary>When a recurring meeting (per its calendar info) is analyzed, its files move from the date folder to <b>YYYY\\&lt;Meeting-Name&gt;\\</b>.</summary> Un-analyzed meetings stay in the date folders, so they're easy to find.</details>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meAppendName" ${me.appendMeetingName ? 'checked' : ''} ${me.outlookEnabled ? '' : 'disabled'}> Append meeting name to filename</label></div>
       <details class="hint"><summary>Renames a finished recording from &lt;timestamp&gt;.wav to <b>&lt;timestamp&gt;-&lt;Meeting Name&gt;.wav</b> when the calendar matched a meeting; every later file (transcript, analysis…) inherits the name.</summary> Requires meeting information above.</details>
-      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meSepTx" ${me.separateTranscript ? 'checked' : ''}> Separate Clean Transcript</label></div>
-      <p class="hint">Leaves the full transcript out of the analysis .md and saves it as <b>&lt;name&gt;-clean_transcript.txt</b> instead.</p>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meTaskList" ${me.taskListEnabled ? 'checked' : ''}> Create task-lists for post-analysis processing</label></div>
       <details class="hint"><summary>After each analysis batch finishes, writes a dated checklist pointing at the new <b>-analysis.md</b> files (plus meeting metadata when available) — the hand-off for pulling your action items onto a board.</summary> One file per batch, named like <b>2026-08-17_10-42-13.md</b>.</details>
       <div class="row"><label>Task-list folder</label>
@@ -4588,8 +4586,7 @@ ${IS_MAC ? `
       <div class="row"><label>API token</label>${secretInput(me.joplinToken || '', 'id="meJoplinToken" placeholder="Joplin › Tools › Options › Web Clipper"', 'flex:1')}</div>
       <div class="row"><label>Notebook</label>
         <input id="meJoplinNb" value="${esc(me.joplinNotebook)}" style="width:230px"></div>
-      <div class="row" style="margin-top:12px"><label class="iconopt" style="width:auto"><input type="checkbox" id="meDetails" ${me.useDetailsFolder ? 'checked' : ''}> Use Details Folder</label></div>
-      <p class="hint">At analysis, everything except the notes .md (WAV, transcript, meeting info, clean transcript) moves into a <b>details\\</b> subfolder of the meeting's folder.</p>
+      <p class="hint" style="margin-top:12px">Filing: at analysis, everything except the meeting .md (WAV, transcript, meeting info, capture info, captions, screenshots) moves into a <b>details\\</b> subfolder of the meeting's folder. The .md always contains the full transcript.</p>
       <div class="row" style="margin-top:12px"><label>Speaker threshold</label>
         <input type="number" id="meThreshold" min="0" max="1" step="0.05" value="${esc(me.transcribeThreshold)}" style="width:120px">
         <span class="hint" style="margin:0 0 0 8px">blank = server default</span></div>
@@ -6073,8 +6070,6 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       syncMeetingSource();
       document.getElementById('meSepRec').onchange = e => saveMe({ separateRecurring: e.target.checked });
       document.getElementById('meAppendName').onchange = e => saveMe({ appendMeetingName: e.target.checked });
-      document.getElementById('meSepTx').onchange = e => saveMe({ separateTranscript: e.target.checked });
-      document.getElementById('meDetails').onchange = e => saveMe({ useDetailsFolder: e.target.checked });
       // macOS: the calendar name is rarely "Calendar" (Google names it after the address), so the last
       // Check Connection result fills it in when the saved name is not one of the chosen account's calendars.
       let lastCheckedAccounts = [];

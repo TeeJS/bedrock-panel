@@ -31,6 +31,55 @@ const ANALYZE_TIMEOUT_MS = 10 * 60 * 1000;   // generous; a transcript is small 
 //   codex-cli 0.154.0: `--sandbox read-only` + `--ephemeral`; the cwd is a fresh empty temp dir.
 // Exported so the tests pin the exact child-process arguments.
 const CLAUDE_ISOLATION_ARGS = Object.freeze(['--safe-mode', '--tools', '', '--strict-mcp-config', '--no-session-persistence']);
+
+// Appended by code to WHATEVER analysis prompt is in use (built-in or the user's edited copy), so a
+// custom prompt keeps producing its own sections while the app still gets machine-readable facts.
+// The model never writes YAML: meetingFrontmatter.js parses this block and builds the frontmatter.
+// Versioned: a change to the block's shape bumps the anchor's version and the parser together.
+const STRUCTURED_TAIL_VERSION = 1;
+const STRUCTURED_TAIL_INSTRUCTION = `
+
+---
+ADDITIONAL REQUIRED OUTPUT (overrides only two earlier rules: "nothing after these sections" and
+the transcript line shape; every other instruction above still applies).
+
+1. Transcript lines: write each turn as "[Name m:ss] text" — the speaker's name (or the diarizer's
+   label if unresolved) and the start time of the turn's first diarizer segment, taken from that
+   segment's "start" field (seconds, rounded down to m:ss or h:mm:ss). Never invent a time.
+
+2. After the last section, append exactly this block. Section headers in English, one bullet per
+   item, "(none)" when a section has nothing. Do not add commentary inside the block.
+
+<!-- BEDROCK-STRUCTURED v${STRUCTURED_TAIL_VERSION} -->
+KEY POINTS:
+- one bullet per point
+
+DECISIONS:
+- decision text
+
+ACTION ITEMS:
+- @Full Name: task (by deadline, only if one was stated)
+- a task whose owner was not named: write it without the @owner prefix
+
+OPEN QUESTIONS:
+- question
+
+COMMITMENTS:
+- @Full Name: commitment (by deadline, only if stated)
+
+PARTICIPANTS:
+- Full Name
+
+SPEAKER MAP:
+- diarizer label -> Full Name (how it was established: enrolled | captions | direct address | self-introduction | elimination)
+- a label you could not resolve: label -> unresolved
+
+TURNS:
+- 1: segments 0-3
+- 2: segments 4-4
+(one line per transcript turn in order; the diarizer segment index range the turn was built from, zero-based, inclusive)
+<!-- /BEDROCK-STRUCTURED -->
+`;
 const CODEX_ISOLATION_ARGS = Object.freeze(['--sandbox', 'read-only', '--ephemeral']);
 // CLI sign-in failures (Claude prints these on stdout: "Failed to authenticate: OAuth session expired
 // and could not be refreshed"; Codex/Copilot use "not logged in" wording). Matched case-insensitively.
@@ -258,22 +307,11 @@ function createMeetingAnalyzer(deps) {
     }
     if (!markdown.trim()) throw new Error('AI returned no output');
 
-    // "Separate Clean Transcript": split the AI's output at the ## Transcript heading — notes
-    // stay in the .md, the cleaned transcript goes to <base>-clean_transcript.txt. A custom
-    // prompt without that heading keeps the combined output (logged, never lost).
-    let mdOut = markdown;
-    let txtPath = null;
-    if (opts.separateTranscript) {
-      const m = /^##\s*Transcript\s*$/im.exec(markdown);
-      if (m) {
-        mdOut = markdown.slice(0, m.index).trimEnd() + '\n';
-        const txt = markdown.slice(m.index + m[0].length).trim() + '\n';
-        txtPath = path.join(dir, base + '-clean_transcript.txt');
-        await fsp.writeFile(txtPath, txt);
-      } else {
-        log('no "## Transcript" heading in the AI output — keeping the combined .md');
-      }
-    }
+    // One file per meeting: the transcript always stays in the .md (the old "Separate Clean
+    // Transcript" split was retired with the Minutes-compatible format; legacy
+    // <base>-clean_transcript.txt files are still filed into details/ by fileSet).
+    const mdOut = markdown;
+    const txtPath = null;
     const tmp = mdPath + '.tmp';
     await fsp.writeFile(tmp, mdOut);
     await fsp.rename(tmp, mdPath);
@@ -370,6 +408,7 @@ function createMeetingAnalyzer(deps) {
       await mv(jsonPath, path.join(fileDir, path.basename(jsonPath)));
       await mv(path.join(dir, base + '.wav'), path.join(fileDir, base + '.wav'));
       await mv(path.join(dir, base + '.json'), path.join(fileDir, base + '.json'));
+      await mv(path.join(dir, base + '.capture.json'), path.join(fileDir, base + '.capture.json'));   // capture start + offset
       await mv(txtPath, txtPath ? path.join(fileDir, path.basename(txtPath)) : null);
       const vtt = findCompanionVtt(dir, base);   // Teams captions travel with the WAV
       if (vtt) await mv(vtt, path.join(fileDir, path.basename(vtt)));

@@ -261,13 +261,12 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   `<timestamp>-<Meeting Name>.wav` (sidecar too) when the calendar matched a meeting; all
   later files inherit the name. Requires calendar meeting info; the rename happens when
   the recording stops (an open file can't be renamed).
-- **Advanced → Separate Clean Transcript** — the analysis `.md` keeps the notes only;
-  the cleaned transcript saves as `<name>-clean_transcript.txt`. (The split keys off
-  the prompt's `## Transcript` heading — a custom prompt without it falls back to the
-  combined file.)
-- **Advanced → Use Details Folder** — at analysis, everything except the notes `.md`
-  (WAV, transcript JSON, meeting info, clean transcript) moves into a `details\`
-  subfolder of the meeting's folder — date folders and recurring-meeting folders alike.
+- **Filing layout (fixed)** — at analysis, everything except the meeting `.md` (WAV,
+  transcript JSON, meeting info, capture info, captions, screenshots) moves into a
+  `details\` subfolder of the meeting's folder — date folders and recurring-meeting
+  folders alike. The meeting `.md` always contains the full transcript. (The former
+  *Separate Clean Transcript* and *Use Details Folder* options were retired with the
+  one-file meeting format; old settings are ignored.)
 - **Advanced → Speaker threshold** — optional speaker-identification cosine cutoff
   (e.g. `0.70`) sent with each transcription; blank = the server's default. When a
   recording has calendar meeting info, its attendee list (organizer + required +

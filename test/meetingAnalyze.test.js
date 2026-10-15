@@ -405,15 +405,16 @@ function filingSetup(opts, meta, baseName) {
   return { processed, dir, base, an, rel: '2026/08/' + base + '-diarizer-response.json' };
 }
 
-test('Separate Clean Transcript splits the output at ## Transcript', async () => {
-  const s = filingSetup({ separateTranscript: true }, null);
+test('the transcript always stays in the .md (the Separate Clean Transcript split is retired)', async () => {
+  const s = filingSetup({ separateTranscript: true }, null);   // a stale flag in an old config is ignored
   s.an.start(s.rel);
   await drained(s.an);
   const md = fs.readFileSync(path.join(s.dir, s.base + '-analysis.md'), 'utf8');
-  assert.ok(!/## Transcript/.test(md), 'md keeps the notes only');
   assert.match(md, /## Summary/);
-  const txt = fs.readFileSync(path.join(s.dir, s.base + '-clean_transcript.txt'), 'utf8');
-  assert.match(txt, /\*\*T\.J\.\*\*: hello|\*\*T\.J\.:\*\* hello/);
+  assert.match(md, /## Transcript/);
+  assert.match(md, /\*\*T\.J\.\*\*: hello|\*\*T\.J\.:\*\* hello/);
+  assert.equal(fs.existsSync(path.join(s.dir, s.base + '-clean_transcript.txt')), false);
+  assert.equal(fs.existsSync(path.join(s.dir, 'details', s.base + '-clean_transcript.txt')), false);
 });
 
 test('recurring meetings move to YYYY/<Meeting-Name>/ after analysis', async () => {
@@ -436,8 +437,9 @@ test('non-recurring (or no sidecar) stays in the date folder even with the optio
   assert.equal(fs.existsSync(path.join(s.dir, s.base + '.wav')), true);
 });
 
-test('Use Details Folder tucks everything but the .md into details/', async () => {
-  const s = filingSetup({ useDetailsFolder: true, separateTranscript: true }, { subject: 'X', is_recurring: false });
+test('details folder layout tucks everything but the .md into details/', async () => {
+  const s = filingSetup({ useDetailsFolder: true }, { subject: 'X', is_recurring: false });
+  fs.writeFileSync(path.join(s.dir, s.base + '.capture.json'), '{"schema":1}');   // recorder's capture sidecar travels too
   s.an.start(s.rel);
   await drained(s.an);
   assert.equal(fs.existsSync(path.join(s.dir, s.base + '-analysis.md')), true);                       // md at folder level
@@ -445,7 +447,7 @@ test('Use Details Folder tucks everything but the .md into details/', async () =
   assert.equal(fs.existsSync(path.join(det, s.base + '.wav')), true);
   assert.equal(fs.existsSync(path.join(det, s.base + '-diarizer-response.json')), true);
   assert.equal(fs.existsSync(path.join(det, s.base + '.json')), true);
-  assert.equal(fs.existsSync(path.join(det, s.base + '-clean_transcript.txt')), true);
+  assert.equal(fs.existsSync(path.join(det, s.base + '.capture.json')), true);
   // re-analysis from the details location writes the .md back at the folder level and stays put
   const an2rel = '2026/08/details/' + s.base + '-diarizer-response.json';
   const r = s.an.start(an2rel);
@@ -588,7 +590,6 @@ test('joplin: note created after a successful analysis with the analysis markdow
   const s = setup(() => ({ stdout: '# Meeting Analysis\nnotes\n## Transcript\ndialogue', code: 0 }), 'claude', null, {
     resolveJoplin: () => ({ enabled: true, url: 'box:41184', token: 'tok', notebook: 'NW Pipe' }),
     joplinNotes: { createAnalysisNote: async args => { notes.push(args); return { id: 'n1', applied: ['meeting notes'], skipped: [] }; } },
-    filingOptions: () => ({ separateTranscript: true }),
   });
   s.an.start('m.json');
   await drained(s.an);
@@ -596,7 +597,7 @@ test('joplin: note created after a successful analysis with the analysis markdow
   assert.equal(notes[0].title, 'm');
   assert.equal(notes[0].notebook, 'NW Pipe');
   assert.match(notes[0].body, /# Meeting Analysis/);
-  assert.doesNotMatch(notes[0].body, /dialogue/);   // separate-transcript: note body is notes only
+  assert.match(notes[0].body, /dialogue/);   // one-file format: the note carries the whole meeting file
   assert.equal(s.an.getState().joplin.ok, true);
 });
 
