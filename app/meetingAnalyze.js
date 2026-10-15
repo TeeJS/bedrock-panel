@@ -227,8 +227,30 @@ function createMeetingAnalyzer(deps) {
     };
   }
 
+  // The meeting .md is the row the panel shows; resolve it to the transcript it was (or will be)
+  // built from: <base>-diarizer-response.json beside it, or in details/, or a legacy plain
+  // <base>.json. Returns the processed-relative JSON name, or null when no transcript exists.
+  function transcriptForMd(mdRel) {
+    const processed = resolveFolders().processed;
+    const dir = path.posix.dirname(mdRel);
+    const base = path.posix.basename(mdRel).replace(/(-analysis)?\.md$/i, '');
+    const dirs = dir === '.' ? ['', 'details'] : [dir, dir + '/details'];
+    for (const d of dirs) {
+      for (const f of [base + '-diarizer-response.json', base + '.json']) {
+        const rel = d ? d + '/' + f : f;
+        if (fsMod.existsSync(path.join(processed, rel))) return rel;
+      }
+    }
+    return null;
+  }
+
   function start(name) {
-    const n = safeRelPath(name);
+    let n = safeRelPath(name);
+    if (n && /\.md$/i.test(n)) {
+      const json = transcriptForMd(n);
+      if (!json) return { ok: false, error: 'no transcript for this meeting' };
+      n = json;
+    }
     if (!n || !/\.json$/i.test(n)) return { ok: false, error: 'bad name' };
     if ((running && running.name === n) || queue.includes(n)) return { ok: false, error: 'already queued' };
     if (!fsMod.existsSync(path.join(resolveFolders().processed, n))) return { ok: false, error: 'not found' };

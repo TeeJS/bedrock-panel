@@ -178,6 +178,24 @@ test('claude route: -p, transcript on stdin, stdout filed as .md', async () => {
   assert.equal(st.lastDone.name, 'm.json');
 });
 
+test('start() accepts the meeting .md and resolves its transcript beside it or in details/', async () => {
+  const s = setup(() => ({ stdout: '# Meeting Analysis\nok', code: 0 }), 'claude');
+  // beside: m.md -> m.json exists (setup wrote m.json)
+  assert.equal(s.an.start('m.md').ok, true);
+  await drained(s.an);
+  assert.equal(s.an.getState().lastDone.name, 'm.json');
+  // in details/: 2026/10/x.md -> 2026/10/details/x-diarizer-response.json
+  fs.mkdirSync(path.join(s.processed, '2026', '10', 'details'), { recursive: true });
+  fs.writeFileSync(path.join(s.processed, '2026', '10', 'details', 'x-diarizer-response.json'), JSON.stringify({ segments: [] }));
+  assert.equal(s.an.start('2026/10/x.md').ok, true);
+  await drained(s.an);
+  assert.equal(s.an.getState().lastDone.name, '2026/10/details/x-diarizer-response.json');
+  // no transcript anywhere: a clear error, nothing queued
+  const r = s.an.start('2026/10/nothing.md');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /no transcript/);
+});
+
 test('codex route: exec with stdin marker + output-last-message file', async () => {
   const s = setup(() => ({ outFile: 'codex analysis', code: 0 }), 'codex');
   s.an.start('m.json');

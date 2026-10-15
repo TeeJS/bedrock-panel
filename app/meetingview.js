@@ -842,7 +842,12 @@ function renderAnList() {
     // Only diarizer transcripts are analyzable — plain .json files here are Outlook meeting-info
     // sidecars (or other data), not transcripts. The server computes `analyzed` (it knows the
     // details-folder layout where the .md sits one level up).
-    var jsons = files.filter(function (f) { return /-diarizer-response\.json$/i.test(f.name); });
+    // New library contract: `meetings` = logical meeting rows ({ name: the .md, base, jsonName,
+    // analyzed, status, legacy, readOnly, warning }); older servers only send `files`, so fall
+    // back to filtering transcripts. Either way each row is keyed by the name Analyze/View take.
+    var jsons = Array.isArray(r && r.meetings)
+      ? r.meetings.map(function (m) { return { name: m.name, base: m.base, analyzed: !!m.analyzed, status: m.status || '', readOnly: !!m.readOnly, warning: m.warning || '' }; })
+      : files.filter(function (f) { return /-diarizer-response\.json$/i.test(f.name); });
     selReset(anSel, jsons.map(function (f) { return f.name; }));
     dirs.forEach(function (d) {
       var b = document.createElement('button');
@@ -858,13 +863,14 @@ function renderAnList() {
     jsons.forEach(function (f) {
       // Raw transcripts are <base>-diarizer-response.json (legacy plain .json accepted);
       // the analysis is <base>-analysis.md, so match/display on the stripped base.
-      var base = f.name.replace(/(-diarizer-response)?\.json$/i, '');
+      var base = f.base || f.name.replace(/(-diarizer-response)?\.json$/i, '').replace(/(-analysis)?\.md$/i, '');
       var rel = splitRel(base);
       var analyzed = !!f.analyzed;
+      var subText = f.warning ? f.warning : (f.status === 'processing' ? 'Transcribed, not analyzed' : (analyzed ? 'Analyzed' : 'Not analyzed'));
       var row = document.createElement('div'); row.className = 'fileRow';
       row.appendChild(selBox(anSel, f.name));
       var meta = document.createElement('div'); meta.className = 'meta';
-      meta.innerHTML = '<div class="fname">' + escHtml(rel.base) + '</div><div class="fsub">' + (analyzed ? 'Analyzed' : 'Not analyzed') + '</div>';
+      meta.innerHTML = '<div class="fname">' + escHtml(rel.base) + '</div><div class="fsub' + (f.warning ? ' err' : '') + '">' + escHtml(subText) + '</div>';
       var btnA = rowBtn(analyzed ? 'Re-analyze' : 'Analyze', analyzed ? '' : 'primary');
       btnA.onclick = function () {
         btnA.disabled = true;
@@ -914,11 +920,17 @@ function renderMarkdown(src) {
   }
   return out;
 }
+// Meeting files start with a YAML frontmatter block (machine-readable facts for other tools); the
+// panel shows the human sections only. Only a leading block delimited by '---' lines is removed.
+function stripFrontmatter(md) {
+  var m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(String(md || ''));
+  return m && m.index === 0 ? String(md).slice(m[0].length) : String(md || '');
+}
 function openAnalysisView(jsonName, title) {
   fetchJson('/meeting-analysis?name=' + encodeURIComponent(jsonName)).then(function (r) {
     if (!r || !r.ok) { var n = $('anNote'); n.textContent = (r && r.error) || 'Could not load analysis'; n.classList.add('err'); return; }
     $('anViewTitle').textContent = title;
-    $('anView').innerHTML = renderMarkdown(r.markdown);
+    $('anView').innerHTML = renderMarkdown(stripFrontmatter(r.markdown));
     $('anView').scrollTop = 0;
     $('anViewOverlay').classList.add('show');
   }).catch(function () {});
