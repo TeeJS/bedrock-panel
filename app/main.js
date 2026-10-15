@@ -2808,6 +2808,7 @@ function onMeetingLibraryRequest(op, params) {
     if (op === 'transcribeState') return meetingTranscriber ? meetingTranscriber.getState() : { ok: false, error: 'transcriber unavailable' };
     if (op === 'analyzeStart') return meetingAnalyzer ? meetingAnalyzer.start(p.name) : { ok: false, error: 'analyzer unavailable' };
     if (op === 'analyzeState') return meetingAnalyzer ? meetingAnalyzer.getState() : { ok: false, error: 'analyzer unavailable' };
+    if (op === 'analyzeApplyProposed') return meetingAnalyzer ? meetingAnalyzer.applyProposed(p.name) : { ok: false, error: 'analyzer unavailable' };
     if (op === 'batchStart') return meetingBatch ? meetingBatch.start() : { ok: false, error: 'batch unavailable' };
     if (op === 'batchState') return meetingBatch ? meetingBatch.getState() : { ok: false, error: 'batch unavailable' };
     if (op === 'analysisResult') return meetingAnalyzer ? meetingAnalyzer.result(p.name) : { ok: false, error: 'analyzer unavailable' };
@@ -4192,6 +4193,7 @@ app.whenReady().then(async () => {
           const m = meetingSettings();
           return { enabled: !!m.taskListEnabled, folder: m.taskListFolder || '' };
         },
+        resolveMyName: () => meetingSettings().myName || '',   // recorded_by in the meeting file's frontmatter
         resolveJoplin: () => {
           const m = meetingSettings();
           return { enabled: !!m.joplinEnabled, url: m.joplinUrl || '', token: m.joplinToken || '', notebook: m.joplinNotebook || '' };

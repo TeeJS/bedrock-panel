@@ -86,10 +86,31 @@ can send them to a diarizing transcription server, then to an AI for meeting not
 - **Analysis** (top row) — browses the Processed folder one directory at a time (tap a
   folder to enter it, **⬆ Up** to go back; no recursive sweep), and runs the chosen
   **Analysis AI** (Settings → Meeting: Claude, ChatGPT Codex, or GitHub Copilot — the locally
-  installed CLI, using its own login, run with every tool, MCP server and customization disabled
-  so nothing said in a meeting can reach a shell — or **Open WebUI**, your own server via the Auth-tab
+  installed CLI, using its own login, run so nothing said in a meeting can reach a shell: Claude
+  with every tool, MCP server and customization disabled; Codex in a read-only sandbox with no MCP
+  servers and its browser, computer-use and apps features off — or **Open WebUI**, your own server via the Auth-tab
   connection with a slimmed `Speaker: text` transcript) over a transcript, filing the result as
-  `<name>-analysis.md` next to it. **View** renders it on the panel.
+  `<name>.md` beside it (the one meeting file described below). **View** renders it on the panel.
+
+### The meeting file
+
+Every analyzed meeting is one markdown file whose first block is YAML frontmatter in the
+[Minutes](https://github.com/silverstein/minutes/blob/6a5a8cbf9c4236f55814cccafb50a840fbf15c86/docs/architecture/frontmatter-schema.md)
+schema, so Obsidian, grep, Minutes-aware tools and future agents can read the facts without
+parsing prose: `title`, `type`, `date` (capture start with its UTC offset), `duration`,
+`attendees`, `people`, `tags`, `action_items`, `decisions`, `intents` (open questions and
+items without a named owner), and `speaker_map` (diarizer label → person, with how confident
+and how it was established). The app's own bookkeeping sits under one `bedrock:` key
+(meeting id, revision, hashes, extraction state, export state). Below the frontmatter come the
+human sections exactly as the analysis prompt produces them, ending with the full transcript
+as `[Name m:ss] text` lines whose times come from the diarizer segments the model cited.
+
+The model never writes the YAML. The app appends a fixed instruction block to whatever
+analysis prompt is in use asking for labelled lists at the end of its output, parses those,
+builds and validates the frontmatter from data it already holds, and refuses to publish a
+file that fails validation. A missing or malformed block keeps the prose and marks the file
+`extraction: "malformed"` rather than dropping anything. The panel hides the frontmatter when
+it shows a meeting.
 - **Settings** (utility rail, replaces the old Full screen row) — picks the recording
   microphone. It must be the same mic Teams is using; if you switch mics in Teams,
   switch here too.

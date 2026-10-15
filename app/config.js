@@ -4575,7 +4575,7 @@ ${IS_MAC ? `
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meAppendName" ${me.appendMeetingName ? 'checked' : ''} ${me.outlookEnabled ? '' : 'disabled'}> Append meeting name to filename</label></div>
       <details class="hint"><summary>Renames a finished recording from &lt;timestamp&gt;.wav to <b>&lt;timestamp&gt;-&lt;Meeting Name&gt;.wav</b> when the calendar matched a meeting; every later file (transcript, analysis…) inherits the name.</summary> Requires meeting information above.</details>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meTaskList" ${me.taskListEnabled ? 'checked' : ''}> Create task-lists for post-analysis processing</label></div>
-      <details class="hint"><summary>After each analysis batch finishes, writes a dated checklist pointing at the new <b>-analysis.md</b> files (plus meeting metadata when available) — the hand-off for pulling your action items onto a board.</summary> One file per batch, named like <b>2026-08-17_10-42-13.md</b>.</details>
+      <details class="hint"><summary>After each analysis batch finishes, writes a dated checklist pointing at the new meeting <b>.md</b> files (plus meeting metadata when available) — the hand-off for pulling your action items onto a board.</summary> One file per batch, named like <b>2026-08-17_10-42-13.md</b>.</details>
       <div class="row"><label>Task-list folder</label>
         <input id="meTaskFolder" value="${esc(me.taskListFolder)}" placeholder="blank = task-list under Processed Recordings" style="flex:1">
         <button id="meTaskFolderBrowse" type="button">Browse…</button></div>

@@ -684,6 +684,7 @@ const MEETING_LIBRARY_OPS = {
   '/meeting-analyze/state': 'analyzeState',
   '/meeting-batch/start': 'batchStart',
   '/meeting-batch/state': 'batchState',
+  '/meeting-analyze/apply-proposed': 'analyzeApplyProposed',
   '/meeting-analysis': 'analysisResult',
 };
 

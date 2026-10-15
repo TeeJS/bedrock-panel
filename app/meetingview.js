@@ -862,7 +862,7 @@ function renderAnList() {
     }
     jsons.forEach(function (f) {
       // Raw transcripts are <base>-diarizer-response.json (legacy plain .json accepted);
-      // the analysis is <base>-analysis.md, so match/display on the stripped base.
+      // the meeting file is <base>.md (legacy <base>-analysis.md), so match/display on the stripped base.
       var base = f.base || f.name.replace(/(-diarizer-response)?\.json$/i, '').replace(/(-analysis)?\.md$/i, '');
       var rel = splitRel(base);
       var analyzed = !!f.analyzed;

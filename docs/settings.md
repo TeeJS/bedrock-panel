@@ -275,7 +275,7 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
 - **Advanced → Create task-lists for post-analysis processing** — after each analysis
   batch finishes, writes a dated checklist (`2026-08-17_10-42-13.md`) to the
   **Task-list folder** (blank = `task-list` under Processed Recordings): one checkbox
-  per analyzed meeting, pointing at its `-analysis.md` (and meeting metadata when the
+  per analyzed meeting, pointing at its meeting `.md` (and meeting metadata when the
   calendar integration provided it) — the hand-off for pulling action items onto a
   kanban board. Only successful analyses are listed.
 - **Advanced → Create Joplin notes for analyses** — after each analysis, creates a note

@@ -96,7 +96,10 @@ async function pagedGet(origin, token, endpoint, fetchImpl) {
 // names wanted tags that don't exist in Joplin (never created here). Throws on anything that
 // prevented the NOTE itself; a tag attach failure after the note exists degrades to `skipped`
 // rather than failing a note that was successfully created.
-async function createAnalysisNote({ url, token, notebook, title, body, fetchImpl }) {
+// `id` (optional, 32 hex chars) is a caller-supplied note id: the Data API creates the note with
+// that exact id, so a caller that persisted the id BEFORE the request can reconcile an uncertain
+// result (timeout, crash) with GET /notes/:id instead of creating a duplicate.
+async function createAnalysisNote({ url, token, notebook, title, body, id, fetchImpl }) {
   const origin = normalizeJoplinUrl(url);
   if (!origin) throw new Error('Joplin API URL is not set — configure it in Settings › Meeting');
   if (!String(token || '').trim()) throw new Error('Joplin API token is not set — copy it from Tools › Options › Web Clipper');
@@ -107,7 +110,9 @@ async function createAnalysisNote({ url, token, notebook, title, body, fetchImpl
   const nb = folders.find(x => x && String(x.title || '').trim().toLowerCase() === nbWanted.toLowerCase());
   if (!nb) throw new Error('notebook "' + nbWanted + '" not found in Joplin — create it there first');
 
-  const note = await api(origin, token, 'POST', 'notes', { body: { title, body, parent_id: nb.id }, fetchImpl });
+  const noteBody = { title, body, parent_id: nb.id };
+  if (id && /^[0-9a-f]{32}$/i.test(String(id))) noteBody.id = String(id).toLowerCase();
+  const note = await api(origin, token, 'POST', 'notes', { body: noteBody, fetchImpl });
   if (!note || !note.id) throw new Error('Joplin did not return a note id');
 
   const wanted = tagsFor(title);
@@ -125,4 +130,19 @@ async function createAnalysisNote({ url, token, notebook, title, body, fetchImpl
   return { id: note.id, applied, skipped };
 }
 
-module.exports = { createAnalysisNote, tagsFor, normalizeJoplinUrl };
+// Does a note with this id exist? Used to reconcile an export left `pending` by a crash: the
+// note was created with our caller-supplied id, so its presence settles the question. Returns
+// the note's { id, title } or null; throws only when Joplin can't be reached.
+async function getNote({ url, token, id, fetchImpl }) {
+  const origin = normalizeJoplinUrl(url);
+  if (!origin || !id) throw new Error('Joplin API URL or note id missing');
+  try {
+    const note = await api(origin, token, 'GET', 'notes/' + encodeURIComponent(id), { params: { fields: 'id,title' }, fetchImpl });
+    return note && note.id ? { id: note.id, title: note.title || '' } : null;
+  } catch (e) {
+    if (/\b404\b|not found/i.test(String(e && e.message))) return null;
+    throw e;
+  }
+}
+
+module.exports = { createAnalysisNote, getNote, tagsFor, normalizeJoplinUrl };
