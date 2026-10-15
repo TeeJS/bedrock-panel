@@ -467,3 +467,37 @@ test('staging retains the actual uppercase WAV source path on case-sensitive sys
   assert.equal(fs.existsSync(path.join(s.transcribed, 'm.wav')), true);
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.WAV')), false);
 });
+
+test('misconfigured folders refuse queue work before hooks or uploads', async () => {
+  let hooks = 0, uploads = 0;
+  const s = setup(null, async () => { uploads++; return { status: 200, text: JSON.stringify(GOOD_RESPONSE) }; }, {
+    foldersError: () => 'Transcribed and Completed folders are the same path',
+    resolveHooks: () => ({ enabled: true, pre: 'START' }),
+    execHook: async () => { hooks++; },
+  });
+  addWav(s.unprocessed, 'm.wav');
+  s.tx.enqueue('m.wav'); await drained(s.tx);
+  assert.match(s.tx.getState().recent[0].error, /meeting folders misconfigured/);
+  assert.equal(hooks, 0); assert.equal(uploads, 0);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.wav')), true);
+  assert.equal(fs.existsSync(s.transcribed), false);
+});
+
+test('a settings change during transcription refuses filing and the next queued job', async () => {
+  let release, entered, bad = '', uploads = 0;
+  const inUpload = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const s = setup(null, async () => {
+    uploads++; entered(); await gate;
+    return { status: 200, text: JSON.stringify(GOOD_RESPONSE) };
+  }, { foldersError: () => bad });
+  addWav(s.unprocessed, 'a.wav'); addWav(s.unprocessed, 'b.wav');
+  s.tx.enqueue('a.wav'); s.tx.enqueue('b.wav');
+  await inUpload; bad = 'Transcribed folder is inside the Completed folder'; release();
+  await drained(s.tx);
+  assert.equal(uploads, 1, 'queued job never uploads after the settings change');
+  assert.equal(s.tx.getState().failed, 2);
+  assert.equal(s.tx.getState().recent.every(item => /meeting folders misconfigured/.test(item.error)), true);
+  assert.deepEqual(fs.readdirSync(s.unprocessed).sort(), ['a.wav', 'b.wav']);
+  assert.equal(fs.existsSync(s.transcribed), false);
+});

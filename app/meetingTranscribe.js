@@ -104,6 +104,10 @@ function createMeetingTranscriber(deps) {
   const fetchImpl = deps.fetchImpl || fetch;         // health probe only (short, cheap)
   const httpPost = deps.httpPost || httpPostWav;     // the long-running upload
   const resolveFolders = deps.resolveFolders;   // () => { unprocessed, transcribed, processed }
+  const foldersError = () => {
+    try { return deps.foldersError ? String(deps.foldersError() || '') : ''; }
+    catch (e) { return 'folder validation unavailable'; }
+  };
   const resolveBaseUrl = deps.resolveBaseUrl;   // () => 'http://127.0.0.1:10301'
   const resolveThreshold = deps.resolveThreshold || (() => '');  // () => speaker cutoff ('' = server default)
   const resolveMyName = deps.resolveMyName || (() => '');        // () => operator's enrolled name ('' = off)
@@ -213,6 +217,14 @@ function createMeetingTranscriber(deps) {
 
   function pump() {
     if (current || hookRunning || !queue.length) return;
+    const badFolders = foldersError();
+    if (badFolders) {
+      const error = 'meeting folders misconfigured: ' + badFolders;
+      while (queue.length) pushRecent({ name: queue.shift(), status: 'error', error, finishedAt: now() });
+      log(error);
+      maybeRunPostHook();   // an already started server still gets its configured stop hook
+      return;
+    }
     const hooks = isLocal() ? {} : (resolveHooks() || {});   // local engine: no server to start or stop
     // Idle -> active with a pre hook configured: start the server, wait for it to answer, then
     // flow the queue. Failure fails every queued job (they'd all hit the same dead server) and
@@ -310,6 +322,8 @@ function createMeetingTranscriber(deps) {
   // Waiting transcripts are flat source sets, never meeting .md files. Reserve a whole
   // basename (including optional companions) so retries cannot overwrite older sources.
   async function fileResult(name, folders, result) {
+    const badFolders = foldersError();   // settings may have changed during a long transcription
+    if (badFolders) throw new Error('meeting folders misconfigured: ' + badFolders);
     const src = path.join(folders.unprocessed, name);
     if (!folders.transcribed) throw new Error('Transcribed Recordings folder is not configured');
     const destDir = folders.transcribed;
