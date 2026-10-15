@@ -13,7 +13,8 @@
 const path = require('path');
 const http = require('http');
 const https = require('https');
-const { safeName } = require('./meetingLibrary');
+const { safeName, wavDurationMs } = require('./meetingLibrary');
+const { buildFrontmatter, validateFrontmatter, serializeFrontmatter } = require('./meetingFrontmatter');
 
 function normalizeName(value) {
   const name = String(value || '').trim();
@@ -324,6 +325,8 @@ function createMeetingTranscriber(deps) {
       const d = new Date(now());
       destDir = path.join(destDir, String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'));
     }
+    const home = destDir;
+    destDir = path.join(home, 'details');
     await fsp.mkdir(destDir, { recursive: true });
     // Re-tests of the same meeting must never overwrite an existing set: if <base>.wav or its
     // transcript already exists at the destination, file this run as <base>_1, <base>_2, …
@@ -332,7 +335,10 @@ function createMeetingTranscriber(deps) {
     for (let i = 1;
       fsMod.existsSync(path.join(destDir, finalBase + '.wav'))
       || fsMod.existsSync(path.join(destDir, finalBase + '-diarizer-response.json'))
-      || fsMod.existsSync(path.join(destDir, finalBase + '.json'));   // Outlook meeting-info sidecar
+      || fsMod.existsSync(path.join(destDir, finalBase + '.json'))
+      || fsMod.existsSync(path.join(home, finalBase + '.wav'))
+      || fsMod.existsSync(path.join(home, finalBase + '-diarizer-response.json'))
+      || fsMod.existsSync(path.join(home, finalBase + '.json'));   // legacy flat layout
       i++) {
       finalBase = base + '_' + i;
     }
@@ -349,6 +355,11 @@ function createMeetingTranscriber(deps) {
       try { await moveFile(sidecar, sidecarDest); }
       catch (e) { log('meeting-info sidecar move failed: ' + e.message); }
     }
+    const capturePath = path.join(folders.unprocessed, base + '.capture.json');
+    if (fsMod.existsSync(capturePath)) {
+      try { await moveFile(capturePath, path.join(destDir, finalBase + '.capture.json')); }
+      catch (e) { log('capture sidecar move failed: ' + e.message); }
+    }
     // The slide-capture folder (<base>-screenshots\) travels with the recording too. Best-effort;
     // a failed move never fails the transcription job. Cross-volume falls back to recursive copy.
     const shots = path.join(folders.unprocessed, base + '-screenshots');
@@ -358,6 +369,31 @@ function createMeetingTranscriber(deps) {
         try { await fsp.rename(shots, shotsDest); }
         catch (e) { await fsp.cp(shots, shotsDest, { recursive: true }); await fsp.rm(shots, { recursive: true, force: true }); }
       } catch (e) { log('screenshots folder move failed: ' + e.message); }
+    }
+    // Publish the initial meeting record before marking transcription complete. Exclusive create
+    // keeps existing canonical or legacy notes intact, including a re-transcription race.
+    const mdPath = path.join(home, finalBase + '.md');
+    const legacy = [finalBase + '-analysis.md', finalBase + '_analysis.md', finalBase + '-meeting-analysis.md', finalBase + ' - meeting analysis.md'];
+    if (!fsMod.existsSync(mdPath) && !legacy.some(n => fsMod.existsSync(path.join(home, n)))) {
+      const readJson = async filename => { try { return JSON.parse(await fsp.readFile(path.join(destDir, filename), 'utf8')); } catch (e) { return null; } };
+      let duration = null;
+      try {
+        const handle = await fsp.open(src, 'r');
+        try { const head = Buffer.alloc(65536); const read = await handle.read(head, 0, head.length, 0); duration = wavDurationMs(head.subarray(0, read.bytesRead)); }
+        finally { await handle.close(); }
+      } catch (e) { /* unsupported/imported audio uses diarizer duration */ }
+      const { frontmatter } = buildFrontmatter({ base: finalBase, now: now(), status: 'processing',
+        sources: { transcriptJson: result, meta: await readJson(finalBase + '.json'), capture: await readJson(finalBase + '.capture.json'), wavDurationMs: duration },
+        settings: { myName: String(resolveMyName() || '') } });
+      frontmatter.bedrock.extraction = 'none';
+      frontmatter.bedrock.evidence = 'full';
+      const validation = validateFrontmatter(frontmatter);
+      if (!validation.ok) throw new Error('meeting stub invalid: ' + validation.errors.join('; '));
+      const stamp = seconds => { const n = Math.max(0, Math.floor(Number(seconds) || 0)); return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); };
+      const dialogue = result.segments.map(seg => '[' + String(seg.speaker || 'UNKNOWN').replace(/[\r\n\[\]]/g, ' ') + ' ' + stamp(seg.start) + '] ' + String(seg.text || '').replace(/[\r\n]+/g, ' ')).join('\n');
+      const content = '---\n' + serializeFrontmatter(frontmatter) + '---\n\n## Transcript\n\n' + dialogue + '\n';
+      try { await fsp.writeFile(mdPath, content, { flag: 'wx' }); }
+      catch (e) { if (e.code !== 'EEXIST') throw e; }
     }
     const dest = path.join(destDir, finalBase + '.wav');
     await moveFile(src, dest);

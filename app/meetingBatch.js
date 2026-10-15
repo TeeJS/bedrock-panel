@@ -30,7 +30,8 @@ function createMeetingBatch(deps) {
       const dir = String(date.getFullYear()) + '/' + String(date.getMonth() + 1).padStart(2, '0');
       result = list('processed', dir);
     }
-    return result.files.filter(file => /-diarizer-response\.json$/i.test(file.name) && file.analyzed === false)
+    return (result.meetings || result.files).filter(file => /(?:\.md|-diarizer-response\.json)$/i.test(file.name)
+      && file.analyzed === false && !file.readOnly && (!Object.hasOwn(file, 'jsonName') || !!file.jsonName))
       .map(file => file.name);
   }
 

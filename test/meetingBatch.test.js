@@ -104,6 +104,20 @@ test('non-date mode analyzes root only and ignores navigable subfolders', async 
   assert.deepEqual(s.calls.filter(c => c[0] === 'analyze').map(c => c[1]), ['root-diarizer-response.json']);
 });
 
+test('logical meeting rows drive batch, omitting complete/read-only/missing-source records', async () => {
+  const s = setup({ list: kind => kind === 'unprocessed' ? listing() : Object.assign(listing([
+    transcript('raw-diarizer-response.json'),
+  ]), { meetings: [
+    { name: 'todo.md', jsonName: 'details/todo-diarizer-response.json', analyzed: false },
+    { name: 'done.md', jsonName: 'details/done-diarizer-response.json', analyzed: true },
+    { name: 'readonly.md', jsonName: 'details/readonly-diarizer-response.json', analyzed: false, readOnly: true },
+    { name: 'notes-only.md', jsonName: null, analyzed: false },
+  ] }) });
+  s.batch.start();
+  assert.equal((await finish(s.batch)).analyzed, 1);
+  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze').map(c => c[1]), ['todo.md']);
+});
+
 test('date mode with no current-month files completes without falling back to archive/root', async () => {
   const s = setup({ now: () => Date.UTC(2026, 0, 14, 12), list: (kind, dir) => {
     if (kind === 'unprocessed') return listing();

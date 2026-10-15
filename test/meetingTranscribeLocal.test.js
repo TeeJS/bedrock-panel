@@ -54,10 +54,10 @@ test('local engine: transcribes on this machine, files the transcript and the WA
   assert.deepEqual(calls, [[path.join(f.unprocessed, 'standup.wav'), 'T.J.']]);
   assert.equal(posted, 0);
   assert.ok(logs.some(l => l.includes('[local] analyzing')), 'engine log lines are relayed');
-  const filed = JSON.parse(fs.readFileSync(path.join(f.processed, 'standup-diarizer-response.json'), 'utf8'));
+  const filed = JSON.parse(fs.readFileSync(path.join(f.processed, 'details', 'standup-diarizer-response.json'), 'utf8'));
   assert.equal(filed.segments[0].speaker, 'T.J.');
-  assert.ok(fs.existsSync(path.join(f.processed, 'standup.wav')), 'WAV moved beside the transcript');
-  assert.ok(fs.existsSync(path.join(f.processed, 'standup.json')), 'sidecar moved too');
+  assert.ok(fs.existsSync(path.join(f.processed, 'details', 'standup.wav')), 'WAV moved beside the transcript');
+  assert.ok(fs.existsSync(path.join(f.processed, 'details', 'standup.json')), 'sidecar moved too');
   assert.ok(!fs.existsSync(path.join(f.unprocessed, 'standup.wav')));
 });
 

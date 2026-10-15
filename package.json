@@ -44,7 +44,8 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
     "electron": "^44.3.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "js-yaml": "^4.3.2"
   },
   "build": {
     "appId": "com.teejs.bedrockpanel",

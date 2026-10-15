@@ -9,6 +9,7 @@
 // never a throw that could leak a path into an error response.
 
 const path = require('path');
+const { readFrontmatter, validateFrontmatter } = require('./meetingFrontmatter');
 
 // Deny-list validation, not allow-list: real meeting subjects carry #, &, [ ], ', commas, etc.
 // (an allow-list silently hid renamed recordings from every panel screen). Rejected outright:
@@ -88,6 +89,59 @@ function createMeetingLibrary(deps) {
     return resolveFolders()[kind] || null;
   }
 
+  function contained(file, root) {
+    try {
+      const rel = path.relative(fsMod.realpathSync(root), fsMod.realpathSync(file));
+      return !!rel && !rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel);
+    } catch (e) { return false; }
+  }
+
+  function noteState(file) {
+    try {
+      if (fsMod.statSync(file).size > 32 * 1024 * 1024) return { analyzed: true, legacy: false, readOnly: true, status: 'unreadable-frontmatter', warning: 'Meeting file exceeds reader limit' };
+      const parsed = readFrontmatter(fsMod.readFileSync(file, 'utf8'));
+      if (!parsed.ok) return { analyzed: true, legacy: parsed.reason === 'no-frontmatter', readOnly: parsed.reason !== 'no-frontmatter',
+        status: parsed.reason === 'no-frontmatter' ? 'complete' : 'unreadable-frontmatter', warning: parsed.reason === 'no-frontmatter' ? '' : parsed.reason };
+      if (!validateFrontmatter(parsed.data).ok) return { analyzed: true, legacy: false, readOnly: true, status: 'invalid-frontmatter', warning: 'Invalid meeting metadata; file kept read-only' };
+      return { analyzed: parsed.data.status === 'complete', legacy: false, readOnly: false, status: parsed.data.status || 'unknown',
+        warning: parsed.data.bedrock?.extraction === 'malformed' ? 'Structured extraction malformed' : '' };
+    } catch (e) { return { analyzed: false, legacy: false, readOnly: true, status: 'unreadable', warning: 'Meeting file unreadable' }; }
+  }
+
+  const meetingBase = name => String(name).replace(/(?:-analysis|_analysis|-meeting-analysis| - meeting analysis)?\.md$/i, '').replace(/-diarizer-response\.json$/i, '');
+  function logicalMeetings(base, rel, files) {
+    if (rel.split('/').some(p => /^(?:details|_system)$/i.test(p))) return [];
+    const dir = rel ? path.join(base, rel) : base;
+    const join = leaf => rel ? rel + '/' + leaf : leaf;
+    const resolveJson = meeting => {
+      for (const leaf of ['details/' + meeting + '-diarizer-response.json', meeting + '-diarizer-response.json', 'details/' + meeting + '.json', meeting + '.json']) {
+        const abs = path.join(dir, leaf);
+        if (!contained(abs, base)) continue;
+        if (!/-diarizer-response\.json$/i.test(leaf)) {
+          try { if (fsMod.statSync(abs).size > 32 * 1024 * 1024 || !Array.isArray(JSON.parse(fsMod.readFileSync(abs, 'utf8')).segments)) continue; } catch (e) { continue; }
+        }
+        return join(leaf);
+      }
+      return null;
+    };
+    const records = new Map();
+    for (const file of files) {
+      if (!/\.md$/i.test(file.name) || /(?:\.rev[^/]*|\.proposed)\.md$/i.test(file.name)) continue;
+      const filename = path.basename(file.name), meeting = meetingBase(filename), key = meeting.toLowerCase();
+      const canonical = filename.toLowerCase() === (meeting + '.md').toLowerCase();
+      if (records.has(key) && (!canonical || records.get(key).canonical)) continue;
+      records.set(key, Object.assign({}, file, noteState(path.join(base, file.name)), { base: meeting, jsonName: resolveJson(meeting), canonical }));
+    }
+    // Keep pre-pivot transcripts visible without writing files or walking archive folders.
+    for (const file of files) {
+      if (!/-diarizer-response\.json$/i.test(file.name)) continue;
+      const meeting = meetingBase(path.basename(file.name)), key = meeting.toLowerCase();
+      if (!records.has(key)) records.set(key, Object.assign({}, file, { base: meeting, jsonName: file.name, analyzed: false,
+        status: 'processing', legacy: true, readOnly: false, warning: 'Legacy transcript awaiting analysis', canonical: false }));
+    }
+    return [...records.values()].map(({ canonical, ...record }) => record).sort((a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name));
+  }
+
   // Absolute path for a validated (kind, name), or null. Processed accepts YYYY/MM subpaths;
   // unprocessed stays flat. The startsWith re-check is belt and braces on top of the name
   // validation — a folder setting containing tricks can't escape either.
@@ -117,19 +171,21 @@ function createMeetingLibrary(deps) {
     let entries = [];
     const byDate = kind === 'processed' && !!organizeByDate();   // panel auto-opens the current YYYY/MM
     try { entries = fsMod.readdirSync(rel ? path.join(base, rel) : base, { withFileTypes: true }); }
-    catch (e) { return { ok: true, dirs: [], files: [], byDate }; }   // folder not created yet = empty
+    catch (e) { return Object.assign({ ok: true, dirs: [], files: [], byDate }, kind === 'processed' ? { meetings: [] } : {}); }
     const dirs = [];
     const files = [];
     for (const ent of entries) {
       if (ent.isDirectory()) {
         // navigable while files inside remain valid rel paths (≤3 dirs); dot-folders stay hidden
-        if (kind === 'processed' && depth < 3 && validSegment(ent.name) && ent.name[0] !== '.') dirs.push(ent.name);
+        if (kind === 'processed' && depth < 3 && validSegment(ent.name) && ent.name[0] !== '.' && contained(path.join(base, rel, ent.name), base)) dirs.push(ent.name);
         continue;
       }
       if (!/\.(wav|json|md)$/i.test(ent.name) || !safeName(ent.name)) continue;
+      if (/\.capture\.json$/i.test(ent.name)) continue;
       try {
         const dirAbs = rel ? path.join(base, rel) : base;
         const abs = path.join(dirAbs, ent.name);
+        if (!contained(abs, base)) continue;
         const st = fsMod.statSync(abs);
         if (!st.isFile()) continue;
         let durationMs = null;
@@ -146,17 +202,23 @@ function createMeetingLibrary(deps) {
         // beside the transcript, or one level up when the transcript lives in a details/ folder.
         if (/-diarizer-response\.json$/i.test(ent.name)) {
           const b = ent.name.replace(/-diarizer-response\.json$/i, '');
-          entry.analyzed = fsMod.existsSync(path.join(dirAbs, b + '-analysis.md'))
-            || fsMod.existsSync(path.join(dirAbs, b + '.md'))
-            || (path.basename(dirAbs).toLowerCase() === 'details'
-                && fsMod.existsSync(path.join(path.dirname(dirAbs), b + '-analysis.md')));
+          const home = path.basename(dirAbs).toLowerCase() === 'details' ? path.dirname(dirAbs) : dirAbs;
+          const candidates = [path.join(home, b + '.md'), path.join(home, b + '-analysis.md'), path.join(dirAbs, b + '-analysis.md')];
+          const note = candidates.find(p => contained(p, base) && fsMod.existsSync(p));
+          entry.analyzed = note ? noteState(note).analyzed : false;
         }
         files.push(entry);
       } catch (e) { /* raced deletion — skip */ }
     }
     dirs.sort();
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    return { ok: true, dirs, files, byDate };
+    return Object.assign({ ok: true, dirs, files, byDate }, kind === 'processed' ? { meetings: logicalMeetings(base, rel, files) } : {});
+  }
+
+  function listMeetings(subDir) {
+    const result = listFiles('processed', subDir);
+    if (!result.ok) return result;
+    return { ok: true, dirs: result.dirs.filter(d => !/^(?:details|_system)$/i.test(d)), files: result.meetings, byDate: result.byDate };
   }
 
   // Deletion is only offered for unprocessed recordings — processed WAVs and their transcripts are
@@ -168,11 +230,12 @@ function createMeetingLibrary(deps) {
     if (!p) return { ok: false, error: 'bad name' };
     try { fsMod.unlinkSync(p); } catch (e) { return { ok: false, error: e.code === 'ENOENT' ? 'not found' : e.message }; }
     if (/\.wav$/i.test(p)) { try { fsMod.unlinkSync(p.replace(/\.wav$/i, '.json')); } catch (e) { /* no sidecar */ } }
+    if (/\.wav$/i.test(p)) { try { fsMod.unlinkSync(p.replace(/\.wav$/i, '.capture.json')); } catch (e) { /* no sidecar */ } }
     log('deleted ' + name);
     return { ok: true };
   }
 
-  return { listFiles, deleteFile, resolvePath, safeName };
+  return { listFiles, listMeetings, deleteFile, resolvePath, safeName };
 }
 
 module.exports = { createMeetingLibrary, safeName, safeRelPath, sanitizeSubjectForFilename, wavDurationMs };

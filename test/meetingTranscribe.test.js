@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createMeetingTranscriber } = require('../app/meetingTranscribe');
+const { readFrontmatter } = require('../app/meetingFrontmatter');
 
 const GOOD_RESPONSE = { speaker_report: { speaker_count: 1 }, segments: [{ speaker: 'T', start: 0, end: 1, text: 'hi' }] };
 
@@ -58,8 +59,8 @@ test('success: JSON transcript written to processed, WAV moved, FIFO order kept'
   assert.deepEqual(st.recent.map(j => [j.name, j.status]), [['b.wav', 'done'], ['a.wav', 'done']]);   // newest first = FIFO ran a then b
   for (const base of ['a', 'b']) {
     assert.equal(fs.existsSync(path.join(s.unprocessed, base + '.wav')), false, base + ' should have moved');
-    assert.equal(fs.existsSync(path.join(s.processed, base + '.wav')), true);
-    const j = JSON.parse(fs.readFileSync(path.join(s.processed, base + '-diarizer-response.json'), 'utf8'));
+    assert.equal(fs.existsSync(path.join(s.processed, 'details', base + '.wav')), true);
+    const j = JSON.parse(fs.readFileSync(path.join(s.processed, 'details', base + '-diarizer-response.json'), 'utf8'));
     assert.deepEqual(j.segments, GOOD_RESPONSE.segments);
   }
 });
@@ -73,8 +74,39 @@ test('slide-capture folder travels with the WAV into processed', async () => {
   s.tx.enqueue('m.wav');
   await drained(s.tx);
   assert.equal(fs.existsSync(shots), false, 'screenshots folder should have left unprocessed');
-  const moved = path.join(s.processed, 'm-screenshots', '20260817-090001-slide001.png');
+  const moved = path.join(s.processed, 'details', 'm-screenshots', '20260817-090001-slide001.png');
   assert.equal(fs.existsSync(moved), true, 'slide should now sit beside the transcript');
+});
+
+test('transcription publishes one processing record with raw timed dialogue and carries capture metadata', async () => {
+  const s = setup();
+  addWav(s.unprocessed, 'm.wav');
+  fs.writeFileSync(path.join(s.unprocessed, 'm.capture.json'), JSON.stringify({ started_at: '2026-10-15T10:12:00-06:00', device: 'Mic' }));
+  s.tx.enqueue('m.wav');
+  await drained(s.tx);
+  assert.equal(s.tx.getState().recent[0].status, 'done');
+  const parsed = readFrontmatter(fs.readFileSync(path.join(s.processed, 'm.md'), 'utf8'));
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.data.status, 'processing');
+  assert.equal(parsed.data.date, '2026-10-15T10:12:00-06:00');
+  assert.equal(parsed.data.bedrock.extraction, 'none');
+  assert.match(parsed.body, /\[T 0:00\] hi/);
+  assert.ok(fs.existsSync(path.join(s.processed, 'details', 'm.capture.json')));
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.capture.json')), false);
+});
+
+test('stub creation never overwrites existing canonical or legacy complete notes', async () => {
+  for (const filename of ['m.md', 'm-analysis.md']) {
+    const s = setup();
+    fs.mkdirSync(s.processed, { recursive: true });
+    const body = '# My edited complete notes\n';
+    fs.writeFileSync(path.join(s.processed, filename), body);
+    addWav(s.unprocessed, 'm.wav');
+    s.tx.enqueue('m.wav'); await drained(s.tx);
+    assert.equal(fs.readFileSync(path.join(s.processed, filename), 'utf8'), body);
+    if (filename !== 'm.md') assert.equal(fs.existsSync(path.join(s.processed, 'm.md')), false);
+    assert.equal(s.tx.getState().recent[0].status, 'done');
+  }
 });
 
 test('diarizer {detail} error: WAV stays in unprocessed, error recorded, queue continues', async () => {
@@ -95,7 +127,7 @@ test('diarizer {detail} error: WAV stays in unprocessed, error recorded, queue c
     ['bad.wav', 'error', 'unsupported audio'],
   ]);
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'bad.wav')), true);     // stays for retry
-  assert.equal(fs.existsSync(path.join(s.processed, 'good.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', 'good.wav')), true);
   assert.equal(st.completed, 1);
   assert.equal(st.failed, 1);
 });
@@ -170,8 +202,8 @@ test('organizeByDate files results into YYYY/MM under processed', async () => {
   addWav(unprocessed, 'm.wav');
   tx.enqueue('m.wav');
   await drained(tx);
-  assert.equal(fs.existsSync(path.join(processed, '2026', '08', 'm.wav')), true);
-  assert.equal(fs.existsSync(path.join(processed, '2026', '08', 'm-diarizer-response.json')), true);
+  assert.equal(fs.existsSync(path.join(processed, '2026', '08', 'details', 'm.wav')), true);
+  assert.equal(fs.existsSync(path.join(processed, '2026', '08', 'details', 'm-diarizer-response.json')), true);
   assert.equal(fs.existsSync(path.join(unprocessed, 'm.wav')), false);
 });
 
@@ -186,15 +218,15 @@ test('re-transcribing the same meeting files as _1, _2 — never overwrites', as
   assert.equal(s.tx.getState().recent[0].status, 'done');
   assert.equal(fs.readFileSync(path.join(s.processed, 'm.wav'), 'utf8'), 'ORIGINAL WAV');                 // untouched
   assert.equal(fs.readFileSync(path.join(s.processed, 'm-diarizer-response.json'), 'utf8'), '"ORIGINAL JSON"');
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_1.wav')), true);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_1-diarizer-response.json')), true);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', 'm_1.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', 'm_1-diarizer-response.json')), true);
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.wav')), false);
   // a third run steps to _2
   addWav(s.unprocessed, 'm.wav');
   s.tx.enqueue('m.wav');
   await drained(s.tx);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_2.wav')), true);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_2-diarizer-response.json')), true);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', 'm_2.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', 'm_2-diarizer-response.json')), true);
 });
 
 test('attendees from the sidecar and the threshold setting ride the upload', async () => {
@@ -243,16 +275,16 @@ test('Outlook meeting-info sidecar travels with the WAV (and joins the collision
   fs.writeFileSync(path.join(s.unprocessed, 'm.json'), '{"subject":"weekly"}');
   s.tx.enqueue('m.wav');
   await drained(s.tx);
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm.json'), 'utf8'), '{"subject":"weekly"}');
+  assert.equal(fs.readFileSync(path.join(s.processed, 'details', 'm.json'), 'utf8'), '{"subject":"weekly"}');
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.json')), false);
   // re-run: existing m.json at dest forces the _1 rename, sidecar follows as m_1.json
   addWav(s.unprocessed, 'm.wav');
   fs.writeFileSync(path.join(s.unprocessed, 'm.json'), '{"subject":"weekly take 2"}');
   s.tx.enqueue('m.wav');
   await drained(s.tx);
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm_1.json'), 'utf8'), '{"subject":"weekly take 2"}');
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_1.wav')), true);
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm.json'), 'utf8'), '{"subject":"weekly"}');   // first set untouched
+  assert.equal(fs.readFileSync(path.join(s.processed, 'details', 'm_1.json'), 'utf8'), '{"subject":"weekly take 2"}');
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', 'm_1.wav')), true);
+  assert.equal(fs.readFileSync(path.join(s.processed, 'details', 'm.json'), 'utf8'), '{"subject":"weekly"}');   // first set untouched
 });
 
 test('hooks: pre runs once before a batch (after health), post once after the drain', async () => {

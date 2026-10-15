@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createMeetingLibrary, safeName, safeRelPath, wavDurationMs } = require('../app/meetingLibrary');
+const { serializeFrontmatter } = require('../app/meetingFrontmatter');
 
 function tempDirs() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-lib-'));
@@ -182,4 +183,45 @@ test('listFiles(processed) shows one folder at a time with navigable subdirs', (
   fs.mkdirSync(path.join(dirs.unprocessed, 'sub'));
   fs.writeFileSync(path.join(dirs.unprocessed, 'sub', 'x.wav'), makeWav(1));
   assert.deepEqual(lib.listFiles('unprocessed', 'sub'), { ok: true, dirs: [], files: [], byDate: false });
+});
+
+test('logical meetings deduplicate new/legacy names, use status and resolve details sources without sweeping', () => {
+  const dirs = tempDirs();
+  const lib = createMeetingLibrary({ resolveFolders: () => dirs });
+  fs.mkdirSync(path.join(dirs.processed, 'details'));
+  fs.mkdirSync(path.join(dirs.processed, '_system'));
+  const note = (base, status) => fs.writeFileSync(path.join(dirs.processed, base + '.md'), '---\n' + serializeFrontmatter({
+    title: base, type: 'meeting', date: '2026-10-15T10:00:00Z', duration: '1m', status,
+  }) + '---\n## Transcript\nWords');
+  note('done', 'complete'); note('todo', 'processing');
+  fs.writeFileSync(path.join(dirs.processed, 'done-analysis.md'), '# old');
+  fs.writeFileSync(path.join(dirs.processed, 'legacy-analysis.md'), '# legacy complete');
+  fs.writeFileSync(path.join(dirs.processed, 'done.rev1.md'), '# backup');
+  fs.writeFileSync(path.join(dirs.processed, 'done.proposed.md'), '# proposed');
+  fs.writeFileSync(path.join(dirs.processed, 'details', 'todo-diarizer-response.json'), '{"segments":[]}');
+  fs.writeFileSync(path.join(dirs.processed, 'details', 'hidden.md'), '# not a meeting');
+  fs.writeFileSync(path.join(dirs.processed, 'orphan-diarizer-response.json'), '{"segments":[]}');
+  fs.writeFileSync(path.join(dirs.processed, 'm.capture.json'), '{}');
+  const result = lib.listFiles('processed');
+  assert.equal(result.files.some(f => /capture/.test(f.name)), false);
+  assert.deepEqual(result.meetings.map(f => f.name).sort(), ['done.md', 'legacy-analysis.md', 'orphan-diarizer-response.json', 'todo.md']);
+  const todo = result.meetings.find(f => f.base === 'todo');
+  assert.equal(todo.analyzed, false); assert.equal(todo.jsonName, 'details/todo-diarizer-response.json');
+  assert.equal(result.meetings.find(f => f.base === 'done').analyzed, true);
+  assert.equal(result.meetings.find(f => f.base === 'legacy').legacy, true);
+  assert.equal(lib.listMeetings().dirs.includes('details'), false);
+  assert.deepEqual(lib.listFiles('processed', 'details').meetings, []);
+});
+
+test('unsupported frontmatter is visible read-only and capture metadata is excluded/deleted with recording', () => {
+  const dirs = tempDirs();
+  const lib = createMeetingLibrary({ resolveFolders: () => dirs });
+  fs.writeFileSync(path.join(dirs.processed, 'edited.md'), '---\ntitle: |\n  multiline\n---\n## Summary\nEdit');
+  const row = lib.listMeetings().files[0];
+  assert.equal(row.readOnly, true); assert.equal(row.analyzed, true); assert.equal(row.status, 'unreadable-frontmatter');
+  fs.writeFileSync(path.join(dirs.unprocessed, 'm.wav'), 'WAV');
+  fs.writeFileSync(path.join(dirs.unprocessed, 'm.capture.json'), '{}');
+  assert.deepEqual(lib.listFiles('unprocessed').files.map(f => f.name), ['m.wav']);
+  assert.equal(lib.deleteFile('unprocessed', 'm.wav').ok, true);
+  assert.equal(fs.existsSync(path.join(dirs.unprocessed, 'm.capture.json')), false);
 });
