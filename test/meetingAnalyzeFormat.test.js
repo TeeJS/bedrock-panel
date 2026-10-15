@@ -145,7 +145,10 @@ test('task-list recovery: a crash after the list was written but before success 
   s.an.start('details/' + s.json); await drained(s.an); await flushed();
   const lists = fs.readdirSync(folder).filter(f => f.endsWith('.md'));
   assert.deepEqual(lists, [first]);                                      // reused, not a second list
-  assert.deepEqual(readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.exports.task_list, { file: first, state: 'succeeded' });
+  const rec = readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.exports.task_list;
+  assert.equal(rec.file, first);
+  assert.equal(rec.state, 'succeeded');
+  assert.equal(rec.consumed, 'delivered');                              // the existing list matched its recorded hash: untouched
 });
 
 test('a proposal made for a legacy -analysis.md row applies onto the canonical <base>.md and retires the legacy file', async () => {
@@ -163,6 +166,46 @@ test('a proposal made for a legacy -analysis.md row applies onto the canonical <
   assert.match(fs.readFileSync(path.join(s.processed, 'details', s.base + '.rev0.md'), 'utf8'), /old notes without frontmatter/);
   assert.equal(readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.revision, 1);
   assert.equal(fs.existsSync(path.join(s.processed, 'details', s.base + '.proposed.md')), false);
+});
+
+test('task-list recovery never overwrites a list someone already ticked', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-tl3-'));
+  const s = setup([output('First pass.'), output('Second pass.')], { resolveTaskList: () => ({ enabled: true, folder }) });
+  const flushed = () => new Promise(r => setTimeout(r, 200));
+  s.an.start(s.json); await drained(s.an); await flushed();
+  const first = fs.readdirSync(folder).filter(f => f.endsWith('.md'))[0];
+  const ticked = fs.readFileSync(path.join(folder, first), 'utf8').replace('- [ ] ', '- [x] ');
+  fs.writeFileSync(path.join(folder, first), ticked);                      // the kanban side acted on it
+  fs.writeFileSync(s.md, fs.readFileSync(s.md, 'utf8').replace('state: "succeeded"', 'state: "pending"'));   // …but the record says pending
+  s.an.start('details/' + s.json); await drained(s.an); await flushed();
+  assert.deepEqual(fs.readdirSync(folder).filter(f => f.endsWith('.md')), [first]);
+  assert.equal(fs.readFileSync(path.join(folder, first), 'utf8'), ticked);   // bytes untouched
+  const tl = readFrontmatter(fs.readFileSync(s.md, 'utf8')).data.bedrock.exports.task_list;
+  assert.equal(tl.state, 'succeeded');
+  assert.equal(tl.consumed, 'edited');
+});
+
+test('a proposal for a date-folder note under the recurring rule sits beside that note; apply files it to the recurring home', async () => {
+  const s = setup([output('First pass.'), output('Second pass.')], { filingOptions: () => ({ useDetailsFolder: true, separateRecurring: true }) });
+  // first analysis before the calendar said "recurring": lands in the date folder
+  s.an.start(s.json); await drained(s.an);
+  assert.equal(fs.existsSync(s.md), true);
+  fs.writeFileSync(s.md, fs.readFileSync(s.md, 'utf8').replace('First pass.', 'First pass, edited by hand.'));
+  // now the sidecar marks it recurring and a re-analysis is requested
+  fs.writeFileSync(path.join(s.processed, 'details', s.base + '.json'), JSON.stringify({ subject: 'G1 Weekly Review', is_recurring: true, required_attendees: ['Carl Tanner'], optional_attendees: [] }));
+  s.an.start('details/' + s.json); await drained(s.an);
+  assert.equal(s.an.getState().error, null);
+  const proposed = path.join(s.processed, 'details', s.base + '.proposed.md');   // beside the row, not in the recurring folder
+  assert.equal(fs.existsSync(proposed), true);
+  assert.equal(fs.existsSync(path.join(s.processed, '2026', 'G1-Weekly-Review', 'details', s.base + '.proposed.md')), false);
+  const r = await s.an.applyProposed(s.base + '.md');
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.warning, undefined, r.warning);
+  const home = path.join(s.processed, '2026', 'G1-Weekly-Review');
+  assert.equal(fs.existsSync(path.join(home, s.base + '.md')), true);
+  assert.equal(fs.existsSync(path.join(home, 'details', s.json)), true);
+  assert.equal(fs.existsSync(s.md), false);
+  assert.match(fs.readFileSync(path.join(home, s.base + '.md'), 'utf8'), /Second pass\./);
 });
 
 test('applying a proposal whose base notes changed afterwards is refused', async () => {

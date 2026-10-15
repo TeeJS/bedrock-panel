@@ -485,7 +485,9 @@ function createMeetingAnalyzer(deps) {
       fm.bedrock.proposal_base_hash = previousHash;
       fm.bedrock.proposal_base_path = path.basename(previousPath);
       const proposedText = assembleFile(serializeFrontmatter(fm), body);
-      const detDir = path.join(path.dirname(mdPath), 'details');
+      // The proposal lives beside the notes it would replace (the row the user sees), even when
+      // the recurring rule would file a fresh analysis elsewhere; apply moves it to the final home.
+      const detDir = path.join(path.dirname(previousPath), 'details');
       await fsp.mkdir(detDir, { recursive: true });
       const proposedPath = path.join(detDir, base + '.proposed.md');
       const tmp = proposedPath + '.tmp';
@@ -611,6 +613,23 @@ function createMeetingAnalyzer(deps) {
       await fsp.rename(tmp, mdFile);
       if (baseBytes && path.resolve(basePath) !== path.resolve(mdFile)) await fsp.unlink(basePath).catch(() => {});   // legacy -analysis.md retired
       await fsp.unlink(proposedPath);
+      // Final destination (recurring rule) and source filing happen now, as they would after an
+      // ordinary publish: the applied file moves to its home and the sources follow into details/.
+      try {
+        const jsonRel = transcriptForMd(path.posix.join(path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n), base + '.md'));
+        if (jsonRel) {
+          const jsonAbs = path.join(processed, jsonRel);
+          const opts = filingOptions() || {};
+          const target = await resolveTarget(jsonAbs, base, opts);
+          if (path.resolve(target.mdPath) !== path.resolve(mdFile)) {
+            if (fsMod.existsSync(target.mdPath)) throw new Error('a meeting file already exists at ' + path.relative(processed, target.mdPath));
+            await preflightSources(jsonAbs, base, target);
+            await fsp.mkdir(path.dirname(target.mdPath), { recursive: true });
+            await fsp.rename(mdFile, target.mdPath);
+          }
+          await fileSet(jsonAbs, null, null, base, opts, target);
+        }
+      } catch (e) { log('applied proposal is saved, but filing it to its final folder failed: ' + e.message); return { ok: true, name: n, warning: 'applied; filing failed: ' + e.message }; }
       if (lastProposed && lastProposed.name === base) lastProposed = null;
       log('proposed analysis applied: ' + n);
       return { ok: true, name: n };
@@ -794,31 +813,50 @@ function createMeetingAnalyzer(deps) {
       // written and flipped to `succeeded` after. A crash in between leaves `pending` with the
       // list's file name, and the next batch REUSES that name (overwriting the partial list)
       // instead of allocating a fresh one — one hand-off per meeting, even across a crash.
-      let dest = null;
+      let dest = null, pendingHash = null;
       for (const it of items) {
         try {
           const tl = readFrontmatter(await fsp.readFile(it.md, 'utf8')).data.bedrock.exports.task_list;
-          if (tl && tl.state === 'pending' && tl.file) { dest = path.join(folder, path.basename(String(tl.file))); break; }
+          if (tl && tl.state === 'pending' && tl.file) { dest = path.join(folder, path.basename(String(tl.file))); pendingHash = tl.hash || null; break; }
         } catch (e) { /* no readable export state: a fresh name below */ }
       }
       if (!dest) {
         dest = path.join(folder, stamp + '.md');
         for (let i = 1; fsMod.existsSync(dest); i++) dest = path.join(folder, stamp + '_' + i + '.md');
       }
+      const payload = lines.join('\n');
+      const payloadHash = sha256(payload);
+      // Reusing a pending name: a list that already exists is a hand-off that was delivered. If it
+      // is byte-for-byte what we recorded, nothing is rewritten; if someone has edited it (ticked
+      // a box), it is left exactly as is and noted — it was consumed. Only a MISSING list is written.
+      let state = 'succeeded', consumed = null, mustWrite = true;
+      if (fsMod.existsSync(dest)) {
+        const existing = sha256(await fsp.readFile(dest));
+        mustWrite = false;
+        consumed = existing === pendingHash ? 'delivered' : 'edited';
+      }
       // A meeting whose pending identity cannot be persisted is left out of this list (it stays
       // in batchDone's place for the next run) rather than handed off without a durable record.
       const listed = [];
       for (const it of items) {
         try {
-          await patchFrontmatter(it.md, d => { d.bedrock = d.bedrock || {}; d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: { file: path.basename(dest), state: 'pending' } }); });
+          await patchFrontmatter(it.md, d => { d.bedrock = d.bedrock || {}; d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: { file: path.basename(dest), state: 'pending', hash: payloadHash } }); });
           listed.push(it);
         } catch (e) { log('task-list hand-off deferred for ' + path.basename(it.md) + ' (could not record it): ' + e.message); }
       }
       if (!listed.length) return;
-      await fsp.writeFile(dest, lines.join('\n'));
-      log('task list written: ' + dest + ' (' + listed.length + ' meeting(s))');
+      if (mustWrite) {
+        const tmp = dest + '.tmp';
+        await fsp.writeFile(tmp, payload);
+        await fsp.rename(tmp, dest);
+        log('task list written: ' + dest + ' (' + listed.length + ' meeting(s))');
+      } else {
+        log('task list ' + path.basename(dest) + ' already exists (' + consumed + ') — kept as is, hand-off recorded');
+      }
       for (const it of listed) {
-        try { await patchFrontmatter(it.md, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: { file: path.basename(dest), state: 'succeeded' } }); }); }
+        const record = { file: path.basename(dest), state, hash: mustWrite ? payloadHash : (pendingHash || payloadHash) };
+        if (consumed) record.consumed = consumed;
+        try { await patchFrontmatter(it.md, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: record }); }); }
         catch (e) { log('task-list export left pending for ' + path.basename(it.md) + ': ' + e.message); }
       }
     } catch (e) { log('task-list write failed: ' + e.message); }
