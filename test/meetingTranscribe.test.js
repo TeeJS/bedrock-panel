@@ -448,3 +448,21 @@ test('copy or late publish failure keeps every original and exposes no partial r
     assert.deepEqual(fs.readdirSync(s.unprocessed), []);
   }
 });
+
+test('staging retains the actual uppercase WAV source path on case-sensitive systems', async () => {
+  const copied = [];
+  const injectedFs = Object.create(fs);
+  Object.defineProperty(injectedFs, 'promises', { value: Object.assign({}, fs.promises, {
+    async copyFile(src, dest, flags) {
+      copied.push(path.basename(src));
+      return fs.promises.copyFile(src, dest, flags);
+    },
+  }) });
+  const s = setup(null, null, { fs: injectedFs });
+  addWav(s.unprocessed, 'm.WAV');
+  s.tx.enqueue('m.WAV'); await drained(s.tx);
+  assert.equal(s.tx.getState().recent[0].status, 'done');
+  assert.deepEqual(copied, ['m.WAV']);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.WAV')), false);
+});

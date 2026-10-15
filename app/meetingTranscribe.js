@@ -323,7 +323,7 @@ function createMeetingTranscriber(deps) {
     if (finalBase !== base) log('destination exists — filing as ' + finalBase);
     const jsonPath = path.join(destDir, finalBase + '-diarizer-response.json');
     const sources = ['.wav', '.json', '.capture.json', '.vtt', '-screenshots']
-      .map(suffix => ({ src: path.join(folders.unprocessed, base + suffix), leaf: finalBase + suffix }))
+      .map(suffix => ({ src: suffix === '.wav' ? src : path.join(folders.unprocessed, base + suffix), leaf: finalBase + suffix }))
       .filter(item => fsMod.existsSync(item.src));
     // Copy first, keep originals until publication. A failed companion must not leave an
     // actionable row with missing calendar/capture data or permit Delete during filing.
