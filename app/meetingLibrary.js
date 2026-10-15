@@ -1,6 +1,6 @@
 'use strict';
 
-// Meeting recordings library: list / delete / resolve files in the unprocessed and processed
+// Meeting recordings library: list / delete / resolve files in the three meeting-stage
 // folders for the panel's Unprocessed / Transcription / Analysis screens. Everything is injected
 // (folders, fs) so the module is testable without Electron — same pattern as officeActions.
 //
@@ -16,7 +16,7 @@ const { readFrontmatter, validateFrontmatter } = require('./meetingFrontmatter')
 // path separators, Windows-illegal filename chars, control chars, and anything containing "..".
 const ILLEGAL_CHARS = /[\\/<>:"|?*]/;   // path separators + Windows-illegal (control chars checked below)
 const SAFE_EXT = /\.(wav|json|md)$/i;
-const KINDS = ['unprocessed', 'processed'];
+const KINDS = ['unprocessed', 'transcribed', 'processed'];
 
 function validSegment(s) {
   if (!s.length || s.includes('..') || s.trim() !== s || ILLEGAL_CHARS.test(s)) return false;
@@ -80,9 +80,10 @@ function wavDurationMs(buf) {
 
 function createMeetingLibrary(deps) {
   const fsMod = deps.fs || require('fs');
-  const resolveFolders = deps.resolveFolders;   // () => { unprocessed, processed }
+  const resolveFolders = deps.resolveFolders;   // () => { unprocessed, transcribed, processed }
   const organizeByDate = deps.organizeByDate || (() => false);   // () => bool: processed files live in YYYY/MM
   const log = deps.log || (() => {});
+  const isBusy = deps.isBusy || (() => false);   // transcribed name is analyzing/queued
 
   function folderFor(kind) {
     if (!KINDS.includes(kind)) return null;
@@ -134,14 +135,26 @@ function createMeetingLibrary(deps) {
       const proposed = contained(proposal, base) && fsMod.statSync(proposal).isFile();
       records.set(key, Object.assign({}, file, noteState(path.join(base, file.name)), { base: meeting, jsonName: resolveJson(meeting), canonical, proposed }));
     }
-    // Keep pre-pivot transcripts visible without writing files or walking archive folders.
+    return [...records.values()].map(({ canonical, ...record }) => record).sort((a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name));
+  }
+
+  function transcribedMeetings(base, files) {
+    const records = [];
     for (const file of files) {
       if (!/-diarizer-response\.json$/i.test(file.name)) continue;
-      const meeting = meetingBase(path.basename(file.name)), key = meeting.toLowerCase();
-      if (!records.has(key)) records.set(key, Object.assign({}, file, { base: meeting, jsonName: file.name, analyzed: false,
-        status: 'processing', legacy: true, readOnly: false, proposed: false, warning: 'Legacy transcript awaiting analysis', canonical: false }));
+      try {
+        if (file.size > 32 * 1024 * 1024) continue;
+        const transcript = JSON.parse(fsMod.readFileSync(path.join(base, file.name), 'utf8'));
+        if (!Array.isArray(transcript.segments)) continue;
+        const meeting = file.name.replace(/-diarizer-response\.json$/i, '');
+        const wav = files.find(f => f.name.toLowerCase() === (meeting + '.wav').toLowerCase());
+        records.push(Object.assign({}, file, { base: meeting, jsonName: file.name, analyzed: false,
+          status: 'transcribed', readOnly: false, proposed: false,
+          durationMs: wav ? wav.durationMs : null,
+          warning: !transcript.segments.length ? 'Transcript has no segments' : !wav ? 'Source recording missing' : '' }));
+      } catch (e) { /* malformed JSON is not an actionable transcript row */ }
     }
-    return [...records.values()].map(({ canonical, ...record }) => record).sort((a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name));
+    return records;
   }
 
   // Absolute path for a validated (kind, name), or null. Processed accepts YYYY/MM subpaths;
@@ -175,7 +188,7 @@ function createMeetingLibrary(deps) {
     let entries = [];
     const byDate = kind === 'processed' && !!organizeByDate();   // panel auto-opens the current YYYY/MM
     try { entries = fsMod.readdirSync(rel ? path.join(base, rel) : base, { withFileTypes: true }); }
-    catch (e) { return Object.assign({ ok: true, dirs: [], files: [], byDate }, kind === 'processed' ? { meetings: [] } : {}); }
+    catch (e) { return Object.assign({ ok: true, dirs: [], files: [], byDate }, kind !== 'unprocessed' ? { meetings: [] } : {}); }
     const dirs = [];
     const files = [];
     for (const ent of entries) {
@@ -216,7 +229,8 @@ function createMeetingLibrary(deps) {
     }
     dirs.sort();
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    return Object.assign({ ok: true, dirs, files, byDate }, kind === 'processed' ? { meetings: logicalMeetings(base, rel, files) } : {});
+    return Object.assign({ ok: true, dirs, files, byDate }, kind === 'processed' ? { meetings: logicalMeetings(base, rel, files) }
+      : kind === 'transcribed' ? { meetings: transcribedMeetings(base, files) } : {});
   }
 
   function listMeetings(subDir) {
@@ -225,17 +239,48 @@ function createMeetingLibrary(deps) {
     return { ok: true, dirs: result.dirs.filter(d => !/^(?:details|_system)$/i.test(d)), files: result.meetings, byDate: result.byDate };
   }
 
-  // Deletion is only offered for unprocessed recordings — processed WAVs and their transcripts are
-  // the archive and stay put. Deleting a WAV also removes its Outlook meeting-info sidecar
+  // Waiting recordings/transcripts can be deleted; completed records stay put.
+  // Deleting an unprocessed WAV also removes its Outlook meeting-info sidecar
   // (<base>.json) so no orphaned info files pile up.
   function deleteFile(kind, name) {
-    if (kind !== 'unprocessed') return { ok: false, error: 'delete only allowed for unprocessed' };
+    if (kind === 'transcribed') return deleteTranscribed(name);
+    if (kind !== 'unprocessed') return { ok: false, error: 'delete only allowed for unprocessed or transcribed' };
     const p = resolvePath(kind, name);
     if (!p) return { ok: false, error: 'bad name' };
     try { fsMod.unlinkSync(p); } catch (e) { return { ok: false, error: e.code === 'ENOENT' ? 'not found' : e.message }; }
     if (/\.wav$/i.test(p)) { try { fsMod.unlinkSync(p.replace(/\.wav$/i, '.json')); } catch (e) { /* no sidecar */ } }
     if (/\.wav$/i.test(p)) { try { fsMod.unlinkSync(p.replace(/\.wav$/i, '.capture.json')); } catch (e) { /* no sidecar */ } }
     log('deleted ' + name);
+    return { ok: true };
+  }
+
+  function deleteTranscribed(name) {
+    const n = safeName(name);
+    if (!n || !/-diarizer-response\.json$/i.test(n)) return { ok: false, error: 'bad name' };
+    if (isBusy(n)) return { ok: false, error: 'meeting is analyzing or queued' };
+    const root = folderFor('transcribed');
+    const transcript = resolvePath('transcribed', n);
+    if (!root || !transcript || !fsMod.existsSync(transcript)) return { ok: false, error: 'not found' };
+    const base = n.replace(/-diarizer-response\.json$/i, '');
+    const targets = [n, base + '.wav', base + '.json', base + '.capture.json', base + '.vtt', base + '-screenshots']
+      .map(leaf => path.join(root, leaf)).filter(file => fsMod.existsSync(file));
+    // Preflight the entire exact set before any deletion, including nested screenshots.
+    // Refuse links, even ones pointing inside the root: they are not owned source files.
+    const check = file => {
+      if (!contained(file, root) || fsMod.lstatSync(file).isSymbolicLink()) throw new Error('source path is not contained');
+      if (fsMod.lstatSync(file).isDirectory()) for (const leaf of fsMod.readdirSync(file)) check(path.join(file, leaf));
+    };
+    try {
+      targets.forEach(check);
+      // Keep the transcript row until its companions were removed, so a partial failure
+      // remains visible and retryable instead of stranding an invisible source set.
+      for (const file of targets.filter(file => file !== transcript)) {
+        if (fsMod.lstatSync(file).isDirectory()) fsMod.rmSync(file, { recursive: true });
+        else fsMod.unlinkSync(file);
+      }
+      fsMod.unlinkSync(transcript);
+    } catch (e) { return { ok: false, error: e.message }; }
+    log('deleted transcribed ' + n);
     return { ok: true };
   }
 

@@ -28,8 +28,8 @@ function setup(options = {}) {
   const analyzer = {
     getState: () => Object.assign({}, an),
     clearQueue() { calls.push(['clearAnalysisQueue']); return an.queue.splice(0).length; },
-    start(name) {
-      calls.push(['analyze', name]);
+    start(name, kind) {
+      calls.push(['analyze', name, kind]);
       if (options.rejectAn) return { ok: false, error: 'not found' };
       an.queue.push(name);
       return { ok: true };
@@ -57,77 +57,46 @@ async function finish(batch) {
   return batch.getState();
 }
 
-const listing = (files = [], dirs = []) => ({ ok: true, files, dirs });
-const transcript = name => ({ name, analyzed: false });
+const listing = (files = [], dirs = []) => ({ ok: true, files, dirs, meetings: files });
+const transcript = name => ({ name, jsonName: name, analyzed: false });
 
-test('date mode waits through transcription/post hook then analyzes only current-month files', async () => {
+test('waits for transcription and post hook, then analyzes every flat transcribed row', async () => {
   let created = false;
   const s = setup({
-    now: () => Date.UTC(2026, 9, 14, 12),
     list: (kind, dir) => {
+      assert.equal(dir, '');
       if (kind === 'unprocessed') return listing([{ name: 'new.WAV' }, { name: 'new.json' }]);
-      if (!dir) {
-        assert.equal(created, true, 'processed scan waits for transcription');
-        return Object.assign(listing([transcript('root-diarizer-response.json')], ['2026']), { byDate: true });
-      }
-      assert.equal(dir, '2026/10', 'no archive/details directory is scanned');
-      return listing([transcript('2026/10/new-diarizer-response.json'), transcript('2026/10/old-diarizer-response.json'),
-        { name: '2026/10/new.json' }, { name: '2026/10/done-diarizer-response.json', analyzed: true }], ['details']);
+      assert.equal(kind, 'transcribed', 'never scans completed or date/archive folders');
+      assert.equal(created, true, 'scan waits for transcription and its post hook');
+      return Object.assign(listing([transcript('new-diarizer-response.json'), transcript('old-diarizer-response.json')], ['2026']), { byDate: true });
     },
     tick: ({ tx, an, ticks }) => {
       if (ticks === 1) { tx.completed++; tx.queue = []; tx.phase = 'post'; }
       else if (ticks === 2) { tx.phase = null; created = true; }
-      else { an.completed += an.queue.splice(0).length; }
+      else an.completed += an.queue.splice(0).length;
     },
   });
-  assert.equal(s.batch.getState().phase, 'idle');
   assert.equal(s.batch.start().phase, 'transcribing');
   const st = await finish(s.batch);
-  assert.equal(st.phase, 'done');
-  assert.equal(st.transcribed, 1);
-  assert.equal(st.analyzed, 2);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze').map(c => c[1]),
-    ['2026/10/new-diarizer-response.json', '2026/10/old-diarizer-response.json']);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'list' && c[1] === 'processed').map(c => c[2]), ['', '2026/10']);
+  assert.deepEqual([st.phase, st.transcribed, st.analyzed], ['done', 1, 2]);
+  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze'), [
+    ['analyze', 'new-diarizer-response.json', 'transcribed'], ['analyze', 'old-diarizer-response.json', 'transcribed'],
+  ]);
+  assert.deepEqual(s.calls.filter(c => c[0] === 'list'), [['list', 'unprocessed', ''], ['list', 'transcribed', '']]);
 });
 
-test('non-date mode analyzes root only and ignores navigable subfolders', async () => {
-  const s = setup({ list: (kind, dir) => {
-    assert.equal(dir, '');
-    return kind === 'unprocessed' ? listing() : Object.assign(listing([
-      transcript('root-diarizer-response.json'), { name: 'done-diarizer-response.json', analyzed: true }, { name: 'sidecar.json' },
-    ], ['2026', 'details']), { byDate: false });
-  } });
-  s.batch.start();
-  const st = await finish(s.batch);
-  assert.equal(st.analyzed, 1);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze').map(c => c[1]), ['root-diarizer-response.json']);
-});
-
-test('logical meeting rows drive batch, omitting complete/read-only/missing-source records', async () => {
+test('logical transcribed rows drive Batch; raw files and completed notes are never analyzed', async () => {
   const s = setup({ list: kind => kind === 'unprocessed' ? listing() : Object.assign(listing([
     transcript('raw-diarizer-response.json'),
   ]), { meetings: [
-    { name: 'todo.md', jsonName: 'details/todo-diarizer-response.json', analyzed: false },
-    { name: 'done.md', jsonName: 'details/done-diarizer-response.json', analyzed: true },
-    { name: 'readonly.md', jsonName: 'details/readonly-diarizer-response.json', analyzed: false, readOnly: true },
-    { name: 'notes-only.md', jsonName: null, analyzed: false },
+    transcript('todo-diarizer-response.json'),
+    { name: 'done-diarizer-response.json', jsonName: 'done-diarizer-response.json', analyzed: true },
+    { name: 'readonly-diarizer-response.json', jsonName: 'readonly-diarizer-response.json', analyzed: false, readOnly: true },
+    { name: 'notes.md', jsonName: null, analyzed: false },
   ] }) });
   s.batch.start();
   assert.equal((await finish(s.batch)).analyzed, 1);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze').map(c => c[1]), ['todo.md']);
-});
-
-test('date mode with no current-month files completes without falling back to archive/root', async () => {
-  const s = setup({ now: () => Date.UTC(2026, 0, 14, 12), list: (kind, dir) => {
-    if (kind === 'unprocessed') return listing();
-    if (!dir) return Object.assign(listing([transcript('root-diarizer-response.json')], ['2025']), { byDate: true });
-    assert.equal(dir, '2026/01');
-    return listing();
-  } });
-  s.batch.start();
-  assert.equal((await finish(s.batch)).analyzed, 0);
-  assert.equal(s.calls.some(c => c[0] === 'analyze'), false);
+  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze'), [['analyze', 'todo-diarizer-response.json', 'transcribed']]);
 });
 
 test('no WAVs still analyzes stragglers; a second click shares the active batch', async () => {
