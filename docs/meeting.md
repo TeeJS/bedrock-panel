@@ -111,6 +111,12 @@ builds and validates the frontmatter from data it already holds, and refuses to 
 file that fails validation. A missing or malformed block keeps the prose and marks the file
 `extraction: "malformed"` rather than dropping anything. The panel hides the frontmatter when
 it shows a meeting.
+
+People slugs are derived per meeting from the display names (calendar attendees and
+speakers); two different people whose names collide within one meeting get distinct slugs
+and are listed under `bedrock.slug_collisions` for you to look at. There is no corpus-wide
+identity registry yet: that belongs to the knowledge-base phase (people pages), and the raw
+names and speaker provenance are kept in each file so it can reconcile them later.
 - **Settings** (utility rail, replaces the old Full screen row) — picks the recording
   microphone. It must be the same mic Teams is using; if you switch mics in Teams,
   switch here too.
