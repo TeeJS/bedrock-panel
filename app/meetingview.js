@@ -846,9 +846,11 @@ function renderAnList() {
     // analyzed, status, legacy, readOnly, warning }); older servers only send `files`, so fall
     // back to filtering transcripts. Either way each row is keyed by the name Analyze/View take.
     var jsons = Array.isArray(r && r.meetings)
-      ? r.meetings.map(function (m) { return { name: m.name, base: m.base, analyzed: !!m.analyzed, status: m.status || '', readOnly: !!m.readOnly, warning: m.warning || '' }; })
+      ? r.meetings.map(function (m) { return { name: m.name, base: m.base, jsonName: m.jsonName || null, analyzed: !!m.analyzed, status: m.status || '', readOnly: !!m.readOnly, proposed: !!m.proposed, warning: m.warning || '' }; })
       : files.filter(function (f) { return /-diarizer-response\.json$/i.test(f.name); });
     selReset(anSel, jsons.map(function (f) { return f.name; }));
+    // details/ holds sources and revisions, _system/ holds migration and export bookkeeping — neither is a place with meetings
+    dirs = dirs.filter(function (d) { return !/^(details|_system)$/i.test(d) && d[0] !== '.' && d[0] !== '_'; });
     dirs.forEach(function (d) {
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'fileRow folder press foc';
@@ -866,12 +868,16 @@ function renderAnList() {
       var base = f.base || f.name.replace(/(-diarizer-response)?\.json$/i, '').replace(/(-analysis)?\.md$/i, '');
       var rel = splitRel(base);
       var analyzed = !!f.analyzed;
-      var subText = f.warning ? f.warning : (f.status === 'processing' ? 'Transcribed, not analyzed' : (analyzed ? 'Analyzed' : 'Not analyzed'));
+      var subText = f.warning ? f.warning
+        : f.proposed ? 'New analysis awaiting your review'
+        : f.status === 'processing' ? 'Transcribed, not analyzed'
+        : analyzed ? 'Analyzed' : 'Not analyzed';
       var row = document.createElement('div'); row.className = 'fileRow';
       row.appendChild(selBox(anSel, f.name));
       var meta = document.createElement('div'); meta.className = 'meta';
       meta.innerHTML = '<div class="fname">' + escHtml(rel.base) + '</div><div class="fsub' + (f.warning ? ' err' : '') + '">' + escHtml(subText) + '</div>';
       var btnA = rowBtn(analyzed ? 'Re-analyze' : 'Analyze', analyzed ? '' : 'primary');
+      btnA.disabled = !!f.readOnly;   // a file the app must not rewrite (unreadable frontmatter, protected) is view-only
       btnA.onclick = function () {
         btnA.disabled = true;
         fetchJson('/meeting-analyze/start?name=' + encodeURIComponent(f.name))
@@ -888,7 +894,20 @@ function renderAnList() {
       btnV.disabled = !analyzed;
       btnV.onclick = function () { openAnalysisView(f.name, rel.base); };
       row.appendChild(meta); row.appendChild(btnA); row.appendChild(btnV);
-      anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed };
+      if (f.proposed) {   // a re-analysis that was kept aside because the notes had been edited by hand
+        var btnP = rowBtn('Apply new', 'primary');
+        btnP.onclick = function () {
+          btnP.disabled = true;
+          fetchJson('/meeting-analyze/apply-proposed?name=' + encodeURIComponent(f.name))
+            .then(function (r2) {
+              if (r2 && r2.ok === false) { var s3 = meta.querySelector('.fsub'); s3.textContent = r2.error || 'Could not apply'; s3.classList.add('err'); btnP.disabled = false; return; }
+              renderAnList();
+            })
+            .catch(function () { btnP.disabled = false; });
+        };
+        row.appendChild(btnP);
+      }
+      anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed, jsonName: f.jsonName || null, readOnly: !!f.readOnly };
       el.appendChild(row);
     });
     updateAnButtons();
@@ -901,9 +920,14 @@ function updateAnButtons() {
   if (!anState) return;
   Object.keys(anRows).forEach(function (name) {
     var r = anRows[name];
-    if (anState.running && anState.name === name) { r.btnA.textContent = 'Analyzing…'; r.btnA.disabled = true; }
-    else if ((anState.queue || []).indexOf(name) >= 0) { r.btnA.textContent = 'Queued'; r.btnA.disabled = true; }
-    else { r.btnA.textContent = r.analyzed ? 'Re-analyze' : 'Analyze'; r.btnA.disabled = false; }
+    // The analyzer reports the TRANSCRIPT it is working on; a row is keyed by its meeting .md,
+    // so match on the row's transcript name when the library gave us one.
+    var key = r.jsonName || name;
+    var active = anState.running && (anState.name === key || anState.name === name);
+    var queued = (anState.queue || []).indexOf(key) >= 0 || (anState.queue || []).indexOf(name) >= 0;
+    if (active) { r.btnA.textContent = 'Analyzing…'; r.btnA.disabled = true; }
+    else if (queued) { r.btnA.textContent = 'Queued'; r.btnA.disabled = true; }
+    else { r.btnA.textContent = r.analyzed ? 'Re-analyze' : 'Analyze'; r.btnA.disabled = !!r.readOnly; }
   });
 }
 // Minimal markdown treatment (escape-first, matching the voice panel's renderContent discipline):
