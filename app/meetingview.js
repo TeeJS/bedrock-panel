@@ -811,6 +811,7 @@ function anPoll() {
     if (st.running) { n.textContent = 'Analyzing ' + splitRel(st.name).base + ' — ' + fmtDur(Date.now() - st.startedAt) + qSuffix(queued); n.classList.remove('err'); }
     else if (st.error) { n.textContent = splitRel(st.error.name).base + ': ' + st.error.error; n.classList.add('err'); }
     else if (st.joplin && st.joplin.ok === false) { n.textContent = 'Joplin note failed (' + st.joplin.name + '): ' + st.joplin.error; n.classList.add('err'); }
+    else if (st.lastDone && st.lastDone.warning) { n.textContent = splitRel(st.lastDone.name).base + ': ' + st.lastDone.warning; n.classList.remove('err'); }   // e.g. committed, with leftovers in transcribed
     else { n.textContent = ''; n.classList.remove('err'); }
     var fin = (st.lastDone && st.lastDone.finishedAt) || 0;
     var finErr = (st.error && st.error.finishedAt) || 0;
@@ -820,13 +821,41 @@ function anPoll() {
   }).catch(function () {});
 }
 var anSel = selMake('anSelAll', 'anGoSel');
-var anDir = '';   // current subfolder inside processed ('' = root); one folder shown at a time
-var anAutoDate = false;   // set on Analysis-overlay open: auto-descend to the current YYYY/MM when Organize-by-date is on
+// The screen has two roots. 'transcribed': the flat waiting room — every row is a transcript to
+// analyze (or delete). 'processed': the Completed Meetings folder browser — finished files to view,
+// re-analyze, review a proposal, apply. The Completed button toggles; every request names the root.
+var anKind = 'transcribed';
+var anDir = '';   // current subfolder inside completed ('' = root); one folder shown at a time
+var anAutoDate = false;   // set on entering Completed: auto-descend to the current YYYY/MM when Organize-by-date is on
+// Every listing is a generation: a response for an older root or folder is dropped, and each row's
+// handlers close over the root they were listed from, so a toggle mid-fetch can never send a
+// waiting transcript's Analyze with the other root's kind.
+var anGen = 0;
+function anSetKind(kind) {
+  anGen++;
+  $('anList').innerHTML = ''; anRows = {}; selReset(anSel, []); selSync(anSel);   // the old root's rows go at once
+  anKind = kind === 'processed' ? 'processed' : 'transcribed';
+  var completed = anKind === 'processed';
+  $('anTitle').textContent = completed ? 'Completed' : 'Analysis';
+  $('anCompleted').textContent = completed ? 'Transcribed' : 'Completed';
+  $('anSelAll').style.display = completed ? 'none' : '';
+  $('anGoSel').style.display = completed ? 'none' : '';
+  $('anNav').style.display = completed ? '' : 'none';
+  anDir = ''; anAutoDate = completed;
+  $('anList').scrollTop = 0;
+}
 function renderAnList() {
-  var url = '/meeting-files?kind=processed' + (anDir ? '&dir=' + encodeURIComponent(anDir) : '');
+  var kind = anKind, dir = anDir, gen = ++anGen;
+  var url = '/meeting-files?kind=' + kind + (kind === 'processed' && dir ? '&dir=' + encodeURIComponent(dir) : '');
   var keepScroll = $('anList').scrollTop;   // batch completions re-render every so often — don't yank the view
   fetchJson(url).then(function (r) {
-    if (anAutoDate && !anDir && r && r.byDate) {   // Organize-by-date: open straight into <processed>/YYYY/MM
+    if (gen !== anGen) return;   // a newer listing (other root or folder) superseded this one
+    if (r && r.ok === false) {   // e.g. the three folders overlap: say so, list nothing
+      var n0 = $('anNote'); n0.textContent = r.error || 'Could not list'; n0.classList.add('err');
+      $('anList').innerHTML = '<div class="ovEmpty">' + escHtml(r.error || 'Could not list') + '</div>'; anRows = {}; selReset(anSel, []); selSync(anSel);
+      return;
+    }
+    if (kind === 'processed' && anAutoDate && !dir && r && r.byDate) {   // Organize-by-date: open straight into <completed>/YYYY/MM
       anAutoDate = false;
       var now = new Date();
       anDir = now.getFullYear() + '/' + ('0' + (now.getMonth() + 1)).slice(-2);
@@ -835,40 +864,59 @@ function renderAnList() {
     }
     anAutoDate = false;
     var el = $('anList'); el.innerHTML = ''; anRows = {};
-    $('anPath').textContent = 'Processed' + (anDir ? ' › ' + anDir.split('/').join(' › ') : '');
-    $('anUp').disabled = !anDir;
+    $('anPath').textContent = 'Completed' + (dir ? ' › ' + dir.split('/').join(' › ') : '');
+    $('anUp').disabled = !dir;
     var files = (r && r.files) || [];
     var dirs = (r && r.dirs) || [];
     // Only diarizer transcripts are analyzable — plain .json files here are Outlook meeting-info
     // sidecars (or other data), not transcripts. The server computes `analyzed` (it knows the
     // details-folder layout where the .md sits one level up).
-    var jsons = files.filter(function (f) { return /-diarizer-response\.json$/i.test(f.name); });
+    // New library contract: `meetings` = logical meeting rows ({ name: the .md, base, jsonName,
+    // analyzed, status, legacy, readOnly, warning }); older servers only send `files`, so fall
+    // back to filtering transcripts. Either way each row is keyed by the name Analyze/View take.
+    var jsons = Array.isArray(r && r.meetings)
+      ? r.meetings.map(function (m) { return { name: m.name, base: m.base, jsonName: m.jsonName || null, analyzed: !!m.analyzed, status: m.status || '', readOnly: !!m.readOnly, proposed: !!m.proposed, warning: m.warning || '', durationMs: m.durationMs || 0 }; })
+      : files.filter(function (f) { return /-diarizer-response\.json$/i.test(f.name); });
     selReset(anSel, jsons.map(function (f) { return f.name; }));
+    // details/ holds sources and revisions, _system/ holds migration and export bookkeeping — neither is a place with meetings
+    dirs = dirs.filter(function (d) { return !/^(details|_system)$/i.test(d) && d[0] !== '.' && d[0] !== '_'; });
+    if (kind !== 'processed') dirs = [];   // the waiting room is flat: no folders, ever
     dirs.forEach(function (d) {
       var b = document.createElement('button');
       b.type = 'button'; b.className = 'fileRow folder press foc';
       b.innerHTML = '<div class="meta"><div class="fname">&#128193; ' + escHtml(d) + '</div></div><span class="chev">&rsaquo;</span>';
-      b.onclick = function () { anDir = anDir ? anDir + '/' + d : d; $('anList').scrollTop = 0; renderAnList(); };
+      b.onclick = function () { anDir = dir ? dir + '/' + d : d; $('anList').scrollTop = 0; renderAnList(); };
       el.appendChild(b);
     });
     if (!jsons.length) {
-      if (!dirs.length) el.innerHTML = '<div class="ovEmpty">No transcripts here' + (anDir ? '.' : ' yet — transcribe a recording first.') + '</div>';
+      if (!dirs.length) el.innerHTML = '<div class="ovEmpty">' + (kind === 'processed'
+        ? 'No completed meetings here' + (dir ? '.' : ' yet.')
+        : 'Nothing waiting for analysis — transcribe a recording first.') + '</div>';
       selSync(anSel); return;
     }
     jsons.forEach(function (f) {
       // Raw transcripts are <base>-diarizer-response.json (legacy plain .json accepted);
-      // the analysis is <base>-analysis.md, so match/display on the stripped base.
-      var base = f.name.replace(/(-diarizer-response)?\.json$/i, '');
+      // the meeting file is <base>.md (legacy <base>-analysis.md), so match/display on the stripped base.
+      var base = f.base || f.name.replace(/(-diarizer-response)?\.json$/i, '').replace(/(-analysis)?\.md$/i, '');
       var rel = splitRel(base);
       var analyzed = !!f.analyzed;
+      var waiting = kind !== 'processed';
+      var subText = f.warning ? f.warning
+        : f.proposed ? 'New analysis awaiting your review'
+        : waiting || f.status === 'processing' ? 'Transcribed, not analyzed' + (f.durationMs ? ' · ' + fmtDur(f.durationMs) : '')
+        : analyzed ? 'Analyzed' : 'Not analyzed';
       var row = document.createElement('div'); row.className = 'fileRow';
-      row.appendChild(selBox(anSel, f.name));
+      if (waiting) row.appendChild(selBox(anSel, f.name));
       var meta = document.createElement('div'); meta.className = 'meta';
-      meta.innerHTML = '<div class="fname">' + escHtml(rel.base) + '</div><div class="fsub">' + (analyzed ? 'Analyzed' : 'Not analyzed') + '</div>';
+      meta.innerHTML = '<div class="fname">' + escHtml(rel.base) + '</div><div class="fsub' + (f.warning ? ' err' : '') + '">' + escHtml(subText) + '</div>';
       var btnA = rowBtn(analyzed ? 'Re-analyze' : 'Analyze', analyzed ? '' : 'primary');
+      // view-only: a file the app must not rewrite (unreadable frontmatter, protected), or a row the
+      // library found no transcript for (nothing to analyze)
+      var noSource = f.jsonName === null && f.base !== undefined;
+      btnA.disabled = !!f.readOnly || noSource;
       btnA.onclick = function () {
         btnA.disabled = true;
-        fetchJson('/meeting-analyze/start?name=' + encodeURIComponent(f.name))
+        fetchJson('/meeting-analyze/start?kind=' + kind + '&name=' + encodeURIComponent(f.name))
           .then(function (r2) {
             if (r2 && r2.ok === false) {
               var s2 = meta.querySelector('.fsub'); s2.textContent = r2.error || 'Could not start'; s2.classList.add('err');
@@ -878,11 +926,42 @@ function renderAnList() {
           })
           .catch(function () { btnA.disabled = false; });
       };
-      var btnV = rowBtn('View');
-      btnV.disabled = !analyzed;
-      btnV.onclick = function () { openAnalysisView(f.name, rel.base); };
-      row.appendChild(meta); row.appendChild(btnA); row.appendChild(btnV);
-      anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed };
+      row.appendChild(meta); row.appendChild(btnA);
+      var btnV = null;
+      if (waiting) {
+        // A bad transcription can be removed here (exact set: transcript, WAV, sidecars, captions,
+        // screenshots). Two-tap confirm like Unprocessed; refused while the row is analyzing or queued.
+        var btnD = rowBtn('Delete', 'danger');
+        var confirmT = null;
+        btnD.onclick = function () {
+          if (!btnD.classList.contains('confirm')) {
+            btnD.classList.add('confirm'); btnD.textContent = 'Confirm?';
+            confirmT = setTimeout(function () { btnD.classList.remove('confirm'); btnD.textContent = 'Delete'; }, 3000);
+            return;
+          }
+          clearTimeout(confirmT);
+          btnD.disabled = true;
+          fetchJson('/meeting-file-delete?kind=transcribed&name=' + encodeURIComponent(f.jsonName || f.name))
+            .then(function (r2) {
+              if (r2 && r2.ok) { renderAnList(); return; }
+              var s2 = meta.querySelector('.fsub'); s2.textContent = (r2 && r2.error) || 'Delete failed'; s2.classList.add('err');
+              btnD.disabled = false; btnD.classList.remove('confirm'); btnD.textContent = 'Delete';
+            })
+            .catch(function () { btnD.disabled = false; btnD.classList.remove('confirm'); btnD.textContent = 'Delete'; });
+        };
+        row.appendChild(btnD);
+      } else {
+        btnV = rowBtn('View');
+        btnV.disabled = !analyzed;
+        btnV.onclick = function () { openAnalysisView(f.name, rel.base, false, kind); };
+        row.appendChild(btnV);
+        if (f.proposed) {   // a re-analysis kept aside because the notes had been edited by hand: review it, then apply from the viewer
+          var btnP = rowBtn('Review new', 'primary');
+          btnP.onclick = function () { openAnalysisView(f.name, rel.base, true, kind); };
+          row.appendChild(btnP);
+        }
+      }
+      anRows[f.name] = { btnA: btnA, btnV: btnV, analyzed: analyzed, jsonName: f.jsonName || null, readOnly: !!f.readOnly || noSource, kind: kind };
       el.appendChild(row);
     });
     updateAnButtons();
@@ -890,14 +969,23 @@ function renderAnList() {
     el.scrollTop = keepScroll;
   }).catch(function () {});
 }
-wireEnqueue('anGoSel', anSel, '/meeting-analyze/start?name=', anPoll);
+wireEnqueue('anGoSel', anSel, '/meeting-analyze/start?kind=transcribed&name=', anPoll);   // Select all exists only in the waiting room
 function updateAnButtons() {
   if (!anState) return;
   Object.keys(anRows).forEach(function (name) {
     var r = anRows[name];
-    if (anState.running && anState.name === name) { r.btnA.textContent = 'Analyzing…'; r.btnA.disabled = true; }
-    else if ((anState.queue || []).indexOf(name) >= 0) { r.btnA.textContent = 'Queued'; r.btnA.disabled = true; }
-    else { r.btnA.textContent = r.analyzed ? 'Re-analyze' : 'Analyze'; r.btnA.disabled = false; }
+    // The analyzer reports the TRANSCRIPT it is working on, and the ROOT it came from (the same
+    // name may exist in both); a completed row is keyed by its meeting .md, so match on the row's
+    // transcript name when the library gave us one, within this screen's root only.
+    var key = r.jsonName || name;
+    var active = anState.running && (anState.kind || 'processed') === r.kind && (anState.name === key || anState.name === name);
+    var queued = (anState.queue || []).some(function (q) {
+      var qn = (q && typeof q === 'object') ? q.name : q, qk = (q && typeof q === 'object' && q.kind) || 'processed';
+      return qk === r.kind && (qn === key || qn === name);
+    });
+    if (active) { r.btnA.textContent = 'Analyzing…'; r.btnA.disabled = true; }
+    else if (queued) { r.btnA.textContent = 'Queued'; r.btnA.disabled = true; }
+    else { r.btnA.textContent = r.analyzed ? 'Re-analyze' : 'Analyze'; r.btnA.disabled = !!r.readOnly; }
   });
 }
 // Minimal markdown treatment (escape-first, matching the voice panel's renderContent discipline):
@@ -914,15 +1002,38 @@ function renderMarkdown(src) {
   }
   return out;
 }
-function openAnalysisView(jsonName, title) {
-  fetchJson('/meeting-analysis?name=' + encodeURIComponent(jsonName)).then(function (r) {
+// Meeting files start with a YAML frontmatter block (machine-readable facts for other tools); the
+// panel shows the human sections only. Only a leading block delimited by '---' lines is removed.
+function stripFrontmatter(md) {
+  var m = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(String(md || ''));
+  return m && m.index === 0 ? String(md).slice(m[0].length) : String(md || '');
+}
+var anViewProposalFor = null;   // the row name whose PROPOSED analysis is on screen (Apply shows only then)
+function openAnalysisView(jsonName, title, proposed, kind) {
+  fetchJson('/meeting-analysis?kind=' + (kind || anKind) + '&name=' + encodeURIComponent(jsonName) + (proposed ? '&proposed=1' : '')).then(function (r) {
     if (!r || !r.ok) { var n = $('anNote'); n.textContent = (r && r.error) || 'Could not load analysis'; n.classList.add('err'); return; }
-    $('anViewTitle').textContent = title;
-    $('anView').innerHTML = renderMarkdown(r.markdown);
+    anViewProposalFor = proposed ? jsonName : null;
+    $('anViewTitle').textContent = title + (proposed ? ' — new analysis (review)' : '');
+    $('anViewNote').textContent = proposed ? 'Your edited notes are kept until you apply this version' : '';
+    $('anViewApply').style.display = proposed ? '' : 'none';
+    $('anViewApply').disabled = false;
+    $('anView').innerHTML = renderMarkdown(stripFrontmatter(r.markdown));
     $('anView').scrollTop = 0;
     $('anViewOverlay').classList.add('show');
   }).catch(function () {});
 }
+$('anViewApply').onclick = function () {
+  if (!anViewProposalFor) return;
+  $('anViewApply').disabled = true;
+  fetchJson('/meeting-analyze/apply-proposed?name=' + encodeURIComponent(anViewProposalFor))
+    .then(function (r) {
+      if (!r || r.ok === false) { $('anViewNote').textContent = (r && r.error) || 'Could not apply'; $('anViewApply').disabled = false; return; }
+      $('anViewOverlay').classList.remove('show');
+      anViewProposalFor = null;
+      renderAnList();
+    })
+    .catch(function () { $('anViewApply').disabled = false; });
+};
 $('anUp').onclick = function () {
   if (!anDir) return;
   var parts = anDir.split('/'); parts.pop();
@@ -932,9 +1043,13 @@ $('anUp').onclick = function () {
 };
 $('btnAnalysis').onclick = function () {
   $('anOverlay').classList.add('show');
-  anDir = ''; anAutoDate = true;   // reopen lands on the current month's folder when Organize-by-date is on
+  anSetKind('transcribed');   // always opens on the waiting room; Completed is one tap away
   renderAnList(); anPoll();
   if (!anTimer) anTimer = setInterval(anPoll, 1000);
+};
+$('anCompleted').onclick = function () {
+  anSetKind(anKind === 'processed' ? 'transcribed' : 'processed');   // entering Completed lands on the current month when Organize-by-date is on
+  renderAnList(); anPoll();
 };
 $('anClose').onclick = function () {
   $('anOverlay').classList.remove('show');

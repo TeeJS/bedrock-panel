@@ -56,17 +56,27 @@ does this automatically, so it works even when Teams isn't the visible foregroun
 The panel records meetings (one stereo WAV: your mic = left, everyone else = right) and
 can send them to a diarizing transcription server, then to an AI for meeting notes.
 
-- Recordings land in the **Unprocessed Recordings** folder (Settings → Meeting; default
-  `Documents\Bedrock Panel Meetings\unprocessed`).
+- A meeting passes through three folders (Settings → Meeting), and each folder means exactly one
+  thing:
+  - **Unprocessed Recordings** (default `Documents\Bedrock Panel Meetings\unprocessed`) —
+    recordings waiting to be transcribed: the WAV with its calendar and capture sidecars.
+  - **Transcribed Recordings** (default `…\transcribed`) — transcribed, not yet analyzed: the
+    WAV, its `<name>-diarizer-response.json` transcript, sidecars, captions and screenshots, in
+    one flat folder (no date subfolders, no stub `.md`). The transcript is the row the Analysis
+    screen shows. A set leaves only when its analysis succeeds.
+  - **Completed Meetings** (default `…\processed`) — finished meeting files only, `<name>.md`
+    with the sources under `details\`, in `YYYY\MM\` or recurring-meeting folders. This is the
+    folder to open as an Obsidian vault.
+  The three folders must be separate (none equal to or inside another); the panel refuses to
+  analyze or delete while they overlap. Changing a folder setting never moves files by itself.
 - The top row reads **Batch | Analysis | Unprocessed | Record**; the two screens open as
   their own full page with per-row select boxes, **Select all**, and act-on-selected
   buttons in the header.
 - **Batch** — one tap does the whole pipeline: every unprocessed recording is queued for
   transcription (a recording still in progress or being finalized is left alone and picked
   up by the next batch), and once that queue has fully drained (including the server
-  start/stop hooks) every transcript marked **Not analyzed** in the folder the Analysis
-  screen opens into (the current `YYYY/MM` folder when Organize by date is on, the
-  Processed root otherwise; subfolders are not searched) is queued for analysis. The space left of the
+  start/stop hooks) every row the Analysis screen lists — every transcript waiting in the
+  Transcribed folder — is queued for analysis. The space left of the
   button reads **Batching…** while it runs and **Batch completed** (or **Batch completed
   (N failed)**) when it ends; the button is disabled meanwhile. The batch runs in the
   main process, so leaving the page or reloading the panel doesn't stop it. If the
@@ -80,15 +90,67 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   Transcription Server; protocol in [meetings-api.md](meetings-api.md)); jobs queue and
   run one at a time (roughly ⅓ of the recording's length each), with the running job,
   elapsed time, and server health shown in the strip under the header. On success the
-  WAV moves to the **Processed Recordings** folder with its transcript
-  (`<name>-diarizer-response.json`) beside it; on failure the WAV stays put and the
-  error shows on the row (tap **Retry**). A running or queued file can't be deleted.
-- **Analysis** (top row) — browses the Processed folder one directory at a time (tap a
-  folder to enter it, **⬆ Up** to go back; no recursive sweep), and runs the chosen
-  **Analysis AI** (Settings → Meeting: Claude, ChatGPT Codex, or GitHub Copilot — the locally
-  installed CLI, using its own login — or **Open WebUI**, your own server via the Auth-tab
-  connection with a slimmed `Speaker: text` transcript) over a transcript, filing the result as
-  `<name>-analysis.md` next to it. **View** renders it on the panel.
+  WAV and every companion (calendar and capture sidecars, a Teams `.vtt`, the screenshots
+  folder) move to the **Transcribed Recordings** folder with the transcript
+  (`<name>-diarizer-response.json`); the transcript is written last, so a row never appears
+  before its set is complete, and on failure everything stays in Unprocessed with the error on
+  the row (tap **Retry**). A running or queued file can't be deleted.
+- **Analysis** (top row) — opens on the Transcribed folder: one row per waiting transcript
+  (flat, newest first) with **Analyze** and **Delete** (two-tap; removes that transcript's exact
+  set, refused while it is analyzing or queued), plus **Select all / Analyze selected**. Analysis
+  runs the chosen **Analysis AI** (Settings → Meeting: Claude, ChatGPT Codex, or GitHub Copilot —
+  the locally installed CLI, using its own login, run so nothing said in a meeting can reach a
+  shell: Claude with every tool, MCP server and customization disabled; Codex in a read-only
+  sandbox with no MCP servers and its browser, computer-use and apps features off — or **Open
+  WebUI**, your own server via the Auth-tab connection with a slimmed `Speaker: text` transcript)
+  over the transcript and publishes the meeting file into **Completed Meetings** (below). The
+  **Completed** button swaps the screen for a browser over that folder, one directory at a time
+  (tap a folder to enter it, **⬆ Up** to go back; it opens on the current `YYYY\MM` when Organize
+  by date is on), where each finished meeting has **Re-analyze**, **View** (renders the file on the
+  panel) and, when a re-analysis is waiting for review, **Review new** → **Apply this version**.
+  **Transcribed** on that screen goes back.
+
+  Publishing is staged, never a chain of moves: every source is copied into the destination's
+  `details\` folder and verified by hash, then the `.md` is written, then the originals leave
+  Transcribed (the transcript last). A failure before the file is written leaves Transcribed
+  intact; a failure removing the originals afterwards is reported on the panel as "committed,
+  with leftovers in transcribed", and the next **Analyze** of that row clears the duplicates
+  without another AI call. A finished file with *different* sources already at the destination
+  is a conflict: nothing is moved and the row says so.
+
+  **Which date files the meeting** (the `YYYY\MM` folder, and the year of a recurring folder) is
+  the meeting's own date — the calendar sidecar's start, in this PC's local time; without a
+  calendar entry, the capture sidecar's start; without that, the date in the recording's file
+  name. Never the day it was processed. The file records which one was used
+  (`bedrock.filing_date`: `calendar`, `capture` or `filename`) and, when a calendar start could
+  not be read, a `bedrock.filing_warning`. A transcript with no usable date at all stays in
+  Transcribed with an error on the row.
+
+### The meeting file
+
+Every analyzed meeting is one markdown file whose first block is YAML frontmatter in the
+[Minutes](https://github.com/silverstein/minutes/blob/6a5a8cbf9c4236f55814cccafb50a840fbf15c86/docs/architecture/frontmatter-schema.md)
+schema, so Obsidian, grep, Minutes-aware tools and future agents can read the facts without
+parsing prose: `title`, `type`, `date` (capture start with its UTC offset), `duration`,
+`attendees`, `people`, `tags`, `action_items`, `decisions`, `intents` (open questions and
+items without a named owner), and `speaker_map` (diarizer label → person, with how confident
+and how it was established). The app's own bookkeeping sits under one `bedrock:` key
+(meeting id, revision, hashes, extraction state, export state). Below the frontmatter come the
+human sections exactly as the analysis prompt produces them, ending with the full transcript
+as `[Name m:ss] text` lines whose times come from the diarizer segments the model cited.
+
+The model never writes the YAML. The app appends a fixed instruction block to whatever
+analysis prompt is in use asking for labelled lists at the end of its output, parses those,
+builds and validates the frontmatter from data it already holds, and refuses to publish a
+file that fails validation. A missing or malformed block keeps the prose and marks the file
+`extraction: "malformed"` rather than dropping anything. The panel hides the frontmatter when
+it shows a meeting.
+
+People slugs are derived per meeting from the display names (calendar attendees and
+speakers); two different people whose names collide within one meeting get distinct slugs
+and are listed under `bedrock.slug_collisions` for you to look at. There is no corpus-wide
+identity registry yet: that belongs to the knowledge-base phase (people pages), and the raw
+names and speaker provenance are kept in each file so it can reconcile them later.
 - **Settings** (utility rail, replaces the old Full screen row) — picks the recording
   microphone. It must be the same mic Teams is using; if you switch mics in Teams,
   switch here too.

@@ -16,12 +16,90 @@
 
 const path = require('path');
 const os = require('os');
-const { safeRelPath } = require('./meetingLibrary');
+const crypto = require('crypto');
+const { safeRelPath, wavDurationMs } = require('./meetingLibrary');
 const { runCopilotBatchPrompt } = require('./copilotvoice-session');
 const owuiClientMod = require('./owuiClient');
 const joplinNotesMod = require('./joplinNotes');
+const { parseStructuredTail, buildFrontmatter, validateFrontmatter, serializeFrontmatter, readFrontmatter } = require('./meetingFrontmatter');
+const { newId, sha256, formatTime, applyTurnTimes, aiHeadingsOf, baselineHash, mergeOwnership, assignItemIds, assembleFile } = require('./meetingFile');
 
 const ANALYZE_TIMEOUT_MS = 10 * 60 * 1000;   // generous; a transcript is small but CLIs cold-start
+// Unattended analysis must never let transcript text reach a tool. These flag sets are what the
+// comment above actually means, verified against the installed CLIs on 2026-10-15:
+//   claude 2.1.292:  `--tools ""` disables every built-in tool, `--strict-mcp-config` with no
+//     --mcp-config loads zero MCP servers, `--safe-mode` disables CLAUDE.md/skills/plugins/hooks,
+//     `--no-session-persistence` writes nothing to disk. Smoke: a prompt asking it to list files
+//     with a tool answered "NO TOOLS AVAILABLE".
+//   codex-cli 0.154.0: `--sandbox read-only` (shell commands can't write), `--ephemeral` (no
+//     persisted session), `-c mcp_servers={}` (overrides every MCP server in ~/.codex/config.toml),
+//     `--disable browser_use/computer_use/apps` (the agent-tool features), cwd = fresh empty temp
+//     dir. The arguments are accepted by the installed CLI; a tool-use smoke like Claude's could
+//     not be run because the configured Codex model is rejected for the account — so for Codex
+//     this is "sandboxed, no MCP, agent features off", not an observed refusal to use tools.
+// Exported so the tests pin the exact child-process arguments.
+const CLAUDE_ISOLATION_ARGS = Object.freeze(['--safe-mode', '--tools', '', '--strict-mcp-config', '--no-session-persistence']);
+
+// Appended by code to WHATEVER analysis prompt is in use (built-in or the user's edited copy), so a
+// custom prompt keeps producing its own sections while the app still gets machine-readable facts.
+// The model never writes YAML: meetingFrontmatter.js parses this block and builds the frontmatter.
+// Versioned: a change to the block's shape bumps the anchor's version and the parser together.
+const STRUCTURED_TAIL_VERSION = 1;
+const STRUCTURED_TAIL_INSTRUCTION = `
+
+---
+ADDITIONAL REQUIRED OUTPUT (overrides only two earlier rules: "nothing after these sections" and
+the transcript line shape; every other instruction above still applies).
+
+1. Transcript lines: write each turn as "[Name m:ss] text" — the speaker's name (or the diarizer's
+   label if unresolved) and the start time of the turn's first diarizer segment, taken from that
+   segment's "start" field (seconds, rounded down to m:ss or h:mm:ss). Never invent a time.
+
+2. After the last section, append a block in exactly the shape shown below, between the two
+   marker lines. Rules: section headers in English exactly as shown; one "- " bullet per item;
+   write "- (none)" when a section has nothing; no commentary, headings or prose inside the
+   block. ACTION ITEMS and COMMITMENTS bullets are "@Full Name: text" when the owner was named
+   and plain text when not; append " (by <deadline>)" only when a deadline was stated. Every
+   SPEAKER MAP bullet is "<diarizer label> -> <Full Name> (<evidence>)" where evidence is one of
+   enrolled, captions, direct address, self-introduction, elimination; a label you could not
+   resolve is "<label> -> unresolved (no evidence)". TURNS has one bullet per transcript turn, in
+   order, giving the zero-based inclusive index range of the diarizer segments that turn was
+   built from. The example values below are placeholders.
+
+<!-- BEDROCK-STRUCTURED v${STRUCTURED_TAIL_VERSION} -->
+KEY POINTS:
+- example point
+
+DECISIONS:
+- example decision
+
+ACTION ITEMS:
+- @Example Name: example task (by Friday)
+
+OPEN QUESTIONS:
+- (none)
+
+COMMITMENTS:
+- (none)
+
+PARTICIPANTS:
+- Example Name
+
+SPEAKER MAP:
+- Speaker A -> Example Name (direct address)
+
+TURNS:
+- 1: segments 0-3
+- 2: segments 4-4
+<!-- /BEDROCK-STRUCTURED -->
+`;
+const CODEX_ISOLATION_ARGS = Object.freeze(['--sandbox', 'read-only', '--ephemeral', '-c', 'mcp_servers={}',
+  '--disable', 'browser_use', '--disable', 'computer_use', '--disable', 'apps']);
+// Work bounds: a transcript past this is refused up front (one call cannot cover it honestly), and
+// a reply past this is cut off. Both fail loudly; neither ever publishes a "complete" file.
+const MAX_INPUT_CHARS = 2000000;
+const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
+const MAX_STDERR_BYTES = 1024 * 1024;   // diagnostics only; anything past this is dropped, not buffered
 // CLI sign-in failures (Claude prints these on stdout: "Failed to authenticate: OAuth session expired
 // and could not be refreshed"; Codex/Copilot use "not logged in" wording). Matched case-insensitively.
 const AUTH_FAILURE_RE = /failed to authenticate|not logged in|please run \/login|oauth[^\n]*expired|invalid api key/i;
@@ -36,8 +114,25 @@ function authRequiredMsg(ai) {
 // response is <base>-diarizer-response.json (legacy plain <base>.json still accepted), the
 // analysis is <base>-analysis.md — matching the naming T.J.'s pre-existing pipeline used, which
 // other services key off.
+// One file per meeting: <base>.md beside (or one level above) the transcript. Pre-format analyses
+// were <base>-analysis.md; readers still accept that name, the app never writes it again.
 function mdPathFor(jsonPath) {
-  return jsonPath.replace(/-diarizer-response\.json$/i, '.json').replace(/\.json$/i, '-analysis.md');
+  return jsonPath.replace(/-diarizer-response\.json$/i, '.json').replace(/\.json$/i, '.md');
+}
+function legacyMdPathFor(mdPath) { return mdPath.replace(/\.md$/i, '-analysis.md'); }
+// Duration from the wav header without reading the whole file (headers are tiny; the data is not).
+function wavDurationFromHeader(fsMod, wavPath) {
+  try {
+    const fd = fsMod.openSync(wavPath, 'r');
+    try {
+      const head = Buffer.alloc(64);
+      const n = fsMod.readSync(fd, head, 0, head.length, 0);
+      return wavDurationMs(head.slice(0, n));
+    } finally { fsMod.closeSync(fd); }
+  } catch (e) { return null; }
+}
+function readJsonIfExists(fsMod, p) {
+  try { return fsMod.existsSync(p) ? JSON.parse(fsMod.readFileSync(p, 'utf8')) : null; } catch (e) { return null; }
 }
 // With "Use Details Folder" on, the transcript lives in <home>/details/ while the analysis .md
 // belongs at <home>/ — write (and read) the .md one level up when the transcript sits in details.
@@ -123,7 +218,7 @@ function createMeetingAnalyzer(deps) {
   const fsMod = deps.fs || require('fs');
   const fsp = fsMod.promises;
   const spawnImpl = deps.spawn || require('child_process').spawn;
-  const resolveFolders = deps.resolveFolders;        // () => { unprocessed, processed }
+  const resolveFolders = deps.resolveFolders;        // () => { unprocessed, transcribed, processed }
   const resolveAi = deps.resolveAi;                  // () => 'claude' | 'codex' | 'copilot' | 'owui'
   const resolveOwui = deps.resolveOwui || (() => ({}));   // () => { url, apiKey, model } (settings.owui)
   const owuiClient = deps.owuiClient || owuiClientMod;
@@ -146,49 +241,109 @@ function createMeetingAnalyzer(deps) {
   const joplinNotes = deps.joplinNotes || joplinNotesMod;
   const batchDone = [];   // successful analyses in the current batch, flushed to a task list on drain
 
-  const queue = [];      // names waiting (supports the panel's Analyze Selected)
-  let running = null;    // { name, ai, startedAt } while a job runs
-  let lastError = null;  // { name, error, finishedAt }
-  let lastDone = null;   // { name, finishedAt }
+  // Every job names its root: kind 'transcribed' (a flat transcript waiting in the transcribed
+  // folder — analysis publishes it into completed) or 'processed' (a meeting already in completed,
+  // re-analyzed in place). The same base name may exist in both roots; nothing guesses.
+  const queue = [];      // [{ name, kind }] waiting (supports the panel's Analyze Selected)
+  let running = null;    // { name, kind, ai, startedAt } while a job runs
+  let lastError = null;  // { name, kind, error, finishedAt }
+  let lastDone = null;   // { name, kind, finishedAt, md?, warning? } — md: completed-relative path of the published file
+  const published = new Map();   // transcribed name -> absolute .md it was published as (for the panel's View)
   let completed = 0, failed = 0;   // lifetime outcomes, never lost when lastError is cleared
   let lastJoplin = null; // { name, ok, error?, applied?, skipped?, finishedAt } for the panel
+  let lastProposed = null; // { name, path, finishedAt } — a re-analysis saved for review instead of replacing edited notes
+  const resolveMyName = deps.resolveMyName || null;   // () => the operator's enrolled name (Settings → Meeting → My name)
+  const foldersError = deps.foldersError || (() => '');   // () => '' or why the three roots overlap; re-checked as each job starts
 
   function getState() {
     return {
       ok: true,
       running: !!running,
       name: running ? running.name : null,
+      kind: running ? running.kind : null,
       startedAt: running ? running.startedAt : null,
-      queue: queue.slice(),
+      queue: queue.map(q => ({ name: q.name, kind: q.kind })),
       error: lastError,
       lastDone,
       completed,
       failed,
       joplin: lastJoplin,
+      proposed: lastProposed,
     };
   }
 
-  function start(name) {
-    const n = safeRelPath(name);
-    if (!n || !/\.json$/i.test(n)) return { ok: false, error: 'bad name' };
-    if ((running && running.name === n) || queue.includes(n)) return { ok: false, error: 'already queued' };
-    if (!fsMod.existsSync(path.join(resolveFolders().processed, n))) return { ok: false, error: 'not found' };
-    queue.push(n);
+  // The meeting .md is the row the panel shows; resolve it to the transcript it was (or will be)
+  // built from: <base>-diarizer-response.json beside it, or in details/, or a legacy plain
+  // <base>.json. Returns the processed-relative JSON name, or null when no transcript exists.
+  function transcriptForMd(mdRel) {
+    const processed = resolveFolders().processed;
+    const dir = path.posix.dirname(mdRel);
+    // Legacy analysis names from the pre-format archive: -analysis, _analysis, -meeting-analysis,
+    // " - meeting analysis"; the migration's name map covers the rest.
+    const base = path.posix.basename(mdRel).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/\.md$/i, '');
+    const dirs = dir === '.' ? ['', 'details'] : [dir, dir + '/details'];
+    // The named diarizer transcript wins in either location; a plain <base>.json is only the
+    // legacy transcript name and is usually the calendar sidecar, so it is the last resort.
+    for (const f of [base + '-diarizer-response.json', base + '.json']) {
+      for (const d of dirs) {
+        const rel = d ? d + '/' + f : f;
+        if (fsMod.existsSync(path.join(processed, rel))) return rel;
+      }
+    }
+    return null;
+  }
+
+  function normKind(kind) { return kind === 'transcribed' ? 'transcribed' : 'processed'; }
+  function rootFor(kind) { const f = resolveFolders() || {}; return kind === 'transcribed' ? f.transcribed : f.processed; }
+
+  // Is this name analyzing or queued in that root? The library's transcribed Delete refuses while
+  // true (main wires it), so a source set is never removed under a running job.
+  function isBusy(name, kind) {
+    const k = normKind(kind), n = String(name || '');
+    return !!(running && running.kind === k && running.name === n) || queue.some(q => q.kind === k && q.name === n);
+  }
+
+  function start(name, kind) {
+    const k = normKind(kind);
+    let n = safeRelPath(name);
+    if (k === 'transcribed') {
+      // A transcribed row IS the transcript: flat name, no subfolder, never a .md.
+      if (!n || n.includes('/') || !/-diarizer-response\.json$/i.test(n)) return { ok: false, error: 'bad name' };
+      if (!rootFor(k)) return { ok: false, error: 'no transcribed folder configured' };
+    } else {
+      if (n && /\.md$/i.test(n)) {
+        const json = transcriptForMd(n);
+        if (!json) return { ok: false, error: 'no transcript for this meeting' };
+        n = json;
+      }
+      if (!n || !/\.json$/i.test(n)) return { ok: false, error: 'bad name' };
+    }
+    if (isBusy(n, k)) return { ok: false, error: 'already queued' };
+    if (!fsMod.existsSync(path.join(rootFor(k), n))) return { ok: false, error: 'not found' };
+    queue.push({ name: n, kind: k });
     pump();
     return Object.assign({}, getState());
   }
 
   function pump() {
     if (running || !queue.length) return;
-    const n = queue.shift();
-    const processed = resolveFolders().processed;
-    const jsonPath = path.join(processed, n);
+    const job = queue.shift();
+    const n = job.name, kind = job.kind;
+    const jsonPath = path.join(rootFor(kind), n);
     const aiSetting = resolveAi();
     const ai = ['codex', 'copilot', 'owui'].includes(aiSetting) ? aiSetting : 'claude';
-    running = { name: n, ai, startedAt: now() };
-    log('analysis started (' + ai + '): ' + n);
-    runJob(n, ai, jsonPath)
-      .then(() => { completed++; lastDone = { name: n, finishedAt: now() }; lastError = null; log('analysis done: ' + n); })
+    running = { name: n, kind, ai, startedAt: now() };
+    log('analysis started (' + ai + ', ' + kind + '): ' + n);
+    // Settings can change while a batch is queued: the roots are checked again as each job starts,
+    // so an overlap introduced meanwhile fails the job instead of filing into another stage.
+    const bad = foldersError();
+    (bad ? Promise.reject(new Error('meeting folders misconfigured: ' + bad)) : runJob(n, ai, jsonPath, kind))
+      .then(r => {
+        completed++;
+        lastDone = Object.assign({ name: n, kind, finishedAt: now() }, r || {});
+        lastError = null;
+        log('analysis done: ' + n + (r && r.warning ? ' — ' + r.warning : ''));
+      })
       .catch(e => {
         failed++;
         const raw = (e && e.message) || 'failed';
@@ -196,8 +351,8 @@ function createMeetingAnalyzer(deps) {
         // The CLI's "session expired" lands on stdout and reads as noise on a 480px panel; swap it
         // for the one instruction that fixes it. authRequired lets the batch coordinator stop early.
         lastError = AUTH_FAILURE_RE.test(raw)
-          ? { name: n, error: authRequiredMsg(ai), authRequired: true, finishedAt: now() }
-          : { name: n, error: raw, finishedAt: now() };
+          ? { name: n, kind, error: authRequiredMsg(ai), authRequired: true, finishedAt: now() }
+          : { name: n, kind, error: raw, finishedAt: now() };
       })
       .finally(() => {
         running = null;
@@ -206,13 +361,51 @@ function createMeetingAnalyzer(deps) {
       });
   }
 
-  async function runJob(name, ai, jsonPath) {
+  async function runJob(name, ai, jsonPath, kind) {
+    kind = normKind(kind);
     const opts = filingOptions() || {};
-    const mdPath = mdTargetFor(jsonPath);
-    const prompt = await fsp.readFile(resolvePromptPath(), 'utf8');
-    const transcript = await fsp.readFile(jsonPath, 'utf8');
     const dir = path.dirname(jsonPath);
     const base = path.basename(jsonPath).replace(/-diarizer-response\.json$/i, '').replace(/\.json$/i, '');
+    if (kind === 'transcribed') {
+      for (const s of sourceSet(jsonPath, base)) await assertOwned(s.src, s.dir);   // links refused before any model call
+      // A run that committed its .md but could not finish removing the originals left a journal
+      // (<base>.completed.json) naming the file. Trust it before any date rule: the sidecars that
+      // decided the date may be the very files that were already removed.
+      const journal = readJournal(dir, base);
+      if (journal) {
+        if (fsMod.existsSync(journal.md)) return clearLeftovers(name, jsonPath, base, journal.md);
+        await fsp.rm(journal.path, { force: true }).catch(() => {});   // stale: its file is gone; decide afresh
+      }
+    }
+    // Final destination first (date rule and recurring rule included); the meeting file is written there once.
+    const target = await resolveTarget(jsonPath, base, opts, kind);
+    const mdPath = target.mdPath;
+    // A finished file already where this transcript would publish: a leftover set (cleared, no
+    // model call) or a genuinely different meeting with the same name (refused) — clearLeftovers decides.
+    if (kind === 'transcribed' && (fsMod.existsSync(mdPath) || fsMod.existsSync(legacyMdPathFor(mdPath)))) return clearLeftovers(name, jsonPath, base, mdPath);
+    // The structured-tail contract rides on whatever prompt is configured (built-in or the user's
+    // edited copy) — the user's text is never modified, only followed by the fixed block.
+    const promptPath = resolvePromptPath();
+    const prompt = (await fsp.readFile(promptPath, 'utf8')) + STRUCTURED_TAIL_INSTRUCTION;
+    const transcript = await fsp.readFile(jsonPath, 'utf8');
+    if (transcript.length > MAX_INPUT_CHARS) throw new Error('transcript too large for one analysis (' + transcript.length + ' chars, limit ' + MAX_INPUT_CHARS + ') — not analyzed');
+
+    // Re-analysis: the previous meeting file is read ONCE, before the model call, and its byte
+    // hash is re-checked at publish so an edit made meanwhile is never overwritten. A pre-format
+    // <base>-analysis.md (no frontmatter) is left untouched: the new file lands as .proposed.md.
+    // A file left in the transcript's own folder by an earlier layout counts as the previous too.
+    // A transcribed-kind job has no previous (the existence check above already returned): the
+    // transcript's own folder is a waiting room, never a place a meeting file lives.
+    const previousCandidates = kind === 'transcribed' ? [] : [mdPath, legacyMdPathFor(mdPath)];
+    const dateFolderMd = mdTargetFor(jsonPath);
+    if (kind !== 'transcribed' && dateFolderMd !== mdPath) previousCandidates.push(dateFolderMd, legacyMdPathFor(dateFolderMd));
+    const previousPath = previousCandidates.find(p => fsMod.existsSync(p)) || null;
+    if (previousPath) await reconcilePendingExports(previousPath);   // a pending Joplin export from a crashed run, before we snapshot the bytes
+    const previousBytes = previousPath ? await fsp.readFile(previousPath) : null;
+    const previousHash = previousBytes ? sha256(previousBytes) : null;
+    const previous = previousBytes ? readFrontmatter(previousBytes.toString('utf8')) : null;
+    const previousFm = previous && previous.ok ? previous.data : null;
+    const previousBedrock = (previousFm && previousFm.bedrock && typeof previousFm.bedrock === 'object') ? previousFm.bedrock : {};
 
     // Companion speaker-identity sources, when the recording produced them: the calendar
     // meeting-info sidecar (<base>.json — subject/organizer/attendees) and a Teams live-caption
@@ -225,7 +418,7 @@ function createMeetingAnalyzer(deps) {
       if (sidecar !== jsonPath && fsMod.existsSync(sidecar)) metaText = await fsp.readFile(sidecar, 'utf8');
     } catch (e) { log('meeting-info sidecar unreadable: ' + e.message); }
     try {
-      const vttPath = findCompanionVtt(dir, base);
+      const vttPath = companionVtt(dir, base, kind);
       if (vttPath) { vttText = await fsp.readFile(vttPath, 'utf8'); log('companion VTT found: ' + path.basename(vttPath)); }
     } catch (e) { log('companion VTT unreadable: ' + e.message); }
     // Mid-meeting highlights ride inside that same sidecar (meetingHighlights writes them there).
@@ -248,48 +441,515 @@ function createMeetingAnalyzer(deps) {
     }
     if (!markdown.trim()) throw new Error('AI returned no output');
 
-    // "Separate Clean Transcript": split the AI's output at the ## Transcript heading — notes
-    // stay in the .md, the cleaned transcript goes to <base>-clean_transcript.txt. A custom
-    // prompt without that heading keeps the combined output (logged, never lost).
-    let mdOut = markdown;
-    let txtPath = null;
-    if (opts.separateTranscript) {
-      const m = /^##\s*Transcript\s*$/im.exec(markdown);
-      if (m) {
-        mdOut = markdown.slice(0, m.index).trimEnd() + '\n';
-        const txt = markdown.slice(m.index + m[0].length).trim() + '\n';
-        txtPath = path.join(dir, base + '-clean_transcript.txt');
-        await fsp.writeFile(txtPath, txt);
+    // ---- the meeting file: parse the structured tail, derive turn times, build + validate ----
+    const inputHash = sha256([prompt, transcript, metaText || '', vttText || '', hlText || ''].join('\u0000'));
+    const tail = parseStructuredTail(markdown);
+    if (tail.malformed) log('structured block malformed (' + tail.errors.join('; ') + ') — prose kept, extraction marked');
+    let segments = [];
+    try { const t = JSON.parse(transcript); segments = Array.isArray(t.segments) ? t.segments : []; } catch (e) { /* builder tolerates */ }
+    const timed = applyTurnTimes(tail.bodyWithoutTail, tail.structured.turns, segments);
+    let body = timed.body;
+    if (timed.unverified) log('transcript turns without a verifiable time: ' + timed.unverified + ' of ' + timed.turns + ' — evidence limited');
+    // A complete meeting file always carries the full transcript. If the model's output has no
+    // transcript turns (notes-only prompt, truncated reply), the raw diarizer transcript is
+    // appended with its real labels and times — never a "complete" file with the dialogue missing.
+    let transcriptSource = 'model';
+    if (!timed.turns) {
+      const raw = segments.map(s => '[' + String((s && s.speaker) || 'Speaker') + ' ' + formatTime(Number(s && s.start) || 0) + '] ' + String((s && s.text) || '').trim()).filter(l => l.length > 3);
+      if (raw.length) {
+        body = body.replace(/\s+$/, '') + '\n\n## Transcript\n' + raw.join('\n') + '\n';
+        transcriptSource = 'diarizer';
+        log('model output had no transcript turns — raw diarizer transcript appended (evidence limited)');
       } else {
-        log('no "## Transcript" heading in the AI output — keeping the combined .md');
+        // Nothing was transcribed at all (empty diarizer result): the file says so explicitly
+        // rather than pretending a transcript exists or failing a legitimately empty recording.
+        transcriptSource = 'none';
+        log('no transcript turns in the model output and no diarizer segments — file marked transcript: absent');
       }
     }
-    const tmp = mdPath + '.tmp';
-    await fsp.writeFile(tmp, mdOut);
-    await fsp.rename(tmp, mdPath);
 
-    const filed = await fileSet(jsonPath, mdPath, txtPath, base, opts);
-    if (filed) batchDone.push({ base, md: filed.md, sidecar: filed.sidecar, meta: filed.meta });
-    await createJoplinNote(base, mdOut);
+    const metaObj = metaText ? (() => { try { return JSON.parse(metaText); } catch (e) { return null; } })() : null;
+    const built = buildFrontmatter({
+      base,
+      sources: { transcriptJson: transcript, meta: metaObj, capture: readJsonIfExists(fsMod, path.join(dir, base + '.capture.json')),
+        wavDurationMs: wavDurationFromHeader(fsMod, path.join(dir, base + '.wav')) },
+      parsed: tail, settings: { myName: resolveMyName ? (resolveMyName() || '') : '' },
+      tags: joplinNotes.tagsFor ? joplinNotes.tagsFor(base) : [], previous: previousFm, now: now(),
+    });
+    const fm = built.frontmatter;
+    fm.bedrock = Object.assign({}, fm.bedrock, {
+      meeting_id: previousBedrock.meeting_id || newId('mt', now()),
+      revision: (Number(previousBedrock.revision) || 0) + 1,
+      input_hash: inputHash,
+      evidence: transcriptSource === 'model' ? timed.evidence : 'limited',
+      transcript_source: transcriptSource,
+      transcript: transcriptSource === 'none' ? 'absent' : 'present',
+      ai_sections: aiHeadingsOf(body),
+      exports: Object.assign({}, previousBedrock.exports || {}),
+    });
+    assignItemIds(fm, previousFm, now());
+    // Which date chose the folder (calendar start, capture start, or the file-name stamp) is
+    // recorded in the file, with the warning when the calendar's start could not be read.
+    if (target.dateSource) fm.bedrock.filing_date = target.dateSource;
+    if (target.dateWarning) { fm.bedrock.filing_warning = target.dateWarning; log('filing: ' + target.dateWarning); }
+
+    // Ownership: a user edit inside an AI-owned section (baseline hash moved) or an unreadable /
+    // pre-format previous file means NO automatic replacement — the new analysis is written as a
+    // proposal beside the sources and the panel says so. User-owned sections always come along.
+    let proposed = false;
+    if (previousFm && previousBedrock.baseline_hash) {
+      const edited = baselineHash(previous.body, previousBedrock.ai_sections || []) !== previousBedrock.baseline_hash;
+      if (edited) proposed = true;
+      body = mergeOwnership(previous.body, body, fm.bedrock.ai_sections);
+    } else if (previousBytes && !(previousFm && previousFm.status === 'processing')) {
+      proposed = true;   // legacy -analysis.md or frontmatter we can't read: never overwrite it
+    }
+    fm.bedrock.baseline_hash = baselineHash(body, fm.bedrock.ai_sections);
+    const valid = validateFrontmatter(fm);
+    if (!valid.ok) throw new Error('meeting file failed validation — not published: ' + valid.errors.join('; '));
+    const fileText = assembleFile(serializeFrontmatter(fm), body);
+    for (const w of built.warnings || []) log('frontmatter: ' + w);
+
+    // Stale-write checks: the previous file's bytes must still be what the job read, no file may
+    // have appeared at the destination meanwhile, and every input the model saw must still hash
+    // the same (the analysis describes THOSE bytes, not whatever is on disk now).
+    if (previousPath) {
+      const nowBytes = await fsp.readFile(previousPath);
+      if (sha256(nowBytes) !== previousHash) throw new Error('meeting file changed during analysis — not published (re-run to analyze the current file)');
+    } else if (fsMod.existsSync(mdPath) || fsMod.existsSync(legacyMdPathFor(mdPath))) {
+      throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)');
+    }
+    const inputsHashNow = async () => sha256([
+      (await fsp.readFile(promptPath, 'utf8')) + STRUCTURED_TAIL_INSTRUCTION,
+      await fsp.readFile(jsonPath, 'utf8').catch(() => ''),
+      await readOptional(path.join(dir, base + '.json'), jsonPath), await readOptional(companionVtt(dir, base, kind)), highlightsBlock(await readOptional(path.join(dir, base + '.json'), jsonPath)) || '',
+    ].join('\u0000'));
+    if (await inputsHashNow() !== inputHash) throw new Error('analysis inputs changed during analysis — not published (re-run to analyze the current files)');
+    // Source filing is checked BEFORE anything is published: a differently-hashed file already at a
+    // source's destination is a conflict the user must look at, not something to skip or overwrite.
+    // From transcribed the publish is STAGED, never a chain of moves: every source is copied into
+    // completed\…\details\ and hash-verified first, only then is the .md written, only then are
+    // the originals removed. A failure before the .md is committed leaves transcribed intact (the
+    // copies made here are rolled back); a failure during the cleanup after commit is reported as
+    // "committed, with leftovers" — the meeting is done and the next run clears the duplicates.
+    let staged = null;
+    if (kind === 'transcribed') {
+      staged = await stageSources(jsonPath, base, target);
+      // Copying a long recording takes time: nothing may have appeared at the destination meanwhile,
+      // and the inputs must still be the bytes the analysis describes. Re-checked right before commit.
+      if (fsMod.existsSync(mdPath) || fsMod.existsSync(legacyMdPathFor(mdPath))) { await staged.rollback(); throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)'); }
+      if (await inputsHashNow() !== inputHash) { await staged.rollback(); throw new Error('analysis inputs changed during analysis — not published (re-run to analyze the current files)'); }
+    } else if (!proposed) await preflightSources(jsonPath, base, target);
+    let publishedMd = null;
+    if (proposed) {
+      // The proposal remembers the exact bytes it was generated against, so applying it later can
+      // refuse if the file moved on. Sources stay where they are: the kept notes still own them.
+      fm.bedrock.proposal_base_hash = previousHash;
+      fm.bedrock.proposal_base_path = path.basename(previousPath);
+      const proposedText = assembleFile(serializeFrontmatter(fm), body);
+      // The proposal lives beside the notes it would replace (the row the user sees), even when
+      // the recurring rule would file a fresh analysis elsewhere; apply moves it to the final home.
+      const detDir = path.join(path.dirname(previousPath), 'details');
+      await fsp.mkdir(detDir, { recursive: true });
+      const proposedPath = path.join(detDir, base + '.proposed.md');
+      const tmp = proposedPath + '.tmp';
+      await fsp.writeFile(tmp, proposedText);
+      await fsp.rename(tmp, proposedPath);
+      lastProposed = { name: base, path: proposedPath, finishedAt: now() };
+      log('existing notes were edited by hand (or are pre-format) — new analysis saved for review: ' + proposedPath);
+      return;
+    } else {
+      if (previousPath === mdPath && previousFm && previousFm.status !== 'processing') {
+        const detDir = path.join(path.dirname(mdPath), 'details');
+        await fsp.mkdir(detDir, { recursive: true });
+        await fsp.copyFile(mdPath, path.join(detDir, base + '.rev' + (Number(previousBedrock.revision) || 0) + '.md'));
+      }
+      try {
+        await fsp.mkdir(path.dirname(mdPath), { recursive: true });   // a recurring or date folder may not exist yet
+        const tmp = mdPath + '.tmp';
+        await fsp.writeFile(tmp, fileText);
+        await fsp.rename(tmp, mdPath);
+      } catch (e) {
+        if (staged) await staged.rollback();   // nothing committed: the copies go, transcribed stays whole
+        throw new Error('could not write the meeting file: ' + e.message);
+      }
+      publishedMd = mdPath;
+    }
+    if (staged) {
+      // Committed. Sources are already filed; now the originals leave transcribed — companions
+      // first, the transcript last, so the Analysis row disappears only when its set is gone. The
+      // journal written first names the finished file, so a retry after a failed cleanup never has
+      // to re-derive the home from sidecars that may already be gone.
+      published.set(name, mdPath);
+      let left;
+      try { await writeJournal(dir, base, mdPath); left = await removeOriginals(jsonPath, base); }
+      catch (e) {
+        // No journal, no cleanup: removing anything without it could leave a retry re-deriving a
+        // different home. The whole set stays; the meeting is still done.
+        log('cleanup journal not written (' + e.message + ') — originals left in transcribed');
+        left = sourceSet(jsonPath, base).map(s => s.name);
+      }
+      const tl0 = fm.bedrock.exports && fm.bedrock.exports.task_list;
+      if (!(tl0 && tl0.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: target.meta ? path.join(target.fileDir, base + '.json') : null, meta: target.meta });
+      await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports);
+      const out = { md: relToProcessed(mdPath) };
+      if (left.length) { out.warning = 'committed, with leftovers in transcribed: ' + left.join(', '); log('analysis committed; cleanup left files in transcribed: ' + left.join(', ')); }
+      return out;
+    }
+
+    // An earlier-layout file (date folder) that served as the previous moves aside as a revision.
+    if (publishedMd && previousPath && previousPath !== mdPath) {
+      const detDir = path.join(path.dirname(mdPath), 'details');
+      await fsp.mkdir(detDir, { recursive: true });
+      await fsp.rename(previousPath, path.join(detDir, base + '.rev' + (Number(previousBedrock.revision) || 0) + '.md')).catch(e => log('could not move the earlier file aside: ' + e.message));
+    }
+    // Sources travel into details/ beside the published file; the .md itself is already in place.
+    // A filing failure after publish is a visible job failure (the file is saved; the sources are not where the file says).
+    const filed = await fileSet(jsonPath, null, null, base, opts, target);
+    // Hand-offs happen once per meeting: a re-analysis whose task-list export already succeeded is not listed again.
+    const tl = fm.bedrock.exports && fm.bedrock.exports.task_list;
+    if (!(tl && tl.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: filed ? filed.sidecar : null, meta: filed ? filed.meta : target.meta });
+    await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports);
+    return { md: relToProcessed(mdPath) };
+  }
+
+  function relToProcessed(p) { return path.relative(resolveFolders().processed, p).split(path.sep).join('/'); }
+
+  // SHA-256 of a file without holding it in memory (recordings run to hundreds of MB).
+  function hashFile(p) {
+    if (typeof fsMod.createReadStream !== 'function') return fsp.readFile(p).then(sha256);
+    return new Promise((resolve, reject) => {
+      const h = crypto.createHash('sha256');
+      fsMod.createReadStream(p).on('data', d => h.update(d)).on('error', reject).on('end', () => resolve('sha256:' + h.digest('hex')));
+    });
+  }
+  async function sameBytes(a, b) { const [x, y] = await Promise.all([hashFile(a), hashFile(b)]); return x === y; }
+
+  // The exact source set a transcript brings along: [{ name, src, dir }] for what exists in its folder.
+  // The exact source set a waiting transcript brings along — exact companions ONLY (<base>.wav,
+  // <base>.json, <base>.capture.json, <base>.vtt, <base>-screenshots\); the stamp-prefix caption
+  // fallback of the old archive layout could claim another meeting's captions here. Names are
+  // matched case-insensitively but the ACTUAL on-disk name is carried (a .WAV stays .WAV).
+  function actualName(dir, want) {
+    try { return fsMod.readdirSync(dir).find(e => e.toLowerCase() === want.toLowerCase()) || null; } catch (e) { return null; }
+  }
+  function sourceSet(jsonPath, base) {
+    const dir = path.dirname(jsonPath);
+    const names = [path.basename(jsonPath), base + '.wav', base + '.json', base + '.capture.json', base + '.vtt'].map(n => actualName(dir, n)).filter(Boolean);
+    const set = [...new Set(names)].filter(n => fsMod.existsSync(path.join(dir, n))).map(n => ({ name: n, src: path.join(dir, n), dir: false }));
+    const shots = actualName(dir, base + '-screenshots');
+    if (shots && fsMod.existsSync(path.join(dir, shots))) set.push({ name: shots, src: path.join(dir, shots), dir: true });
+    return set;
+  }
+  // Captions for the prompt: a waiting transcript uses its exact <base>.vtt only; a meeting in
+  // completed keeps the legacy stamp-prefix fallback (its folder holds one meeting's files).
+  function companionVtt(dir, base, kind) {
+    if (normKind(kind) !== 'transcribed') return findCompanionVtt(dir, base);
+    const n = actualName(dir, base + '.vtt');
+    return n ? path.join(dir, n) : null;
+  }
+
+  // Sources are the app's own files, never links: a symlink or junction anywhere in a source (or a
+  // source tree) is refused before anything is copied or removed, so nothing outside the folder
+  // can be read into completed or deleted through it.
+  async function assertOwned(p, isDir) {
+    const st = await fsp.lstat(p);
+    if (st.isSymbolicLink()) throw new Error('source "' + path.basename(p) + '" is a link — refused');
+    if (isDir && st.isDirectory()) for (const e of await fsp.readdir(p)) await assertOwned(path.join(p, e), true);
+  }
+  // The destination must resolve inside the completed root (no junction under it pointing elsewhere).
+  async function assertInsideProcessed(dirPath) {
+    const norm = s => process.platform === 'win32' ? s.toLowerCase() : s;
+    const root = norm(await fsp.realpath(resolveFolders().processed)), real = norm(await fsp.realpath(dirPath));
+    if (real !== root && !real.startsWith(root + path.sep)) throw new Error('destination resolves outside the completed folder — refused');
+  }
+
+  // Cleanup journal: <base>.completed.json beside the originals, written after the .md is
+  // committed and removed last. It names the finished file so a retry never re-derives the home.
+  const journalPath = (dir, base) => path.join(dir, base + '.completed.json');
+  function readJournal(dir, base) {
+    const p = journalPath(dir, base);
+    const j = readJsonIfExists(fsMod, p);
+    const rel = j && typeof j.md === 'string' ? safeRelPath(j.md) : null;
+    if (!rel || !/\.md$/i.test(rel)) return null;
+    return { path: p, md: path.join(resolveFolders().processed, rel) };
+  }
+  async function writeJournal(dir, base, mdPath) {
+    const p = journalPath(dir, base), tmp = p + '.tmp';
+    await fsp.writeFile(tmp, JSON.stringify({ schema: 1, md: relToProcessed(mdPath), committed_at: new Date(now()).toISOString() }, null, 2));
+    await fsp.rename(tmp, p);
+  }
+
+  // A finished file already exists for this waiting set: either every source is already filed
+  // beside it byte for byte (the leftover of a cleanup that failed after commit) — remove the
+  // originals, no model call — or it is a different meeting with the same name: refuse.
+  async function clearLeftovers(name, jsonPath, base, mdPath) {
+    const target = { mdPath, fileDir: path.join(path.dirname(mdPath), 'details') };
+    if (!(await sourcesAlreadyFiled(jsonPath, base, target))) {
+      throw new Error('a completed meeting file already exists at ' + relToProcessed(mdPath) + ' — not published (rename the transcript or remove the finished file first)');
+    }
+    const left = await removeOriginals(jsonPath, base);
+    published.set(name, mdPath);
+    if (left.length) return { md: relToProcessed(mdPath), warning: 'already completed; leftovers still in transcribed: ' + left.join(', ') };
+    log('leftover sources cleared from transcribed (meeting already completed): ' + base);
+    return { md: relToProcessed(mdPath), warning: 'already completed; leftovers cleared' };
+  }
+  function walkFiles(root) {
+    const out = [];
+    const walk = d => { for (const e of fsMod.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else out.push(path.relative(root, p)); } };
+    walk(root);
+    return out.sort();
+  }
+  async function sameTree(a, b) {
+    const fa = walkFiles(a), fb = walkFiles(b);
+    if (fa.length !== fb.length || fa.some((f, i) => f !== fb[i])) return false;
+    for (const f of fa) if (!(await sameBytes(path.join(a, f), path.join(b, f)))) return false;
+    return true;
+  }
+
+  // Copy every source into the destination details folder and verify each copy by hash. A file
+  // already there with the same bytes is accepted as filed; different bytes are a conflict and
+  // nothing further is copied. Returns { rollback } — removes only what this call created.
+  async function stageSources(jsonPath, base, target) {
+    const created = [];
+    const rollback = async () => {
+      for (const c of created.reverse()) await fsp.rm(c.dest, { recursive: !!c.dir, force: true }).catch(e => log('rollback could not remove ' + c.dest + ': ' + e.message));
+      created.length = 0;
+    };
+    try {
+      const set = sourceSet(jsonPath, base);
+      for (const s of set) await assertOwned(s.src, s.dir);
+      await fsp.mkdir(target.fileDir, { recursive: true });
+      await assertInsideProcessed(target.fileDir);
+      for (const s of set) {
+        const dest = path.join(target.fileDir, s.name);
+        if (fsMod.existsSync(dest)) {
+          await assertOwned(dest, s.dir);
+          const same = s.dir ? await sameTree(s.src, dest) : await sameBytes(s.src, dest);
+          if (!same) throw new Error('source filing conflict: a different "' + s.name + '" already exists in ' + relToProcessed(target.fileDir) + ' — not published');
+          continue;   // already filed, byte for byte
+        }
+        // Registered as ours BEFORE the copy, so a copy that dies halfway (partial bytes) is still
+        // rolled back. Exclusive mode: a destination that exists by the time we write is NEVER ours —
+        // it is unregistered and reported as a conflict, not rolled back. A folder is copied into an
+        // isolated staging name and renamed into place for the same reason (a foreign folder that
+        // appears meanwhile makes the rename fail and is left alone).
+        if (s.dir) {
+          const staging = dest + '.staging-' + process.pid;
+          created.push({ dest: staging, dir: true });
+          await fsp.cp(s.src, staging, { recursive: true, force: false, errorOnExist: true, dereference: false, verbatimSymlinks: true });
+          if (fsMod.existsSync(dest)) throw new Error('source filing conflict: "' + s.name + '" appeared in ' + relToProcessed(target.fileDir) + ' during filing — not published');
+          await fsp.rename(staging, dest);
+          created[created.length - 1].dest = dest;
+        } else {
+          created.push({ dest, dir: false });
+          try { await fsp.copyFile(s.src, dest, fsMod.constants ? fsMod.constants.COPYFILE_EXCL : 1); }
+          catch (e) {
+            if (e && e.code === 'EEXIST') { created.pop(); throw new Error('source filing conflict: "' + s.name + '" appeared in ' + relToProcessed(target.fileDir) + ' during filing — not published'); }
+            throw e;
+          }
+        }
+        const ok = s.dir ? await sameTree(s.src, dest) : await sameBytes(s.src, dest);
+        if (!ok) throw new Error('copy of "' + s.name + '" did not verify — not published');
+      }
+    } catch (e) { await rollback(); throw e; }
+    return { rollback };
+  }
+
+  // Are all of this transcript's sources already in the destination, byte for byte?
+  async function sourcesAlreadyFiled(jsonPath, base, target) {
+    const set = sourceSet(jsonPath, base);
+    for (const s of set) await assertOwned(s.src, s.dir);
+    if (!fsMod.existsSync(target.fileDir)) return false;
+    await assertInsideProcessed(target.fileDir);
+    for (const s of set) {
+      const dest = path.join(target.fileDir, s.name);
+      if (!fsMod.existsSync(dest)) return false;
+      await assertOwned(dest, s.dir);
+      if (!(s.dir ? await sameTree(s.src, dest) : await sameBytes(s.src, dest))) return false;
+    }
+    return true;
+  }
+
+  // Remove the originals after commit, in an order that keeps a retry pointed at the SAME home:
+  // bulk companions first (wav, captions, screenshots), then the two sidecars that decide the
+  // date, the transcript last (it is the row). The first failure stops the cleanup, so whatever
+  // is left still includes the date sidecars and the row; the next run finds the finished file,
+  // verifies the leftovers byte for byte and clears them. Returns the names left behind.
+  async function removeOriginals(jsonPath, base) {
+    const dir = path.dirname(jsonPath);
+    const set = sourceSet(jsonPath, base);
+    for (const s of set) await assertOwned(s.src, s.dir).catch(e => { throw new Error('cleanup refused: ' + e.message); });
+    const rank = s => s.src === jsonPath ? 3 : /\.capture\.json$/i.test(s.name) ? 1 : s.name.toLowerCase() === (base + '.json').toLowerCase() ? 2 : 0;
+    const ordered = set.slice().sort((a, b) => rank(a) - rank(b));
+    const jp = journalPath(dir, base);
+    if (fsMod.existsSync(jp)) ordered.push({ name: path.basename(jp), src: jp, dir: false });   // the journal goes last of all
+    for (let i = 0; i < ordered.length; i++) {
+      try { await fsp.rm(ordered[i].src, { recursive: !!ordered[i].dir, force: true }); }
+      catch (e) {
+        log('could not remove ' + ordered[i].src + ' after publish: ' + e.message);
+        return ordered.slice(i).map(s => s.name);
+      }
+    }
+    return [];
+  }
+
+  // Every source this meeting will file into details/ must either not exist there yet or be the
+  // very same bytes; anything else stops the job before the .md is written.
+  async function preflightSources(jsonPath, base, target) {
+    const dir = path.dirname(jsonPath);
+    const names = [path.basename(jsonPath), base + '.wav', base + '.json', base + '.capture.json'];
+    const vtt = findCompanionVtt(dir, base);
+    if (vtt) names.push(path.basename(vtt));
+    for (const n of names) {
+      const src = path.join(dir, n), dest = path.join(target.fileDir, n);
+      if (src === dest || !fsMod.existsSync(src) || !fsMod.existsSync(dest)) continue;
+      const [a, b] = await Promise.all([fsp.readFile(src), fsp.readFile(dest)]);
+      if (sha256(a) !== sha256(b)) throw new Error('source filing conflict: a different "' + n + '" already exists in ' + path.relative(resolveFolders().processed, target.fileDir) + ' — not published');
+    }
+  }
+
+  async function readOptional(p, notThis) {
+    if (!p || p === notThis) return '';
+    try { return await fsp.readFile(p, 'utf8'); } catch (e) { return ''; }
+  }
+
+  // A Joplin export left `pending` by a crash or timeout: the note was created with OUR id, so
+  // asking Joplin for that id settles it without a second note.
+  async function reconcilePendingExports(mdFile) {
+    try {
+      const parsed = readFrontmatter(await fsp.readFile(mdFile, 'utf8'));
+      const pending = parsed.ok && parsed.data.bedrock && parsed.data.bedrock.exports && parsed.data.bedrock.exports.joplin;
+      if (!pending || pending.state !== 'pending' || !pending.id) return;
+      const cfg = resolveJoplin() || {};
+      if (!cfg.enabled || !joplinNotes.getNote) return;
+      const note = await joplinNotes.getNote({ url: cfg.url, token: cfg.token, id: pending.id });
+      if (note) {
+        await patchFrontmatter(mdFile, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { joplin: { id: pending.id, state: 'succeeded' } }); });
+        log('joplin export reconciled as succeeded: ' + path.basename(mdFile));
+      }
+    } catch (e) { log('joplin export reconcile skipped: ' + e.message); }
+  }
+
+  // Apply a reviewed proposal (details/<base>.proposed.md) over the current meeting file: the
+  // current file becomes the next revision backup, the proposal becomes the file with its
+  // revision/identity/exports carried from the current one, and the proposal is removed.
+  async function applyProposed(name) {
+    const n = safeRelPath(name);
+    if (!n || !/\.md$/i.test(n)) return { ok: false, error: 'bad name' };
+    const processed = resolveFolders().processed;
+    // Always land on the canonical <base>.md, even when the row was a legacy -analysis.md.
+    const base = path.basename(n).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/\.md$/i, '');
+    const mdFile = path.join(path.dirname(path.join(processed, n)), base + '.md');
+    const detDir = path.join(path.dirname(mdFile), 'details');
+    const proposedPath = path.join(detDir, base + '.proposed.md');
+    if (!fsMod.existsSync(proposedPath)) return { ok: false, error: 'no proposal to apply' };
+    if (running && running.kind === 'processed' && running.name && transcriptForMd(n) === running.name) return { ok: false, error: 'this meeting is being analyzed right now' };
+    try {
+      const proposed = readFrontmatter(await fsp.readFile(proposedPath, 'utf8'));
+      if (!proposed.ok) return { ok: false, error: 'proposal unreadable' };
+      const pb = proposed.data.bedrock || {};
+      // The proposal was generated against specific bytes; the file it would replace must still be
+      // exactly those bytes, or the user's later edits / completed items would be lost.
+      const basePath = pb.proposal_base_path ? path.join(path.dirname(mdFile), String(pb.proposal_base_path)) : (fsMod.existsSync(mdFile) ? mdFile : legacyMdPathFor(mdFile));
+      if (path.dirname(path.resolve(basePath)) !== path.dirname(path.resolve(mdFile))) return { ok: false, error: 'proposal base path outside the meeting folder' };
+      const baseBytes = fsMod.existsSync(basePath) ? await fsp.readFile(basePath) : null;
+      if (pb.proposal_base_hash && (!baseBytes || sha256(baseBytes) !== pb.proposal_base_hash)) {
+        return { ok: false, error: 'the notes changed after this proposal was made — re-analyze to get a fresh proposal' };
+      }
+      let revision = 0, carry = {};
+      if (baseBytes) {
+        const current = readFrontmatter(baseBytes.toString('utf8'));
+        if (current.ok && current.data.bedrock) {
+          revision = Number(current.data.bedrock.revision) || 0;
+          carry = { meeting_id: current.data.bedrock.meeting_id, exports: current.data.bedrock.exports };
+        }
+      }
+      const data = proposed.data;
+      delete data.bedrock.proposal_base_hash; delete data.bedrock.proposal_base_path;
+      data.bedrock = Object.assign({}, data.bedrock, carry, { revision: revision + 1 });
+      if (!data.bedrock.meeting_id) data.bedrock.meeting_id = newId('mt', now());
+      data.bedrock.baseline_hash = baselineHash(proposed.body, data.bedrock.ai_sections || []);
+      const valid = validateFrontmatter(data);
+      if (!valid.ok) return { ok: false, error: 'proposal failed validation: ' + valid.errors.join('; ') };
+      const text = assembleFile(serializeFrontmatter(data), proposed.body);
+      // validated; now back up, re-check the base once more, and replace
+      if (baseBytes) {
+        await fsp.copyFile(basePath, path.join(detDir, base + '.rev' + revision + '.md'));
+        if (sha256(await fsp.readFile(basePath)) !== sha256(baseBytes)) return { ok: false, error: 'the notes changed while applying — nothing replaced' };
+      }
+      const tmp = mdFile + '.tmp';
+      await fsp.writeFile(tmp, text);
+      await fsp.rename(tmp, mdFile);
+      if (baseBytes && path.resolve(basePath) !== path.resolve(mdFile)) await fsp.unlink(basePath).catch(() => {});   // legacy -analysis.md retired
+      await fsp.unlink(proposedPath);
+      // Final destination (recurring rule) and source filing happen now, as they would after an
+      // ordinary publish: the applied file moves to its home and the sources follow into details/.
+      try {
+        const jsonRel = transcriptForMd(path.posix.join(path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n), base + '.md'));
+        if (jsonRel) {
+          const jsonAbs = path.join(processed, jsonRel);
+          const opts = filingOptions() || {};
+          const target = await resolveTarget(jsonAbs, base, opts);
+          if (path.resolve(target.mdPath) !== path.resolve(mdFile)) {
+            if (fsMod.existsSync(target.mdPath)) throw new Error('a meeting file already exists at ' + path.relative(processed, target.mdPath));
+            await preflightSources(jsonAbs, base, target);
+            await fsp.mkdir(path.dirname(target.mdPath), { recursive: true });
+            await fsp.rename(mdFile, target.mdPath);
+          }
+          await fileSet(jsonAbs, null, null, base, opts, target);
+        }
+      } catch (e) { log('applied proposal is saved, but filing it to its final folder failed: ' + e.message); return { ok: true, name: n, warning: 'applied; filing failed: ' + e.message }; }
+      if (lastProposed && lastProposed.name === base) lastProposed = null;
+      log('proposed analysis applied: ' + n);
+      return { ok: true, name: n };
+    } catch (e) { return { ok: false, error: (e && e.message) || 'apply failed' }; }
+  }
+
+  // Rewrite only the frontmatter of a published meeting file (export state, revision bookkeeping):
+  // read, hash, mutate the parsed frontmatter, re-serialize with the SAME body, write via
+  // temp+rename, and refuse if the bytes moved between read and write.
+  async function patchFrontmatter(filePath, mutate) {
+    const bytes = await fsp.readFile(filePath);
+    const parsed = readFrontmatter(bytes.toString('utf8'));
+    if (!parsed.ok) throw new Error('cannot patch a file without readable frontmatter');
+    const data = parsed.data;
+    mutate(data);
+    const valid = validateFrontmatter(data);
+    if (!valid.ok) throw new Error('patched frontmatter invalid: ' + valid.errors.join('; '));
+    const again = await fsp.readFile(filePath);
+    if (sha256(again) !== sha256(bytes)) throw new Error('file changed while patching');
+    const tmp = filePath + '.tmp';
+    await fsp.writeFile(tmp, assembleFile(serializeFrontmatter(data), parsed.body));
+    await fsp.rename(tmp, filePath);
   }
 
   // Post-analysis Joplin note (replaces the retired Cowork pipeline's note step). The body is the
   // analysis markdown — with "Separate Clean Transcript" on that's the notes without the
   // transcript, matching what the old pipeline filed. A Joplin failure never fails the analysis
   // (the .md is already saved); it's logged and surfaced on the panel via getState().joplin.
-  async function createJoplinNote(base, markdown) {
+  // Durable export state so a crash or timeout between "note created in Joplin" and "id stored
+  // here" can never produce a second note: the id is allocated and written into the meeting file
+  // as `pending` BEFORE the request, the note is created WITH that id, and the state flips to
+  // `succeeded` afterwards. A re-analysis with a succeeded export does not export again.
+  async function createJoplinNote(base, mdFile, markdown, exports) {
     const cfg = resolveJoplin() || {};
     if (!cfg.enabled) return;
+    const prior = (exports && exports.joplin) || null;
+    if (prior && prior.state === 'succeeded') return;
+    const id = (prior && prior.id) || crypto.randomBytes(16).toString('hex');
     try {
+      await patchFrontmatter(mdFile, d => { d.bedrock = d.bedrock || {}; d.bedrock.exports = Object.assign({}, d.bedrock.exports, { joplin: { id, state: 'pending' } }); });
       const r = await joplinNotes.createAnalysisNote({
-        url: cfg.url, token: cfg.token, notebook: cfg.notebook, title: base, body: markdown,
+        url: cfg.url, token: cfg.token, notebook: cfg.notebook, title: base, body: markdown, id,
       });
+      await patchFrontmatter(mdFile, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { joplin: { id: r.id || id, state: 'succeeded' } }); });
       lastJoplin = { name: base, ok: true, applied: r.applied, skipped: r.skipped, finishedAt: now() };
       log('joplin note created: ' + base + ' [' + r.applied.join(', ') + ']'
         + (r.skipped.length ? ' — tag(s) not in Joplin, skipped: ' + r.skipped.join(', ') : ''));
     } catch (e) {
       lastJoplin = { name: base, ok: false, error: (e && e.message) || 'failed', finishedAt: now() };
-      log('joplin note failed: ' + base + ' — ' + lastJoplin.error);
+      log('joplin note failed: ' + base + ' — ' + lastJoplin.error + ' (export left pending; reconciled on the next analysis of this meeting)');
     }
   }
 
@@ -317,34 +977,84 @@ function createMeetingAnalyzer(deps) {
   // Post-analysis filing: recurring meetings move to <processed>/YYYY/<Meeting-Name>/, and with
   // "Use Details Folder" everything except the .md tucks into a details/ subfolder. Runs after
   // the .md exists so unanalyzed meetings always stay in the easy-to-find date folders.
-  async function fileSet(jsonPath, mdPath, txtPath, base, opts) {
+  // Where this meeting's file and sources belong, decided BEFORE anything is written: the
+  // transcript's folder (or its parent when it sits in details/), or the recurring-meeting folder
+  // when the calendar sidecar says so and the option is on. The sidecar also feeds the task list.
+  async function resolveTarget(jsonPath, base, opts, kind) {
+    kind = normKind(kind);
     const dir = path.dirname(jsonPath);
     const inDetails = path.basename(dir).toLowerCase() === 'details';
     let home = inDetails ? path.dirname(dir) : dir;
-
-    // Meeting-info sidecar (when the calendar integration wrote one): drives the recurring-folder
-    // decision and feeds the batch task list's title/organizer.
     let meta = null;
     try {
       const sidecar = path.join(dir, base + '.json');
-      if (fsMod.existsSync(sidecar)) meta = JSON.parse(await fsp.readFile(sidecar, 'utf8')) || null;
+      if (sidecar !== jsonPath && fsMod.existsSync(sidecar)) meta = JSON.parse(await fsp.readFile(sidecar, 'utf8')) || null;
     } catch (e) { log('meeting-info sidecar unreadable: ' + e.message); }
-
-    if (opts.separateRecurring && meta) {
-      const folderName = sanitizeSubjectFolder(meta.subject);
-      if (meta.is_recurring && folderName) {
-        const ym = /^(\d{4})/.exec(base);
-        const year = ym ? ym[1] : String(new Date(now()).getFullYear());
-        home = path.join(resolveFolders().processed, year, folderName);
-      }
+    const recurringName = opts.separateRecurring && meta && meta.is_recurring ? sanitizeSubjectFolder(meta.subject) : '';
+    let dateSource = null, dateWarning = null;
+    if (kind === 'transcribed') {
+      // From the waiting room the home is decided by the meeting's own date (never the processing
+      // date): the recurring folder, the YYYY\MM folder when Organize by date is on, else the root.
+      const when = meetingDate(meta, dir, base);
+      if (!when.date) throw new Error(when.error);
+      dateSource = when.source; dateWarning = when.warning;
+      const processed = resolveFolders().processed;
+      const y = String(when.date.getFullYear()), m = pad2(when.date.getMonth() + 1);
+      home = recurringName ? path.join(processed, y, recurringName) : opts.byDate ? path.join(processed, y, m) : processed;
+    } else if (recurringName) {
+      // Re-analysis in completed: a recurring meeting still moves to its folder; the year follows
+      // the same date rule, falling back to the old file-name year when no date can be found.
+      const when = meetingDate(meta, dir, base);
+      const ym = /^(\d{4})/.exec(base);
+      const year = when.date ? String(when.date.getFullYear()) : ym ? ym[1] : String(new Date(now()).getFullYear());
+      home = path.join(resolveFolders().processed, year, recurringName);
     }
-    const fileDir = opts.useDetailsFolder ? path.join(home, 'details') : home;
+    const fileDir = opts.useDetailsFolder || kind === 'transcribed' ? path.join(home, 'details') : home;
+    return { dir, home, fileDir, meta, mdPath: path.join(home, base + '.md'), dateSource, dateWarning };
+  }
+
+  // The date that files a meeting (decided 2026-10-15): the calendar sidecar's start, in this
+  // machine's local time; without a calendar entry, the capture sidecar's start; without that,
+  // the date stamp in the recording's file name. A calendar start that cannot be read falls back
+  // with a warning; no usable date at all is an error (the transcript stays where it is).
+  function meetingDate(meta, dir, base) {
+    const valid = d => d instanceof Date && !isNaN(d.getTime()) && d.getFullYear() >= 2000 && d.getFullYear() <= 2100;
+    let warning = null;
+    if (meta && meta.start !== undefined && meta.start !== null && meta.start !== '') {
+      const d = new Date(String(meta.start));
+      if (valid(d)) return { date: d, source: 'calendar', warning: null };
+      warning = 'calendar start "' + String(meta.start) + '" is not a readable date — filed by the recording date instead';
+    } else if (meta) {
+      warning = 'calendar entry has no start — filed by the recording date instead';
+    }
+    const capture = readJsonIfExists(fsMod, path.join(dir, base + '.capture.json'));
+    if (capture && capture.started_at) {
+      const d = new Date(String(capture.started_at));
+      if (valid(d)) return { date: d, source: 'capture', warning };
+    }
+    const m = /^(\d{4})-(\d{2})-(\d{2})(?:-(\d{2})-(\d{2})-(\d{2}))?/.exec(base);
+    if (m) {
+      const d = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+      if (valid(d) && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3]) return { date: d, source: 'filename', warning };
+    }
+    return { date: null, source: null, warning, error: 'no usable date for this meeting (no calendar start, no capture start, no date in the file name) — not filed; it stays in transcribed' };
+  }
+
+  async function fileSet(jsonPath, mdPath, txtPath, base, opts, target) {
+    const { dir, home, fileDir, meta } = target || await resolveTarget(jsonPath, base, opts);
 
     // Move a file/dir into place: skip if missing or the target already exists; try an atomic rename,
     // and on a cross-device failure fall back to copy+delete (recursive for a directory).
     const move = async (src, dest, recursive) => {
       if (!src || src === dest || !fsMod.existsSync(src)) return;
-      if (fsMod.existsSync(dest)) { log('filing skipped (exists): ' + path.basename(dest)); return; }
+      if (fsMod.existsSync(dest)) {
+        if (recursive) { log('filing skipped (folder exists): ' + path.basename(dest)); return; }
+        // Same bytes already there (an earlier interrupted run): drop the duplicate source.
+        // Different bytes: a real conflict — preflightSources should have caught it; fail loudly.
+        const [a, b] = await Promise.all([fsp.readFile(src), fsp.readFile(dest)]);
+        if (sha256(a) === sha256(b)) { await fsp.unlink(src); return; }
+        throw new Error('a different "' + path.basename(dest) + '" already exists at the destination');
+      }
       try { await fsp.rename(src, dest); }
       catch (e) {
         if (recursive) { await fsp.cp(src, dest, { recursive: true }); await fsp.rm(src, { recursive: true, force: true }); }
@@ -356,17 +1066,18 @@ function createMeetingAnalyzer(deps) {
     const mvDir = (src, dest) => move(src, dest, true);
     try {
       await fsp.mkdir(fileDir, { recursive: true });
-      await mv(mdPath, path.join(home, path.basename(mdPath)));
+      if (mdPath) await mv(mdPath, path.join(home, path.basename(mdPath)));   // null = the .md is already at its final path
       await mv(jsonPath, path.join(fileDir, path.basename(jsonPath)));
       await mv(path.join(dir, base + '.wav'), path.join(fileDir, base + '.wav'));
       await mv(path.join(dir, base + '.json'), path.join(fileDir, base + '.json'));
+      await mv(path.join(dir, base + '.capture.json'), path.join(fileDir, base + '.capture.json'));   // capture start + offset
       await mv(txtPath, txtPath ? path.join(fileDir, path.basename(txtPath)) : null);
       const vtt = findCompanionVtt(dir, base);   // Teams captions travel with the WAV
       if (vtt) await mv(vtt, path.join(fileDir, path.basename(vtt)));
       await mvDir(path.join(dir, base + '-screenshots'), path.join(fileDir, base + '-screenshots'));
-    } catch (e) { log('filing failed (analysis itself is saved): ' + e.message); }
+    } catch (e) { throw new Error('analysis published, but filing its sources failed: ' + e.message); }
     return {
-      md: path.join(home, path.basename(mdPath)),
+      md: mdPath ? path.join(home, path.basename(mdPath)) : path.join(home, base + ".md"),
       sidecar: meta ? path.join(fileDir, base + '.json') : null,
       meta,
     };
@@ -407,10 +1118,56 @@ function createMeetingAnalyzer(deps) {
         if (it.sidecar && fsMod.existsSync(it.sidecar)) lines.push('    - Meeting metadata: `' + rel(it.sidecar) + '`');
       }
       lines.push('');
-      let dest = path.join(folder, stamp + '.md');
-      for (let i = 1; fsMod.existsSync(dest); i++) dest = path.join(folder, stamp + '_' + i + '.md');
-      await fsp.writeFile(dest, lines.join('\n'));
-      log('task list written: ' + dest + ' (' + items.length + ' meeting(s))');
+      // The hand-off identity is persisted on each meeting file as `pending` BEFORE the list is
+      // written and flipped to `succeeded` after. A crash in between leaves `pending` with the
+      // list's file name, and the next batch REUSES that name (overwriting the partial list)
+      // instead of allocating a fresh one — one hand-off per meeting, even across a crash.
+      let dest = null, pendingHash = null;
+      for (const it of items) {
+        try {
+          const tl = readFrontmatter(await fsp.readFile(it.md, 'utf8')).data.bedrock.exports.task_list;
+          if (tl && tl.state === 'pending' && tl.file) { dest = path.join(folder, path.basename(String(tl.file))); pendingHash = tl.hash || null; break; }
+        } catch (e) { /* no readable export state: a fresh name below */ }
+      }
+      if (!dest) {
+        dest = path.join(folder, stamp + '.md');
+        for (let i = 1; fsMod.existsSync(dest); i++) dest = path.join(folder, stamp + '_' + i + '.md');
+      }
+      const payload = lines.join('\n');
+      const payloadHash = sha256(payload);
+      // Reusing a pending name: a list that already exists is a hand-off that was delivered. If it
+      // is byte-for-byte what we recorded, nothing is rewritten; if someone has edited it (ticked
+      // a box), it is left exactly as is and noted — it was consumed. Only a MISSING list is written.
+      let state = 'succeeded', consumed = null, mustWrite = true;
+      if (fsMod.existsSync(dest)) {
+        const existing = sha256(await fsp.readFile(dest));
+        mustWrite = false;
+        consumed = existing === pendingHash ? 'delivered' : 'edited';
+      }
+      // A meeting whose pending identity cannot be persisted is left out of this list (it stays
+      // in batchDone's place for the next run) rather than handed off without a durable record.
+      const listed = [];
+      for (const it of items) {
+        try {
+          await patchFrontmatter(it.md, d => { d.bedrock = d.bedrock || {}; d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: { file: path.basename(dest), state: 'pending', hash: payloadHash } }); });
+          listed.push(it);
+        } catch (e) { log('task-list hand-off deferred for ' + path.basename(it.md) + ' (could not record it): ' + e.message); }
+      }
+      if (!listed.length) return;
+      if (mustWrite) {
+        const tmp = dest + '.tmp';
+        await fsp.writeFile(tmp, payload);
+        await fsp.rename(tmp, dest);
+        log('task list written: ' + dest + ' (' + listed.length + ' meeting(s))');
+      } else {
+        log('task list ' + path.basename(dest) + ' already exists (' + consumed + ') — kept as is, hand-off recorded');
+      }
+      for (const it of listed) {
+        const record = { file: path.basename(dest), state, hash: mustWrite ? payloadHash : (pendingHash || payloadHash) };
+        if (consumed) record.consumed = consumed;
+        try { await patchFrontmatter(it.md, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { task_list: record }); }); }
+        catch (e) { log('task-list export left pending for ' + path.basename(it.md) + ': ' + e.message); }
+      }
     } catch (e) { log('task-list write failed: ' + e.message); }
   }
 
@@ -418,7 +1175,8 @@ function createMeetingAnalyzer(deps) {
     const exe = findClaudeExe();
     if (!exe) return Promise.reject(new Error('Claude CLI not found on PATH'));
     // `claude -p` with no positional prompt reads the whole prompt from stdin; response on stdout.
-    return runProc(exe, ['-p'], input, false).then(r => r.stdout);
+    // CLAUDE_ISOLATION_ARGS is what makes "tools denied" true (see the constant for the smoke test).
+    return runProc(exe, ['-p'].concat(CLAUDE_ISOLATION_ARGS), input, false).then(r => r.stdout);
   }
 
   async function runCodex(input) {
@@ -426,12 +1184,19 @@ function createMeetingAnalyzer(deps) {
     // codex exec: `-` = read instructions from stdin; --output-last-message captures just the final
     // reply (stdout carries progress noise); --skip-git-repo-check because the processed folder is
     // not a repo. shell:true because npm's codex shim is a .cmd on Windows (codexvoice-session:249).
-    const outFile = path.join(os.tmpdir(), 'oqx-analysis-' + now() + '.md');
+    // Isolation (CODEX_ISOLATION_ARGS): read-only sandbox, no persisted session, and the working
+    // directory is a fresh empty temp folder so even read-only commands see nothing of ours.
+    const stamp = now();
+    const workDir = path.join(os.tmpdir(), 'oqx-analysis-' + stamp + '-cwd');
+    const outFile = path.join(os.tmpdir(), 'oqx-analysis-' + stamp + '.md');
     try {
-      await runProc('"' + findCodexExe() + '"', ['exec', '-', '--skip-git-repo-check', '--output-last-message', outFile], input, true);
+      await fsp.mkdir(workDir, { recursive: true });
+      await runProc('"' + findCodexExe() + '"',
+        ['exec', '-', '--skip-git-repo-check'].concat(CODEX_ISOLATION_ARGS, ['-C', workDir, '--output-last-message', outFile]), input, true);
       return await fsp.readFile(outFile, 'utf8');
     } finally {
       try { await fsp.unlink(outFile); } catch (e) {}
+      try { await fsp.rm(workDir, { recursive: true, force: true }); } catch (e) {}
     }
   }
 
@@ -500,8 +1265,20 @@ function createMeetingAnalyzer(deps) {
         reject(new Error('timed out after ' + Math.round(timeoutMs / 60000) + ' min'));
       }, timeoutMs);
       const finish = (fn, v) => { if (!settled) { settled = true; clearTimeout(timer); fn(v); } };
-      proc.stdout.on('data', d => { out += d; });
-      proc.stderr.on('data', d => { err += d; });
+      // Byte-counted caps on both streams; nothing is appended once the call is settled.
+      let outBytes = 0, errBytes = 0;
+      proc.stdout.on('data', d => {
+        if (settled) return;
+        outBytes += Buffer.byteLength(d);
+        if (outBytes > MAX_OUTPUT_BYTES) {   // never accumulate an unbounded reply
+          settled = true; clearTimeout(timer);
+          try { proc.kill(); } catch (e) {}
+          reject(new Error('AI output exceeded ' + Math.round(MAX_OUTPUT_BYTES / 1048576) + ' MB — not analyzed'));
+          return;
+        }
+        out += d;
+      });
+      proc.stderr.on('data', d => { if (settled) return; errBytes += Buffer.byteLength(d); if (errBytes <= MAX_STDERR_BYTES) err += d; });
       proc.on('error', e => finish(reject, new Error('spawn failed: ' + e.message)));
       proc.on('close', code => {
         if (code === 0) finish(resolve, { stdout: out });
@@ -521,9 +1298,20 @@ function createMeetingAnalyzer(deps) {
 
   // Read a finished analysis for the panel's View action. The .md may live beside the transcript
   // or (details layout) one folder up; legacy plain <base>.md still accepted.
-  function result(name) {
+  function result(name, proposed, kind) {
     const n = safeRelPath(name);
     if (!n) return { ok: false, error: 'bad name' };
+    if (normKind(kind) === 'transcribed') {
+      // A transcribed row has no analysis of its own; once published, View shows the file it became.
+      const p = published.get(n);
+      if (!p) return { ok: false, error: 'not analyzed' };
+      try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8'), md: relToProcessed(p) }; } catch (e) { return { ok: false, error: 'not analyzed' }; }
+    }
+    if (proposed) {   // the reviewable new analysis kept beside the sources
+      const base = path.posix.basename(n).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/(-diarizer-response)?\.(?:md|json)$/i, '');
+      const p = path.join(resolveFolders().processed, path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n), 'details', base + '.proposed.md');
+      try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8'), proposed: true }; } catch (e) { return { ok: false, error: 'no proposal to review' }; }
+    }
     const jsonAbs = path.join(resolveFolders().processed, n).replace(/\.md$/i, '.json');
     for (const p of [mdTargetFor(jsonAbs), mdPathFor(jsonAbs), mdPathFor(jsonAbs).replace(/-analysis\.md$/i, '.md')]) {
       try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8') }; } catch (e) { /* next */ }
@@ -539,7 +1327,7 @@ function createMeetingAnalyzer(deps) {
     return n;
   }
 
-  return { start, getState, result, clearQueue };
+  return { start, getState, result, clearQueue, applyProposed, isBusy };
 }
 
-module.exports = { createMeetingAnalyzer, slimTranscript, highlightsBlock };
+module.exports = { createMeetingAnalyzer, slimTranscript, highlightsBlock, CLAUDE_ISOLATION_ARGS, CODEX_ISOLATION_ARGS };

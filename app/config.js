@@ -4186,7 +4186,7 @@
     const th = currentTheme();
     // Meeting recording settings (config.settings.meeting) — global so auto-record works regardless of
     // which app the panel is showing. Same shape as MEETING_DEFAULTS in main.js.
-    const currentMe = () => Object.assign({ folder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: IS_MAC ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' }, (config.settings || {}).meeting || {}, ((config.settings || {}).meeting || {}).busyMqttBaseTopic === 'open-quake' ? { busyMqttBaseTopic: 'bedrock-panel' } : {});
+    const currentMe = () => Object.assign({ folder: '', transcribedFolder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: IS_MAC ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' }, (config.settings || {}).meeting || {}, ((config.settings || {}).meeting || {}).busyMqttBaseTopic === 'open-quake' ? { busyMqttBaseTopic: 'bedrock-panel' } : {});
     const me = currentMe();
     // Day set for the busylight schedule. Built here so the markup below stays readable; the empty
     // guard matters because ''.split(',') yields [''] and Number('') is 0, which would silently
@@ -4383,12 +4383,17 @@ ${IS_MAC ? `
         <button id="meFolderBrowse" type="button">Browse…</button></div>
       <details class="hint"><summary>Where new recordings land — one stereo WAV per meeting (your mic = left, everyone else = right), named by date and time.</summary> Leave blank to use Documents\\Bedrock Panel Meetings\\unprocessed.</details>
 
-      <div class="row" style="margin-top:12px"><label>Processed Recordings</label>
+      <div class="row" style="margin-top:12px"><label>Transcribed Recordings</label>
+        <input id="meTranscribed" value="${esc(me.transcribedFolder)}" placeholder="Documents\\Bedrock Panel Meetings\\transcribed" style="flex:1">
+        <button id="meTranscribedBrowse" type="button">Browse…</button></div>
+      <p class="hint">Transcribed but not yet analyzed: the WAV, its transcript and meeting info wait here (one flat folder) until you analyze them. Leave blank to use Documents\\Bedrock Panel Meetings\\transcribed.</p>
+      <div class="row" style="margin-top:12px"><label>Completed Meetings</label>
         <input id="meProcessed" value="${esc(me.processedFolder)}" placeholder="Documents\\Bedrock Panel Meetings\\processed" style="flex:1">
         <button id="meProcessedBrowse" type="button">Browse…</button></div>
-      <p class="hint">Transcribed recordings and their transcripts are moved here. Leave blank to use Documents\\Bedrock Panel Meetings\\processed.</p>
+      <p class="hint">Finished meeting files only (<b>&lt;recording&gt;.md</b> with the sources in <b>details\\</b>) — the folder to open as an Obsidian vault. Leave blank to use Documents\\Bedrock Panel Meetings\\processed. The three folders must be separate; one may not sit inside another.</p>
+      <p class="hint err" id="meFoldersErr" style="display:none"></p>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meByDate" ${me.processedByDate ? 'checked' : ''}> Organize by date</label></div>
-      <p class="hint">Files each processed recording into year and month subfolders (e.g. 2026\\08\\) under the folder above, by the date it was processed.</p>
+      <p class="hint">Files each completed meeting into year and month subfolders (e.g. 2026\\08\\) under the folder above, by the meeting's calendar date, or the recording date when there is no calendar entry.</p>
 
       <div class="row" style="margin-top:12px"><label style="width:auto">Audio</label>
         <label class="iconopt" style="width:auto"><input type="checkbox" id="meAudioOn" ${me.micDevice ? 'checked' : ''}> Override default audio sources</label></div>
@@ -4574,10 +4579,8 @@ ${IS_MAC ? `
       <details class="hint"><summary>When a recurring meeting (per its calendar info) is analyzed, its files move from the date folder to <b>YYYY\\&lt;Meeting-Name&gt;\\</b>.</summary> Un-analyzed meetings stay in the date folders, so they're easy to find.</details>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meAppendName" ${me.appendMeetingName ? 'checked' : ''} ${me.outlookEnabled ? '' : 'disabled'}> Append meeting name to filename</label></div>
       <details class="hint"><summary>Renames a finished recording from &lt;timestamp&gt;.wav to <b>&lt;timestamp&gt;-&lt;Meeting Name&gt;.wav</b> when the calendar matched a meeting; every later file (transcript, analysis…) inherits the name.</summary> Requires meeting information above.</details>
-      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meSepTx" ${me.separateTranscript ? 'checked' : ''}> Separate Clean Transcript</label></div>
-      <p class="hint">Leaves the full transcript out of the analysis .md and saves it as <b>&lt;name&gt;-clean_transcript.txt</b> instead.</p>
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meTaskList" ${me.taskListEnabled ? 'checked' : ''}> Create task-lists for post-analysis processing</label></div>
-      <details class="hint"><summary>After each analysis batch finishes, writes a dated checklist pointing at the new <b>-analysis.md</b> files (plus meeting metadata when available) — the hand-off for pulling your action items onto a board.</summary> One file per batch, named like <b>2026-08-17_10-42-13.md</b>.</details>
+      <details class="hint"><summary>After each analysis batch finishes, writes a dated checklist pointing at the new meeting <b>.md</b> files (plus meeting metadata when available) — the hand-off for pulling your action items onto a board.</summary> One file per batch, named like <b>2026-08-17_10-42-13.md</b>.</details>
       <div class="row"><label>Task-list folder</label>
         <input id="meTaskFolder" value="${esc(me.taskListFolder)}" placeholder="blank = task-list under Processed Recordings" style="flex:1">
         <button id="meTaskFolderBrowse" type="button">Browse…</button></div>
@@ -4588,8 +4591,7 @@ ${IS_MAC ? `
       <div class="row"><label>API token</label>${secretInput(me.joplinToken || '', 'id="meJoplinToken" placeholder="Joplin › Tools › Options › Web Clipper"', 'flex:1')}</div>
       <div class="row"><label>Notebook</label>
         <input id="meJoplinNb" value="${esc(me.joplinNotebook)}" style="width:230px"></div>
-      <div class="row" style="margin-top:12px"><label class="iconopt" style="width:auto"><input type="checkbox" id="meDetails" ${me.useDetailsFolder ? 'checked' : ''}> Use Details Folder</label></div>
-      <p class="hint">At analysis, everything except the notes .md (WAV, transcript, meeting info, clean transcript) moves into a <b>details\\</b> subfolder of the meeting's folder.</p>
+      <p class="hint" style="margin-top:12px">Filing: at analysis, everything except the meeting .md (WAV, transcript, meeting info, capture info, captions, screenshots) moves into a <b>details\\</b> subfolder of the meeting's folder. The .md always contains the full transcript.</p>
       <div class="row" style="margin-top:12px"><label>Speaker threshold</label>
         <input type="number" id="meThreshold" min="0" max="1" step="0.05" value="${esc(me.transcribeThreshold)}" style="width:120px">
         <span class="hint" style="margin:0 0 0 8px">blank = server default</span></div>
@@ -6048,15 +6050,33 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       wireAppList('meApps', 'recordApps', appLists.callApps, 'No apps — the default list is used: Zoom.exe, Teams.exe, ms-teams.exe.');
       wireAppList('meBusyApps', 'busyApps', appLists.callApps, 'No apps — the busy light never turns on for a call.');
       wireAppList('meSlideFilter', 'slideAppFilter', appLists.slideFilter, 'No apps chosen — the picker lists every window.');
-      document.getElementById('meFolder').oninput = e => saveMe({ folder: e.target.value.trim() });
+      // The three stage folders are checked as typed (blank = default): same path or nested = an
+      // error shown right here, and the panel refuses to list, analyze, delete or batch until fixed.
+      const meCheckFolders = async () => {
+        const el = document.getElementById('meFoldersErr');
+        try {
+          const bad = await configApi.meetingFoldersCheck({
+            unprocessed: document.getElementById('meFolder').value, transcribed: document.getElementById('meTranscribed').value, processed: document.getElementById('meProcessed').value,
+          });
+          el.textContent = bad ? 'Meeting folders: ' + bad : '';
+          el.style.display = bad ? '' : 'none';
+        } catch (e) { /* older host without the check: nothing to show */ }
+      };
+      meCheckFolders();
+      document.getElementById('meFolder').oninput = e => { saveMe({ folder: e.target.value.trim() }); meCheckFolders(); };
       document.getElementById('meFolderBrowse').onclick = async () => {
         const p = await configApi.pickFolder();
-        if (p) { document.getElementById('meFolder').value = p; saveMe({ folder: p }); }
+        if (p) { document.getElementById('meFolder').value = p; saveMe({ folder: p }); meCheckFolders(); }
       };
-      document.getElementById('meProcessed').oninput = e => saveMe({ processedFolder: e.target.value.trim() });
+      document.getElementById('meTranscribed').oninput = e => { saveMe({ transcribedFolder: e.target.value.trim() }); meCheckFolders(); };
+      document.getElementById('meTranscribedBrowse').onclick = async () => {
+        const p = await configApi.pickFolder();
+        if (p) { document.getElementById('meTranscribed').value = p; saveMe({ transcribedFolder: p }); meCheckFolders(); }
+      };
+      document.getElementById('meProcessed').oninput = e => { saveMe({ processedFolder: e.target.value.trim() }); meCheckFolders(); };
       document.getElementById('meProcessedBrowse').onclick = async () => {
         const p = await configApi.pickFolder();
-        if (p) { document.getElementById('meProcessed').value = p; saveMe({ processedFolder: p }); }
+        if (p) { document.getElementById('meProcessed').value = p; saveMe({ processedFolder: p }); meCheckFolders(); }
       };
       document.getElementById('meByDate').onchange = e => saveMe({ processedByDate: e.target.checked });
       document.getElementById('meLargeRec').onchange = e => saveMe({ largeRecordButton: e.target.checked });
@@ -6073,8 +6093,6 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       syncMeetingSource();
       document.getElementById('meSepRec').onchange = e => saveMe({ separateRecurring: e.target.checked });
       document.getElementById('meAppendName').onchange = e => saveMe({ appendMeetingName: e.target.checked });
-      document.getElementById('meSepTx').onchange = e => saveMe({ separateTranscript: e.target.checked });
-      document.getElementById('meDetails').onchange = e => saveMe({ useDetailsFolder: e.target.checked });
       // macOS: the calendar name is rarely "Calendar" (Google names it after the address), so the last
       // Check Connection result fills it in when the saved name is not one of the chosen account's calendars.
       let lastCheckedAccounts = [];

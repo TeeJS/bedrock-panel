@@ -11,19 +11,20 @@ const { createMeetingTranscriber } = require('../app/meetingTranscribe');
 
 const GOOD_RESPONSE = { speaker_report: { speaker_count: 1 }, segments: [{ speaker: 'T', start: 0, end: 1, text: 'hi' }] };
 
-function setup(fetchImpl, httpPost) {
+function setup(fetchImpl, httpPost, extra = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-tx-'));
   const unprocessed = path.join(root, 'unprocessed');
-  const processed = path.join(root, 'processed');
+  const transcribed = path.join(root, 'transcribed');
   fs.mkdirSync(unprocessed);
   const tx = createMeetingTranscriber({
-    resolveFolders: () => ({ unprocessed, processed }),
+    resolveFolders: () => ({ unprocessed, transcribed }),
     resolveBaseUrl: () => 'http://fake:1',
     fetchImpl: fetchImpl || (async () => jsonResponse(true, {})),   // health probe
     httpPost: httpPost || (async () => ({ status: 200, text: JSON.stringify(GOOD_RESPONSE) })),
     healthTtlMs: 0,
+    ...extra,
   });
-  return { root, unprocessed, processed, tx };
+  return { root, unprocessed, transcribed, tx };
 }
 
 function jsonResponse(ok, body, status) {
@@ -42,7 +43,7 @@ async function drained(tx, timeoutMs = 3000) {
   }
 }
 
-test('success: JSON transcript written to processed, WAV moved, FIFO order kept', async () => {
+test('success: JSON transcript written flat to transcribed, WAV moved, FIFO order kept', async () => {
   const uploads = [];
   const s = setup(null, async (url, filename, buf) => {
     uploads.push([String(url), filename, buf.length]);
@@ -58,13 +59,13 @@ test('success: JSON transcript written to processed, WAV moved, FIFO order kept'
   assert.deepEqual(st.recent.map(j => [j.name, j.status]), [['b.wav', 'done'], ['a.wav', 'done']]);   // newest first = FIFO ran a then b
   for (const base of ['a', 'b']) {
     assert.equal(fs.existsSync(path.join(s.unprocessed, base + '.wav')), false, base + ' should have moved');
-    assert.equal(fs.existsSync(path.join(s.processed, base + '.wav')), true);
-    const j = JSON.parse(fs.readFileSync(path.join(s.processed, base + '-diarizer-response.json'), 'utf8'));
+    assert.equal(fs.existsSync(path.join(s.transcribed, base + '.wav')), true);
+    const j = JSON.parse(fs.readFileSync(path.join(s.transcribed, base + '-diarizer-response.json'), 'utf8'));
     assert.deepEqual(j.segments, GOOD_RESPONSE.segments);
   }
 });
 
-test('slide-capture folder travels with the WAV into processed', async () => {
+test('slide-capture folder travels with the WAV into transcribed', async () => {
   const s = setup(null, async () => ({ status: 200, text: JSON.stringify(GOOD_RESPONSE) }));
   addWav(s.unprocessed, 'm.wav');
   const shots = path.join(s.unprocessed, 'm-screenshots');
@@ -73,8 +74,36 @@ test('slide-capture folder travels with the WAV into processed', async () => {
   s.tx.enqueue('m.wav');
   await drained(s.tx);
   assert.equal(fs.existsSync(shots), false, 'screenshots folder should have left unprocessed');
-  const moved = path.join(s.processed, 'm-screenshots', '20260817-090001-slide001.png');
+  const moved = path.join(s.transcribed, 'm-screenshots', '20260817-090001-slide001.png');
   assert.equal(fs.existsSync(moved), true, 'slide should now sit beside the transcript');
+});
+
+test('transcription carries capture metadata and never creates a stub or completed folder', async () => {
+  const s = setup();
+  addWav(s.unprocessed, 'm.wav');
+  const capture = JSON.stringify({ started_at: '2026-10-15T10:12:00-06:00', device: 'Mic' });
+  fs.writeFileSync(path.join(s.unprocessed, 'm.capture.json'), capture);
+  s.tx.enqueue('m.wav');
+  await drained(s.tx);
+  assert.equal(s.tx.getState().recent[0].status, 'done');
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm.capture.json'), 'utf8'), capture);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.capture.json')), false);
+  assert.equal(fs.readdirSync(s.transcribed).some(n => /\.md$/i.test(n)), false);
+  assert.equal(fs.existsSync(path.join(s.root, 'processed')), false);
+});
+
+test('transcription preserves existing notes and never creates a new stub', async () => {
+  for (const filename of ['m.md', 'm-analysis.md']) {
+    const s = setup();
+    fs.mkdirSync(s.transcribed, { recursive: true });
+    const body = '# My edited complete notes\n';
+    fs.writeFileSync(path.join(s.transcribed, filename), body);
+    addWav(s.unprocessed, 'm.wav');
+    s.tx.enqueue('m.wav'); await drained(s.tx);
+    assert.equal(fs.readFileSync(path.join(s.transcribed, filename), 'utf8'), body);
+    if (filename !== 'm.md') assert.equal(fs.existsSync(path.join(s.transcribed, 'm.md')), false);
+    assert.equal(s.tx.getState().recent[0].status, 'done');
+  }
 });
 
 test('diarizer {detail} error: WAV stays in unprocessed, error recorded, queue continues', async () => {
@@ -95,7 +124,7 @@ test('diarizer {detail} error: WAV stays in unprocessed, error recorded, queue c
     ['bad.wav', 'error', 'unsupported audio'],
   ]);
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'bad.wav')), true);     // stays for retry
-  assert.equal(fs.existsSync(path.join(s.processed, 'good.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'good.wav')), true);
   assert.equal(st.completed, 1);
   assert.equal(st.failed, 1);
 });
@@ -152,14 +181,14 @@ test('enqueue validates names, requires the file, and dedupes against queue + cu
   await drained(s.tx);
 });
 
-test('organizeByDate files results into YYYY/MM under processed', async () => {
+test('organizeByDate never changes the flat transcribed layout', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-tx-date-'));
   const unprocessed = path.join(root, 'unprocessed');
-  const processed = path.join(root, 'processed');
+  const transcribed = path.join(root, 'transcribed');
   fs.mkdirSync(unprocessed);
   const fixedNow = new Date(2026, 7, 14).getTime();   // Aug 14 2026 -> 2026/08
   const tx = createMeetingTranscriber({
-    resolveFolders: () => ({ unprocessed, processed }),
+    resolveFolders: () => ({ unprocessed, transcribed }),
     resolveBaseUrl: () => 'http://fake:1',
     organizeByDate: () => true,
     now: () => fixedNow,
@@ -170,31 +199,31 @@ test('organizeByDate files results into YYYY/MM under processed', async () => {
   addWav(unprocessed, 'm.wav');
   tx.enqueue('m.wav');
   await drained(tx);
-  assert.equal(fs.existsSync(path.join(processed, '2026', '08', 'm.wav')), true);
-  assert.equal(fs.existsSync(path.join(processed, '2026', '08', 'm-diarizer-response.json')), true);
+  assert.equal(fs.existsSync(path.join(transcribed, 'm.wav')), true);
+  assert.equal(fs.existsSync(path.join(transcribed, 'm-diarizer-response.json')), true);
   assert.equal(fs.existsSync(path.join(unprocessed, 'm.wav')), false);
 });
 
 test('re-transcribing the same meeting files as _1, _2 — never overwrites', async () => {
   const s = setup();
-  fs.mkdirSync(s.processed, { recursive: true });
-  fs.writeFileSync(path.join(s.processed, 'm.wav'), 'ORIGINAL WAV');
-  fs.writeFileSync(path.join(s.processed, 'm-diarizer-response.json'), '"ORIGINAL JSON"');
+  fs.mkdirSync(s.transcribed, { recursive: true });
+  fs.writeFileSync(path.join(s.transcribed, 'm.wav'), 'ORIGINAL WAV');
+  fs.writeFileSync(path.join(s.transcribed, 'm-diarizer-response.json'), '"ORIGINAL JSON"');
   addWav(s.unprocessed, 'm.wav');
   s.tx.enqueue('m.wav');
   await drained(s.tx);
   assert.equal(s.tx.getState().recent[0].status, 'done');
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm.wav'), 'utf8'), 'ORIGINAL WAV');                 // untouched
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm-diarizer-response.json'), 'utf8'), '"ORIGINAL JSON"');
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_1.wav')), true);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_1-diarizer-response.json')), true);
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm.wav'), 'utf8'), 'ORIGINAL WAV');                 // untouched
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm-diarizer-response.json'), 'utf8'), '"ORIGINAL JSON"');
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_1.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_1-diarizer-response.json')), true);
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.wav')), false);
   // a third run steps to _2
   addWav(s.unprocessed, 'm.wav');
   s.tx.enqueue('m.wav');
   await drained(s.tx);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_2.wav')), true);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_2-diarizer-response.json')), true);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_2.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_2-diarizer-response.json')), true);
 });
 
 test('attendees from the sidecar and the threshold setting ride the upload', async () => {
@@ -203,7 +232,7 @@ test('attendees from the sidecar and the threshold setting ride the upload', asy
   const unprocessed = path.join(root, 'unprocessed');
   fs.mkdirSync(unprocessed);
   const tx = createMeetingTranscriber({
-    resolveFolders: () => ({ unprocessed, processed: path.join(root, 'processed') }),
+    resolveFolders: () => ({ unprocessed, transcribed: path.join(root, 'transcribed') }),
     resolveBaseUrl: () => 'http://fake:1',
     resolveThreshold: () => '0.7',
     resolveMyName: () => 'T.J. Schmitz',
@@ -243,16 +272,16 @@ test('Outlook meeting-info sidecar travels with the WAV (and joins the collision
   fs.writeFileSync(path.join(s.unprocessed, 'm.json'), '{"subject":"weekly"}');
   s.tx.enqueue('m.wav');
   await drained(s.tx);
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm.json'), 'utf8'), '{"subject":"weekly"}');
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm.json'), 'utf8'), '{"subject":"weekly"}');
   assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.json')), false);
   // re-run: existing m.json at dest forces the _1 rename, sidecar follows as m_1.json
   addWav(s.unprocessed, 'm.wav');
   fs.writeFileSync(path.join(s.unprocessed, 'm.json'), '{"subject":"weekly take 2"}');
   s.tx.enqueue('m.wav');
   await drained(s.tx);
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm_1.json'), 'utf8'), '{"subject":"weekly take 2"}');
-  assert.equal(fs.existsSync(path.join(s.processed, 'm_1.wav')), true);
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm.json'), 'utf8'), '{"subject":"weekly"}');   // first set untouched
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm_1.json'), 'utf8'), '{"subject":"weekly take 2"}');
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_1.wav')), true);
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm.json'), 'utf8'), '{"subject":"weekly"}');   // first set untouched
 });
 
 test('hooks: pre runs once before a batch (after health), post once after the drain', async () => {
@@ -262,7 +291,7 @@ test('hooks: pre runs once before a batch (after health), post once after the dr
   fs.mkdirSync(unprocessed);
   let serverUp = false;
   const tx = createMeetingTranscriber({
-    resolveFolders: () => ({ unprocessed, processed: path.join(root, 'processed') }),
+    resolveFolders: () => ({ unprocessed, transcribed: path.join(root, 'transcribed') }),
     resolveBaseUrl: () => 'http://fake:1',
     resolveHooks: () => ({ enabled: true, pre: 'START', post: 'STOP' }),
     execHook: async (cmd) => { events.push('hook:' + cmd); if (cmd === 'START') serverUp = true; if (cmd === 'STOP') serverUp = false; },
@@ -293,7 +322,7 @@ test('hooks: pre-command failure errors every queued job; WAVs stay for retry', 
   const unprocessed = path.join(root, 'unprocessed');
   fs.mkdirSync(unprocessed);
   const tx = createMeetingTranscriber({
-    resolveFolders: () => ({ unprocessed, processed: path.join(root, 'processed') }),
+    resolveFolders: () => ({ unprocessed, transcribed: path.join(root, 'transcribed') }),
     resolveBaseUrl: () => 'http://fake:1',
     resolveHooks: () => ({ enabled: true, pre: 'START', post: '' }),
     execHook: async () => { throw new Error('ssh: connect refused'); },
@@ -342,4 +371,133 @@ test('health is unknown until a probe answers, then reflects reality', async () 
   s.tx.getState();
   await settle();
   assert.equal(s.tx.getState().health, 'ok');
+});
+
+test('exact captions move with the collision-renamed source set; similar names stay put', async () => {
+  const s = setup();
+  fs.mkdirSync(s.transcribed);
+  fs.writeFileSync(path.join(s.transcribed, 'm.vtt'), 'OLD CAPTIONS');
+  fs.writeFileSync(path.join(s.transcribed, 'm_1.capture.json'), 'OLD CAPTURE');
+  fs.mkdirSync(path.join(s.transcribed, 'm_2-screenshots'));
+  fs.writeFileSync(path.join(s.transcribed, 'm_3.completed.json'), '{"md":"2026/03/m.md"}');
+  addWav(s.unprocessed, 'm.wav');
+  fs.writeFileSync(path.join(s.unprocessed, 'm.vtt'), 'WEBVTT\nExact meeting captions');
+  fs.writeFileSync(path.join(s.unprocessed, 'm-other.vtt'), 'Other meeting captions');
+  s.tx.enqueue('m.wav'); await drained(s.tx);
+  assert.equal(s.tx.getState().recent[0].status, 'done');
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm_4.vtt'), 'utf8'), 'WEBVTT\nExact meeting captions');
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_4-diarizer-response.json')), true);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm_4.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.vtt')), false);
+  assert.equal(fs.readFileSync(path.join(s.transcribed, 'm.vtt'), 'utf8'), 'OLD CAPTIONS');
+  assert.equal(fs.readFileSync(path.join(s.unprocessed, 'm-other.vtt'), 'utf8'), 'Other meeting captions');
+});
+
+test('transcript row is published only after every source is filed', async () => {
+  let release, copying;
+  const waiting = new Promise(resolve => { copying = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const injectedFs = Object.create(fs);
+  Object.defineProperty(injectedFs, 'promises', { value: Object.assign({}, fs.promises, {
+    async copyFile(src, dest, flags) {
+      if (src.endsWith('.capture.json')) { copying(); await gate; }
+      return fs.promises.copyFile(src, dest, flags);
+    },
+  }) });
+  const s = setup(null, null, { fs: injectedFs });
+  addWav(s.unprocessed, 'm.wav');
+  fs.writeFileSync(path.join(s.unprocessed, 'm.capture.json'), '{"started_at":"2026-10-15T10:00:00Z"}');
+  s.tx.enqueue('m.wav'); await waiting;
+  const { createMeetingLibrary } = require('../app/meetingLibrary');
+  const library = createMeetingLibrary({ resolveFolders: () => s });
+  assert.deepEqual(library.listFiles('transcribed').meetings, []);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.wav')), true);
+  release(); await drained(s.tx);
+  assert.equal(library.listFiles('transcribed').meetings.length, 1);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm.capture.json')), true);
+});
+
+test('copy or late publish failure keeps every original and exposes no partial row; retry succeeds', async () => {
+  for (const fault of ['copy', 'publish']) {
+    let fail = true;
+    const injectedFs = Object.create(fs);
+    Object.defineProperty(injectedFs, 'promises', { value: Object.assign({}, fs.promises, {
+      async copyFile(src, dest, flags) {
+        if (fail && fault === 'copy' && src.endsWith('.capture.json')) throw new Error('injected companion failure');
+        return fs.promises.copyFile(src, dest, flags);
+      },
+      async rename(src, dest) {
+        if (fail && fault === 'publish' && dest.endsWith('-diarizer-response.json')) throw new Error('injected publish failure');
+        return fs.promises.rename(src, dest);
+      },
+    }) });
+    const s = setup(null, null, { fs: injectedFs });
+    addWav(s.unprocessed, 'm.wav');
+    for (const suffix of ['.json', '.capture.json', '.vtt']) fs.writeFileSync(path.join(s.unprocessed, 'm' + suffix), suffix);
+    fs.mkdirSync(path.join(s.unprocessed, 'm-screenshots'));
+    fs.writeFileSync(path.join(s.unprocessed, 'm-screenshots', 'slide.png'), 'PNG');
+    const originals = fs.readdirSync(s.unprocessed).sort();
+    s.tx.enqueue('m.wav'); await drained(s.tx);
+    assert.equal(s.tx.getState().recent[0].status, 'error', fault);
+    assert.deepEqual(fs.readdirSync(s.unprocessed).sort(), originals, fault);
+    assert.deepEqual(fs.readdirSync(s.transcribed), [], fault);
+    assert.equal(fs.readFileSync(path.join(s.unprocessed, 'm-screenshots', 'slide.png'), 'utf8'), 'PNG');
+    fail = false;
+    s.tx.enqueue('m.wav'); await drained(s.tx);
+    assert.equal(s.tx.getState().recent[0].status, 'done', fault);
+    assert.equal(fs.existsSync(path.join(s.transcribed, 'm-diarizer-response.json')), true);
+    assert.deepEqual(fs.readdirSync(s.unprocessed), []);
+  }
+});
+
+test('staging retains the actual uppercase WAV source path on case-sensitive systems', async () => {
+  const copied = [];
+  const injectedFs = Object.create(fs);
+  Object.defineProperty(injectedFs, 'promises', { value: Object.assign({}, fs.promises, {
+    async copyFile(src, dest, flags) {
+      copied.push(path.basename(src));
+      return fs.promises.copyFile(src, dest, flags);
+    },
+  }) });
+  const s = setup(null, null, { fs: injectedFs });
+  addWav(s.unprocessed, 'm.WAV');
+  s.tx.enqueue('m.WAV'); await drained(s.tx);
+  assert.equal(s.tx.getState().recent[0].status, 'done');
+  assert.deepEqual(copied, ['m.WAV']);
+  assert.equal(fs.existsSync(path.join(s.transcribed, 'm.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.WAV')), false);
+});
+
+test('misconfigured folders refuse queue work before hooks or uploads', async () => {
+  let hooks = 0, uploads = 0;
+  const s = setup(null, async () => { uploads++; return { status: 200, text: JSON.stringify(GOOD_RESPONSE) }; }, {
+    foldersError: () => 'Transcribed and Completed folders are the same path',
+    resolveHooks: () => ({ enabled: true, pre: 'START' }),
+    execHook: async () => { hooks++; },
+  });
+  addWav(s.unprocessed, 'm.wav');
+  s.tx.enqueue('m.wav'); await drained(s.tx);
+  assert.match(s.tx.getState().recent[0].error, /meeting folders misconfigured/);
+  assert.equal(hooks, 0); assert.equal(uploads, 0);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'm.wav')), true);
+  assert.equal(fs.existsSync(s.transcribed), false);
+});
+
+test('a settings change during transcription refuses filing and the next queued job', async () => {
+  let release, entered, bad = '', uploads = 0;
+  const inUpload = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const s = setup(null, async () => {
+    uploads++; entered(); await gate;
+    return { status: 200, text: JSON.stringify(GOOD_RESPONSE) };
+  }, { foldersError: () => bad });
+  addWav(s.unprocessed, 'a.wav'); addWav(s.unprocessed, 'b.wav');
+  s.tx.enqueue('a.wav'); s.tx.enqueue('b.wav');
+  await inUpload; bad = 'Transcribed folder is inside the Completed folder'; release();
+  await drained(s.tx);
+  assert.equal(uploads, 1, 'queued job never uploads after the settings change');
+  assert.equal(s.tx.getState().failed, 2);
+  assert.equal(s.tx.getState().recent.every(item => /meeting folders misconfigured/.test(item.error)), true);
+  assert.deepEqual(fs.readdirSync(s.unprocessed).sort(), ['a.wav', 'b.wav']);
+  assert.equal(fs.existsSync(s.transcribed), false);
 });

@@ -23,15 +23,10 @@ function createMeetingBatch(deps) {
   }
 
   function transcripts() {
-    let result = list('processed', '');
-    // Match the Analysis overlay's initial directory, without sweeping archive/details folders.
-    if (result.byDate) {
-      const date = new Date(now());
-      const dir = String(date.getFullYear()) + '/' + String(date.getMonth() + 1).padStart(2, '0');
-      result = list('processed', dir);
-    }
-    return result.files.filter(file => /-diarizer-response\.json$/i.test(file.name) && file.analyzed === false)
-      .map(file => file.name);
+    // Same flat logical rows as the Analysis screen; no completed/archive scan.
+    const result = list('transcribed', '');
+    return (result.meetings || []).filter(file => /-diarizer-response\.json$/i.test(file.name)
+      && file.analyzed === false && !file.readOnly && !!file.jsonName).map(file => file.name);
   }
 
   async function stage(service, names, enqueue, busy, doneKey, errorKey, haltOnAuth) {
@@ -69,7 +64,7 @@ function createMeetingBatch(deps) {
       await stage(transcriber, wavs, name => transcriber.enqueue(name),
         s => !!(s.current || s.phase || s.queue.length), 'transcribed', 'transcribeErrors');
       state.phase = 'analyzing';
-      await stage(analyzer, transcripts(), name => analyzer.start(name),
+      await stage(analyzer, transcripts(), name => analyzer.start(name, 'transcribed'),
         s => !!(s.running || s.queue.length), 'analyzed', 'analyzeErrors', true);
       if (state.halted) return;
       state.phase = 'done';

@@ -146,10 +146,16 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   renamed to that on first launch when the setting is blank; custom paths are never touched. Recordings from before v0.4.8 that sat in
   the root of that folder are moved into `unprocessed\`
   automatically at launch, only when this setting is blank.)
-- **Processed Recordings** — where transcribed recordings and their transcripts are
-  moved. Blank = `Documents\Bedrock Panel Meetings\processed`.
-- **Organize by date** — files each processed recording into `YYYY\MM\` subfolders under
-  the Processed folder, keyed to the date it was processed.
+- **Transcribed Recordings** — transcribed but not yet analyzed: the WAV, its transcript,
+  sidecars, captions and screenshots wait here in one flat folder until you analyze them.
+  Blank = `Documents\Bedrock Panel Meetings\transcribed`.
+- **Completed Meetings** — finished meeting files only (`<recording>.md` with the sources in
+  `details\`); the folder to open as an Obsidian vault. Blank =
+  `Documents\Bedrock Panel Meetings\processed`. The three folders must be separate — none may be
+  equal to or inside another; the panel refuses to analyze or delete while they overlap.
+- **Organize by date** — files each completed meeting into `YYYY\MM\` subfolders under the
+  Completed folder, by the meeting's calendar date (or the recording date when there is no
+  calendar entry) — never the day it was processed.
 - **Microphone** — the mic recorded as your channel. This must be the same mic you use
   with Teams; it can also be changed from the panel's Settings row.
 - **Transcription Server** — the tts-sst / meeting-diarizer URL (either the base URL or
@@ -261,13 +267,12 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   `<timestamp>-<Meeting Name>.wav` (sidecar too) when the calendar matched a meeting; all
   later files inherit the name. Requires calendar meeting info; the rename happens when
   the recording stops (an open file can't be renamed).
-- **Advanced → Separate Clean Transcript** — the analysis `.md` keeps the notes only;
-  the cleaned transcript saves as `<name>-clean_transcript.txt`. (The split keys off
-  the prompt's `## Transcript` heading — a custom prompt without it falls back to the
-  combined file.)
-- **Advanced → Use Details Folder** — at analysis, everything except the notes `.md`
-  (WAV, transcript JSON, meeting info, clean transcript) moves into a `details\`
-  subfolder of the meeting's folder — date folders and recurring-meeting folders alike.
+- **Filing layout (fixed)** — at analysis, everything except the meeting `.md` (WAV,
+  transcript JSON, meeting info, capture info, captions, screenshots) moves into a
+  `details\` subfolder of the meeting's folder — date folders and recurring-meeting
+  folders alike. The meeting `.md` always contains the full transcript. (The former
+  *Separate Clean Transcript* and *Use Details Folder* options were retired with the
+  one-file meeting format; old settings are ignored.)
 - **Advanced → Speaker threshold** — optional speaker-identification cosine cutoff
   (e.g. `0.70`) sent with each transcription; blank = the server's default. When a
   recording has calendar meeting info, its attendee list (organizer + required +
@@ -276,7 +281,7 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
 - **Advanced → Create task-lists for post-analysis processing** — after each analysis
   batch finishes, writes a dated checklist (`2026-08-17_10-42-13.md`) to the
   **Task-list folder** (blank = `task-list` under Processed Recordings): one checkbox
-  per analyzed meeting, pointing at its `-analysis.md` (and meeting metadata when the
+  per analyzed meeting, pointing at its meeting `.md` (and meeting metadata when the
   calendar integration provided it) — the hand-off for pulling action items onto a
   kanban board. Only successful analyses are listed.
 - **Advanced → Create Joplin notes for analyses** — after each analysis, creates a note

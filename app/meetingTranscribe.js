@@ -3,8 +3,8 @@
 // Diarized-transcription client (docs/meetings-api.md): uploads unprocessed WAVs to the
 // tts-sst / meeting-diarizer /transcribe endpoint, then files the results. One upload at a time
 // through a FIFO queue — the diarizer runs one job anyway, and a single long-lived socket beats
-// several 3600 s ones. On success the raw response JSON lands in the processed folder as
-// <basename>.json and the WAV moves in next to it; on any failure the WAV stays in unprocessed
+// several 3600 s ones. On success the raw response JSON lands flat in transcribed as
+// <basename>-diarizer-response.json and the WAV moves in next to it; on any failure the WAV stays in unprocessed
 // and the error is kept for the panel to show.
 //
 // Everything external is injected (folders, base URL, fetch, fs, clock) so tests run with a fake
@@ -94,11 +94,6 @@ function httpPostWav(url, filename, buf, timeoutMs, fields) {
 function createMeetingTranscriber(deps) {
   const fsMod = deps.fs || require('fs');
   const fsp = fsMod.promises;
-  // Move a file into place: atomic rename, falling back to copy+unlink across volumes.
-  const moveFile = async (src, dest) => {
-    try { await fsp.rename(src, dest); }
-    catch (e) { await fsp.copyFile(src, dest); await fsp.unlink(src); }
-  };
   // Record a finished-file entry at the head of `recent`, capped to the most recent RECENT_MAX.
   const pushRecent = entry => {
     if (entry.status === 'done') completed++;
@@ -108,9 +103,12 @@ function createMeetingTranscriber(deps) {
   };
   const fetchImpl = deps.fetchImpl || fetch;         // health probe only (short, cheap)
   const httpPost = deps.httpPost || httpPostWav;     // the long-running upload
-  const resolveFolders = deps.resolveFolders;   // () => { unprocessed, processed }
+  const resolveFolders = deps.resolveFolders;   // () => { unprocessed, transcribed, processed }
+  const foldersError = () => {
+    try { return deps.foldersError ? String(deps.foldersError() || '') : ''; }
+    catch (e) { return 'folder validation unavailable'; }
+  };
   const resolveBaseUrl = deps.resolveBaseUrl;   // () => 'http://127.0.0.1:10301'
-  const organizeByDate = deps.organizeByDate || (() => false);   // () => bool: file results into YYYY/MM subfolders
   const resolveThreshold = deps.resolveThreshold || (() => '');  // () => speaker cutoff ('' = server default)
   const resolveMyName = deps.resolveMyName || (() => '');        // () => operator's enrolled name ('' = off)
   // Engine: 'server' (the diarizer at resolveBaseUrl) or 'local' (localTranscribe(wavPath, { myName })
@@ -219,6 +217,14 @@ function createMeetingTranscriber(deps) {
 
   function pump() {
     if (current || hookRunning || !queue.length) return;
+    const badFolders = foldersError();
+    if (badFolders) {
+      const error = 'meeting folders misconfigured: ' + badFolders;
+      while (queue.length) pushRecent({ name: queue.shift(), status: 'error', error, finishedAt: now() });
+      log(error);
+      maybeRunPostHook();   // an already started server still gets its configured stop hook
+      return;
+    }
     const hooks = isLocal() ? {} : (resolveHooks() || {});   // local engine: no server to start or stop
     // Idle -> active with a pre hook configured: start the server, wait for it to answer, then
     // flow the queue. Failure fails every queued job (they'd all hit the same dead server) and
@@ -313,54 +319,70 @@ function createMeetingTranscriber(deps) {
     await fileResult(name, folders, result);
   }
 
-  // File the results: transcript JSON first (atomic tmp+rename, same discipline as saveConfig),
-  // then move the WAV. If the move fails the transcript still exists and the WAV stays visible
-  // in unprocessed — nothing is lost either way. With Organize-by-date on, both land in
-  // <processed>/YYYY/MM/ keyed to the processing date. Shared by both engines.
+  // Waiting transcripts are flat source sets, never meeting .md files. Reserve a whole
+  // basename (including optional companions) so retries cannot overwrite older sources.
   async function fileResult(name, folders, result) {
+    const badFolders = foldersError();   // settings may have changed during a long transcription
+    if (badFolders) throw new Error('meeting folders misconfigured: ' + badFolders);
     const src = path.join(folders.unprocessed, name);
-    let destDir = folders.processed;
-    if (organizeByDate()) {
-      const d = new Date(now());
-      destDir = path.join(destDir, String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'));
-    }
+    if (!folders.transcribed) throw new Error('Transcribed Recordings folder is not configured');
+    const destDir = folders.transcribed;
     await fsp.mkdir(destDir, { recursive: true });
-    // Re-tests of the same meeting must never overwrite an existing set: if <base>.wav or its
-    // transcript already exists at the destination, file this run as <base>_1, <base>_2, …
     const base = name.replace(/\.wav$/i, '');
+    const suffixes = ['.wav', '-diarizer-response.json', '.json', '.capture.json', '.completed.json', '.vtt', '-screenshots', '.md'];
     let finalBase = base;
-    for (let i = 1;
-      fsMod.existsSync(path.join(destDir, finalBase + '.wav'))
-      || fsMod.existsSync(path.join(destDir, finalBase + '-diarizer-response.json'))
-      || fsMod.existsSync(path.join(destDir, finalBase + '.json'));   // Outlook meeting-info sidecar
-      i++) {
+    for (let i = 1; suffixes.some(suffix => fsMod.existsSync(path.join(destDir, finalBase + suffix))); i++) {
       finalBase = base + '_' + i;
     }
     if (finalBase !== base) log('destination exists — filing as ' + finalBase);
     const jsonPath = path.join(destDir, finalBase + '-diarizer-response.json');
-    const tmp = jsonPath + '.tmp';
-    await fsp.writeFile(tmp, JSON.stringify(result, null, 2));
-    await fsp.rename(tmp, jsonPath);
-    // The Outlook meeting-info sidecar (<base>.json, written at record start) travels with the
-    // recording. Best-effort: a failed sidecar move never fails the job.
-    const sidecar = path.join(folders.unprocessed, base + '.json');
-    if (fsMod.existsSync(sidecar)) {
-      const sidecarDest = path.join(destDir, finalBase + '.json');
-      try { await moveFile(sidecar, sidecarDest); }
-      catch (e) { log('meeting-info sidecar move failed: ' + e.message); }
+    const sources = ['.wav', '.json', '.capture.json', '.vtt', '-screenshots']
+      .map(suffix => ({ src: suffix === '.wav' ? src : path.join(folders.unprocessed, base + suffix), leaf: finalBase + suffix }))
+      .filter(item => fsMod.existsSync(item.src));
+    // Copy first, keep originals until publication. A failed companion must not leave an
+    // actionable row with missing calendar/capture data or permit Delete during filing.
+    const stage = await fsp.mkdtemp(path.join(destDir, '.transcribing-'));
+    const placed = [];
+    let committed = false;
+    const copy = async (source, dest) => {
+      const stat = await fsp.lstat(source);
+      if (stat.isSymbolicLink()) throw new Error('recording source must not be a symbolic link');
+      if (stat.isDirectory()) {
+        await fsp.mkdir(dest);
+        for (const leaf of await fsp.readdir(source)) await copy(path.join(source, leaf), path.join(dest, leaf));
+      } else if (stat.isFile()) await fsp.copyFile(source, dest, fsMod.constants.COPYFILE_EXCL);
+      else throw new Error('unsupported recording source');
+    };
+    try {
+      for (const item of sources) await copy(item.src, path.join(stage, item.leaf));
+      const stagedJson = path.join(stage, finalBase + '-diarizer-response.json');
+      await fsp.writeFile(stagedJson, JSON.stringify(result, null, 2), { flag: 'wx' });
+      for (const item of sources) {
+        const dest = path.join(destDir, item.leaf);
+        if (fsMod.existsSync(dest)) throw new Error('recording source appeared during transcription filing');
+        await fsp.rename(path.join(stage, item.leaf), dest);
+        placed.push(dest);
+      }
+      if (fsMod.existsSync(jsonPath)) throw new Error('transcript appeared during transcription filing');
+      await fsp.rename(stagedJson, jsonPath);   // row becomes visible only with the complete source set
+      committed = true;
+    } catch (e) {
+      // Only paths created by this attempt are removed; originals have not been changed.
+      for (const dest of placed.reverse()) {
+        try { await fsp.rm(dest, { recursive: true, force: true }); }
+        catch (cleanup) { log('partial transcription copy remains: ' + path.basename(dest) + ' — ' + cleanup.message); }
+      }
+      throw e;
+    } finally {
+      try { await fsp.rm(stage, { recursive: true, force: true }); }
+      catch (e) { log('transcription staging cleanup failed: ' + e.message); }
     }
-    // The slide-capture folder (<base>-screenshots\) travels with the recording too. Best-effort;
-    // a failed move never fails the transcription job. Cross-volume falls back to recursive copy.
-    const shots = path.join(folders.unprocessed, base + '-screenshots');
-    if (fsMod.existsSync(shots)) {
-      const shotsDest = path.join(destDir, finalBase + '-screenshots');
-      try {
-        try { await fsp.rename(shots, shotsDest); }
-        catch (e) { await fsp.cp(shots, shotsDest, { recursive: true }); await fsp.rm(shots, { recursive: true, force: true }); }
-      } catch (e) { log('screenshots folder move failed: ' + e.message); }
+    if (committed) {
+      for (const item of sources) {
+        try { await fsp.rm(item.src, { recursive: true }); }
+        catch (e) { log('transcription saved; original source remains: ' + path.basename(item.src) + ' — ' + e.message); }
+      }
     }
-    const dest = path.join(destDir, finalBase + '.wav');
-    await moveFile(src, dest);
   }
 
   return { enqueue, getState };

@@ -11,8 +11,8 @@ const { createMeetingTranscriber } = require('../app/meetingTranscribe');
 
 function folders() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-meet-'));
-  const f = { unprocessed: path.join(root, 'unprocessed'), processed: path.join(root, 'processed') };
-  fs.mkdirSync(f.unprocessed, { recursive: true }); fs.mkdirSync(f.processed, { recursive: true });
+  const f = { unprocessed: path.join(root, 'unprocessed'), transcribed: path.join(root, 'transcribed') };
+  fs.mkdirSync(f.unprocessed, { recursive: true }); fs.mkdirSync(f.transcribed, { recursive: true });
   return f;
 }
 const settle = () => new Promise(r => setTimeout(r, 30));
@@ -54,10 +54,10 @@ test('local engine: transcribes on this machine, files the transcript and the WA
   assert.deepEqual(calls, [[path.join(f.unprocessed, 'standup.wav'), 'T.J.']]);
   assert.equal(posted, 0);
   assert.ok(logs.some(l => l.includes('[local] analyzing')), 'engine log lines are relayed');
-  const filed = JSON.parse(fs.readFileSync(path.join(f.processed, 'standup-diarizer-response.json'), 'utf8'));
+  const filed = JSON.parse(fs.readFileSync(path.join(f.transcribed, 'standup-diarizer-response.json'), 'utf8'));
   assert.equal(filed.segments[0].speaker, 'T.J.');
-  assert.ok(fs.existsSync(path.join(f.processed, 'standup.wav')), 'WAV moved beside the transcript');
-  assert.ok(fs.existsSync(path.join(f.processed, 'standup.json')), 'sidecar moved too');
+  assert.ok(fs.existsSync(path.join(f.transcribed, 'standup.wav')), 'WAV moved beside the transcript');
+  assert.ok(fs.existsSync(path.join(f.transcribed, 'standup.json')), 'sidecar moved too');
   assert.ok(!fs.existsSync(path.join(f.unprocessed, 'standup.wav')));
 });
 

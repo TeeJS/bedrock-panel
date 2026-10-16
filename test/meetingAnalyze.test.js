@@ -9,8 +9,13 @@ const { PassThrough } = require('node:stream');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createMeetingAnalyzer, slimTranscript, highlightsBlock } = require('../app/meetingAnalyze');
+const { createMeetingAnalyzer, slimTranscript, highlightsBlock, CLAUDE_ISOLATION_ARGS, CODEX_ISOLATION_ARGS } = require('../app/meetingAnalyze');
 const { normalizeOwuiUrl } = require('../app/owuiClient');
+// Meeting files start with a YAML frontmatter block; these tests check the human body the AI wrote.
+function bodyOf(text) {
+  const m = /^---\n[\s\S]*?\n---\n/.exec(text);
+  return (m ? text.slice(m[0].length) : text).replace(/\n$/, '');
+}
 
 // Fake child process: capture stdin, emit stdout, exit with a code on the next tick.
 function fakeSpawnFactory(spawns, behavior) {
@@ -165,14 +170,35 @@ test('claude route: -p, transcript on stdin, stdout filed as .md', async () => {
   assert.equal(s.an.start('m.json').ok, true);
   await drained(s.an);
   assert.equal(s.spawns[0].cmd, 'claude.exe');
-  assert.deepEqual(s.spawns[0].args, ['-p']);
+  // Exact isolation set: print mode, no customizations, no built-in tools, no MCP, no session file.
+  assert.deepEqual(s.spawns[0].args, ['-p', '--safe-mode', '--tools', '', '--strict-mcp-config', '--no-session-persistence']);
+  assert.deepEqual(s.spawns[0].args.slice(1), [...CLAUDE_ISOLATION_ARGS]);
+  assert.equal(s.spawns[0].opts.shell, false);
   assert.match(s.spawns[0].stdin, /Meeting Analysis/);        // prompt text
   assert.match(s.spawns[0].stdin, /"segments"/);              // transcript JSON
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm-analysis.md'), 'utf8'), '# Meeting Analysis\nok');
+  assert.equal(bodyOf(fs.readFileSync(path.join(s.processed, 'm.md'), 'utf8')), '# Meeting Analysis\nok');
   const st = s.an.getState();
   assert.equal(st.running, false);
   assert.equal(st.error, null);
   assert.equal(st.lastDone.name, 'm.json');
+});
+
+test('start() accepts the meeting .md and resolves its transcript beside it or in details/', async () => {
+  const s = setup(() => ({ stdout: '# Meeting Analysis\nok', code: 0 }), 'claude');
+  // beside: m.md -> m.json exists (setup wrote m.json)
+  assert.equal(s.an.start('m.md').ok, true);
+  await drained(s.an);
+  assert.equal(s.an.getState().lastDone.name, 'm.json');
+  // in details/: 2026/10/x.md -> 2026/10/details/x-diarizer-response.json
+  fs.mkdirSync(path.join(s.processed, '2026', '10', 'details'), { recursive: true });
+  fs.writeFileSync(path.join(s.processed, '2026', '10', 'details', 'x-diarizer-response.json'), JSON.stringify({ segments: [] }));
+  assert.equal(s.an.start('2026/10/x.md').ok, true);
+  await drained(s.an);
+  assert.equal(s.an.getState().lastDone.name, '2026/10/details/x-diarizer-response.json');
+  // no transcript anywhere: a clear error, nothing queued
+  const r = s.an.start('2026/10/nothing.md');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /no transcript/);
 });
 
 test('codex route: exec with stdin marker + output-last-message file', async () => {
@@ -180,11 +206,16 @@ test('codex route: exec with stdin marker + output-last-message file', async () 
   s.an.start('m.json');
   await drained(s.an);
   assert.equal(s.spawns[0].cmd, '"codex.cmd"');   // resolved path, quoted for the shell
-  assert.equal(s.spawns[0].args[0], 'exec');
-  assert.equal(s.spawns[0].args[1], '-');
-  assert.ok(s.spawns[0].args.includes('--skip-git-repo-check'));
+  const a = s.spawns[0].args;
+  assert.deepEqual(a.slice(0, 3), ['exec', '-', '--skip-git-repo-check']);
+  // Exact isolation set: read-only sandbox, no persisted session, cwd is a fresh empty temp dir.
+  assert.deepEqual(a.slice(3, 3 + CODEX_ISOLATION_ARGS.length), [...CODEX_ISOLATION_ARGS]);
+  assert.deepEqual(a.slice(3, 14), ['--sandbox', 'read-only', '--ephemeral', '-c', 'mcp_servers={}', '--disable', 'browser_use', '--disable', 'computer_use', '--disable', 'apps']);
+  assert.equal(a[14], '-C');
+  assert.match(a[15], /oqx-analysis-\d+-cwd$/);
+  assert.equal(a[16], '--output-last-message');
   assert.equal(s.spawns[0].opts.shell, true);
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm-analysis.md'), 'utf8'), 'codex analysis');
+  assert.equal(bodyOf(fs.readFileSync(path.join(s.processed, 'm.md'), 'utf8')), 'codex analysis');
 });
 
 test('copilot route: one-shot ACP session, agent_message_chunk filed as .md', async () => {
@@ -205,7 +236,7 @@ test('copilot route: one-shot ACP session, agent_message_chunk filed as .md', as
   // NO allow_all: batch analysis runs with tools denied (untrusted transcript input)
   assert.deepEqual(spawns[0].calls, ['initialize', 'session/new', 'session/prompt']);
   assert.equal(spawns[0].opts.cwd, os.tmpdir());   // neutral cwd, never the app's
-  assert.equal(fs.readFileSync(path.join(processed, 'm-analysis.md'), 'utf8'), '# Meeting Analysis\ncopilot notes');
+  assert.equal(bodyOf(fs.readFileSync(path.join(processed, 'm.md'), 'utf8')), '# Meeting Analysis\ncopilot notes');
   const st = an.getState();
   assert.equal(st.running, false);
   assert.equal(st.error, null);
@@ -226,7 +257,7 @@ test('copilot batch rejects permission requests — even when only allow options
   const permReply = spawns[0].responses.find(r => r.id === 99);
   assert.ok(permReply, 'client must answer the permission request');
   assert.equal(permReply.result.outcome.outcome, 'cancelled');   // fail closed, never an allow option
-  assert.equal(fs.readFileSync(path.join(processed, 'm-analysis.md'), 'utf8'), 'notes');   // turn still completes
+  assert.equal(bodyOf(fs.readFileSync(path.join(processed, 'm.md'), 'utf8')), 'notes');   // turn still completes
 });
 
 test('missing copilot CLI is a clear error; nothing spawned', async () => {
@@ -243,7 +274,7 @@ test('missing copilot CLI is a clear error; nothing spawned', async () => {
   await drained(an);
   assert.equal(spawns.length, 0);
   assert.match(an.getState().error.error, /Copilot CLI not found/);
-  assert.equal(fs.existsSync(path.join(processed, 'm-analysis.md')), false);
+  assert.equal(fs.existsSync(path.join(processed, 'm.md')), false);
 });
 
 test('missing CLI is a clear error; nothing spawned', async () => {
@@ -252,7 +283,7 @@ test('missing CLI is a clear error; nothing spawned', async () => {
   await drained(s.an);
   assert.equal(s.spawns.length, 0);
   assert.match(s.an.getState().error.error, /Claude CLI not found/);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm-analysis.md')), false);
+  assert.equal(fs.existsSync(path.join(s.processed, 'm.md')), false);
 });
 
 test('nonzero exit surfaces stderr; no .md written', async () => {
@@ -260,7 +291,7 @@ test('nonzero exit surfaces stderr; no .md written', async () => {
   s.an.start('m.json');
   await drained(s.an);
   assert.match(s.an.getState().error.error, /exited 2: boom/);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm-analysis.md')), false);
+  assert.equal(fs.existsSync(path.join(s.processed, 'm.md')), false);
 });
 
 test('queue: second transcript waits its turn; rel-path names work', async () => {
@@ -278,14 +309,14 @@ test('queue: second transcript waits its turn; rel-path names work', async () =>
   assert.equal(an.start('a.json').ok, true);
   const second = an.start('2026/08/b.json');
   assert.equal(second.ok, true);                       // queued, not rejected
-  assert.deepEqual(second.queue, ['2026/08/b.json']);
+  assert.deepEqual(second.queue, [{ name: '2026/08/b.json', kind: 'processed' }]);
   assert.equal(an.start('2026/08/b.json').ok, false);  // dedupe
   await drained(an);
   assert.equal(an.getState().running, false);
   assert.deepEqual(an.getState().queue, []);
-  assert.equal(fs.existsSync(path.join(processed, 'a-analysis.md')), true);
-  assert.equal(fs.existsSync(path.join(processed, '2026', '08', 'b-analysis.md')), true);
-  assert.deepEqual(an.result('2026/08/b.json'), { ok: true, markdown: 'notes' });
+  assert.equal(fs.existsSync(path.join(processed, 'a.md')), true);
+  assert.equal(fs.existsSync(path.join(processed, '2026', '08', 'b.md')), true);
+  const rb = an.result('2026/08/b.json'); assert.equal(rb.ok, true); assert.equal(bodyOf(rb.markdown), 'notes');
 });
 
 test('suffixed transcript names produce clean .md names', async () => {
@@ -299,11 +330,11 @@ test('suffixed transcript names produce clean .md names', async () => {
   });
   an.start('meeting-diarizer-response.json');
   await drained(an);
-  assert.equal(fs.existsSync(path.join(processed, 'meeting-analysis.md')), true);   // suffix stripped
-  assert.deepEqual(an.result('meeting-diarizer-response.json'), { ok: true, markdown: 'notes' });
+  assert.equal(fs.existsSync(path.join(processed, 'meeting.md')), true);   // suffix stripped
+  const rr = an.result('meeting-diarizer-response.json'); assert.equal(rr.ok, true); assert.equal(bodyOf(rr.markdown), 'notes');
 });
 
-test('post-analysis task list: one dated checklist per batch, pointing at -analysis.md files', async () => {
+test('post-analysis task list: one dated checklist per batch, pointing at the meeting .md files', async () => {
   const processed = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-antl-'));
   const dir = path.join(processed, '2026', '08');
   fs.mkdirSync(dir, { recursive: true });
@@ -329,9 +360,9 @@ test('post-analysis task list: one dated checklist per batch, pointing at -analy
   assert.match(body, /^# Analysis batch — 2026-08-17 10:42:13/);
   assert.match(body, /2 meeting\(s\) analyzed\./);
   assert.match(body, /- \[ \] \*\*Weekly Sync\*\* \(recurring\) — David Mastalski/);
-  assert.match(body, /    - Analysis: `2026\/08\/a-analysis\.md`/);
+  assert.match(body, /    - Analysis: `2026\/08\/a.md`/);
   assert.match(body, /    - Meeting metadata: `2026\/08\/a\.json`/);
-  assert.match(body, /- \[ \] \*\*b\*\*\n    - Analysis: `2026\/08\/b-analysis\.md`/);   // no metadata line without a sidecar
+  assert.match(body, /- \[ \] \*\*b\*\*\n    - Analysis: `2026\/08\/b.md`/);   // no metadata line without a sidecar
   // a second batch writes a SECOND list (collision-suffixed under the frozen clock), not an overwrite
   fs.writeFileSync(path.join(dir, 'c-diarizer-response.json'), '{"segments":[]}');
   an.start('2026/08/c-diarizer-response.json');
@@ -397,15 +428,16 @@ function filingSetup(opts, meta, baseName) {
   return { processed, dir, base, an, rel: '2026/08/' + base + '-diarizer-response.json' };
 }
 
-test('Separate Clean Transcript splits the output at ## Transcript', async () => {
-  const s = filingSetup({ separateTranscript: true }, null);
+test('the transcript always stays in the .md (the Separate Clean Transcript split is retired)', async () => {
+  const s = filingSetup({ separateTranscript: true }, null);   // a stale flag in an old config is ignored
   s.an.start(s.rel);
   await drained(s.an);
-  const md = fs.readFileSync(path.join(s.dir, s.base + '-analysis.md'), 'utf8');
-  assert.ok(!/## Transcript/.test(md), 'md keeps the notes only');
+  const md = fs.readFileSync(path.join(s.dir, s.base + '.md'), 'utf8');
   assert.match(md, /## Summary/);
-  const txt = fs.readFileSync(path.join(s.dir, s.base + '-clean_transcript.txt'), 'utf8');
-  assert.match(txt, /\*\*T\.J\.\*\*: hello|\*\*T\.J\.:\*\* hello/);
+  assert.match(md, /## Transcript/);
+  assert.match(md, /\*\*T\.J\.\*\*: hello|\*\*T\.J\.:\*\* hello/);
+  assert.equal(fs.existsSync(path.join(s.dir, s.base + '-clean_transcript.txt')), false);
+  assert.equal(fs.existsSync(path.join(s.dir, 'details', s.base + '-clean_transcript.txt')), false);
 });
 
 test('recurring meetings move to YYYY/<Meeting-Name>/ after analysis', async () => {
@@ -413,7 +445,7 @@ test('recurring meetings move to YYYY/<Meeting-Name>/ after analysis', async () 
   s.an.start(s.rel);
   await drained(s.an);
   const home = path.join(s.processed, '2026', 'Weekly-Sync-Team');   // OpenHiNotes sanitization
-  assert.equal(fs.existsSync(path.join(home, s.base + '-analysis.md')), true);
+  assert.equal(fs.existsSync(path.join(home, s.base + '.md')), true);
   assert.equal(fs.existsSync(path.join(home, s.base + '.wav')), true);
   assert.equal(fs.existsSync(path.join(home, s.base + '-diarizer-response.json')), true);
   assert.equal(fs.existsSync(path.join(home, s.base + '.json')), true);
@@ -424,26 +456,27 @@ test('non-recurring (or no sidecar) stays in the date folder even with the optio
   const s = filingSetup({ separateRecurring: true }, { subject: 'One-off', is_recurring: false });
   s.an.start(s.rel);
   await drained(s.an);
-  assert.equal(fs.existsSync(path.join(s.dir, s.base + '-analysis.md')), true);
+  assert.equal(fs.existsSync(path.join(s.dir, s.base + '.md')), true);
   assert.equal(fs.existsSync(path.join(s.dir, s.base + '.wav')), true);
 });
 
-test('Use Details Folder tucks everything but the .md into details/', async () => {
-  const s = filingSetup({ useDetailsFolder: true, separateTranscript: true }, { subject: 'X', is_recurring: false });
+test('details folder layout tucks everything but the .md into details/', async () => {
+  const s = filingSetup({ useDetailsFolder: true }, { subject: 'X', is_recurring: false });
+  fs.writeFileSync(path.join(s.dir, s.base + '.capture.json'), '{"schema":1}');   // recorder's capture sidecar travels too
   s.an.start(s.rel);
   await drained(s.an);
-  assert.equal(fs.existsSync(path.join(s.dir, s.base + '-analysis.md')), true);                       // md at folder level
+  assert.equal(fs.existsSync(path.join(s.dir, s.base + '.md')), true);                       // md at folder level
   const det = path.join(s.dir, 'details');
   assert.equal(fs.existsSync(path.join(det, s.base + '.wav')), true);
   assert.equal(fs.existsSync(path.join(det, s.base + '-diarizer-response.json')), true);
   assert.equal(fs.existsSync(path.join(det, s.base + '.json')), true);
-  assert.equal(fs.existsSync(path.join(det, s.base + '-clean_transcript.txt')), true);
+  assert.equal(fs.existsSync(path.join(det, s.base + '.capture.json')), true);
   // re-analysis from the details location writes the .md back at the folder level and stays put
   const an2rel = '2026/08/details/' + s.base + '-diarizer-response.json';
   const r = s.an.start(an2rel);
   assert.equal(r.ok, true);
   await drained(s.an);
-  assert.equal(fs.existsSync(path.join(s.dir, s.base + '-analysis.md')), true);
+  assert.equal(fs.existsSync(path.join(s.dir, s.base + '.md')), true);
   assert.equal(fs.existsSync(path.join(det, s.base + '-diarizer-response.json')), true);
   // and View resolves the parent-level md from the details-relative name
   assert.equal(s.an.result(an2rel).ok, true);
@@ -454,7 +487,7 @@ test('recurring + details compose: YYYY/<Name>/details with md at the folder lev
   s.an.start(s.rel);
   await drained(s.an);
   const home = path.join(s.processed, '2026', 'Weekly-Sync');
-  assert.equal(fs.existsSync(path.join(home, s.base + '-analysis.md')), true);
+  assert.equal(fs.existsSync(path.join(home, s.base + '.md')), true);
   assert.equal(fs.existsSync(path.join(home, 'details', s.base + '.wav')), true);
   assert.equal(fs.existsSync(path.join(home, 'details', s.base + '-diarizer-response.json')), true);
 });
@@ -509,7 +542,9 @@ test('owui route: one POST to /api/chat/completions with the slimmed transcript,
   assert.match(user.content, /UNKNOWN: who said this/);
   assert.ok(!user.content.includes('"segments"'), 'raw JSON keys must not reach the model');
   assert.ok(!user.content.includes('{'), 'no JSON braces in the slimmed transcript');
-  assert.equal(fs.readFileSync(path.join(s.processed, 'm-analysis.md'), 'utf8'), '# OWUI notes');
+  const owuiBody = bodyOf(fs.readFileSync(path.join(s.processed, 'm.md'), 'utf8'));
+  assert.match(owuiBody, /^# OWUI notes/);
+  assert.match(owuiBody, /## Transcript\n\[T\.J\. Schmitz 0:01\] hello there/);   // no transcript in the reply -> diarizer turns appended
   assert.equal(s.an.getState().error, null);
 });
 
@@ -520,7 +555,7 @@ test('owui not configured: clear error, no request, no claude fallthrough', asyn
   assert.equal(s.calls.length, 0);
   assert.equal(s.spawns.length, 0);
   assert.match(s.an.getState().error.error, /not configured.*Auth tab/);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm-analysis.md')), false);
+  assert.equal(fs.existsSync(path.join(s.processed, 'm.md')), false);
 });
 
 test('owui 401 names the API key and the Auth tab', async () => {
@@ -529,7 +564,7 @@ test('owui 401 names the API key and the Auth tab', async () => {
   s.an.start('m-diarizer-response.json');
   await drained(s.an);
   assert.match(s.an.getState().error.error, /rejected the API key.*check the key on the Auth tab/);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm-analysis.md')), false);
+  assert.equal(fs.existsSync(path.join(s.processed, 'm.md')), false);
 });
 
 test('owui finish_reason length fails loudly — never a silently truncated analysis', async () => {
@@ -538,7 +573,7 @@ test('owui finish_reason length fails loudly — never a silently truncated anal
   s.an.start('m-diarizer-response.json');
   await drained(s.an);
   assert.match(s.an.getState().error.error, /context window is too small/);
-  assert.equal(fs.existsSync(path.join(s.processed, 'm-analysis.md')), false);
+  assert.equal(fs.existsSync(path.join(s.processed, 'm.md')), false);
 });
 
 test('owui connection failure asks whether the server is running', async () => {
@@ -571,7 +606,7 @@ test('result() reads the filed markdown or reports not analyzed', async () => {
   assert.deepEqual(s.an.result('m.json'), { ok: false, error: 'not analyzed' });
   s.an.start('m.json');
   await drained(s.an);
-  assert.deepEqual(s.an.result('m.json'), { ok: true, markdown: 'notes' });
+  const r1 = s.an.result('m.json'); assert.equal(r1.ok, true); assert.equal(bodyOf(r1.markdown), 'notes');
   assert.equal(s.an.result('..\\m.json').ok, false);
 });
 
@@ -580,7 +615,6 @@ test('joplin: note created after a successful analysis with the analysis markdow
   const s = setup(() => ({ stdout: '# Meeting Analysis\nnotes\n## Transcript\ndialogue', code: 0 }), 'claude', null, {
     resolveJoplin: () => ({ enabled: true, url: 'box:41184', token: 'tok', notebook: 'NW Pipe' }),
     joplinNotes: { createAnalysisNote: async args => { notes.push(args); return { id: 'n1', applied: ['meeting notes'], skipped: [] }; } },
-    filingOptions: () => ({ separateTranscript: true }),
   });
   s.an.start('m.json');
   await drained(s.an);
@@ -588,7 +622,7 @@ test('joplin: note created after a successful analysis with the analysis markdow
   assert.equal(notes[0].title, 'm');
   assert.equal(notes[0].notebook, 'NW Pipe');
   assert.match(notes[0].body, /# Meeting Analysis/);
-  assert.doesNotMatch(notes[0].body, /dialogue/);   // separate-transcript: note body is notes only
+  assert.match(notes[0].body, /dialogue/);   // one-file format: the note carries the whole meeting file
   assert.equal(s.an.getState().joplin.ok, true);
 });
 
@@ -614,7 +648,7 @@ test('joplin: disabled -> never called; failure -> analysis still succeeds, surf
   assert.equal(st.lastDone.name, 'm.json');
   assert.equal(st.joplin.ok, false);
   assert.match(st.joplin.error, /could not reach Joplin/);
-  assert.equal(fs.readFileSync(path.join(fail.processed, 'm-analysis.md'), 'utf8'), 'notes');
+  assert.equal(bodyOf(fs.readFileSync(path.join(fail.processed, 'm.md'), 'utf8')), 'notes');
 });
 
 test('companion metadata + VTT ride along in the CLI input; legacy name never self-includes', async () => {

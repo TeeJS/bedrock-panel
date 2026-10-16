@@ -32,6 +32,20 @@ function timestampName(d) {
     pad2(d.getHours()) + '-' + pad2(d.getMinutes()) + '-' + pad2(d.getSeconds()) + '.wav';
 }
 
+// ISO-8601 with the machine's UTC offset at that instant (2026-10-14T15:57:16-07:00), the form
+// the Minutes frontmatter schema requires for `date`. Date.toISOString() would lose the offset.
+function isoWithOffset(d) {
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const a = Math.abs(off);
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' +
+    pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) +
+    sign + pad2(Math.floor(a / 60)) + ':' + pad2(a % 60);
+}
+function localTimeZoneName() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; }
+}
+
 // 44-byte canonical PCM WAV header. Sizes are patched on stop() once the total is known.
 function wavHeader(dataBytes) {
   const blockAlign = CHANNELS * BYTES_PER_SAMPLE;
@@ -186,6 +200,19 @@ function createMeetingRecorder(deps) {
     startedAt = now.getTime();
     triggerApp = app || null;
     lastLoudAt = now.getTime();
+    // Capture sidecar: the one place the real capture start (with THIS machine's UTC offset at
+    // that moment) is recorded. The meeting file's `date` comes from here, never from the analysis
+    // time or the calendar's scheduled start. Travels with the wav like the calendar sidecar.
+    try {
+      fs.writeFileSync(filePath.replace(/\.wav$/i, '') + '.capture.json', JSON.stringify({
+        schema: 1,
+        started_at: isoWithOffset(now),
+        tz: localTimeZoneName(),
+        device: micLabel || '',
+        app: app || null,
+        reason: reason || 'manual',
+      }, null, 2));
+    } catch (e) { log('capture sidecar write error: ' + e.message); }
 
     captureSession++;
     warnedStaleSession = false;
@@ -286,4 +313,4 @@ function createMeetingRecorder(deps) {
   };
 }
 
-module.exports = { createMeetingRecorder };
+module.exports = { createMeetingRecorder, isoWithOffset, localTimeZoneName };
