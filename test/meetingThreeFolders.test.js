@@ -382,6 +382,38 @@ test('a meeting file that appears while the sources are being copied stops the c
   assert.equal(walk(s.transcribed).length, 4);
 });
 
+test('a CLI that hangs: the timeout error carries what it had printed, so the hang can be diagnosed', async () => {
+  const hung = () => {
+    const proc = new EventEmitter();
+    proc.stdout = new PassThrough(); proc.stderr = new PassThrough(); proc.stdin = new PassThrough();
+    proc.stdin.on('data', () => {});
+    proc.kill = () => { proc.emit('close', null); };
+    setImmediate(() => proc.stderr.write('Retrying in 8 seconds (attempt 3/10)\n'));
+    return proc;
+  };
+  const s = setup({ deps: { spawn: hung, timeoutMs: 300 } });
+  s.an.start(s.json, 'transcribed');
+  await drained(s.an);
+  const e = s.an.getState().error.error;
+  assert.match(e, /^timed out after 0 min — stderr: Retrying in 8 seconds \(attempt 3\/10\)$/);
+  assert.equal(walk(s.transcribed).length, 4, 'nothing moved');
+  assert.deepEqual(walk(s.processed), []);
+});
+
+test('a CLI that hangs silently says so', async () => {
+  const silent = () => {
+    const proc = new EventEmitter();
+    proc.stdout = new PassThrough(); proc.stderr = new PassThrough(); proc.stdin = new PassThrough();
+    proc.stdin.on('data', () => {});
+    proc.kill = () => { proc.emit('close', null); };
+    return proc;
+  };
+  const s = setup({ deps: { spawn: silent, timeoutMs: 300 } });
+  s.an.start(s.json, 'transcribed');
+  await drained(s.an);
+  assert.equal(s.an.getState().error.error, 'timed out after 0 min — the CLI printed nothing');
+});
+
 function canSymlink() {
   try { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-ln-')); fs.writeFileSync(path.join(d, 'a'), 'a'); fs.symlinkSync(path.join(d, 'a'), path.join(d, 'b'), 'file'); return true; } catch (e) { return false; }
 }

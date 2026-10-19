@@ -1262,7 +1262,11 @@ function createMeetingAnalyzer(deps) {
         if (settled) return;
         settled = true;
         try { proc.kill(); } catch (e) {}
-        reject(new Error('timed out after ' + Math.round(timeoutMs / 60000) + ' min'));
+        // What the CLI had said by then is the only clue to WHY it hung (retrying the API, waiting
+        // for a sign-in, printing nothing): keep the tail of both streams in the error.
+        const tail = s => String(s || '').trim().slice(-300).replace(/\s+/g, ' ');
+        const seen = [tail(err) && 'stderr: ' + tail(err), tail(out) && 'stdout: ' + tail(out)].filter(Boolean).join(' | ');
+        reject(new Error('timed out after ' + Math.round(timeoutMs / 60000) + ' min' + (seen ? ' — ' + seen : ' — the CLI printed nothing')));
       }, timeoutMs);
       const finish = (fn, v) => { if (!settled) { settled = true; clearTimeout(timer); fn(v); } };
       // Byte-counted caps on both streams; nothing is appended once the call is settled.
