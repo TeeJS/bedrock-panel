@@ -2806,7 +2806,13 @@ function appendMeetingNameToRecording(wavName) {
     for (let i = 1; fs.existsSync(path.join(dir, newBase + '.wav')); i++) newBase = base + '-' + subject + '_' + i;
     fs.renameSync(path.join(dir, wavName), path.join(dir, newBase + '.wav'));
     fs.renameSync(sidecar, path.join(dir, newBase + '.json'));
-    // The slide-capture folder is a sidecar too: rename it in lockstep so it stays matched to the WAV.
+    // The capture sidecar (real start time + offset, written at record start) and the slide-capture
+    // folder are sidecars too: rename them in lockstep so they stay matched to the WAV. Left behind,
+    // the capture sidecar would be an orphan in Unprocessed and the meeting file would lose its date.
+    try {
+      const oldCapture = path.join(dir, base + '.capture.json');
+      if (fs.existsSync(oldCapture)) fs.renameSync(oldCapture, path.join(dir, newBase + '.capture.json'));
+    } catch (e2) { console.log('[meeting] capture-sidecar rename failed: ' + e2.message); }
     try {
       const oldShots = path.join(dir, base + '-screenshots');
       if (fs.existsSync(oldShots)) fs.renameSync(oldShots, path.join(dir, newBase + '-screenshots'));
