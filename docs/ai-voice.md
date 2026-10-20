@@ -117,6 +117,10 @@ editor's AI Voice page options) and the page waits for the persona's name.
   Typing works at all times, wake word or not. With the permission mode set to run commands without
   approval, anything said after the phrase is acted on, so keep the phrase distinctive.
 
+Whisper often writes a spoken "hey" as "a", "hay", "hate", "pain", "ay", "eh", "hi" or "he" ("A norm." for
+"Hey Norm"), so every "Hey <name>" phrase also accepts those in front of the same name. The name itself must
+still match exactly. A page phrase that does not start with "hey" gets no such leniency.
+
 Recognition is done on the STT transcript (there is no separate wake-word model), so what counts is
 what Whisper writes: "Hey, Jarvis!" and "hey jarvis" both wake the page; "Hey Travis" does not.
 

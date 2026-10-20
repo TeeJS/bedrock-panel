@@ -48,8 +48,17 @@ function resolvePhrase({ persona, pageOverride, pageDefault }) {
 // { wake:true, phrase, commandText } where commandText keeps the STT's original text after the
 // phrase (and its trailing punctuation), '' when the phrase stood alone. Anchored: the phrase must be
 // the first words of the utterance and end on a word boundary ("hey norm" never matches "hey normal").
+// What Whisper tends to write for a spoken "hey" in front of a name (measured on the live panel:
+// "Hey Norm" came back as "A norm." and "pain norm." as often as "Hey Norm."). Every "hey <name>"
+// phrase also accepts these in front of the same name; the name itself is still matched exactly.
+const HEY_VARIANTS = ['a', 'hay', 'hate', 'pain', 'ay', 'eh', 'hi', 'he'];
 function createWakeMatcher({ phrase, aliases }) {
-  const forms = [phrase].concat(Array.isArray(aliases) ? aliases : []).map(normalizeForMatch).filter(Boolean);
+  const base = [phrase].concat(Array.isArray(aliases) ? aliases : []).map(normalizeForMatch).filter(Boolean);
+  const forms = [];
+  for (const f of base) {
+    forms.push(f);
+    if (/^hey\s+\S/.test(f)) for (const v of HEY_VARIANTS) forms.push(v + f.slice(3));
+  }
   const res = forms.map(f => new RegExp('^\\s*' + f.split(' ').map(escapeRe).join('[\\s\\p{P}]+') + '(?![\\p{L}\\p{N}\'])', 'iu'));
   function match(text) {
     const raw = String(text == null ? '' : text);

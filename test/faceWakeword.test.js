@@ -157,6 +157,15 @@ const FIXTURES = [
   ['hey jarvis', "hey jarvis's desk", null],                  // possessive: a different word
   ['hey jarvis', 'hey jarvisss what', null],                  // not a word boundary
   ['hey norm', 'Hey, normal people say hi', null],
+  // Measured on the live panel (Whisper): the "hey" is what gets misheard, the name is right.
+  ['hey norm', 'A norm.', ''],
+  ['hey norm', 'pain norm.', ''],
+  ['hey norm', 'Hey Norm.', ''],
+  ['hey norm', 'a norm, what time is it', 'what time is it'],
+  ['hey norm', 'you', null],
+  ['hey norm', 'A normal day', null],                         // the name must still match exactly
+  ['hey norm', 'Pain is normal', null],
+  ['computer please', 'a computer please', null],             // only "hey ..." phrases get the variants
   ['hey jarvis', '', null],
   ['hey jarvis', '   ', null],
 ];
