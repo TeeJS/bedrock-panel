@@ -281,6 +281,7 @@ const { createDisplayArrange } = require('./displayArrange');   // macOS helper 
 const { createVoicePanelHost } = require('./voicepanel-host'); // generic voice-panel app host (state/SSE/speech/STT-TTS plumbing)
 const personaLib = require('./face/persona');                   // AI Voice face personas (library seeding)
 const personaFetch = require('./face/persona-fetch');           // persona import-from-URL policy (transport injected)
+const personaRepo = require('./face/persona-repo');             // persona repositories (the app-repository model)
 const { createClaudeVoiceAdapter } = require('./claudevoice-adapter'); // Claude Code session adapter (CLI spawn, events, approval hook)
 const { createCodexVoiceAdapter, findCodexExe } = require('./codexvoice-session'); // OpenAI Codex session adapter (app-server JSON-RPC over stdio)
 const { createCopilotVoiceAdapter, findCopilotExe } = require('./copilotvoice-session'); // GitHub Copilot CLI session adapter (ACP JSON-RPC over stdio)
@@ -1229,25 +1230,98 @@ function githubApiHeaders(token) {
 async function fetchGithubRawJson(url, token) {
   return fetchJsonWithHeaders(url, Object.assign({ 'User-Agent': 'bedrock-panel/' + app.getVersion() }, githubApiHeaders(token)));
 }
-async function fetchRepoIndex(settingUrl) {
+// `parse` turns the fetched index.json into entries: appRepo.parseIndex for apps (default), or
+// personaRepo.parsePersonaIndex for a persona source (same hosts, same token path, same cache busting).
+async function fetchRepoIndex(settingUrl, parse) {
+  parse = parse || appRepo.parseIndex;
   settingUrl = appRepo.canonicalRepoUrl(settingUrl);   // covers editor-supplied repo lists too
   if (!appRepo.isAllowedRepoUrl(settingUrl)) return { error: 'Only github.com app repositories are allowed for now.' };
   const base = appRepo.repoRawBase(settingUrl);
   if (!base) return { error: 'The app-repository URL is not a valid http(s) URL.' };
   // Public repos: anonymous raw fetch.
-  try { return { base, apps: appRepo.parseIndex(await fetchJson(bustCache(appRepo.indexUrl(base)))) }; }
+  try { return { base, apps: parse(await fetchJson(bustCache(appRepo.indexUrl(base)))) }; }
   catch (e) {
     // raw.githubusercontent 404s for a private repo when unauthenticated. Retry through the Contents API
     // with the connected GitHub app's token; if it works, downloads use the same authenticated path.
     const coords = appRepo.githubContentsCoords(settingUrl);
     const token = coords ? await githubRepoToken() : '';
     if (coords && token) {
-      try { return { base, coords, authed: true, apps: appRepo.parseIndex(await fetchGithubRawJson(bustCache(appRepo.githubContentsUrl(coords, 'index.json')), token)) }; }
+      try { return { base, coords, authed: true, apps: parse(await fetchGithubRawJson(bustCache(appRepo.githubContentsUrl(coords, 'index.json')), token)) }; }
       catch (e2) { return { base, error: 'Could not load the private repository catalog (HTTP ' + (e2.message || e2) + '). Confirm the GitHub app is connected and has access to this repository.' }; }
     }
     const hint = coords ? ' If it is private, connect the GitHub app first (Settings → the GitHub page).' : '';
     return { base, error: 'Could not load the repository catalog: ' + (e.message || e) + '.' + hint };
   }
+}
+
+// ---- Persona repositories: the app-repository model for personas (app/face/persona-repo.js) ----
+// Sources = explicit settings.personaRepos + every app repo's personas/ folder. Catalog and files are
+// read exactly like app catalogs/zips (public raw, private through the Contents API with the token),
+// then each file goes through importPersonaText (size, shape, no credentials) before it touches the
+// library. An installed persona remembers {url, version} as `source` so updates can be offered.
+async function listRepoPersonas() {
+  const sources = personaRepo.personaSources(config.settings || {});
+  const library = (config.settings && config.settings.personas) || [];
+  const out = [];
+  for (const src of sources) {
+    const idx = await fetchRepoIndex(src, personaRepo.parsePersonaIndex);
+    if (idx.error) { out.push({ source: src, error: idx.error, personas: [] }); continue; }
+    out.push({ source: src, authed: !!idx.authed, personas: personaRepo.annotate(idx.apps, library, src) });
+  }
+  return { ok: true, sources: out };
+}
+async function fetchRepoPersonaText(idx, entry, src) {
+  if (idx.authed && idx.coords) {
+    const token = await githubRepoToken();
+    if (!token) throw new Error('The GitHub app is not connected.');
+    const r = await net.fetch(bustCache(appRepo.githubContentsUrl(idx.coords, entry.file)), { headers: Object.assign({ 'User-Agent': 'bedrock-panel/' + app.getVersion() }, githubApiHeaders(token)) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.text();
+  }
+  const r = await net.fetch(bustCache(personaRepo.personaFileUrl(src, entry)));
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return await r.text();
+}
+// `replace` = the user confirmed replacing a library entry that did not come from this source.
+async function installRepoPersona(src, id, replace) {
+  const idx = await fetchRepoIndex(src, personaRepo.parsePersonaIndex);
+  if (idx.error) return { ok: false, error: idx.error };
+  const entry = idx.apps.find(p => p.id === id);
+  if (!entry) return { ok: false, error: '"' + id + '" is not in that repository.' };
+  let text;
+  try { text = await fetchRepoPersonaText(idx, entry, src); } catch (e) { return { ok: false, error: 'Could not download ' + entry.file + ': ' + (e.message || e) }; }
+  const v = personaLib.importPersonaText(text);
+  if (!v.ok) return { ok: false, error: entry.file + ': ' + v.error };
+  if (v.persona.id !== entry.id) return { ok: false, error: entry.file + ' is persona "' + v.persona.id + '", not "' + entry.id + '".' };
+  v.persona.source = { url: appRepo.canonicalRepoUrl(src), version: entry.version };
+  personaLib.ensurePersonas(config);
+  const list = config.settings.personas;
+  const at = list.findIndex(p => p && p.id === v.persona.id);
+  if (at >= 0) {
+    const have = list[at];
+    const fromHere = have.source && have.source.url === v.persona.source.url;
+    if (!fromHere && !replace) return { ok: false, needsConfirm: true, existingName: have.name || have.id, error: '"' + (have.name || have.id) + '" is already in the library and did not come from this repository.' };
+    list[at] = v.persona;
+  } else list.push(v.persona);
+  saveConfig();
+  if (configWin && !configWin.isDestroyed()) configWin.webContents.send('configChangedExternally');
+  return { ok: true, id: v.persona.id, name: v.persona.name, version: entry.version, replaced: at >= 0 };
+}
+// Updates for everything installed from a source: one catalog fetch per distinct source.
+async function checkPersonaUpdates() {
+  const library = (config.settings && config.settings.personas) || [];
+  const bySource = {};
+  library.forEach(p => { if (p && p.source && p.source.url) (bySource[p.source.url] = bySource[p.source.url] || []).push(p); });
+  const updates = [], errors = [];
+  for (const src of Object.keys(bySource)) {
+    const idx = await fetchRepoIndex(src, personaRepo.parsePersonaIndex);
+    if (idx.error) { errors.push({ source: src, error: idx.error }); continue; }
+    bySource[src].forEach(p => {
+      const entry = idx.apps.find(e => e.id === p.id);
+      if (entry && appRepo.cmpVersion(entry.version, p.source.version || '0.0.0') > 0) updates.push({ id: p.id, name: p.name, source: src, installedVersion: p.source.version, remoteVersion: entry.version });
+    });
+  }
+  return { ok: true, updates, errors };
 }
 
 // List repo apps, annotated against what's installed (available / installed / update). `repoUrl` is the
@@ -4988,6 +5062,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('listRepoApps', (e, repoUrl) => isFrom(e, configWin) ? listRepoApps(repoUrl) : { ok: false });
   ipcMain.handle('installRepoApp', (e, id, confirmExec, repoUrl) => isFrom(e, configWin) ? installRepoApp(id, confirmExec, repoUrl) : { ok: false });
   ipcMain.handle('checkDropInUpdate', (e, id) => isFrom(e, configWin) ? checkDropInUpdate(id) : { ok: false });
+  // Persona repositories (Settings → Personas → Browse repositories…)
+  ipcMain.handle('listRepoPersonas', (e) => isFrom(e, configWin) ? listRepoPersonas() : { ok: false });
+  ipcMain.handle('installRepoPersona', (e, src, id, replace) => isFrom(e, configWin) ? installRepoPersona(String(src || ''), String(id || ''), !!replace) : { ok: false });
+  ipcMain.handle('checkPersonaUpdates', (e) => isFrom(e, configWin) ? checkPersonaUpdates() : { ok: false });
   ipcMain.handle('updateDropInApp', (e, id, confirmExec) => isFrom(e, configWin) ? updateDropInApp(id, confirmExec) : { ok: false });
   ipcMain.handle('reinstallDropInApp', (e, id, confirmExec) => isFrom(e, configWin) ? reinstallDropInApp(id, confirmExec) : { ok: false });
   // Editor -> drop-in app server bridge (generic): lets the editor host management UI for an app.

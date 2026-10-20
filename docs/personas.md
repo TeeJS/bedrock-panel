@@ -85,3 +85,31 @@ text-to-speech server in **Settings → TTS/STT**.
 
 A persona file is limited to 64 KB. Unknown fields are ignored. Files that are not valid JSON, have no
 usable `id`, or contain credential-like keys are refused.
+
+## Persona repositories
+
+Personas can be installed and updated from GitHub repositories, the same way drop-in apps are:
+
+- **Sources.** Every app repository (Settings → Drop-in apps) is also searched for a `personas/` folder
+  that holds an `index.json` and the `<id>.persona.json` files. Persona-only repositories can be added under
+  Settings → AI Profiles → Personas → **Persona repositories**. Only `github.com` repositories are accepted.
+- **Private repositories** work once the GitHub app is connected (Settings → Auth): the catalog and the
+  files are read through GitHub's API with that connection. Public repositories need no account.
+- **Browse repositories…** lists every source with Install, Update (the catalog's version is newer than
+  the one you installed) or Installed. A persona you wrote or imported by hand is never replaced without
+  asking. **Check for updates** compares everything installed from a repository with its catalog.
+- Each installed file is validated exactly like a pasted persona (size, shape, no credentials). Nothing in
+  a persona repository is ever executed.
+
+The catalog is a small JSON file:
+
+```json
+{
+  "personas": [
+    { "id": "rocky", "name": "Rocky", "version": "1.0.0", "file": "rocky.persona.json", "description": "…" }
+  ]
+}
+```
+
+`file` is a bare file name beside `index.json`; bump `version` when you change a persona so installs can be
+updated.

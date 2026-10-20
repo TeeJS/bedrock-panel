@@ -52,7 +52,7 @@ async function paste(text) {
   await openBox();
   await js('document.getElementById("sPersonaImportText").value = ' + JSON.stringify(text));
 }
-async function go() { await js("document.getElementById('sPersonaImportGo').click()"); await sleep(120); }
+async function go() { await js("document.getElementById('sPersonaImportGo').click()"); await sleep(450); }
 const answer = v => js('window.__confirmCalls = 0; window.confirm = function (m) { window.__confirmCalls++; window.__confirmMsg = m; return ' + (v ? 'true' : 'false') + '; }; true');
 const pickFile = (name, body) => js('(function () { var dt = new DataTransfer(); dt.items.add(new File([' + body + '], ' + JSON.stringify(name) + ', { type: "application/json" })); var f = document.getElementById("sPersonaFile"); f.files = dt.files; f.dispatchEvent(new Event("change", { bubbles: true })); })()');
 
@@ -73,7 +73,7 @@ app.whenReady().then(async () => {
     await sleep(400);
     const base = await rows();
     const seededNames = await names();
-    check('personas tab renders with Rocky, Norm and Mimi first', base >= 3 && seededNames.slice(0, 3).join(',') === 'Rocky,Norm,Mimi', { rows: base, names: seededNames });
+    check('personas tab renders the 5 built-ins (Mimi, Jarvis, CRT Terminal, Startup Intern, Dust Sprite)', base >= 5 && seededNames.slice(0, 5).join(',') === 'Mimi,Jarvis,CRT Terminal,Startup Intern,Dust Sprite', { rows: base, names: seededNames });
     await shot('01-personas-tab');
 
     // 1. valid import
@@ -120,10 +120,10 @@ app.whenReady().then(async () => {
     check('exported JSON re-imports to an equivalent persona', (await rows()) === base + 1 && (await names()).indexOf('Sprocket v2') !== -1, { names: await names() });
 
     // 8. export file
-    const i2 = (await names()).indexOf('Rocky');
+    const i2 = (await names()).indexOf('Mimi');
     await js("document.querySelectorAll('#sPersonaRows .psExportFile')[" + i2 + '].click()'); await sleep(250);
     const calls = await js('window.__exportFileCalls');
-    check('Export file calls the save API with <id>.persona.json', calls.length === 1 && calls[0].file === 'rocky.persona.json', calls);
+    check('Export file calls the save API with <id>.persona.json', calls.length === 1 && calls[0].file === 'kawaii.persona.json', calls);
     check('Export file button confirms with "Saved"', (await js("document.querySelectorAll('#sPersonaRows .psExportFile')[" + i2 + '].textContent')) === 'Saved');
 
     // 9. file picks
@@ -150,14 +150,14 @@ app.whenReady().then(async () => {
     check('every row has a Voice field with a page-default placeholder; the built-ins name a stock Piper voice',
       (await js("document.querySelectorAll('#sPersonaRows .psVoice').length")) === nRows
       && /page default/i.test(await js("document.querySelector('#sPersonaRows .psVoice').placeholder"))
-      && (await voiceVals()).slice(0, 3).every(v => /^[a-z]{2}_[A-Z]{2}-/.test(v)), (await voiceVals()).slice(0, 7));
-    const rockyIdx = (await names()).indexOf('Rocky');
+      && (await voiceVals()).slice(0, 5).every(v => /^[a-z]{2}_[A-Z]{2}-/.test(v)), (await voiceVals()).slice(0, 7));
+    const rockyIdx = (await names()).indexOf('Mimi');   // any built-in works; Mimi is the first
     await js("(function () { var i = document.querySelectorAll('#sPersonaRows .psVoice')[" + rockyIdx + "]; i.value = 'en_US-ryan-high'; i.dispatchEvent(new Event('input', { bubbles: true })); })()");
     await js("document.querySelectorAll('#sPersonaRows .psExport')[" + rockyIdx + '].click()'); await sleep(200);
     let ex2 = null; try { ex2 = JSON.parse(await js("document.getElementById('sPersonaExport').textContent")); } catch (e) {}
     check('a typed voice is in the exported JSON', !!ex2 && ex2.voice === 'en_US-ryan-high', ex2 && ex2.voice);
     await js("document.getElementById('saveBtn').click()"); await sleep(300);
-    const savedVoice = await js("(window.__lastSaved.settings.personas.find(function (p) { return p.id === 'rocky'; }) || {}).voice");
+    const savedVoice = await js("(window.__lastSaved.settings.personas.find(function (p) { return p.id === 'kawaii'; }) || {}).voice");
     check('the voice is saved with the library', savedVoice === 'en_US-ryan-high', savedVoice);
 
     // Load available voices: fills the datalist, never overwrites or auto-selects
@@ -184,7 +184,7 @@ app.whenReady().then(async () => {
       [U]: JSON.stringify({ id: 'urlbot', name: 'URL Bot', prompt: 'Hi.', voice: 'en_GB-alba-medium' }),
       'https://example.com/secret.json': JSON.stringify({ id: 'leak', name: 'Leak', password: 'x' }),
       'https://example.com/huge.json': JSON.stringify({ id: 'huge', prompt: 'a'.repeat(70 * 1024) }),
-      'https://example.com/clash.json': JSON.stringify({ id: 'norm', name: 'Norm (shared)', prompt: 'Different.' }),
+      'https://example.com/clash.json': JSON.stringify({ id: 'jarvis', name: 'Jarvis (shared)', prompt: 'Different.' }),
       'https://example.com/blocked.json': { error: 'local and private addresses cannot be imported from a URL; paste the JSON or choose the file instead' },
     }));
     const before = await rows();
@@ -219,7 +219,7 @@ app.whenReady().then(async () => {
     await js("document.getElementById('sPersonaImportUrl').value = 'https://example.com/clash.json'");
     await js("document.getElementById('sPersonaImportFetch').click()"); await sleep(250);
     await go();
-    check('a fetched persona with an existing id asks before replacing; Cancel keeps Norm', (await js('window.__confirmCalls')) === 1 && (await names()).indexOf('Norm') !== -1 && (await names()).indexOf('Norm (shared)') === -1, await js('window.__confirmMsg'));
+    check('a fetched persona with an existing id asks before replacing; Cancel keeps Jarvis', (await js('window.__confirmCalls')) === 1 && (await names()).indexOf('Jarvis') !== -1 && (await names()).indexOf('Jarvis (shared)') === -1, await js('window.__confirmMsg'));
     await js("document.getElementById('sPersonaImportCancel').click()");
 
     // 11. layout at two widths: no horizontal overflow inside the personas area

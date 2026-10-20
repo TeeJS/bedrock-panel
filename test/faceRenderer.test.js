@@ -71,7 +71,7 @@ test('device pixel ratio is capped and all supported persona styles draw', () =>
 });
 
 // Assert rendered geometry, so a blink/lid or mouth-animation regression is observable.
-test('Norm keeps open circular eyes and a fixed grille through every emotion, blink and sleep', () => {
+test('cartoon persona keeps open circular eyes and a fixed grille through every emotion, blink and sleep', () => {
   const h = harness({ style: 'cartoon', dozeAfterSeconds: 0 });
   h.renderer.start();
   let grille;

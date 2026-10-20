@@ -862,9 +862,94 @@
       </div>`;
     }).join('');
   }
+  // Persona-only repository URLs (GitHub folder URLs). App repositories are searched for a personas/
+  // folder automatically, so most users never need a row here.
+  function personaRepoRowsHtml(list) {
+    const rows = Array.isArray(list) ? list : [];
+    if (!rows.length) return '<p class="hint" style="margin:4px 0">No persona-only repositories; the app repositories\' <code>personas/</code> folders are searched automatically.</p>';
+    return rows.map((u, i) => `<div class="row" data-idx="${i}" style="margin-top:6px">
+        <input class="prUrl" placeholder="https://github.com/<owner>/<repo>/tree/<branch>/<folder>" value="${esc(u || '')}" style="flex:1">
+        <button class="prRemove" type="button" data-rm="${i}" title="Remove" style="margin-left:8px">✕</button>
+      </div>`).join('');
+  }
+  function wirePersonaRepoRows() {
+    const host = document.getElementById('sPersonaRepoRows');
+    if (!host) return;
+    const list = () => { if (!config.settings) config.settings = {}; if (!Array.isArray(config.settings.personaRepos)) config.settings.personaRepos = []; return config.settings.personaRepos; };
+    const isGithub = u => /^https:\/\/(github\.com|raw\.githubusercontent\.com)\//i.test(String(u || '').trim());
+    const redraw = () => { host.innerHTML = personaRepoRowsHtml(list()); wireRows(); };
+    function wireRows() {
+      host.querySelectorAll('.prUrl').forEach((inp, i) => {
+        inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = (!v || isGithub(v)) ? '' : '#e05050'; const l = list(); if (l[i] !== undefined) { l[i] = v; markDirty(); } };
+      });
+      host.querySelectorAll('.prRemove').forEach(btn => { btn.onclick = () => { list().splice(parseInt(btn.getAttribute('data-rm'), 10), 1); markDirty(); redraw(); }; });
+    }
+    wireRows();
+    const addBtn = document.getElementById('sPersonaRepoAdd');
+    if (addBtn) addBtn.onclick = () => { list().push(''); markDirty(); redraw(); const inputs = host.querySelectorAll('.prUrl'); if (inputs.length) inputs[inputs.length - 1].focus(); };
+    const msgEl = document.getElementById('sPersonaRepoMsg');
+    const say = (t, bad) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.style.color = bad ? '#e05050' : ''; } };
+    const catalog = document.getElementById('sPersonaCatalog');
+    // Browse: one list grouped by source; rows carry name, version, description and a state badge.
+    // Unsaved repository rows are not consulted (the main process reads saved settings): say so.
+    const browseBtn = document.getElementById('sPersonaBrowse');
+    const renderCatalog = r => {
+      if (!catalog) return;
+      catalog.style.display = '';
+      const stateLabel = { available: 'Install', update: 'Update', installed: 'Installed', edited: 'Replace…' };
+      catalog.innerHTML = (r.sources || []).map(s => {
+        const head = `<div class="row" style="margin-top:8px"><b style="font-size:13px">${esc(s.source)}</b>${s.authed ? '<span class="hint" style="margin:0 0 0 8px">private, via your GitHub connection</span>' : ''}</div>`;
+        if (s.error) return head + `<p class="hint" style="color:#e05050;margin:2px 0 0 12px">${esc(s.error)}</p>`;
+        if (!s.personas.length) return head + '<p class="hint" style="margin:2px 0 0 12px">No personas in this source.</p>';
+        return head + s.personas.map(p => `<div class="row" style="margin:4px 0 0 12px;align-items:center">
+            <span style="width:180px;font-weight:600">${esc(p.name)}</span>
+            <span class="hint" style="width:70px;margin:0">v${esc(p.version)}${p.installedVersion ? ' (have ' + esc(p.installedVersion) + ')' : ''}</span>
+            <span class="hint" style="flex:1;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.description)}">${esc(p.description)}</span>
+            <button class="prInstall" type="button" data-src="${esc(p.source)}" data-id="${esc(p.id)}" data-state="${p.state}" ${p.state === 'installed' ? 'disabled' : ''} style="margin-left:8px;min-width:90px">${stateLabel[p.state] || 'Install'}</button>
+          </div>`).join('');
+      }).join('') || '<p class="hint">No persona repositories are configured.</p>';
+      catalog.querySelectorAll('.prInstall').forEach(btn => {
+        btn.onclick = async () => {
+          const src = btn.getAttribute('data-src'), id = btn.getAttribute('data-id'), state = btn.getAttribute('data-state');
+          let replace = false;
+          if (state === 'edited') { if (!ask('"' + id + '" is already in your library and did not come from this repository (you may have edited or imported it). Replace it with the repository\'s copy?')) return; replace = true; }
+          btn.disabled = true; const was = btn.textContent; btn.textContent = 'Installing…';
+          let res;
+          try { res = await configApi.installRepoPersona(src, id, replace); } catch (e) { res = { ok: false, error: (e && e.message) || String(e) }; }
+          if (res && res.needsConfirm) {
+            if (!ask('"' + res.existingName + '" is already in your library and did not come from this repository. Replace it?')) { btn.disabled = false; btn.textContent = was; return; }
+            try { res = await configApi.installRepoPersona(src, id, true); } catch (e) { res = { ok: false, error: (e && e.message) || String(e) }; }
+          }
+          if (!res || !res.ok) { btn.disabled = false; btn.textContent = was; say(res && res.error ? res.error : 'Install failed.', true); return; }
+          btn.textContent = 'Installed';
+          say('Installed "' + res.name + '" v' + res.version + (res.replaced ? ' (replaced)' : '') + '. The library below refreshes when the saved config reloads.');
+        };
+      });
+    };
+    if (browseBtn) browseBtn.onclick = async () => {
+      browseBtn.disabled = true; say(dirty ? 'Browsing saved repositories (Save first to include unsaved rows)…' : 'Loading catalogs…');
+      let r;
+      try { r = await configApi.listRepoPersonas(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+      browseBtn.disabled = false;
+      if (!r || !r.ok) { say((r && r.error) || 'Could not load the catalogs.', true); return; }
+      say('');
+      renderCatalog(r);
+    };
+    const updBtn = document.getElementById('sPersonaUpdates');
+    if (updBtn) updBtn.onclick = async () => {
+      updBtn.disabled = true; say('Checking…');
+      let r;
+      try { r = await configApi.checkPersonaUpdates(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+      updBtn.disabled = false;
+      if (!r || !r.ok) { say((r && r.error) || 'Could not check for updates.', true); return; }
+      const n = (r.updates || []).length;
+      say(n ? n + ' update' + (n === 1 ? '' : 's') + ' available: ' + r.updates.map(u => u.name + ' ' + u.installedVersion + ' → ' + u.remoteVersion).join(', ') + '. Use Browse repositories… to apply.' : 'Everything installed from a repository is up to date.' + ((r.errors || []).length ? ' (' + r.errors.length + ' source' + (r.errors.length === 1 ? '' : 's') + ' could not be read.)' : ''), false);
+    };
+  }
   function wirePersonaRows() {
     const host = document.getElementById('sPersonaRows');
     if (!host) return;
+    wirePersonaRepoRows();
     const list = () => { if (!config.settings) config.settings = {}; if (!Array.isArray(config.settings.personas)) config.settings.personas = []; return config.settings.personas; };
     const face = p => { if (!p.face) p.face = {}; return p.face; };
     const redraw = () => { host.innerHTML = personaRowsHtml(list()); wireRows(); };
@@ -976,7 +1061,7 @@
       const l = list();
       const at = l.findIndex(p => p && p.id === v.persona.id);
       if (at >= 0) {
-        if (!confirm('A persona with id "' + v.persona.id + '" already exists (' + (l[at].name || l[at].id) + '). Replace it?')) return;
+        if (!ask('A persona with id "' + v.persona.id + '" already exists (' + (l[at].name || l[at].id) + '). Replace it?')) return;
         l[at] = v.persona;
       } else l.push(v.persona);
       markDirty(); redraw();
@@ -4936,6 +5021,14 @@ ${IS_MAC ? `
       <details class="hint"><summary>A persona is a character for the <b>AI Voice</b> face: a name, how it talks, and how its face is drawn.</summary> Pick one per page (the page's <b>Persona</b> setting, or the panel's Settings). Its words are added to the page's profile, never in place of it. Personas are plain JSON: export one to share it, import one someone else made. A persona never holds a key or password — imports that do are refused. Remember to Save.</details>
       <div class="row" style="margin-top:8px"><button id="sPersonaVoices" type="button">Load available voices</button>
         <span id="sPersonaVoicesMsg" class="hint" style="margin:0 0 0 10px">Voices come from the app-wide TTS server (Settings → TTS/STT); a page with its own audio override may offer different ones. Blank Voice = the page's default.</span></div>
+      <p class="sectitle" style="margin-top:14px">Persona repositories</p>
+      <details class="hint"><summary>Install and update personas from GitHub repositories, the way drop-in apps are installed.</summary> Every app repository (Settings → Drop-in apps) is also searched for a <code>personas/</code> folder with its own <code>index.json</code>; persona-only repositories can be added below. Private repositories work once the GitHub app is connected (Settings → Auth). Installing never runs anything: each file is checked like a pasted persona.</details>
+      <div id="sPersonaRepoRows">${personaRepoRowsHtml((config.settings || {}).personaRepos)}</div>
+      <div class="row" style="margin-top:6px"><button id="sPersonaRepoAdd" type="button">+ Add persona repository</button>
+        <button id="sPersonaBrowse" type="button" style="margin-left:8px">Browse repositories…</button>
+        <button id="sPersonaUpdates" type="button" style="margin-left:8px">Check for updates</button>
+        <span id="sPersonaRepoMsg" class="hint" style="margin:0 0 0 12px"></span></div>
+      <div id="sPersonaCatalog" style="display:none;margin-top:8px"></div>
       <datalist id="psVoiceList"></datalist>
       <div id="sPersonaRows">${personaRowsHtml((config.settings || {}).personas)}</div>
       <div class="row" style="margin-top:10px"><button id="sPersonaAdd" type="button">+ Add persona</button>

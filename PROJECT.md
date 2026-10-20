@@ -57,6 +57,32 @@ Replaces the previous round's charter (Macro Deck preview), which lives in git h
    - **Backends:** all five (Claude Code, Codex, Copilot, Open WebUI, API) pass the state and parser checks; Rocky answers in character live on Open WebUI or API and on at least one CLI backend, using the panel's default Whisper and Piper, and again on a page with an audio override set.
    - **Cost when hidden:** with face Off or the page hidden there is no animation loop, canvas or analyser listener (checked in DevTools); incremental CPU and memory of the face on an idle page are measured and reported, not assumed.
 
+## Phase 3 — persona repositories (approved by T.J. 2026-10-20, "give personas the same repository model as apps")
+
+1. **The one thing this must do:** personas install and update from GitHub repositories the way drop-in
+   apps do: Settings → Personas → **Browse repositories…** lists the personas every configured source
+   offers, **Install** adds one to the library, **Update** replaces it when the catalog's version is newer,
+   and private repositories work through the connected GitHub account.
+2. **Wrong if shipped without it:** a browser that only reads public repos; an install that bypasses
+   `validatePersona` (credentials, size, shape); an update that silently overwrites a persona the user
+   edited without saying so; a catalog host other than GitHub.
+3. **Off-limits:** a second token flow (the GitHub app connection under Settings → Auth is the only
+   credential); executable content in a persona catalog; fetching through the public-URL importer (that
+   path stays public-only and credential-free).
+4. **Target and backup:** branch `rocky-face`, same repo. Reuses `app/appRepo.js` (URL rules, Contents
+   API coordinates, `cmpVersion`) and `fetchRepoIndex` in `main.js` with a catalog parser parameter. New
+   pure module `app/face/persona-repo.js`. Backup is the git branch.
+5. **Verify:** unit tests for the catalog parser, source URL derivation, state annotation (available /
+   installed / update) and the `source` field round trip; `npm test`; live: Browse lists the private
+   `TeeJS/bedrock-personas` catalog through the token, Install adds Rocky, a version bump in the repo
+   shows as Update, Update replaces it, an edited persona asks before being replaced.
+
+**Repository layout (answering "same repos as apps?"):** yes. A source is any GitHub folder URL that
+serves an `index.json`. For every configured app repository the app also looks at `<repo>/personas/`
+(so one repo can carry `index.json` + zips for apps and `personas/index.json` + `*.persona.json` for
+personas), and extra persona-only repositories can be listed under Settings → Personas. The catalog shape:
+`{ "personas": [ { "id", "name", "version", "file": "<id>.persona.json", "description" } ] }`.
+
 ## Decisions T.J. made in the room
 
 - Hardware, servos, the V2 neck, Docker and the Python server are deferred. Focus is the Bedrock Panel angle, as core functionality.

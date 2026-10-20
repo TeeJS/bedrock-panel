@@ -241,6 +241,13 @@ function num(v, def, min, max) {
   return Math.min(max, Math.max(min, n));
 }
 
+function normalizeSource(s) {
+  if (!s || typeof s !== 'object') return null;
+  const url = typeof s.url === 'string' ? s.url.trim() : '';
+  if (!/^https:\/\/(github\.com|raw\.githubusercontent\.com)\//i.test(url)) return null;
+  return { url: url.slice(0, 512), version: typeof s.version === 'string' ? s.version.trim().slice(0, 32) : '0.0.0' };
+}
+
 function normalizeEyePreset(src, base) {
   const b = base || OLED_EYES.neutral;
   const s = (src && typeof src === 'object') ? src : {};
@@ -273,6 +280,9 @@ function normalizePersona(src) {
     // Phase 2 (per-persona Piper voice) stores its pick here; carried through untouched so a pack
     // written for it survives this version's normalization.
     voice: typeof src.voice === 'string' ? src.voice.slice(0, 120) : '',
+    // Where it was installed from (a persona repository) and at which catalog version, so updates
+    // can be offered; null for hand-made or pasted personas.
+    source: normalizeSource(src.source),
     face: {
       style,
       color: hex(faceSrc.color),
