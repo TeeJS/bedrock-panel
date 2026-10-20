@@ -1279,19 +1279,43 @@ async function listRepoPersonas() {
   }
   return { ok: true, sources: out };
 }
+// One persona file, read with the same cap as every other persona import (64 KB, enforced while the
+// body streams, the request aborted past it) and a 15 s limit. Public: raw host; private: Contents API.
 async function fetchRepoPersonaText(idx, entry, src) {
+  let url, headers = { 'User-Agent': 'bedrock-panel/' + app.getVersion() };
   if (idx.authed && idx.coords) {
     const token = await githubRepoToken();
     if (!token) throw new Error('The GitHub app is not connected.');
-    const r = await net.fetch(bustCache(appRepo.githubContentsUrl(idx.coords, entry.file)), { headers: Object.assign({ 'User-Agent': 'bedrock-panel/' + app.getVersion() }, githubApiHeaders(token)) });
+    url = bustCache(appRepo.githubContentsUrl(idx.coords, entry.file));
+    Object.assign(headers, githubApiHeaders(token));
+  } else url = bustCache(personaRepo.personaFileUrl(src, entry));
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await net.fetch(url, { headers, signal: ctl.signal });
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    return await r.text();
-  }
-  const r = await net.fetch(bustCache(personaRepo.personaFileUrl(src, entry)));
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return await r.text();
+    const cap = personaLib.MAX_PACK_BYTES;
+    const declared = parseInt(r.headers.get('content-length') || '0', 10);
+    if (declared > cap) throw new Error('larger than 64 KB');
+    const reader = r.body.getReader();
+    const chunks = []; let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > cap) { try { ctl.abort(); } catch (e) {} throw new Error('larger than 64 KB'); }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw new Error('timed out');
+    throw e;
+  } finally { clearTimeout(timer); }
 }
-// `replace` = the user confirmed replacing a library entry that did not come from this source.
+// `replace` = the user confirmed replacing an existing library entry. Confirmation is required for
+// anything already in the library unless it came from this same source and is unchanged since
+// (content hash recorded at install): a hand-made, imported, or locally edited persona is never
+// silently overwritten by a repository copy.
 async function installRepoPersona(src, id, replace) {
   const idx = await fetchRepoIndex(src, personaRepo.parsePersonaIndex);
   if (idx.error) return { ok: false, error: idx.error };
@@ -1302,14 +1326,17 @@ async function installRepoPersona(src, id, replace) {
   const v = personaLib.importPersonaText(text);
   if (!v.ok) return { ok: false, error: entry.file + ': ' + v.error };
   if (v.persona.id !== entry.id) return { ok: false, error: entry.file + ' is persona "' + v.persona.id + '", not "' + entry.id + '".' };
-  v.persona.source = { url: appRepo.canonicalRepoUrl(src), version: entry.version };
+  v.persona.source = { url: appRepo.canonicalRepoUrl(src), version: entry.version, hash: personaRepo.contentHash(v.persona) };
   personaLib.ensurePersonas(config);
   const list = config.settings.personas;
   const at = list.findIndex(p => p && p.id === v.persona.id);
   if (at >= 0) {
     const have = list[at];
-    const fromHere = have.source && have.source.url === v.persona.source.url;
-    if (!fromHere && !replace) return { ok: false, needsConfirm: true, existingName: have.name || have.id, error: '"' + (have.name || have.id) + '" is already in the library and did not come from this repository.' };
+    const untouched = !!(have.source && have.source.url === v.persona.source.url && (!have.source.hash || have.source.hash === personaRepo.contentHash(have)));
+    if (!untouched && !replace) {
+      const why = have.source && have.source.url === v.persona.source.url ? 'was edited after it was installed' : 'did not come from this repository';
+      return { ok: false, needsConfirm: true, existingName: have.name || have.id, error: '"' + (have.name || have.id) + '" is already in the library and ' + why + '.' };
+    }
     list[at] = v.persona;
   } else list.push(v.persona);
   saveConfig();

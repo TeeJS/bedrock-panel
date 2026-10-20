@@ -55,9 +55,41 @@ test('annotate: available / installed / update / edited', () => {
   assert.equal(repo.annotate(entries, library, src)[0].installedVersion, '1.0');
 });
 
+test('catalog file names are bare: percent escapes, query/fragment characters and odd extensions are refused', () => {
+  const e = repo.parsePersonaIndex([
+    { id: 'a', file: '%2e%2e%2fsecret.persona.json' }, { id: 'b', file: 'x?ref=other.persona.json' }, { id: 'c', file: 'x#hidden.persona.json' },
+    { id: 'd', file: 'D.Persona.JSON' }, { id: 'e', file: 'ok-1.persona.json' }, { id: 'f', version: '1.2.3.4' }, { id: 'g', version: 'v2' },
+  ]);
+  assert.deepEqual(e.map(x => x.id + ':' + x.file + ':' + x.version), ['d:D.Persona.JSON:0.0.0', 'e:ok-1.persona.json:0.0.0', 'f:f.persona.json:1.2.3.4', 'g:g.persona.json:0.0.0']);
+  assert.equal(repo.personaFileUrl('https://github.com/o/r/tree/main', { file: 'a b.persona.json' }), 'https://raw.githubusercontent.com/o/r/main/a%20b.persona.json');
+});
+
+test('annotate is not fooled by prototype property names', () => {
+  const e = repo.parsePersonaIndex([{ id: 'constructor' }, { id: 'tostring' }, { id: '__proto__' }]);
+  assert.deepEqual(e.map(x => x.id), ['constructor', 'tostring']);   // __proto__ fails the id alphabet (leading underscore)
+  assert.deepEqual(repo.annotate(e, [], 'https://github.com/o/r/tree/main').map(x => x.state), ['available', 'available']);
+  assert.deepEqual(repo.annotate(e, [{ id: 'constructor', source: { url: 'https://github.com/o/r/tree/main', version: '0.0.0' } }], 'https://github.com/o/r/tree/main').map(x => x.state), ['installed', 'available']);
+});
+
+test('a persona edited after being installed from a source counts as edited, an untouched one as installed/update', () => {
+  const src = 'https://github.com/o/r/tree/main';
+  const installed = normalizePersona({ id: 'p', name: 'P', prompt: 'Be brief.' });
+  installed.source = { url: src, version: '1.0', hash: repo.contentHash(installed) };
+  const edited = Object.assign({}, installed, { prompt: 'Be very brief.' });
+  const entries = repo.parsePersonaIndex([{ id: 'p', version: '1.1' }]);
+  assert.equal(repo.annotate(entries, [installed], src)[0].state, 'update');
+  assert.equal(repo.annotate(entries, [edited], src)[0].state, 'edited');
+  assert.equal(repo.annotate(repo.parsePersonaIndex([{ id: 'p', version: '1.0' }]), [installed], src)[0].state, 'installed');
+  assert.equal(repo.contentHash(installed), repo.contentHash(Object.assign({}, installed, { source: null })), 'the hash ignores source');
+  assert.equal(repo.contentHash(null), '');
+});
+
 test('a persona keeps its source through normalization, and bad sources are dropped', () => {
   const p = normalizePersona({ id: 'a', source: { url: 'https://github.com/TeeJS/bedrock-personas/tree/main', version: '1.2' } });
   assert.deepEqual(p.source, { url: 'https://github.com/TeeJS/bedrock-personas/tree/main', version: '1.2' });
+  const h = 'a'.repeat(64);
+  assert.equal(normalizePersona({ id: 'a', source: { url: 'https://github.com/o/r/tree/main', version: '1', hash: h } }).source.hash, h);
+  assert.equal(normalizePersona({ id: 'a', source: { url: 'https://github.com/o/r/tree/main', version: '1', hash: 'nope' } }).source.hash, undefined);
   assert.equal(normalizePersona({ id: 'b' }).source, null);
   assert.equal(normalizePersona({ id: 'c', source: { url: 'ftp://x' } }).source, null);
   assert.equal(normalizePersona({ id: 'd', source: 'junk' }).source, null);

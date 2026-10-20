@@ -245,7 +245,9 @@ function normalizeSource(s) {
   if (!s || typeof s !== 'object') return null;
   const url = typeof s.url === 'string' ? s.url.trim() : '';
   if (!/^https:\/\/(github\.com|raw\.githubusercontent\.com)\//i.test(url)) return null;
-  return { url: url.slice(0, 512), version: typeof s.version === 'string' ? s.version.trim().slice(0, 32) : '0.0.0' };
+  const out = { url: url.slice(0, 512), version: typeof s.version === 'string' ? s.version.trim().slice(0, 32) : '0.0.0' };
+  if (typeof s.hash === 'string' && /^[0-9a-f]{64}$/.test(s.hash)) out.hash = s.hash;   // content fingerprint at install (persona-repo.js)
+  return out;
 }
 
 function normalizeEyePreset(src, base) {

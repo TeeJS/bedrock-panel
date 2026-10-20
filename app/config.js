@@ -916,13 +916,17 @@
       catalog.querySelectorAll('.prInstall').forEach(btn => {
         btn.onclick = async () => {
           const src = btn.getAttribute('data-src'), id = btn.getAttribute('data-id'), state = btn.getAttribute('data-state');
+          // An install saves on the main side and reloads this editor's config; unsaved drafts here
+          // would be folded in by the three-way merge, but a persona draft for the same id would be
+          // lost. Keep it explicit: Save & apply first.
+          if (dirty) { say('Save & apply your unsaved changes first, then install.', true); return; }
           let replace = false;
-          if (state === 'edited') { if (!ask('"' + id + '" is already in your library and did not come from this repository (you may have edited or imported it). Replace it with the repository\'s copy?')) return; replace = true; }
+          if (state === 'edited') { if (!ask('"' + id + '" is already in your library and is not an untouched copy from this repository (hand-made, imported, or edited since install). Replace it with the repository\'s copy?')) return; replace = true; }
           btn.disabled = true; const was = btn.textContent; btn.textContent = 'Installing…';
           let res;
           try { res = await configApi.installRepoPersona(src, id, replace); } catch (e) { res = { ok: false, error: (e && e.message) || String(e) }; }
           if (res && res.needsConfirm) {
-            if (!ask('"' + res.existingName + '" is already in your library and did not come from this repository. Replace it?')) { btn.disabled = false; btn.textContent = was; return; }
+            if (!ask((res.error || ('"' + res.existingName + '" is already in your library.')) + ' Replace it with the repository\'s copy?')) { btn.disabled = false; btn.textContent = was; return; }
             try { res = await configApi.installRepoPersona(src, id, true); } catch (e) { res = { ok: false, error: (e && e.message) || String(e) }; }
           }
           if (!res || !res.ok) { btn.disabled = false; btn.textContent = was; say(res && res.error ? res.error : 'Install failed.', true); return; }

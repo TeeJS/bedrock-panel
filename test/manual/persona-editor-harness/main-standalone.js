@@ -59,10 +59,10 @@ const pickFile = (name, body) => js('(function () { var dt = new DataTransfer();
 app.whenReady().then(async () => {
   win = new BrowserWindow({
     width: 1180, height: 900, show: false,
-    webPreferences: { preload: path.join(__dirname, 'preload-stub.js'), contextIsolation: false, nodeIntegration: true, sandbox: false },
+    webPreferences: { preload: path.join(__dirname, 'preload-stub.js'), contextIsolation: false, nodeIntegration: true, sandbox: false, backgroundThrottling: false },
   });
   win.webContents.on('console-message', (_e, _l, message, line, sourceId) => { if (/error|Uncaught|TypeError/i.test(message)) console.log('[H] pageError ' + message.slice(0, 200) + ' @ ' + path.basename(String(sourceId || '')) + ':' + line); });
-  win.showInactive();
+  // never shown: the harness must not appear on the user's desktop (capturePage works on a hidden window)
   await win.loadFile(path.join(REPO, 'app', 'config.html'));
   try {
     for (let i = 0; i < 50 && !(await js("!!document.getElementById('settingsBtn') && !!document.getElementById('saveBtn')")); i++) await sleep(200);
@@ -221,6 +221,136 @@ app.whenReady().then(async () => {
     await go();
     check('a fetched persona with an existing id asks before replacing; Cancel keeps Jarvis', (await js('window.__confirmCalls')) === 1 && (await names()).indexOf('Jarvis') !== -1 && (await names()).indexOf('Jarvis (shared)') === -1, await js('window.__confirmMsg'));
     await js("document.getElementById('sPersonaImportCancel').click()");
+
+    // ---- phase 3: persona repositories (Browse / Install / Update / Check for updates) ----
+    const P = (id, name, version, state, extra) => Object.assign({ id, name, version, description: name + ' persona', source: 'https://github.com/acme/packs/tree/main', state }, extra || {});
+    const SRC_A = 'https://github.com/acme/packs/tree/main';
+    const SRC_B = 'https://github.com/secret/private-packs/tree/main';
+    const catText = () => js("document.getElementById('sPersonaCatalog').innerText");
+    const catBtns = () => js("Array.from(document.querySelectorAll('#sPersonaCatalog .prInstall')).map(function (b) { return b.getAttribute('data-id') + ':' + b.textContent.trim() + (b.disabled ? ':disabled' : ''); })");
+    const rmsg = () => js("document.getElementById('sPersonaRepoMsg').textContent");
+    const browseClick = async () => { await js("document.getElementById('sPersonaBrowse').click()"); await sleep(500); };
+    await js('window.__installCalls = []; window.__listResult = ' + JSON.stringify({ ok: true, sources: [
+      { source: SRC_A, personas: [P('ava', 'Ava', '1.2.0', 'available'), P('ben', 'Ben', '2.0.0', 'update', { installedVersion: '1.0.0' }), P('cy', 'Cy', '1.0.0', 'installed'), P('dot', 'Dot', '1.0.0', 'edited')] },
+      { source: SRC_B, authed: true, personas: [P('eve', 'Eve', '0.9.0', 'available', { source: SRC_B })] },
+      { source: 'https://github.com/acme/apps/tree/main', implicit: true, missing: true, personas: [] },
+      { source: 'https://github.com/acme/empty/tree/main', personas: [] },
+    ] }));
+    await browseClick();
+    const t1 = await catText();
+    check('Browse lists every source with its heading, name, version and description',
+      t1.includes(SRC_A) && t1.includes(SRC_B) && /Ava/.test(t1) && /v1\.2\.0/.test(t1) && /Ava persona/.test(t1) && /Eve/.test(t1), t1.slice(0, 200));
+    check('state buttons: Install / Update / Installed (disabled) / Replace…', (await catBtns()).join(',') === 'ava:Install,ben:Update,cy:Installed:disabled,dot:Replace…,eve:Install', await catBtns());
+    check('an update row shows the version you have', /v2\.0\.0 \(have 1\.0\.0\)/.test(t1.replace(/\s+/g, ' ')), t1.replace(/\s+/g, ' ').slice(0, 200));
+    check('private, app-repository, missing-folder and empty-source notes are shown', /private, via your GitHub connection/.test(t1) && /\(app repository\)/.test(t1) && /No personas folder in this app repository/.test(t1) && /No personas in this source/.test(t1));
+    await shot('04-catalog');
+
+    // Install: calls the API with replace=false and reports what was installed
+    await js('window.__installResult = function (s, id) { return { ok: true, name: id.toUpperCase(), version: "1.2.0", replaced: false }; }; true');
+    await js("document.querySelector('#sPersonaCatalog .prInstall[data-id=\"ava\"]').click()"); await sleep(2800);   // the UI waits up to ~2 s for a settings re-render that only the real app performs
+    const calls1 = await js('window.__installCalls');
+    check('Install sends (source, id, replace=false)', calls1.length === 1 && calls1[0].id === 'ava' && calls1[0].src === SRC_A && calls1[0].replace === false, calls1);
+    check('the result line says what was installed', /Installed "AVA" v1\.2\.0/.test(await rmsg()), await rmsg());
+
+    // Replace… (a library entry that did not come from this source): asks; Cancel installs nothing
+    await js('window.__installCalls = []');
+    await browseClick();
+    await answer(false);
+    await js("document.querySelector('#sPersonaCatalog .prInstall[data-id=\"dot\"]').click()"); await sleep(300);
+    check('Replace… asks first; Cancel sends no install request', (await js('window.__confirmCalls')) === 1 && (await js('window.__installCalls')).length === 0, await js('window.__confirmMsg'));
+    await answer(true);
+    await js("document.querySelector('#sPersonaCatalog .prInstall[data-id=\"dot\"]').click()"); await sleep(700);
+    const calls2 = await js('window.__installCalls');
+    check('Replace… accepted sends replace=true', calls2.length === 1 && calls2[0].id === 'dot' && calls2[0].replace === true, calls2);
+
+    // Update over a persona that came from the same source. Since Fable's content hash, the catalog reports a
+    // persona edited after install as 'edited' (Replace…, asked above); only an UNTOUCHED copy shows 'Update'
+    // and it installs without a prompt (replace=false; the main process re-checks the hash and would answer
+    // needsConfirm if it changed meanwhile).
+    await js('window.__installCalls = []');
+    await browseClick();
+    await answer(false);
+    await js("document.querySelector('#sPersonaCatalog .prInstall[data-id=\"ben\"]').click()"); await sleep(600);
+    const sent = await js('window.__installCalls');
+    check('an untouched copy updates without a prompt (replace=false)', (await js('window.__confirmCalls')) === 0 && sent.length === 1 && sent[0].id === 'ben' && sent[0].replace === false, { confirmAsked: await js('window.__confirmCalls'), installRequests: sent });
+    // the main process can still refuse a replace it is not sure about (needsConfirm): the editor must ask then
+    await js('window.__installCalls = []; window.__installResult = function (s, id, replace) { return replace ? { ok: true, name: "Ben", version: "2.0.0", replaced: true } : { ok: false, needsConfirm: true, existingName: "Ben", error: "Ben was edited since it was installed." }; }; true');
+    await browseClick();
+    await answer(false);
+    await js("document.querySelector('#sPersonaCatalog .prInstall[data-id=\"ben\"]').click()"); await sleep(600);
+    const sent2 = await js('window.__installCalls');
+    check('needsConfirm from the main process is shown to the user; Cancel does not retry with replace', (await js('window.__confirmCalls')) === 1 && sent2.length === 1 && sent2[0].replace === false && /edited since/.test(await js('window.__confirmMsg')), { sent2, msg: await js('window.__confirmMsg') });
+    await answer(true);
+    await js('window.__installCalls = []');
+    await browseClick();
+    await js("document.querySelector('#sPersonaCatalog .prInstall[data-id=\"ben\"]').click()"); await sleep(700);
+    const sent3 = await js('window.__installCalls');
+    check('accepting that prompt retries once with replace=true', sent3.length === 2 && sent3[0].replace === false && sent3[1].replace === true, sent3);
+    await js('window.__installResult = function (s, id) { return { ok: true, name: id.toUpperCase(), version: "1.2.0", replaced: false }; }; true');
+
+    // Partial failure: a good source and a failing private source in one listing
+    await js('window.__listResult = ' + JSON.stringify({ ok: true, sources: [
+      { source: SRC_A, personas: [P('ava', 'Ava', '1.2.0', 'available')] },
+      { source: SRC_B, authed: true, error: 'GitHub is not connected. Connect it under Settings > Auth, then press Browse again.', personas: [] },
+    ] }));
+    await browseClick();
+    const t2 = await catText();
+    check('one failing source keeps the good source visible and shows an actionable reason', /Ava/.test(t2) && t2.includes(SRC_B) && /not connected/i.test(t2) && /Settings > Auth/.test(t2), t2.slice(0, 220));
+    win.setSize(900, 900); await sleep(400);
+    const L2 = await js("(function () { var over = []; document.querySelectorAll('#sPersonaCatalog *, #sPersonaRepoRows *').forEach(function (e) { var b = e.getBoundingClientRect(); if (b.width && (b.right > window.innerWidth + 1 || b.left < -1)) over.push(e.className || e.tagName); }); return { docOverflow: document.documentElement.scrollWidth > window.innerWidth + 1, offscreen: over.slice(0, 5) }; })()");
+    check('the catalog does not overflow at 900 px', !L2.docOverflow && L2.offscreen.length === 0, L2);
+    await shot('05-catalog-900');
+    win.setSize(1180, 900); await sleep(300);
+
+    // Screenshots for UI review (Codex #210): every kind of source group plus one error, at 1180 and 900
+    await js('window.__listResult = ' + JSON.stringify({ ok: true, sources: [
+      { source: SRC_A, personas: [P('ava', 'Ava', '1.2.0', 'available'), P('ben', 'Ben', '2.0.0', 'update', { installedVersion: '1.0.0' }), P('cy', 'Cy', '1.0.0', 'installed'), P('dot', 'Dot', '1.0.0', 'edited')] },
+      { source: SRC_B, authed: true, error: 'GitHub is not connected. Connect it under Settings > Auth, then press Browse again.', personas: [] },
+      { source: 'https://github.com/acme/more/tree/main/personas', personas: [P('flo', 'Flo', '0.3.0', 'available', { description: 'A deliberately long description that has to be cut off by the row instead of wrapping onto several lines and pushing the Install button out of reach' })] },
+      { source: 'https://github.com/acme/apps/tree/main', implicit: true, missing: true, personas: [] },
+      { source: 'https://github.com/acme/empty/tree/main', personas: [] },
+    ] }));
+    await browseClick();
+    for (const w of [1180, 900]) {
+      win.setSize(w, 900); await sleep(400);
+      await js("document.getElementById('sPersonaCatalog').scrollIntoView({ block: 'start' })"); await sleep(250);
+      const Lc = await js("(function () { var over = []; document.querySelectorAll('#sPersonaCatalog button, #sPersonaCatalog span').forEach(function (e) { var b = e.getBoundingClientRect(); if (b.width && (b.right > window.innerWidth + 1 || b.left < -1)) over.push(e.className || e.tagName); }); var btn = document.querySelector('#sPersonaCatalog .prInstall[data-id=\"flo\"]'); var bb = btn && btn.getBoundingClientRect(); return { docOverflow: document.documentElement.scrollWidth > window.innerWidth + 1, offscreen: over.slice(0, 5), longRowButtonVisible: !!bb && bb.right <= window.innerWidth && bb.width >= 60 }; })()");
+      check('catalog with every group kind and one error fits at ' + w + ' px; the Install button of a long-description row stays reachable', !Lc.docOverflow && Lc.offscreen.length === 0 && Lc.longRowButtonVisible, Lc);
+      await shot('06-catalog-' + w);
+    }
+    win.setSize(1180, 900); await sleep(300);
+
+    // Codex #209: an install re-renders the whole editor; with unsaved drafts it would drop them.
+    // Spec: Install/Update must not run while the editor has unsaved changes (ask to Save & apply first).
+    await js('window.__installCalls = []');
+    await js("(function () { var i = document.querySelector('#sPersonaRows .psName'); i.value = 'Draft rename'; i.dispatchEvent(new Event('input', { bubbles: true })); })()");
+    await answer(false);
+    await js("document.querySelector('#sPersonaCatalog .prInstall[data-id=\"ava\"]').click()"); await sleep(600);
+    const dirtySent = await js('window.__installCalls');
+    const dirtyMsg = await rmsg();
+    check('Install with unsaved editor changes does not run (the re-render would drop the drafts); the user is told to Save & apply first', dirtySent.length === 0 && /Save & apply/i.test(dirtyMsg), { installRequests: dirtySent.length, msg: dirtyMsg });
+    await sleep(3000);   // an install that did run schedules a delayed re-browse; let it settle so later checks read their own messages
+
+    // Whole-list failure: the reason is shown and a typed repository URL is kept
+    await js("document.getElementById('sPersonaRepoAdd').click()"); await sleep(150);
+    await js("(function () { var i = document.querySelector('#sPersonaRepoRows .prUrl'); i.value = 'https://github.com/me/my-personas/tree/main'; i.dispatchEvent(new Event('input', { bubbles: true })); })()");
+    await js('window.__listResult = { ok: false, error: "Could not reach GitHub (timeout)." }');
+    await browseClick();
+    check('a failed listing explains itself and keeps the typed repository URL',
+      /timeout/i.test(await rmsg()) && (await js("document.querySelector('#sPersonaRepoRows .prUrl').value")) === 'https://github.com/me/my-personas/tree/main', await rmsg());
+    await js("document.querySelector('#sPersonaRepoRows .prRemove').click()"); await sleep(100);
+    check('a repository row can be removed', (await js("document.querySelectorAll('#sPersonaRepoRows .prUrl').length")) === 0);
+
+    // Check for updates
+    await js('window.__updatesResult = ' + JSON.stringify({ ok: true, updates: [{ name: 'Ben', installedVersion: '1.0.0', remoteVersion: '2.0.0' }, { name: 'Dot', installedVersion: '1.0.0', remoteVersion: '1.1.0' }], errors: [] }));
+    await js("document.getElementById('sPersonaUpdates').click()"); await sleep(400);
+    check('Check for updates lists the pending updates and points at Browse', /2 updates available: Ben 1\.0\.0 → 2\.0\.0, Dot 1\.0\.0 → 1\.1\.0/.test(await rmsg()) && /Browse repositories/.test(await rmsg()), await rmsg());
+    await js('window.__updatesResult = ' + JSON.stringify({ ok: true, updates: [], errors: [{ source: SRC_B, error: 'x' }] }));
+    await js("document.getElementById('sPersonaUpdates').click()"); await sleep(400);
+    check('up to date, with an unreadable source mentioned', /up to date/i.test(await rmsg()) && /1 source could not be read/.test(await rmsg()), await rmsg());
+    await js('window.__updatesResult = { ok: false, error: "No repositories to check." }');
+    await js("document.getElementById('sPersonaUpdates').click()"); await sleep(300);
+    check('a failed update check shows its reason', /No repositories to check/.test(await rmsg()), await rmsg());
 
     // 11. layout at two widths: no horizontal overflow inside the personas area
     for (const w of [1180, 900]) {

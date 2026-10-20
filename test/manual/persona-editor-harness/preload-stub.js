@@ -55,6 +55,14 @@ const overrides = {
     if (Buffer.byteLength(fx, 'utf8') > personaLib.MAX_PACK_BYTES) return { ok: false, persona: null, error: 'that file is larger than 64 KB, which is more than a persona can be' };
     return personaLib.importPersonaText(fx);
   }),
+  // Phase 3: persona repositories. The harness sets window.__listResult / __installResult /
+  // __updatesResult per scenario; calls are recorded in window.__installCalls.
+  listRepoPersonas: () => later(() => window.__listResult || { ok: true, sources: [] }),
+  installRepoPersona: (src, id, replace) => later(() => {
+    (window.__installCalls = window.__installCalls || []).push({ src, id, replace: !!replace });
+    return typeof window.__installResult === 'function' ? window.__installResult(src, id, !!replace) : { ok: true, name: id, version: '1.0.0', replaced: false };
+  }),
+  checkPersonaUpdates: () => later(() => window.__updatesResult || { ok: true, updates: [], errors: [] }),
   // ---- the persona IPC, async, same behaviour as app/main.js ----
   validatePersona: (src) => later(() => personaLib.validatePersona(src)),
   personaJson: (p) => later(() => personaLib.exportPersonaJson(p)),
