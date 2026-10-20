@@ -47,6 +47,17 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   pickProgram() { return ipcRenderer.invoke('pickProgram'); },
   pickFile() { return ipcRenderer.invoke('pickFile'); },
   pickFolder() { return ipcRenderer.invoke('pickFolder'); },
+  // AI Voice face personas: validate a pasted/loaded pack, get the normalized JSON for export, or
+  // save it to a file the user picks. Pure data in both directions; nothing here touches secrets.
+  validatePersona(src) { return ipcRenderer.invoke('validatePersona', src); },
+  personaJson(persona) { return ipcRenderer.invoke('personaJson', persona); },
+  exportPersonaFile(persona) { return ipcRenderer.invoke('exportPersonaFile', persona); },
+  importPersonaUrl(url) { return ipcRenderer.invoke('importPersonaUrl', url); },   // fetch a pack (64 KB cap) and validate it
+  listTtsVoices() { return ipcRenderer.invoke('listTtsVoices'); },                 // voices the configured Piper offers (Wyoming describe)
+  // Persona repositories: the drop-in app repository model (public raw, private via the GitHub connection).
+  listRepoPersonas() { return ipcRenderer.invoke('listRepoPersonas'); },
+  installRepoPersona(src, id, replace) { return ipcRenderer.invoke('installRepoPersona', src, id, replace); },
+  checkPersonaUpdates() { return ipcRenderer.invoke('checkPersonaUpdates'); },
   meetingFoldersCheck(fields) { return ipcRenderer.invoke('meetingFoldersCheck', fields); },
   listDropInApps() { return ipcRenderer.invoke('listDropInApps'); },
   openExternal(url) { ipcRenderer.send('openExternal', url); },

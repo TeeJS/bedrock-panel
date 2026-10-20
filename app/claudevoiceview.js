@@ -129,6 +129,219 @@ function setStatus(status, errorText) {
     status === 'error' ? 'error' : status === 'approval' ? 'approval' : '';
   $('err').textContent = errorText || speechErrText || '';
   console.log('OQX_RING::' + (RING_SIGNAL_STATES[status] ? status : 'idle'));
+  faceOnStatus(status || 'idle', errorText || speechErrText || '');
+}
+
+// ---- Face (app/face/renderer.js) ----
+// The page's `face` option: off (nothing here runs, no canvas, no timers), side (face column beside
+// the chat) or creature (face only, controls on a reveal bar). The renderer is created lazily when
+// the mode is not off and stopped whenever the page is hidden; the host sends the persona's face
+// parameters on /state (meta.persona) and the emotion of each reply as an SSE 'emotion' event.
+// The mouth follows the audio actually playing: a WebAudio analyser on the turn's <audio> element.
+var FACE_MODES = { off: 1, side: 1, creature: 1 };
+var faceMode = FACE_MODES[Q.get('face')] ? Q.get('face') : 'off';
+var face = null;                 // the OqxFace instance, or null while off
+var facePersona = null;          // {id, name, face} from the host, or null = plain face
+var PERSONAS = [];               // [{id, name}] library, from meta
+var currentPersonaId = Q.get('personaPick') || '';
+var faceStatusName = 'idle';
+var faceBarTimer = null;
+var faceCssVar = function (name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); };
+var reducedMotionMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+function faceEnabled() { return faceMode !== 'off'; }
+function applyFaceMode(mode) {
+  faceMode = FACE_MODES[mode] ? mode : 'off';
+  document.body.classList.toggle('face-side', faceMode === 'side');
+  document.body.classList.toggle('face-creature', faceMode === 'creature');
+  setPersonaPending(personaPending);   // the creature badge follows the layout
+  if (faceMode === 'off') { destroyFace(); hideFaceBar(); return; }
+  createFace();
+  syncFaceBarUI();
+  if (face) face.resize();
+}
+function createFace() {
+  if (face || !window.OqxFace || !faceEnabled()) return;
+  try {
+    face = window.OqxFace.create($('faceCanvas'), {
+      persona: facePersona,
+      accent: faceCssVar('--accent') || undefined,
+      background: faceCssVar('--bg') || undefined,
+      reducedMotion: !!(reducedMotionMq && reducedMotionMq.matches),
+    });
+  } catch (e) { console.log('face: renderer unavailable: ' + (e && e.message ? e.message : e)); face = null; return; }
+  face.setState(faceStatusName);
+  if (!document.hidden) face.start();
+  // Face turned on mid-reply: route (or re-join) the playing element so the mouth moves now.
+  if (turnAudio) faceAttachAnalyser(turnAudio);
+}
+function destroyFace() {
+  if (!face) return;
+  faceStopLevel();
+  try { face.destroy(); } catch (e) {}
+  face = null;
+}
+// Status -> renderer state, plus the creature bar's own status/error line (the main status row is
+// hidden in creature mode, and an error or approval must stay visible and actionable there).
+function faceOnStatus(status, errText) {
+  var wasHeld = faceStatusName === 'error' || faceStatusName === 'approval';
+  faceStatusName = status;
+  if (face) face.setState(status);
+  // The bar that an error/approval held open goes back to the normal 6 s auto-hide once resolved.
+  if (wasHeld && status !== 'error' && status !== 'approval' && faceMode === 'creature' && $('faceBar').classList.contains('show')) showFaceBar(false);
+  var fs = $('faceStatus');
+  if (fs) {
+    fs.textContent = status.toUpperCase();
+    fs.className = status === 'thinking' ? 'thinking' : status === 'listening' ? 'listening' : status === 'error' ? 'error' : status === 'approval' ? 'approval' : '';
+  }
+  var fe = $('faceErr');
+  if (fe) { fe.textContent = errText; fe.classList.remove('ok'); }
+  var a11y = $('faceA11y');
+  if (a11y && faceEnabled()) a11y.textContent = (facePersona ? facePersona.name + ' is ' : 'Face: ') + status + (errText ? '. ' + errText : '');
+  // An error or a pending approval reveals the controls and keeps them until acted on.
+  if (faceMode === 'creature' && (status === 'error' || status === 'approval')) showFaceBar(true);
+}
+function faceSetPersona(p) {
+  facePersona = p || null;
+  currentPersonaId = p ? p.id : '';
+  if (face) face.setPersona(facePersona);
+  syncPersonaUI();
+}
+// A persona switch made during a reply is applied after it (the session restarts, new
+// conversation). Say so until the host confirms, on the status line and, in creature mode, as a
+// quiet badge that never displaces the approval or error controls.
+var personaPending = null;
+function setPersonaPending(p) {
+  personaPending = p && p.id !== undefined ? p : null;
+  var text = personaPending ? ('Switching to ' + (personaPending.name || 'no persona') + ' after this reply') : '';
+  var el = $('personaPendingNote');
+  if (el) { el.textContent = text; el.classList.toggle('show', !!text); }
+  var badge = $('facePendingBadge');
+  if (badge) { badge.textContent = text; badge.classList.toggle('show', !!text && faceMode === 'creature'); }
+}
+// Reveal bar (creature mode). `hold` = opened by an error/approval or by keyboard: never auto-hides.
+function showFaceBar(hold) {
+  var bar = $('faceBar');
+  bar.classList.add('show');
+  $('faceCtl').setAttribute('aria-expanded', 'true');
+  syncFaceBarUI();
+  clearTimeout(faceBarTimer);
+  if (!hold) faceBarTimer = setTimeout(maybeHideFaceBar, 6000);
+}
+function hideFaceBar() {
+  clearTimeout(faceBarTimer);
+  $('faceBar').classList.remove('show');
+  $('faceCtl').setAttribute('aria-expanded', 'false');
+}
+function maybeHideFaceBar() {
+  var bar = $('faceBar');
+  if (bar.contains(document.activeElement)) { faceBarTimer = setTimeout(maybeHideFaceBar, 6000); return; }
+  if (faceStatusName === 'error' || faceStatusName === 'approval') return;
+  hideFaceBar();
+}
+function toggleFaceBar(fromKeyboard) {
+  if ($('faceBar').classList.contains('show')) { hideFaceBar(); $('faceCtl').focus(); }
+  else { showFaceBar(!!fromKeyboard); if (fromKeyboard) $('faceMic').focus(); }
+}
+function syncFaceBarUI() {
+  $('faceMic').classList.toggle('on', conversationOpen);
+  $('faceMic').classList.toggle('off', !conversationOpen);
+  $('faceSpk').classList.toggle('on', speakEnabled);
+  $('faceSpk').classList.toggle('off', !speakEnabled);
+  $('faceMuted').classList.toggle('show', faceMode === 'creature' && !conversationOpen);
+}
+$('faceCol').addEventListener('click', function () { if (face) face.wake(); if (faceMode === 'creature') toggleFaceBar(false); });
+$('faceCtl').onclick = function () { toggleFaceBar(false); };
+$('faceCtl').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFaceBar(true); } });
+$('faceBarClose').onclick = function () { hideFaceBar(); $('faceCtl').focus(); };
+$('faceMic').onclick = function () { window.oqxToggleConversation(); syncFaceBarUI(); showFaceBar(false); };
+$('faceSpk').onclick = function () { $('spkBtn').onclick(); syncFaceBarUI(); showFaceBar(false); };
+$('faceStop').onclick = function () { stopTurnAudio(); showFaceBar(false); };
+$('faceSettings').onclick = function () { $('vpSettings').onclick(); };
+// Escape closes the TOPMOST layer only: a picker over Settings, then Settings, then (creature
+// mode) the reveal bar. Focus returns to what opened the layer.
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  if (!$('devOverlay').classList.contains('hidden')) { $('devCancel').onclick(); var back = { audioinput: 'micPickBtn', audiooutput: 'spkPickBtn', model: 'modelPickBtn', persona: 'personaPickBtn', face: 'facePickBtn' }[devOverlayKindLast] || 'settingsClose'; var el = $(back); if (el) el.focus(); return; }
+  if (!$('settingsOverlay').classList.contains('hidden')) { $('settingsOverlay').classList.add('hidden'); (faceMode === 'creature' ? $('faceCtl') : $('vpSettings')).focus(); return; }
+  if (faceMode !== 'creature') return;
+  if ($('faceBar').classList.contains('show') && faceStatusName !== 'error' && faceStatusName !== 'approval') { hideFaceBar(); $('faceCtl').focus(); }
+});
+var devOverlayKindLast = '';   // which picker was open last, for Escape's focus return
+document.addEventListener('visibilitychange', function () {
+  if (!face) return;
+  if (document.hidden) { face.stop(); faceStopLevel(); }
+  else { face.start(); face.resize(); faceResumeLevel(); }
+});
+window.addEventListener('resize', function () { if (face) face.resize(); });
+if (reducedMotionMq && reducedMotionMq.addEventListener) reducedMotionMq.addEventListener('change', function () { if (face) face.setReducedMotion(reducedMotionMq.matches); });
+
+// Mouth level from the audio that is actually playing. The <audio> element is routed through an
+// AudioContext analyser (and on to the context's destination); the picked speaker is applied to
+// the CONTEXT, since a routed element's own setSinkId no longer decides where the sound goes.
+// If any of that fails the reply still plays normally and the face just stops animating its mouth
+// (logged once): an honest still mouth beats a fake one.
+// One MediaElementSource per <audio> (it can only ever be created once per element), cached on the
+// element itself; the level loop is separate from the routing so it can stop while the page is
+// hidden or the face is off, and resume when the face comes back mid-reply.
+var faceAudioCtx = null, faceAnalyser = null, faceAnalysedEl = null, faceLevelRaf = null, faceAnalyserWarned = false, faceLevelBuf = null;
+function faceAttachAnalyser(audio) {
+  if (!face || !audio) return;
+  try {
+    if (!faceAudioCtx) faceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audio._oqxSource) {
+      audio._oqxSource = faceAudioCtx.createMediaElementSource(audio);
+      audio._oqxAnalyser = faceAudioCtx.createAnalyser();
+      audio._oqxAnalyser.fftSize = 512;
+      audio._oqxAnalyser.smoothingTimeConstant = 0.5;
+      audio._oqxSource.connect(audio._oqxAnalyser);
+      audio._oqxAnalyser.connect(faceAudioCtx.destination);
+      audio.addEventListener('playing', function () { if (faceAnalysedEl === audio) faceResumeLevel(); });
+    }
+    faceAnalyser = audio._oqxAnalyser;
+    faceAnalysedEl = audio;
+    faceApplyCtxSink();
+    if (faceAudioCtx.state === 'suspended') faceAudioCtx.resume().catch(function () {});
+    faceResumeLevel();
+  } catch (e) {
+    if (!faceAnalyserWarned) { faceAnalyserWarned = true; console.log('face: playback analyser unavailable, mouth stays still: ' + (e && e.message ? e.message : e)); }
+    faceAnalyser = null; faceAnalysedEl = null;
+  }
+}
+function faceLevelTick() {
+  faceLevelRaf = null;
+  var audio = faceAnalysedEl, an = faceAnalyser;
+  if (!audio || !an || !face) return;
+  if (document.hidden) { face.setLevel(0); return; }   // resumed by visibilitychange
+  if (!faceLevelBuf || faceLevelBuf.length !== an.fftSize) faceLevelBuf = new Uint8Array(an.fftSize);
+  an.getByteTimeDomainData(faceLevelBuf);
+  var sum = 0;
+  for (var i = 0; i < faceLevelBuf.length; i++) { var v = (faceLevelBuf[i] - 128) / 128; sum += v * v; }
+  face.setLevel(Math.min(1, Math.sqrt(sum / faceLevelBuf.length) * 5));
+  if (!audio.paused && !audio.ended) faceLevelRaf = requestAnimationFrame(faceLevelTick);
+  else face.setLevel(0);   // paused or ended: the mouth closes, honestly
+}
+function faceResumeLevel() {
+  if (faceLevelRaf === null && faceAnalysedEl && face && !document.hidden) faceLevelRaf = requestAnimationFrame(faceLevelTick);
+}
+function faceStopLevel() {
+  if (faceLevelRaf !== null) { cancelAnimationFrame(faceLevelRaf); faceLevelRaf = null; }
+  if (face) face.setLevel(0);
+}
+// Called when the element is finished with (ended, error, stopped): tear its graph down so no
+// source/analyser pair is retained per reply. A hide or layout change uses faceStopLevel instead
+// and keeps the graph, since the element is still playing.
+function faceDetachAnalyser(audio) {
+  if (faceAnalysedEl !== audio) return;
+  faceStopLevel();
+  faceAnalysedEl = null;
+  faceAnalyser = null;
+  try { if (audio._oqxAnalyser) audio._oqxAnalyser.disconnect(); } catch (e) {}
+  try { if (audio._oqxSource) audio._oqxSource.disconnect(); } catch (e) {}
+  audio._oqxAnalyser = null;
+  audio._oqxSource = null;
+}
+function faceApplyCtxSink() {
+  if (faceAudioCtx && faceAudioCtx.setSinkId) faceAudioCtx.setSinkId(spkDeviceId || '').catch(function () {});
 }
 
 // Real streaming: EventSource stays open for the life of the page, pushed by main.js as
@@ -208,6 +421,16 @@ function connectEvents() {
     } else if (msg.type === 'profile') {
       currentProfileId = msg.id || '';
       syncProfileUI();
+    } else if (msg.type === 'emotion') {
+      if (face) face.setEmotion(msg.name);
+    } else if (msg.type === 'persona') {
+      faceSetPersona(msg.persona);
+      setPersonaPending(null);   // applied (startSession broadcasts this after the restart)
+    } else if (msg.type === 'persona-pending') {
+      setPersonaPending(msg.persona);
+    } else if (msg.type === 'face') {
+      applyFaceMode(msg.mode);
+      syncPickButtons();
     } else if (msg.type === 'permission-mode') {
       currentMode = msg.mode || currentMode;
       syncModeUI();
@@ -247,6 +470,8 @@ function connectEvents() {
       liveMsg = null;
       renderTranscript();
       setProjectHeader(msg.projectDir);
+      if (face) face.setEmotion('neutral');   // a fresh conversation starts with a clean face
+      setPersonaPending(null);                // the restart is the applied switch
       setStatus('idle');
     }
   };
@@ -343,6 +568,11 @@ function applyMeta(meta) {
     if (typeof meta.profile === 'string') currentProfileId = meta.profile;
     syncProfileUI();
   }
+  // Face: the library for the picker, this page's persona (face parameters) and layout.
+  if (meta.personas) PERSONAS = meta.personas;
+  if ('persona' in meta) faceSetPersona(meta.persona);
+  if (meta.face) applyFaceMode(meta.face);
+  syncPickButtons();
 }
 fetch(BASE + '/state', { cache: 'no-store' }).then(function (r) { return r.json(); })
   .then(function (s) {
@@ -354,9 +584,16 @@ fetch(BASE + '/state', { cache: 'no-store' }).then(function (r) { return r.json(
     if (s.model) { liveModel = s.model; syncPickButtons(); }
     if (s.projectDir) setProjectHeader(s.projectDir);   // live truth beats the (possibly stale) page-load query param
     if (s.panel && s.panel.active) showPanelReview(s.panel);   // rotating away mid-review must not lose the proposal
-    setStatus(s.status, s.error);
+    if (s.emotion && face) face.setEmotion(s.emotion);
+    setPersonaPending(s.personaPending || null);
+    // A reload mid-approval (page switch, creature toggle) restores the actionable overlay; the
+    // decision route checks the requestId, so a stale one is refused server-side, never misapplied.
+    if (s.pendingApproval && s.pendingApproval.requestId && !pendingApprovalRequestId) {
+      showApprovalOverlay(s.pendingApproval.requestId, s.pendingApproval.toolName, s.pendingApproval.toolInput);
+    } else setStatus(s.status, s.error);
   }).catch(function () {});
 connectEvents();
+applyFaceMode(faceMode);   // from the page query; /state's meta corrects it if the editor changed it since
 
 function autoGrow() {
   var ta = $('textInput');
@@ -453,10 +690,11 @@ function speak(text, onDone) {
     .then(function (r) {
       if (!r || !r.ok || !r.id) { finish('Speech failed to start.'); return; }
       var audio = new Audio(BASE + '/tts-audio?id=' + encodeURIComponent(r.id));
-      audio.addEventListener('ended', function () { finish(); });
-      audio.addEventListener('error', function () { finish('Speech playback failed.'); });
+      audio.addEventListener('ended', function () { faceDetachAnalyser(audio); finish(); });
+      audio.addEventListener('error', function () { faceDetachAnalyser(audio); finish('Speech playback failed.'); });
       applySinkId(audio);
-      audio.play().catch(function () { finish('Speech playback failed.'); });
+      faceAttachAnalyser(audio);
+      audio.play().catch(function () { faceDetachAnalyser(audio); finish('Speech playback failed.'); });
     })
     .catch(function () { finish('Speech failed to start.'); });
 }
@@ -484,6 +722,7 @@ function stopTurnAudio() {
   if (!turnAudio) return;
   var a = turnAudio;
   turnAudio = null;
+  faceDetachAnalyser(a);
   try { a.pause(); } catch (e) {}
   try { a.removeAttribute('src'); a.load(); } catch (e) {}   // closes the HTTP stream -> server aborts synthesis
   endSpeechUI();
@@ -494,8 +733,10 @@ function startTurnAudio(turnId) {
   var done = function () {   // ended and error land in the same place: release the mic, settle status
     if (turnAudio !== a) return;
     turnAudio = null;
+    faceDetachAnalyser(a);
     endSpeechUI();
   };
+  faceAttachAnalyser(a);   // before play(): the element must be routed before its first sample
   a.addEventListener('playing', function () {
     if (turnAudio !== a) return;
     speechErrText = '';   // speech audibly works again -- retire the sticky TTS-failure notice
@@ -550,6 +791,7 @@ function ensureDeviceIds(force) {
 }
 function applySinkId(audio) {
   if (spkDeviceId && audio.setSinkId) audio.setSinkId(spkDeviceId).catch(function () {});
+  faceApplyCtxSink();   // a routed element plays through the face's AudioContext instead
 }
 // Model picker state: the pick is an alias ('' = account default) persisted like the device
 // labels; `liveModel` is the model ACTUALLY running, reported by the session's init event.
@@ -562,6 +804,7 @@ function modelPrettyName(id) {   // 'claude-sonnet-5' -> 'Sonnet' (best-effort; 
 }
 // Settings shows only the CURRENT pick per row (big row, tap to change); the actual list lives
 // in its own full-size overlay -- never an always-visible scrolling list inside a dialog.
+var FACE_PICKS = [['off', 'Off — plain chat page'], ['side', 'Side — face beside the chat'], ['creature', 'Creature — face only']];
 function syncPickButtons() {
   $('micPickVal').textContent = savedMicLabel || ('Default — ' + (globalMicLabel || 'System default'));
   $('spkPickVal').textContent = savedSpkLabel || ('Default — ' + (globalSpkLabel || 'System default'));
@@ -569,8 +812,15 @@ function syncPickButtons() {
   var label = savedModelPick ? (pick ? pick[1] : savedModelPick) : 'Default';
   if (!savedModelPick && liveModel) label = 'Default — ' + modelPrettyName(liveModel);
   $('modelPickVal').textContent = label;
+  var fp = FACE_PICKS.find(function (p) { return p[0] === faceMode; });
+  $('facePickVal').textContent = fp ? fp[1] : faceMode;
+  syncPersonaUI();
 }
-var devOverlayKind = '';   // 'audioinput' | 'audiooutput' | 'model' while the picker overlay is open
+function syncPersonaUI() {
+  var cur = PERSONAS.find(function (p) { return p.id === currentPersonaId; });
+  $('personaPickVal').textContent = cur ? cur.name : (facePersona ? facePersona.name : 'None');
+}
+var devOverlayKind = '';   // 'audioinput' | 'audiooutput' | 'model' | 'persona' | 'face' while the picker overlay is open
 function renderDevOverlay() {
   var kind = devOverlayKind;
   var el = $('devList');
@@ -588,6 +838,15 @@ function renderDevOverlay() {
     MODEL_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === savedModelPick); });
     return;
   }
+  if (kind === 'persona') {
+    addRow('None — plain face', '', !currentPersonaId);
+    PERSONAS.forEach(function (p) { addRow(p.name, p.id, p.id === currentPersonaId); });
+    return;
+  }
+  if (kind === 'face') {
+    FACE_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === faceMode); });
+    return;
+  }
   var savedLabel = kind === 'audioinput' ? savedMicLabel : savedSpkLabel;
   var globalLabel = kind === 'audioinput' ? globalMicLabel : globalSpkLabel;
   var devs = allDevices.filter(function (d) { return d.kind === kind && d.label; });
@@ -599,9 +858,10 @@ function renderDevOverlay() {
 }
 function openDevOverlay(kind) {
   devOverlayKind = kind;
-  $('devTitle').textContent = kind === 'audioinput' ? 'Microphone' : kind === 'audiooutput' ? 'Speaker' : 'Model';
+  devOverlayKindLast = kind;
+  $('devTitle').textContent = kind === 'audioinput' ? 'Microphone' : kind === 'audiooutput' ? 'Speaker' : kind === 'persona' ? 'Persona' : kind === 'face' ? 'Face' : 'Model';
   renderDevOverlay();                                  // cached entries paint instantly...
-  if (kind !== 'model') {                              // (the model list is static -- no mic grab)
+  if (kind === 'audioinput' || kind === 'audiooutput') {   // (the other lists are static -- no mic grab)
     ensureDeviceIds(true).then(function () {           // ...then a fresh enumeration replaces them
       if (devOverlayKind === kind) renderDevOverlay();
     });
@@ -631,6 +891,21 @@ function deviceAnnounce(what, label, globalLabel) {
 function pickDevice(kind, label) {
   $('devOverlay').classList.add('hidden');
   devOverlayKind = '';
+  if (kind === 'persona') {
+    // The host persists the pick, restarts the backend's session with the new prompt once the
+    // live turn ends, and broadcasts 'persona' with the face to draw.
+    postJSON('/persona', { id: label })
+      .then(function (r) { return r.json(); })
+      .then(function (r) { if (!r || !r.ok) setStatus(conversationOpen ? 'listening' : 'idle', 'Persona switch failed.'); })
+      .catch(reachErr);
+    return;
+  }
+  if (kind === 'face') {
+    postOption('face', label);   // the host re-issues the prompt (tags on/off) and broadcasts 'face'
+    applyFaceMode(label);
+    syncPickButtons();
+    return;
+  }
   if (kind === 'model') {
     savedModelPick = label;
     postOption('modelPick', label);   // persists; also what a fresh session start reads
@@ -666,6 +941,8 @@ function pickDevice(kind, label) {
 $('micPickBtn').onclick = function () { openDevOverlay('audioinput'); };
 $('spkPickBtn').onclick = function () { openDevOverlay('audiooutput'); };
 $('modelPickBtn').onclick = function () { openDevOverlay('model'); };
+$('personaPickBtn').onclick = function () { openDevOverlay('persona'); };
+$('facePickBtn').onclick = function () { openDevOverlay('face'); };
 $('devCancel').onclick = function () { $('devOverlay').classList.add('hidden'); devOverlayKind = ''; };
 
 // ---- Tap-to-toggle voice conversation (Phase 5) ----
@@ -723,11 +1000,13 @@ window.oqxToggleConversation = function () {
 function syncMicUI() {
   $('micBtn').classList.toggle('on', conversationOpen);
   $('micBtn').classList.toggle('off', !conversationOpen);
+  syncFaceBarUI();
 }
 var speakEnabled = localStorage.getItem('cvSpeakEnabled') !== '0';   // persists across page switches/reloads
 function syncSpkUI() {
   $('spkBtn').classList.toggle('on', speakEnabled);
   $('spkBtn').classList.toggle('off', !speakEnabled);
+  syncFaceBarUI();
 }
 $('micBtn').onclick = function () { window.oqxToggleConversation(); };
 $('spkBtn').onclick = function () {
@@ -744,6 +1023,7 @@ function onVADLevel(level) {
   var now = Date.now();
   if (level < 0.012 || now - lastRippleAt < 180) return;
   lastRippleAt = now;
+  if (face) face.wake();   // someone is talking: a dozing face opens its eyes
   var r = document.createElement('div');
   r.className = 'ripple';
   $('micRipples').appendChild(r);

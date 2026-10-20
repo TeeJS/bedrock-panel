@@ -92,6 +92,10 @@ function createSpeechPipeline({ synthesize, wavHeader, getTts, log, onSpeechErro
     const id = String(++seq);
     turn = {
       id,
+      // The TTS target {host, port, voice} is frozen for the whole turn: one WAV header per turn
+      // assumes one format, and a persona/page/voice change mid-reply must not splice a 16 kHz
+      // voice's PCM under a 22 kHz header. null = speech not configured (text only, as before).
+      tts: getTts(),
       buf: '', inFence: false, inTable: false, sawDelta: false,   // sentence-cutter state
       sentences: [],                 // sanitized sentences waiting for synthesis, in speaking order
       synthesizing: false,           // exactly one wyoming request in flight at a time
@@ -182,7 +186,7 @@ function createSpeechPipeline({ synthesize, wavHeader, getTts, log, onSpeechErro
     const t = turn;
     if (!t || t.synthesizing) return;
     if (!t.sentences.length) { maybeEnd(t); return; }
-    const tts = getTts();
+    const tts = t.tts;   // frozen at beginTurn (see there)
     if (!tts) {   // piper not configured: silently drop the speech, the text is on screen regardless
       t.sentences.length = 0;
       maybeEnd(t);
@@ -190,13 +194,26 @@ function createSpeechPipeline({ synthesize, wavHeader, getTts, log, onSpeechErro
     }
     t.synthesizing = true;
     const text = t.sentences.shift();
+    let delivered = false;   // any format/audio for THIS sentence reached us (then it is never retried)
+    t.dropSentence = false;  // set by onTurnFormat when this sentence's format cannot follow the header
     Promise.resolve(synthesize({
-      host: tts.host, port: tts.port, text, log: say,
+      host: tts.host, port: tts.port, text, voice: tts.voice || '', log: say,   // voice: the page's persona, if it names one
       registerCancel: cancel => { t.cancelSynth = cancel; },
-      onFormat: fmt => { if (turn === t) onTurnFormat(t, fmt); },
-      onChunk: buf => { if (turn === t) onTurnChunk(t, buf); },
+      onFormat: fmt => { if (turn === t) { delivered = true; onTurnFormat(t, fmt); } },
+      onChunk: buf => { if (turn === t) { delivered = true; onTurnChunk(t, buf); } },
     })).catch(e => {
       if (t.aborted) return;
+      // A persona voice the server will not synthesize (unknown name: wyoming-piper answers with an
+      // error, it does not substitute its default) -- say the sentence in the default voice instead.
+      // Only before any audio for it exists, and the fallback holds for the rest of this turn so the
+      // WAV stays one format. After output has begun a failure is a skip, never a duplicate.
+      if (tts.voice && !delivered && !t.headerWritten) {
+        say('voice "' + tts.voice + '" rejected (' + e.message + '); using the default voice for this turn');
+        if (!t.errorNotified) { t.errorNotified = true; tellError('voice "' + tts.voice + '" is not available on the TTS server; using its default voice'); }
+        t.tts = { host: tts.host, port: tts.port, voice: '' };
+        t.sentences.unshift(text);
+        return;
+      }
       say('speech sentence synth failed (skipped): ' + e.message);
       if (!t.errorNotified) {
         t.errorNotified = true;
@@ -209,13 +226,26 @@ function createSpeechPipeline({ synthesize, wavHeader, getTts, log, onSpeechErro
         if (turn === t) pump();
       });
   }
+  function sameFormat(a, b) {
+    return !!a && !!b && (a.rate || 22050) === (b.rate || 22050) && (a.width || 2) === (b.width || 2) && (a.channels || 1) === (b.channels || 1);
+  }
   function onTurnFormat(t, fmt) {
-    if (t.headerWritten) return;   // one header per turn -- piper's format is stable per voice model
+    if (t.headerWritten) {
+      // One header per turn: a later sentence in another format (a different voice, a server
+      // restart) cannot be spliced in; its audio is dropped and the user is told once.
+      if (!sameFormat(t.format, fmt)) {
+        t.dropSentence = true;
+        say('speech sentence format ' + JSON.stringify(fmt) + ' differs from the turn header ' + JSON.stringify(t.format) + '; dropped');
+        if (!t.errorNotified) { t.errorNotified = true; tellError('part of the reply came back in a different audio format and was skipped'); }
+      }
+      return;
+    }
     t.headerWritten = true;
     t.format = fmt;
     if (t.res && !t.resStarted) startRes(t);
   }
   function onTurnChunk(t, buf) {
+    if (t.dropSentence) return;   // see onTurnFormat
     if (t.resStarted) { try { t.res.write(buf); } catch (e) {} }
     else {
       t.pending.push(buf);

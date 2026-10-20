@@ -146,6 +146,26 @@ on the backend: API and Open WebUI pages apply it instantly mid-conversation; Cl
 restarts the session (keeping the conversation, like the Mode button); Codex and Copilot carry it
 into their next message.
 
+## Face and personas
+
+Each AI Voice page can show an animated **face** that follows the live conversation: it blinks and
+dozes when idle, looks attentive while you talk, thinks while a reply is in flight, moves its mouth
+with the audio that is actually playing, and shows the emotion the model picked. It uses the same
+backend, Whisper and Piper the page already uses; nothing extra runs.
+
+- **Face** (Settings → Face, or the editor's Face option): **Off** (the default; the page is exactly
+  as before), **Side** (a face column beside the chat) or **Creature** (the face fills the page;
+  a quiet **Controls** button or a tap on the face reveals mic, speaker, stop-speaking and settings,
+  and an error or approval always shows its controls).
+- **Persona** (Settings → Persona): who the face is. Ships with a starter set (Mimi, Jarvis,
+  CRT Terminal, Startup Intern, Dust Sprite); the default is *None*, a plain face. Each can have its own
+  Piper voice. A persona's prompt is added to the page's profile, never replacing
+  it, and is ignored on structured-output profiles such as Panel Builder. Changing the persona
+  restarts that backend's session once the current reply or approval is finished; changing the face
+  layout never does.
+- **Your own personas:** import, export, edit and share them as small JSON files. See
+  [personas.md](personas.md).
+
 ## Models
 
 The panel's **Settings → Model** picker follows the backend: Claude's fixed pick list, Codex and

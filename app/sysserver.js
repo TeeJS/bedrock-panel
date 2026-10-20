@@ -78,6 +78,7 @@ const STATIC_FILES = {
   '/screensaverview.js': 'application/javascript; charset=utf-8',
   '/claudevoice-vad.js': 'application/javascript; charset=utf-8',
   '/claudevoice-markdown.js': 'application/javascript; charset=utf-8',
+  '/face/renderer.js': 'application/javascript; charset=utf-8',   // AI Voice face (OqxFace canvas renderer)
   '/recorderview.js': 'application/javascript; charset=utf-8',
   '/system-audio-capture.js': 'application/javascript; charset=utf-8',
   '/slidecapture-view.js': 'application/javascript; charset=utf-8',
@@ -625,6 +626,7 @@ const VOICE_POST_SUFFIXES = new Set([
   '/session/stop',
   '/permission-mode',
   '/profile',
+  '/persona',
   '/panel-accept',
   '/routine-save',
   '/panel-cancel',
@@ -940,6 +942,14 @@ async function handler(req, res) {
       const id = body && typeof body.id === 'string' ? body.id : null;
       if (id == null || !h.setProfile) return done(res, false);
       let ok = false; try { ok = !!h.setProfile(id); } catch (e) {}
+      return done(res, ok);
+    }
+    // Face persona switch: the page's picker posts the chosen persona id ('' = none).
+    if (voicePath === '/persona' && req.method === 'POST') {
+      let body; try { body = await readJsonBody(req); } catch (e) { return done(res, false); }
+      const id = body && typeof body.id === 'string' ? body.id : null;
+      if (id == null || !h.setPersona) return done(res, false);
+      let ok = false; try { ok = !!h.setPersona(id); } catch (e) {}
       return done(res, ok);
     }
     // "+ Routine" beside Send: save what's in the message field, or (empty field) the last request

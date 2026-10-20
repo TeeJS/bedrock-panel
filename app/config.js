@@ -840,6 +840,259 @@
       if (inputs.length) inputs[inputs.length - 1].focus();
     };
   }
+  // ---- Personas rows (Settings -> AI Profiles -> Personas): name / style / colors / prompt per row,
+  // add/remove, plus JSON import (validated) and per-row export (clipboard + on-screen JSON). Same
+  // live-edit model as the profile rows: mutate config.settings.personas in place, Save persists.
+  const PERSONA_STYLES = [['oled', 'OLED robot'], ['cartoon', 'Cartoon human'], ['kawaii', 'Kawaii (Mimi)'], ['crt', 'CRT terminal'], ['sprite', 'Dust sprite (color = body)'], ['butler', 'Butler (Jarvis)'], ['intern', 'Intern (vector head)']];
+  function personaRowsHtml(list) {
+    const rows = Array.isArray(list) ? list : [];
+    if (!rows.length) return '<p class="hint">No personas yet — add one below, or import one.</p>';
+    return rows.map((p, i) => {
+      const face = p.face || {};
+      return `<div class="row" data-idx="${i}" style="margin-top:10px;align-items:flex-start;flex-wrap:wrap">
+        <input class="psName" placeholder="Persona name" value="${esc(p.name || '')}" style="width:160px">
+        <select class="psStyle" style="width:170px;margin-left:8px">${PERSONA_STYLES.map(s => `<option value="${s[0]}" ${(face.style || 'oled') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select>
+        <input class="psColor" placeholder="#rrggbb or blank" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color as #rrggbb; blank uses the page accent. A value that is not #rrggbb is not saved.">
+        <input class="psCheek" placeholder="cheek #rrggbb" value="${esc(face.cheekColor || '')}" style="width:130px;margin-left:8px" title="Blush/cheek color; blank uses the face color">
+        <input class="psVoice" list="psVoiceList" placeholder="Voice: page default" value="${esc(p.voice || '')}" style="width:200px;margin-left:8px" title="Piper voice name for this persona (e.g. en_US-lessac-medium). Blank = the page's default voice. Use 'Load available voices' to see what the TTS server offers.">
+        <button class="psExport" type="button" data-ex="${i}" style="margin-left:8px" title="Copy this persona's JSON to the clipboard">Export</button>
+        <button class="psExportFile" type="button" data-ex="${i}" style="margin-left:4px" title="Save this persona as a .persona.json file">Export file…</button>
+        <button class="psRemove" type="button" data-rm="${i}" title="Remove" style="margin-left:8px">✕</button>
+        <textarea class="psPrompt" placeholder="How this character talks (appended to the page's profile)" rows="3" style="flex:1 0 100%;margin-top:6px;font-family:inherit">${esc(p.prompt || '')}</textarea>
+      </div>`;
+    }).join('');
+  }
+  // Persona-only repository URLs (GitHub folder URLs). App repositories are searched for a personas/
+  // folder automatically, so most users never need a row here.
+  // The latest Browse function: an install makes the main process save, which reloads the editor's
+  // config and re-renders Settings (closing the catalog) BEFORE the install call returns, so the
+  // install handler re-opens the catalog through whichever wiring is current.
+  let personaCatalogBrowse = null;
+  function personaRepoRowsHtml(list) {
+    const rows = Array.isArray(list) ? list : [];
+    if (!rows.length) return '<p class="hint" style="margin:4px 0">No persona-only repositories; the app repositories\' <code>personas/</code> folders are searched automatically.</p>';
+    return rows.map((u, i) => `<div class="row" data-idx="${i}" style="margin-top:6px">
+        <input class="prUrl" placeholder="https://github.com/<owner>/<repo>/tree/<branch>/<folder>" value="${esc(u || '')}" style="flex:1">
+        <button class="prRemove" type="button" data-rm="${i}" title="Remove" style="margin-left:8px">✕</button>
+      </div>`).join('');
+  }
+  function wirePersonaRepoRows() {
+    const host = document.getElementById('sPersonaRepoRows');
+    if (!host) return;
+    const list = () => { if (!config.settings) config.settings = {}; if (!Array.isArray(config.settings.personaRepos)) config.settings.personaRepos = []; return config.settings.personaRepos; };
+    const isGithub = u => /^https:\/\/(github\.com|raw\.githubusercontent\.com)\//i.test(String(u || '').trim());
+    const redraw = () => { host.innerHTML = personaRepoRowsHtml(list()); wireRows(); };
+    function wireRows() {
+      host.querySelectorAll('.prUrl').forEach((inp, i) => {
+        inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = (!v || isGithub(v)) ? '' : '#e05050'; const l = list(); if (l[i] !== undefined) { l[i] = v; markDirty(); } };
+      });
+      host.querySelectorAll('.prRemove').forEach(btn => { btn.onclick = () => { list().splice(parseInt(btn.getAttribute('data-rm'), 10), 1); markDirty(); redraw(); }; });
+    }
+    wireRows();
+    const addBtn = document.getElementById('sPersonaRepoAdd');
+    if (addBtn) addBtn.onclick = () => { list().push(''); markDirty(); redraw(); const inputs = host.querySelectorAll('.prUrl'); if (inputs.length) inputs[inputs.length - 1].focus(); };
+    const msgEl = document.getElementById('sPersonaRepoMsg');
+    const say = (t, bad) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.style.color = bad ? '#e05050' : ''; } };
+    const catalog = document.getElementById('sPersonaCatalog');
+    // Browse: one list grouped by source; rows carry name, version, description and a state badge.
+    // Unsaved repository rows are not consulted (the main process reads saved settings): say so.
+    const browseBtn = document.getElementById('sPersonaBrowse');
+    const renderCatalog = r => {
+      if (!catalog) return;
+      catalog.style.display = '';
+      const stateLabel = { available: 'Install', update: 'Update', installed: 'Installed', edited: 'Replace…' };
+      catalog.innerHTML = (r.sources || []).map(s => {
+        const head = `<div class="row" style="margin-top:8px"><b style="font-size:13px">${esc(s.source)}</b>${s.authed ? '<span class="hint" style="margin:0 0 0 8px">private, via your GitHub connection</span>' : ''}${s.implicit ? '<span class="hint" style="margin:0 0 0 8px">(app repository)</span>' : ''}</div>`;
+        if (s.missing) return head + '<p class="hint" style="margin:2px 0 0 12px">No personas folder in this app repository.</p>';
+        if (s.error) return head + `<p class="hint" style="color:#e05050;margin:2px 0 0 12px">${esc(s.error)}</p>`;
+        if (!s.personas.length) return head + '<p class="hint" style="margin:2px 0 0 12px">No personas in this source.</p>';
+        return head + s.personas.map(p => `<div class="row" style="margin:4px 0 0 12px;align-items:center">
+            <span style="width:180px;font-weight:600">${esc(p.name)}</span>
+            <span class="hint" style="width:70px;margin:0">v${esc(p.version)}${p.installedVersion ? ' (have ' + esc(p.installedVersion) + ')' : ''}</span>
+            <span class="hint" style="flex:1;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.description)}">${esc(p.description)}</span>
+            <button class="prInstall" type="button" data-src="${esc(p.source)}" data-id="${esc(p.id)}" data-state="${p.state}" ${p.state === 'installed' ? 'disabled' : ''} style="margin-left:8px;min-width:90px">${stateLabel[p.state] || 'Install'}</button>
+          </div>`).join('');
+      }).join('') || '<p class="hint">No persona repositories are configured.</p>';
+      catalog.querySelectorAll('.prInstall').forEach(btn => {
+        btn.onclick = async () => {
+          const src = btn.getAttribute('data-src'), id = btn.getAttribute('data-id'), state = btn.getAttribute('data-state');
+          // An install saves on the main side and reloads this editor's config; unsaved drafts here
+          // would be folded in by the three-way merge, but a persona draft for the same id would be
+          // lost. Keep it explicit: Save & apply first.
+          if (dirty) { say('Save & apply your unsaved changes first, then install.', true); return; }
+          let replace = false;
+          if (state === 'edited') { if (!ask('"' + id + '" is already in your library and is not an untouched copy from this repository (hand-made, imported, or edited since install). Replace it with the repository\'s copy?')) return; replace = true; }
+          btn.disabled = true; const was = btn.textContent; btn.textContent = 'Installing…';
+          let res;
+          try { res = await configApi.installRepoPersona(src, id, replace); } catch (e) { res = { ok: false, error: (e && e.message) || String(e) }; }
+          if (res && res.needsConfirm) {
+            if (!ask((res.error || ('"' + res.existingName + '" is already in your library.')) + ' Replace it with the repository\'s copy?')) { btn.disabled = false; btn.textContent = was; return; }
+            try { res = await configApi.installRepoPersona(src, id, true); } catch (e) { res = { ok: false, error: (e && e.message) || String(e) }; }
+          }
+          if (!res || !res.ok) { btn.disabled = false; btn.textContent = was; say(res && res.error ? res.error : 'Install failed.', true); return; }
+          btn.textContent = 'Installed';
+          // The main process saved the new persona and the editor reloads its config copy (so a
+          // later Save cannot drop it). That reload re-renders Settings asynchronously, on its own
+          // schedule; wait for the re-wired Browse (or give up after ~2 s) before re-opening the
+          // list, so the catalog lands in the live DOM with fresh states and the result line.
+          const note = 'Installed "' + res.name + '" v' + res.version + (res.replaced ? ' (replaced)' : '') + '.';
+          const before = personaCatalogBrowse;
+          let tries = 0;
+          const tick = () => {
+            if (personaCatalogBrowse !== before || tries++ >= 10) { if (personaCatalogBrowse) personaCatalogBrowse(note); }
+            else setTimeout(tick, 200);
+          };
+          setTimeout(tick, 200);
+        };
+      });
+    };
+    const browse = async (note) => {
+      if (browseBtn) browseBtn.disabled = true;
+      say(note || (dirty ? 'Browsing saved repositories (Save first to include unsaved rows)…' : 'Loading catalogs…'));
+      let r;
+      try { r = await configApi.listRepoPersonas(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+      if (browseBtn) browseBtn.disabled = false;
+      if (!r || !r.ok) { say((r && r.error) || 'Could not load the catalogs.', true); return; }
+      say(note || '');
+      renderCatalog(r);
+    };
+    if (browseBtn) browseBtn.onclick = () => browse('');
+    personaCatalogBrowse = browse;
+    const updBtn = document.getElementById('sPersonaUpdates');
+    if (updBtn) updBtn.onclick = async () => {
+      updBtn.disabled = true; say('Checking…');
+      let r;
+      try { r = await configApi.checkPersonaUpdates(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+      updBtn.disabled = false;
+      if (!r || !r.ok) { say((r && r.error) || 'Could not check for updates.', true); return; }
+      const n = (r.updates || []).length;
+      say(n ? n + ' update' + (n === 1 ? '' : 's') + ' available: ' + r.updates.map(u => u.name + ' ' + u.installedVersion + ' → ' + u.remoteVersion).join(', ') + '. Use Browse repositories… to apply.' : 'Everything installed from a repository is up to date.' + ((r.errors || []).length ? ' (' + r.errors.length + ' source' + (r.errors.length === 1 ? '' : 's') + ' could not be read.)' : ''), false);
+    };
+  }
+  function wirePersonaRows() {
+    const host = document.getElementById('sPersonaRows');
+    if (!host) return;
+    wirePersonaRepoRows();
+    const list = () => { if (!config.settings) config.settings = {}; if (!Array.isArray(config.settings.personas)) config.settings.personas = []; return config.settings.personas; };
+    const face = p => { if (!p.face) p.face = {}; return p.face; };
+    const redraw = () => { host.innerHTML = personaRowsHtml(list()); wireRows(); };
+    const hexOk = v => v === '' || /^#[0-9a-fA-F]{6}$/.test(v);
+    function wireRows() {
+      host.querySelectorAll('.psName').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].name = e.target.value; markDirty(); } }; });
+      host.querySelectorAll('.psStyle').forEach((sel, i) => { sel.onchange = e => { const l = list(); if (l[i]) { face(l[i]).style = e.target.value; markDirty(); } }; });
+      host.querySelectorAll('.psColor').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).color = v; markDirty(); } }; });
+      host.querySelectorAll('.psCheek').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).cheekColor = v; markDirty(); } }; });
+      host.querySelectorAll('.psPrompt').forEach((ta, i) => { ta.oninput = e => { const l = list(); if (l[i]) { l[i].prompt = e.target.value; markDirty(); } }; });
+      host.querySelectorAll('.psVoice').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].voice = e.target.value.trim().slice(0, 120); markDirty(); } }; });
+      host.querySelectorAll('.psRemove').forEach(btn => { btn.onclick = () => { list().splice(parseInt(btn.getAttribute('data-rm'), 10), 1); markDirty(); redraw(); }; });
+      // Export writes the NORMALIZED persona (the main process fills defaults), so what a user
+      // shares is exactly what an import produces -- the seeded entries are raw until then.
+      host.querySelectorAll('.psExport').forEach(btn => {
+        btn.onclick = async () => {
+          const p = list()[parseInt(btn.getAttribute('data-ex'), 10)];
+          if (!p) return;
+          const json = await configApi.personaJson(p);
+          if (!json) { btn.textContent = 'Not exportable'; setTimeout(() => { btn.textContent = 'Export'; }, 1800); return; }
+          const out = document.getElementById('sPersonaExport');
+          if (out) { out.textContent = json; out.style.display = ''; try { out.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} }
+          const done = ok => { btn.textContent = ok ? 'Copied' : 'Shown below'; setTimeout(() => { btn.textContent = 'Export'; }, 1800); };
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(json).then(() => done(true), () => done(false));
+          else done(false);
+        };
+      });
+      host.querySelectorAll('.psExportFile').forEach(btn => {
+        btn.onclick = async () => {
+          const p = list()[parseInt(btn.getAttribute('data-ex'), 10)];
+          if (!p) return;
+          const r = await configApi.exportPersonaFile(p);
+          const label = r && r.ok ? 'Saved' : (r && r.canceled ? 'Export file…' : 'Failed');
+          btn.textContent = label;
+          if (label !== 'Export file…') setTimeout(() => { btn.textContent = 'Export file…'; }, 1800);
+        };
+      });
+    }
+    wireRows();
+    const addBtn = document.getElementById('sPersonaAdd');
+    if (addBtn) addBtn.onclick = () => {
+      list().push({ id: 'ps' + Date.now().toString(36), name: '', version: 1, prompt: '', face: { style: 'oled', color: '', cheekColor: '' } });
+      markDirty(); redraw();
+      const inputs = host.querySelectorAll('.psName');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    };
+    // Import: paste or pick a .json file, validate (shape + no credentials), add or replace by id.
+    const box = document.getElementById('sPersonaImportBox'), txt = document.getElementById('sPersonaImportText');
+    const msg = document.getElementById('sPersonaImportMsg'), file = document.getElementById('sPersonaFile');
+    const say = (t, bad) => { if (msg) { msg.textContent = t; msg.style.color = bad ? '#e05050' : ''; } };
+    const openBox = () => { if (box) box.style.display = ''; if (txt) txt.focus(); say(''); };
+    const importBtn = document.getElementById('sPersonaImportBtn');
+    if (importBtn) importBtn.onclick = openBox;
+    const fileBtn = document.getElementById('sPersonaImportFile');
+    if (fileBtn && file) fileBtn.onclick = () => { file.value = ''; file.click(); };
+    const MAX_PACK_BYTES = 64 * 1024;   // same cap as app/face/persona.js importPersonaText
+    if (file) file.onchange = () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      if (f.size > MAX_PACK_BYTES) { say('That file is larger than 64 KB, which is more than a persona can be.', true); return; }
+      const r = new FileReader();
+      r.onload = () => { if (txt) txt.value = String(r.result || ''); say('Loaded ' + f.name + ' — check it, then Add to library.'); };
+      r.onerror = () => say('Could not read that file.', true);
+      r.readAsText(f);
+    };
+    const cancelBtn = document.getElementById('sPersonaImportCancel');
+    if (cancelBtn) cancelBtn.onclick = () => { if (box) box.style.display = 'none'; if (txt) txt.value = ''; say(''); };
+    // From a URL: the main process fetches (64 KB cap) and validates; the pack lands in the paste
+    // box with its name/id shown, and "Add to library" is the same explicit step as for a paste.
+    const urlIn = document.getElementById('sPersonaImportUrl'), fetchBtn = document.getElementById('sPersonaImportFetch');
+    if (fetchBtn && urlIn) fetchBtn.onclick = async () => {
+      const url = urlIn.value.trim();
+      if (!url) { say('Enter a URL first.', true); return; }
+      fetchBtn.disabled = true; say('Fetching…');
+      let r;
+      try { r = await configApi.importPersonaUrl(url); } catch (e) { r = { ok: false, error: 'Could not fetch: ' + (e && e.message ? e.message : e) }; }
+      fetchBtn.disabled = false;
+      if (!r || !r.ok) { say(r && r.error ? r.error : 'That URL did not give a usable persona.', true); return; }
+      if (txt) txt.value = JSON.stringify(r.persona, null, 2);
+      say('Fetched "' + (r.persona.name || r.persona.id) + '" (id ' + r.persona.id + ') — check it, then Add to library.');
+    };
+    // Voices: one shared lookup fills the datalist every Voice field uses. Never auto-selects.
+    const voicesBtn = document.getElementById('sPersonaVoices'), voicesMsg = document.getElementById('sPersonaVoicesMsg'), voiceList = document.getElementById('psVoiceList');
+    if (voicesBtn && voiceList) voicesBtn.onclick = async () => {
+      voicesBtn.disabled = true;
+      if (voicesMsg) { voicesMsg.textContent = 'Asking the TTS server…'; voicesMsg.style.color = ''; }
+      let r;
+      try { r = await configApi.listTtsVoices(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+      voicesBtn.disabled = false;
+      if (!r || !r.ok) { if (voicesMsg) { voicesMsg.textContent = 'Could not list voices: ' + ((r && r.error) || 'unknown error') + '. You can still type a name.'; voicesMsg.style.color = '#e05050'; } return; }
+      const voices = (r.voices || []).filter(v => v.installed !== false);
+      voiceList.innerHTML = voices.map(v => `<option value="${esc(v.name)}">${esc((v.languages || []).join(', ') + (v.description ? ' — ' + v.description : ''))}</option>`).join('');
+      if (voicesMsg) voicesMsg.textContent = voices.length + ' voice' + (voices.length === 1 ? '' : 's') + ' on ' + (r.host || 'the TTS server') + ' — start typing in a Voice field to pick one. Blank = the page\'s default.';
+    };
+    const goBtn = document.getElementById('sPersonaImportGo');
+    // Validation runs in the main process (IPC, async): the text stays in the box on any failure so
+    // the user can fix it, and the reason is shown next to the button.
+    if (goBtn) goBtn.onclick = async () => {
+      const text = txt ? txt.value : '';
+      if (new TextEncoder().encode(text).length > MAX_PACK_BYTES) { say('That is larger than 64 KB, which is more than a persona can be.', true); return; }
+      let src;
+      try { src = JSON.parse(text); } catch (e) { say('That is not valid JSON.', true); return; }
+      goBtn.disabled = true;
+      let v;
+      try { v = configApi.validatePersona ? await configApi.validatePersona(src) : { ok: false, error: 'validation unavailable' }; }
+      catch (e) { v = { ok: false, error: 'Could not validate: ' + (e && e.message ? e.message : e) }; }
+      goBtn.disabled = false;
+      if (!v || !v.ok) { say(v && v.error ? v.error : 'That persona could not be used.', true); return; }
+      const l = list();
+      const at = l.findIndex(p => p && p.id === v.persona.id);
+      if (at >= 0) {
+        if (!ask('A persona with id "' + v.persona.id + '" already exists (' + (l[at].name || l[at].id) + '). Replace it?')) return;
+        l[at] = v.persona;
+      } else l.push(v.persona);
+      markDirty(); redraw();
+      if (box) box.style.display = 'none';
+      if (txt) txt.value = '';
+      say('');
+    };
+  }
   // ---- Routines (Settings -> Routines): searchable master-detail editor ----
   // Presentation only. Storage is unchanged: config.settings.routines, referenced by stable id
   // from tiles. Everything here selects and binds by routine ID, never array position, so filtering
@@ -2400,7 +2653,17 @@
         <p class="sectitle" style="margin-top:14px">Profile &amp; instructions</p>
         <div class="row"><label>Default profile</label>
           <select id="cvProfile" style="flex:1">${(((config.settings || {}).aiProfiles) || []).map((p, i) => `<option value="${esc(p.id)}" ${(cvVal('profilePick', '') || (((config.settings || {}).aiProfiles) || [{}])[0].id) === p.id ? 'selected' : ''}>${esc(p.name || '(unnamed)')}</option>`).join('')}</select></div>
-        <details class="hint"><summary>The AI profile this page starts with — a named instruction that shapes the AI (translate, summarize, write…).</summary> Switch live from the panel's <b>Profile</b> button; manage the list under <b>Settings → AI Profiles</b>.</details>` + (!cvModes ? '' : `
+        <details class="hint"><summary>The AI profile this page starts with — a named instruction that shapes the AI (translate, summarize, write…).</summary> Switch live from the panel's <b>Profile</b> button; manage the list under <b>Settings → AI Profiles</b>.</details>
+        <p class="sectitle" style="margin-top:14px">Face</p>
+        <div class="row"><label>Face</label>
+          <select id="cvFace" style="width:320px">
+            <option value="off" ${cvVal('face', 'off') === 'side' || cvVal('face', 'off') === 'creature' ? '' : 'selected'}>Off — the plain chat page</option>
+            <option value="side" ${cvVal('face', 'off') === 'side' ? 'selected' : ''}>Side — animated face beside the chat</option>
+            <option value="creature" ${cvVal('face', 'off') === 'creature' ? 'selected' : ''}>Creature — face only, controls on tap</option>
+          </select></div>
+        <div class="row"><label>Persona</label>
+          <select id="cvPersona" style="width:320px"><option value="" ${cvVal('personaPick', '') ? '' : 'selected'}>None — plain face</option>${(((config.settings || {}).personas) || []).map(p => `<option value="${esc(p.id)}" ${cvVal('personaPick', '') === p.id ? 'selected' : ''}>${esc(p.name || p.id)}</option>`).join('')}</select></div>
+        <details class="hint"><summary>An animated face that listens, thinks and talks with the reply. A persona adds a character on top of the profile (its words are appended, never replacing the profile).</summary> Off changes nothing. Side keeps the chat beside the face; Creature shows only the face and reveals the controls on a tap. Personas live under <b>Settings → AI Profiles → Personas</b>, where you can also import and export them. Changing the persona starts a new conversation: it applies on the next message (a reply in progress finishes first).</details>` + (!cvModes ? '' : `
         <p class="sectitle" style="margin-top:14px">Permissions</p>
         <div class="row"><label>Permission mode</label>
           <select id="cvPermMode" style="flex:1">${cvModes.choices.map(c => `<option value="${esc(c[0])}" ${cvMode === c[0] ? 'selected' : ''}>${esc(c[1])}</option>`).join('')}</select></div>
@@ -2630,6 +2893,10 @@
       if (cvPermMode) { syncPermModeUi(cvPermMode.value); cvPermMode.onchange = e => { setOpt('permissionMode', e.target.value); syncPermModeUi(e.target.value); }; }
       const cvProfile = document.getElementById('cvProfile');
       if (cvProfile) cvProfile.onchange = e => setOpt('profilePick', e.target.value);
+      const cvFace = document.getElementById('cvFace');
+      if (cvFace) cvFace.onchange = e => setOpt('face', e.target.value);
+      const cvPersona = document.getElementById('cvPersona');
+      if (cvPersona) cvPersona.onchange = e => setOpt('personaPick', e.target.value);
       const cvApprovals = document.getElementById('cvApprovals');   // claude-only rows
       if (cvApprovals) cvApprovals.onchange = e => setOpt('approvalsEnabled', e.target.checked);
       const cvEditPrompt = document.getElementById('cvEditPrompt');
@@ -4772,7 +5039,35 @@ ${IS_MAC ? `
     const apHtml = `
       <details class="hint"><summary>Named instructions for the <b>AI Voice</b> app — pick one on the panel (the Profile button) and the AI behaves accordingly: translate, summarize, write, and so on.</summary> The instruction is sent to the AI as its role for the conversation. An empty instruction (General Chat) means plain, unmodified chat. Every AI Voice page remembers its own current profile. Remember to Save.</details>
       <div id="sAiProfileRows">${aiProfileRowsHtml((config.settings || {}).aiProfiles)}</div>
-      <button id="sAiProfileAdd" type="button" style="margin-top:10px">+ Add profile</button>`;
+      <button id="sAiProfileAdd" type="button" style="margin-top:10px">+ Add profile</button>
+      <p class="sectitle" style="margin-top:22px">Personas</p>
+      <details class="hint"><summary>A persona is a character for the <b>AI Voice</b> face: a name, how it talks, and how its face is drawn.</summary> Pick one per page (the page's <b>Persona</b> setting, or the panel's Settings). Its words are added to the page's profile, never in place of it. Personas are plain JSON: export one to share it, import one someone else made. A persona never holds a key or password — imports that do are refused. Remember to Save.</details>
+      <div class="row" style="margin-top:8px"><button id="sPersonaVoices" type="button">Load available voices</button>
+        <span id="sPersonaVoicesMsg" class="hint" style="margin:0 0 0 10px">Voices come from the app-wide TTS server (Settings → TTS/STT); a page with its own audio override may offer different ones. Blank Voice = the page's default.</span></div>
+      <p class="sectitle" style="margin-top:14px">Persona repositories</p>
+      <details class="hint"><summary>Install and update personas from GitHub repositories, the way drop-in apps are installed.</summary> Every app repository (Settings → Drop-in apps) is also searched for a <code>personas/</code> folder with its own <code>index.json</code>; persona-only repositories can be added below. Private repositories work once the GitHub app is connected (Settings → Auth). Installing never runs anything: each file is checked like a pasted persona.</details>
+      <div id="sPersonaRepoRows">${personaRepoRowsHtml((config.settings || {}).personaRepos)}</div>
+      <div class="row" style="margin-top:6px"><button id="sPersonaRepoAdd" type="button">+ Add persona repository</button>
+        <button id="sPersonaBrowse" type="button" style="margin-left:8px">Browse repositories…</button>
+        <button id="sPersonaUpdates" type="button" style="margin-left:8px">Check for updates</button>
+        <span id="sPersonaRepoMsg" class="hint" style="margin:0 0 0 12px"></span></div>
+      <div id="sPersonaCatalog" style="display:none;margin-top:8px"></div>
+      <datalist id="psVoiceList"></datalist>
+      <div id="sPersonaRows">${personaRowsHtml((config.settings || {}).personas)}</div>
+      <div class="row" style="margin-top:10px"><button id="sPersonaAdd" type="button">+ Add persona</button>
+        <button id="sPersonaImportBtn" type="button" style="margin-left:8px">Import persona…</button>
+        <input id="sPersonaFile" type="file" accept=".json,application/json" style="display:none"></div>
+      <div id="sPersonaImportBox" style="display:none;margin-top:8px">
+        <div class="row"><label style="width:auto">From a URL</label>
+          <input id="sPersonaImportUrl" placeholder="https://… (a raw .persona.json in a public repo or gist; for a local file use Choose file)" style="flex:1;margin-left:8px">
+          <button id="sPersonaImportFetch" type="button" style="margin-left:8px">Fetch</button></div>
+        <textarea id="sPersonaImportText" rows="5" placeholder="…or paste a persona's JSON here, or choose a .json file" style="width:100%;margin-top:6px;font-family:Consolas,monospace"></textarea>
+        <div class="row" style="margin-top:6px"><button id="sPersonaImportFile" type="button">Choose file…</button>
+          <button id="sPersonaImportGo" type="button" style="margin-left:8px">Add to library</button>
+          <button id="sPersonaImportCancel" type="button" style="margin-left:8px">Cancel</button>
+          <span id="sPersonaImportMsg" class="hint" style="margin:0 0 0 12px"></span></div>
+      </div>
+      <pre id="sPersonaExport" class="hint" style="display:none;margin-top:8px;white-space:pre-wrap;user-select:text;max-height:260px;overflow:auto"></pre>`;
 
     // Routines: saved prompts an "AI Routine" tile re-runs with one tap. Its own tab rather than a
     // second list under AI Profiles -- that tab is already full.
@@ -4838,6 +5133,7 @@ ${IS_MAC ? `
       const sc = document.querySelector('.col.editor'); if (sc) sc.scrollTop = 0;   // new category opens at its top
     });
     wireAiProfileRows();   // no-op unless the AI Profiles tab is showing
+    wirePersonaRows();     // same tab, below the profiles
     wireRoutineRows();     // no-op unless the Routines tab is showing
     const setS = (k, v) => { if (!config.settings) config.settings = {}; config.settings[k] = v; markDirty(); };
 
@@ -6393,7 +6689,7 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
           else { if (rows) rows.style.display = 'none'; stopAllMicTests(); saveMe({ micDevice: '' }); if (meMicSel) meMicSel.value = ''; }
         };
       }
-    } else {
+    } else if (document.getElementById('sAppear')) {   // only the Theme tab has these controls; other tabs used to throw here
       // Theme — global appearance + accent (applied on Save, via the main process)
       const DEFAULT_ACCENT = '#7CFFB2';
       const saveTheme = patch => { if (!config.settings) config.settings = {}; config.settings.theme = Object.assign(currentTheme(), patch); markDirty(); };
