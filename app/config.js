@@ -843,7 +843,7 @@
   // ---- Personas rows (Settings -> AI Profiles -> Personas): name / style / colors / prompt per row,
   // add/remove, plus JSON import (validated) and per-row export (clipboard + on-screen JSON). Same
   // live-edit model as the profile rows: mutate config.settings.personas in place, Save persists.
-  const PERSONA_STYLES = [['oled', 'OLED robot (Rocky, Jarvis)'], ['cartoon', 'Cartoon (Norm)'], ['kawaii', 'Kawaii (Mimi, Intern)'], ['crt', 'CRT terminal'], ['sprite', 'Dust sprite (color = body)']];
+  const PERSONA_STYLES = [['oled', 'OLED robot (Jarvis)'], ['cartoon', 'Cartoon human'], ['kawaii', 'Kawaii (Mimi, Intern)'], ['crt', 'CRT terminal'], ['sprite', 'Dust sprite (color = body)']];
   function personaRowsHtml(list) {
     const rows = Array.isArray(list) ? list : [];
     if (!rows.length) return '<p class="hint">No personas yet — add one below, or import one.</p>';

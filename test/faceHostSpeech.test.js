@@ -62,10 +62,10 @@ const speak = (socket, tag) => { send(socket, 'audio-start', FMT); send(socket, 
 
 // ---- the host under test ------------------------------------------------------------------------
 function makeHost(port, personaVoice, personaPick) {
-  const grid = { id: 'sp', kind: 'app', app: 'ai-voice', options: { face: 'side', profilePick: 'chat', personaPick: personaPick === undefined ? 'rocky' : personaPick, projectDir: __dirname } };
+  const grid = { id: 'sp', kind: 'app', app: 'ai-voice', options: { face: 'side', profilePick: 'chat', personaPick: personaPick === undefined ? 'kawaii' : personaPick, projectDir: __dirname } };
   const config = { grids: [grid], settings: { aiProfiles: [{ id: 'chat', name: 'Chat', prompt: '' }] } };
   ensurePersonas(config);
-  const rocky = config.settings.personas.find(p => p.id === 'rocky');
+  const rocky = config.settings.personas.find(p => p.id === 'kawaii');
   rocky.voice = personaVoice;
   const adapter = new EventEmitter(); let running = false;
   Object.assign(adapter, {

@@ -7,7 +7,10 @@ back in character, the emotion tag was stripped from speech and transcript, Pipe
 voice (confirmed on the wire: joe / alan / ryan / bryce). Seven personas ship (Rocky, Norm, Mimi, Jarvis, CRT
 Terminal, Startup Intern, Dust Sprite), each with a stock Piper voice and a safe fallback to the server's
 default; import/export (paste, file, https URL) and a `<userData>/personas` drop-in folder; Side and Creature
-layouts. Not working, outside this branch: the "AI Voice - GLM-4.7" page's LiteLLM endpoint lists only the
+layouts. **Later the same day Rocky and Norm were removed from the built-ins** (third-party characters are not
+shipped in the app); they live as packs in `D:\Github\bedrock-personas` (`rocky.persona.json`,
+`norm.persona.json`) and come back through import. Five built-ins remain: Mimi, Jarvis, CRT Terminal, Startup
+Intern, Dust Sprite. Not working, outside this branch: the "AI Voice - GLM-4.7" page's LiteLLM endpoint lists only the
 retired glm models (HTTP 500 on every turn); the Codex CLI's own config names `gpt-6.1-sol`, which the ChatGPT
 account refuses, so the Codex page is pinned to `gpt-6-astra` in its Model setting. Demo pages added to the
 config: "Codex Voice (face demo)" and "Copilot Voice (face demo)"; the Claude Code page is left on Side + Rocky.

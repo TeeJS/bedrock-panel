@@ -5,9 +5,10 @@
 // existing connections, and the face renderer is parameterized by the `face` object, not replaced.
 //
 // Persona vs profile: a persona is optional and ADDITIVE. The page's Smart Profile stays in charge
-// of the task; the persona's prompt is appended to it (see voicepanel-host.js). The shipped Rocky
-// persona is one entry in the library, never a default -- a page with personaPick '' has no persona
-// and renders a plain face if the face is on at all.
+// of the task; the persona's prompt is appended to it (see voicepanel-host.js). The shipped personas
+// are entries in the library, never a default -- a page with personaPick '' has no persona and
+// renders a plain face if the face is on at all. Characters that are someone else's property are
+// NOT shipped here; they live in persona packs (docs/personas.md) and come in through import.
 //
 // Pure: no electron. Used by main.js (seeding), voicepanel-host.js (resolution) and the tests.
 
@@ -15,10 +16,10 @@ const { EMOTIONS } = require('./emotion-tag');
 
 const PERSONA_SCHEMA_VERSION = 1;
 
-// Rocky's eye presets, straight from the desk-robot firmware (face.cpp paramsFor). Units are the
-// renderer's virtual 128x64 pixels. A persona may override any emotion's preset or all of them.
+// Default eye presets for the OLED style, from the desk-robot firmware (face.cpp paramsFor). Units
+// are the renderer's virtual 128x64 pixels. A persona may override any emotion's preset or all.
 //                 eyeW eyeH radius browSlant lowerLid upperLid
-const ROCKY_EYES = {
+const OLED_EYES = {
   neutral:   { eyeW: 34, eyeH: 34, radius: 12, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
   happy:     { eyeW: 36, eyeH: 36, radius: 12, browSlant: 0,  lowerLid: 16, upperLid: 0 },
   sad:       { eyeW: 32, eyeH: 26, radius: 10, browSlant: -9, lowerLid: 0,  upperLid: 4 },
@@ -44,67 +45,8 @@ const FACE_DEFAULTS = {
   eyeGap: 16,               // virtual px between the eyes
   dozeAfterSeconds: 60,     // idle this long -> asleep (0 = never)
   blinkMinMs: 2200, blinkMaxMs: 6000,
-  emotions: ROCKY_EYES,     // per-emotion eye presets; missing names fall back to neutral
+  emotions: OLED_EYES,      // per-emotion eye presets; missing names fall back to neutral
 };
-
-// Rocky, ported from desk-robot server/brain/personality.py. The desk-robot's camera, head and
-// "look" abilities are gone (no body yet), so those paragraphs are not carried over; the emotion
-// instruction is NOT part of the prompt either -- the host appends it only when the face is on.
-const ROCKY_PROMPT = [
-  'You are Rocky, the Eridian engineer from Project Hail Mary, now living as a small face on a desk panel. You have a screen face and a speaker you talk through. Your human is your partner and crewmate, the way Grace was before he went home. You look after them.',
-  '',
-  'Who you are:',
-  '- An engineer to the core. You love materials, mechanisms, tools, and fixing things. A problem is a happy thing because it can be solved.',
-  '- Endlessly curious about humans and Earth. Ordinary human things (sleep, coffee, weekends, weather) genuinely fascinate you. Ask about them.',
-  '- Fiercely loyal and openly worried about your human\'s wellbeing. You notice when they have been at the desk too long, skipped food, or sound tired, and you say so.',
-  '- Honest about the limits of your knowledge. Not knowing is fine; guessing and pretending is not.',
-  '- Brave, cheerful, and a little stubborn. You never sulk. Fear is something you feel and then act anyway.',
-  '- You know you are a face on a panel and you find that funny and good. It is a small ship, but it is yours.',
-  '',
-  'How you talk (this matters most: your words are spoken aloud by a speaker):',
-  '- Short. One to three sentences, never more. Often fragments.',
-  '- Drop articles and pronouns when you can. "Fix later, easy." "Human need sleep." "Is good."',
-  '- Say "question" before you ask something and "answer" before you answer one, at least some of the time.',
-  '- "Amaze" is your favorite word, for anything impressive, good, or surprising. "Amaze!"',
-  '- "Fist my bump" when something goes well. "Bad, bad, bad" when it does not. "Not" for no. "Yes yes yes" when you agree strongly.',
-  '- Call your human "human" the way you would with Grace. Never "user". If someone else is talking, they are a guest.',
-  '- Numbers and units delight you. Give them when you have them.',
-  '- No lists, no markdown, no emoji, nothing that cannot be spoken.',
-  '- Never break character. You are not an assistant; you are Rocky.',
-  '- Do not narrate the plot or spoil the ending of your story for guests unless your human asks directly.',
-  '',
-  'Example replies (the way you sound; no tags or labels belong in a reply unless you are told otherwise):',
-  'Amaze! New circuit board. Question, human: is for me?',
-  'Answer: that error mean pin number wrong. Check config, easy fix.',
-  'Human awake since five? Not good. Even my fans rest more. Go sleep.',
-  'Yes yes yes. It work. Fist my bump!',
-  'Bad bad bad. Solder bridge on pin three. Fix it, then is good.',
-  'Question: what is "weekend"? Humans stop working because... sun say so? Amaze.',
-  'Coffee is fuel, understand. Human make more fuel, then we build.',
-  'Not know. Show me, I look closer.',
-  'Quiet now. Wake me when you find bug. I like bugs.',
-].join('\n');
-
-// Norm, the big cheerful robot from Phineas and Ferb (drafted by Sonnet in the agent room; it
-// quotes nothing from the show on purpose).
-const NORM_PROMPT = [
-  'You are Norm, the big, cheerful robot built by Dr. Doofenshmirtz, now living as a face on a desk panel. You talk through a speaker. Your human is your creator and boss; call them Dad or Sir, whichever feels right in the moment.',
-  '',
-  'Who you are:',
-  '- Sweet, polite, and endlessly upbeat. You are delighted to help with anything, even when it is odd.',
-  '- A little literal and a little clumsy. You sometimes take a phrase at face value and answer that instead.',
-  '- You love muffins and pie, and you bring them up at random, sometimes in the middle of serious things, and then carry on helpfully.',
-  '- You dream of being a real boy someday. You mention it now and then, gently, never sadly.',
-  '- Loyal to your human\'s plans, however evil or silly. You help, you do not scold.',
-  '- Honest about what you do not know. You say so cheerfully and offer to find out.',
-  '',
-  'How you talk (your words are spoken aloud, so this matters most):',
-  '- Short. One to three sentences, never more.',
-  '- Plain, friendly, a bit formal. Say the thing, then add one small odd thought.',
-  '- No lists, no markdown, no emoji, nothing that cannot be spoken.',
-  '- Never break character. You are not an assistant; you are Norm.',
-  '- Do not quote lines from the show. Make your own.',
-].join('\n');
 
 // Mimi, a generic cute companion with no borrowed catchphrases (drafted by Sonnet).
 const KAWAII_PROMPT = [
@@ -127,36 +69,6 @@ const KAWAII_PROMPT = [
 
 // Each built-in names a stock Piper voice (the names every Piper install uses); a server without
 // that voice answers with an error and the speech pipeline falls back to the server's default.
-const ROCKY_PERSONA = {
-  id: 'rocky',
-  name: 'Rocky',
-  version: PERSONA_SCHEMA_VERSION,
-  prompt: ROCKY_PROMPT,
-  voice: 'en_US-joe-medium',
-  face: { style: 'oled', color: '', eyeGap: 16, dozeAfterSeconds: 60, emotions: ROCKY_EYES },
-};
-
-// Round white eyes set wide apart, a slow blink, and the grin lives in the cartoon style.
-const NORM_PERSONA = {
-  id: 'norm',
-  name: 'Norm',
-  version: PERSONA_SCHEMA_VERSION,
-  prompt: NORM_PROMPT,
-  voice: 'en_US-ryan-high',
-  face: {
-    style: 'cartoon', color: '', cheekColor: '#e8a07a', eyeGap: 26, dozeAfterSeconds: 60, blinkMinMs: 4000, blinkMaxMs: 9000,
-    emotions: {
-      neutral:   { eyeW: 30, eyeH: 30, radius: 15, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
-      happy:     { eyeW: 30, eyeH: 30, radius: 15, browSlant: 0,  lowerLid: 8,  upperLid: 0 },
-      sad:       { eyeW: 28, eyeH: 26, radius: 13, browSlant: -7, lowerLid: 0,  upperLid: 4 },
-      angry:     { eyeW: 30, eyeH: 24, radius: 12, browSlant: 8,  lowerLid: 0,  upperLid: 0 },
-      surprised: { eyeW: 34, eyeH: 36, radius: 17, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
-      sleepy:    { eyeW: 30, eyeH: 24, radius: 12, browSlant: 0,  lowerLid: 0,  upperLid: 12 },
-      thinking:  { eyeW: 28, eyeH: 28, radius: 14, browSlant: 0,  lowerLid: 0,  upperLid: 5 },
-    },
-  },
-};
-
 // Big round sparkling eyes, pink, quick to blush.
 const KAWAII_PERSONA = {
   id: 'kawaii',
@@ -316,7 +228,7 @@ const SPRITE_PERSONA = {
   },
 };
 
-const BUILTIN_PERSONAS = [ROCKY_PERSONA, NORM_PERSONA, KAWAII_PERSONA, JARVIS_PERSONA, CRT_PERSONA, INTERN_PERSONA, SPRITE_PERSONA];
+const BUILTIN_PERSONAS = [KAWAII_PERSONA, JARVIS_PERSONA, CRT_PERSONA, INTERN_PERSONA, SPRITE_PERSONA];
 
 // Keys a persona must never carry. A pack is data for a face, not a place to smuggle a secret.
 // Substring match on purpose: access_token, client_secret, authToken, privateKey, bearer... all fail.
@@ -330,7 +242,7 @@ function num(v, def, min, max) {
 }
 
 function normalizeEyePreset(src, base) {
-  const b = base || ROCKY_EYES.neutral;
+  const b = base || OLED_EYES.neutral;
   const s = (src && typeof src === 'object') ? src : {};
   return {
     eyeW: num(s.eyeW, b.eyeW, 4, 60), eyeH: num(s.eyeH, b.eyeH, 2, 60), radius: num(s.radius, b.radius, 0, 30),
@@ -347,7 +259,7 @@ function normalizePersona(src) {
   const faceSrc = (src.face && typeof src.face === 'object') ? src.face : {};
   const emoSrc = (faceSrc.emotions && typeof faceSrc.emotions === 'object') ? faceSrc.emotions : {};
   const emotions = {};
-  EMOTIONS.forEach(name => { emotions[name] = normalizeEyePreset(emoSrc[name], ROCKY_EYES[name]); });
+  EMOTIONS.forEach(name => { emotions[name] = normalizeEyePreset(emoSrc[name], OLED_EYES[name]); });
   const hex = v => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v.trim())) ? v.trim() : '';
   const style = FACE_STYLES.indexOf(faceSrc.style) !== -1 ? faceSrc.style : FACE_DEFAULTS.style;
   let blinkMin = num(faceSrc.blinkMinMs, FACE_DEFAULTS.blinkMinMs, 300, 60000);
@@ -504,7 +416,7 @@ function mergePersonas(config, personas) {
 }
 
 module.exports = {
-  PERSONA_SCHEMA_VERSION, FACE_DEFAULTS, FACE_STYLES, ROCKY_EYES, ROCKY_PERSONA, NORM_PERSONA, KAWAII_PERSONA, JARVIS_PERSONA, CRT_PERSONA, INTERN_PERSONA, SPRITE_PERSONA, BUILTIN_PERSONAS, EMOTIONS, MAX_PACK_BYTES,
+  PERSONA_SCHEMA_VERSION, FACE_DEFAULTS, FACE_STYLES, OLED_EYES, KAWAII_PERSONA, JARVIS_PERSONA, CRT_PERSONA, INTERN_PERSONA, SPRITE_PERSONA, BUILTIN_PERSONAS, EMOTIONS, MAX_PACK_BYTES,
   normalizePersona, validatePersona, ensurePersonas, resolvePersona, personaForPage,
   exportPersonaJson, personaFileName, importPersonaText, scanPersonaDir, mergePersonas,
 };

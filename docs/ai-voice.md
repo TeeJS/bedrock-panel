@@ -157,7 +157,7 @@ backend, Whisper and Piper the page already uses; nothing extra runs.
   as before), **Side** (a face column beside the chat) or **Creature** (the face fills the page;
   a quiet **Controls** button or a tap on the face reveals mic, speaker, stop-speaking and settings,
   and an error or approval always shows its controls).
-- **Persona** (Settings → Persona): who the face is. Ships with a starter set (Rocky, Norm, Mimi, Jarvis,
+- **Persona** (Settings → Persona): who the face is. Ships with a starter set (Mimi, Jarvis,
   CRT Terminal, Startup Intern, Dust Sprite); the default is *None*, a plain face. Each can have its own
   Piper voice. A persona's prompt is added to the page's profile, never replacing
   it, and is ignored on structured-output profiles such as Panel Builder. Changing the persona

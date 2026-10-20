@@ -11,6 +11,8 @@
     surprised: [38, 44, 19, 0, 0, 0], sleepy: [34, 26, 10, 0, 0, 14],
     thinking: [30, 30, 11, 0, 0, 5],
   };
+
+  const CARTOON_POSES = { neutral: [0, 0, 0, 0, 4.3], happy: [-5, 0, 0, -3, 4.3], sad: [1, 0.32, 0, 5, 4.3], angry: [3, -0.4, 0, 2, 3.8], surprised: [-6, 0, 0, -3, 5.5], sleepy: [3, 0, 0, 5, 4.3], thinking: [-5, 0.08, 5, -5, 4.3] };
   const KEYS = ['eyeW', 'eyeH', 'radius', 'browSlant', 'lowerLid', 'upperLid'];
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const number = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
@@ -71,7 +73,8 @@
 
     function draw(time, blink) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
-      const scale = Math.min(width / 164, height / 102);
+      const cartoon = face().style === 'cartoon';
+      const scale = cartoon ? Math.min(width / 136, height / 148) : Math.min(width / 164, height / 102);
       ctx.translate(width / 2, height / 2); ctx.scale(scale, scale);
       const f = face(), style = f.style || 'oled';
       const baseInk = f.color || accent;
@@ -105,28 +108,46 @@
         ctx.fillStyle = ink; ctx.strokeStyle = ink;
       }
       if (style === 'cartoon') {
-        // Norm's friendly, human-looking face follows the supplied character reference.
-        ctx.fillStyle = '#f5c49f'; round(-63, -45, 126, 87, 23);
-        ctx.fillStyle = '#653f28';
-        ctx.beginPath(); ctx.moveTo(-62, -12); ctx.lineTo(-63, -34);
-        ctx.quadraticCurveTo(-63, -49, -40, -49); ctx.lineTo(43, -49);
-        ctx.quadraticCurveTo(64, -47, 63, -30); ctx.lineTo(62, -11);
-        ctx.lineTo(55, -15); ctx.lineTo(53, -34); ctx.lineTo(28, -39);
-        ctx.quadraticCurveTo(-5, -23, -49, -29); ctx.lineTo(-53, -13); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#d99676';
-        ctx.beginPath(); ctx.ellipse(0, 7, 7, 4.5, 0, 0, Math.PI * 2); ctx.fill();
-        for (const side of [-1, 1]) for (const point of [[43, 9], [48, 5], [51, 12]]) dot(side * point[0], point[1], 1.05);
+        // Flat cel shapes with a rigid shell; expression belongs to the brows and pupils.
+        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.lineJoin = 'round';
+        ctx.fillStyle = '#f2bd96';
+        for (const side of [-1, 1]) {
+          ctx.beginPath(); ctx.ellipse(side * 49, -8, 7, 12, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(side * 51, -13); ctx.quadraticCurveTo(side * 46, -15, side * 49, -3); ctx.stroke();
+        }
+        ctx.fillStyle = '#f5c49f';
+        ctx.beginPath(); ctx.moveTo(-49, -49); ctx.quadraticCurveTo(-50, -59, -37, -59);
+        ctx.lineTo(37, -59); ctx.quadraticCurveTo(50, -59, 49, -49); ctx.lineTo(46, 29);
+        ctx.quadraticCurveTo(45, 51, 32, 53); ctx.quadraticCurveTo(0, 58, -32, 53);
+        ctx.quadraticCurveTo(-45, 51, -46, 29); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#8c472d';
+        ctx.beginPath(); ctx.moveTo(-49, -27); ctx.lineTo(-50, -49);
+        ctx.quadraticCurveTo(-50, -64, -32, -64); ctx.lineTo(34, -64);
+        ctx.quadraticCurveTo(51, -62, 50, -46); ctx.lineTo(49, -27);
+        ctx.lineTo(43, -30); ctx.lineTo(42, -48); ctx.lineTo(23, -59);
+        ctx.quadraticCurveTo(-4, -43, -39, -49); ctx.lineTo(-43, -29); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#b16a43';
+        ctx.beginPath(); ctx.moveTo(-43, -53); ctx.quadraticCurveTo(-14, -44, 23, -57);
+        ctx.lineTo(37, -53); ctx.quadraticCurveTo(0, -39, -43, -48); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#e2a17b';
+        ctx.beginPath(); ctx.moveTo(-4, 4); ctx.quadraticCurveTo(7, 1, 7, 10);
+        ctx.quadraticCurveTo(3, 16, -5, 11); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#b77b5a';
+        for (const side of [-1, 1]) for (const point of [[33, 12], [38, 8], [41, 15]]) dot(side * point[0], point[1], 1.05);
         ctx.fillStyle = '#543828'; ctx.strokeStyle = '#543828';
       }
       const gap = clamp(number(f.eyeGap, 16), 0, 60);
       const [ew, eh, radius, slant, lower, upper] = current;
-      const separation = (ew + gap) / 2;
+      const separation = cartoon ? 23 : (ew + gap) / 2;
       const speaking = state === 'speaking' && !asleep;
-      const eyeY = -10 + gazeY;
+      const eyeY = cartoon ? -17 : -10 + gazeY;
+      const pose = asleep ? 'sleepy' : state === 'thinking' ? 'thinking' : state === 'error' ? 'sad' : state === 'approval' ? 'surprised' : emotion;
+
+      const [browY, browAngle, pupilX, pupilY, pupilRadius] = CARTOON_POSES[pose];
       const squash = asleep ? 0.08 : Math.max(0.08, 1 - blink);
       const eyeHeight = Math.max(2, (eh - upper - lower * 0.35) * squash);
       for (const side of [-1, 1]) {
-        const cx = side * separation + gazeX;
+        const cx = side * separation + (cartoon ? 0 : gazeX);
         ctx.save(); ctx.translate(cx, eyeY);
         if (style === 'sprite') {
           const w = Math.min(32, ew * 0.82), h = Math.max(2, eyeHeight * 0.9);
@@ -137,14 +158,16 @@
           }
           ctx.fillStyle = ink;
         } else if (style === 'cartoon') {
-          const w = Math.min(29, ew * 0.82), h = Math.max(2, Math.min(29, eyeHeight));
-          ctx.fillStyle = '#fffaf1'; round(-w / 2, -h / 2, w, h, w / 2);
-          ctx.fillStyle = '#355479';
-          if (h > 6) dot(gazeX * 0.35, (state === 'thinking' ? -3 : 0), Math.min(4.3, h / 3));
+          ctx.fillStyle = '#fffaf1'; dot(0, 0, 14.5);
+          ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.stroke();
+          const px = clamp(pupilX + gazeX * 0.65, -6, 6), py = clamp(pupilY + gazeY * 0.65, -6, 6);
+          ctx.fillStyle = '#355479'; dot(px, py, pupilRadius);
+          ctx.fillStyle = '#172b43'; dot(px, py, pupilRadius * 0.51);
+          ctx.fillStyle = '#fffaf1'; dot(px - 1.2, py - 1.4, 1);
           ctx.fillStyle = '#543828';
-          if (h > 6) dot(gazeX * 0.35, (state === 'thinking' ? -3 : 0), Math.min(2.2, h / 5));
-          ctx.save(); ctx.translate(0, -17);
-          ctx.rotate(side * (slant / 90)); round(-13, -1.3, 26, 2.6, 1.3); ctx.restore();
+          ctx.save(); ctx.translate(0, Math.max(-25, -21 + browY + (pose === 'thinking' && side === 1 ? 8 : 0)));
+          ctx.rotate(side * browAngle); ctx.strokeStyle = '#422719'; ctx.lineWidth = 3.1; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(-11, 0); ctx.quadraticCurveTo(0, pose === 'happy' || pose === 'surprised' ? -5 : -1.5, 11, 0); ctx.stroke(); ctx.restore();
           ctx.fillStyle = ink;
         } else {
           ctx.rotate(side * slant / 120);
@@ -175,7 +198,7 @@
           line(x - 12, y + side * 4, x + 12, y - side * 4, 2.8);
         }
       }
-      if ((emotion === 'sad' || state === 'error') && !asleep) {
+      if (!cartoon && (emotion === 'sad' || state === 'error') && !asleep) {
         const x = separation + ew * 0.37 + gazeX, y = eyeY + eyeHeight * 0.35;
         ctx.save(); ctx.fillStyle = style === 'cartoon' ? '#7aaacc' : ink;
         ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x - 6, y + 8, x, y + 9);
@@ -188,27 +211,26 @@
       }
       const mouthY = 22;
       const mouthEmotion = state === 'error' ? 'sad' : state === 'approval' ? 'surprised' : emotion;
-      if (speaking && smoothLevel > 0.015) {
-        const h = 3 + Math.min(style === 'sprite' ? 12 : 20, smoothLevel * 27), w = style === 'cartoon' ? 45 : style === 'sprite' ? 10 : style === 'kawaii' ? 13 : 23;
-        if (style === 'cartoon') ctx.fillStyle = '#613b34';
-        round(-w / 2, mouthY - h / 2, w, h, style === 'cartoon' ? 5 : h / 2);
-        if (style === 'cartoon' && h > 8) {
-          ctx.fillStyle = '#fffaf1'; round(-20, mouthY - h / 2 + 1, 40, 4, 2);
+      if (cartoon) {
+        ctx.save();
+        // Keep the entire tooth grille fixed, including in silence, sleep and surprise.
+        const lit = speaking && smoothLevel > 0.015;
+        ctx.fillStyle = lit ? '#7cfc3a' : '#fffaf1';
+        ctx.beginPath(); ctx.moveTo(-31, 25); ctx.quadraticCurveTo(0, 28, 31, 25);
+        ctx.quadraticCurveTo(34, 25, 32, 29); ctx.lineTo(28, 40); ctx.quadraticCurveTo(27, 43, 23, 43);
+        ctx.lineTo(-23, 43); ctx.quadraticCurveTo(-27, 43, -28, 40); ctx.lineTo(-32, 29);
+        ctx.quadraticCurveTo(-34, 25, -31, 25); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.stroke();
+        if (lit) {
+          ctx.fillStyle = '#c2ff85'; ctx.beginPath(); ctx.moveTo(-27, 25.5); ctx.quadraticCurveTo(0, 30, 27, 25.5);
+          ctx.lineTo(25.8, 29); ctx.quadraticCurveTo(0, 33, -25.8, 29); ctx.closePath(); ctx.fill();
         }
-        ctx.fillStyle = ink;
-      } else if (style === 'cartoon') {
-        if (asleep || mouthEmotion === 'sad' || mouthEmotion === 'angry') {
-          ctx.strokeStyle = '#995b46'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-17, 26);
-          ctx.quadraticCurveTo(0, mouthEmotion === 'sad' ? 15 : 24, 17, 26); ctx.stroke();
-        } else if (mouthEmotion === 'surprised') {
-          ctx.fillStyle = '#613b34'; ctx.beginPath(); ctx.ellipse(0, mouthY, 8, 10, 0, 0, Math.PI * 2); ctx.fill();
-        } else {
-          ctx.fillStyle = '#fffaf1';
-          ctx.beginPath(); ctx.moveTo(-26, 17); ctx.quadraticCurveTo(0, 22, 26, 17);
-          ctx.quadraticCurveTo(21, 34, 0, 34); ctx.quadraticCurveTo(-21, 34, -26, 17); ctx.closePath(); ctx.fill();
-        }
-        ctx.fillStyle = ink;
-        ctx.strokeStyle = ink;
+        ctx.strokeStyle = '#995b46';
+        for (const x of [-18, -6, 6, 18]) line(x, 29, x * 0.88, 40, 0.65);
+        ctx.restore();
+      } else if (speaking && smoothLevel > 0.015) {
+        const h = 3 + Math.min(style === 'sprite' ? 12 : 20, smoothLevel * 27), w = style === 'sprite' ? 10 : style === 'kawaii' ? 13 : 23;
+        round(-w / 2, mouthY - h / 2, w, h, h / 2);
       } else if (style === 'sprite') {
         if (mouthEmotion === 'surprised') dot(0, mouthY, 3);
         else if (mouthEmotion === 'happy') {
@@ -228,19 +250,19 @@
       } else round(-8, mouthY, 16, 2.5, 1.25);
 
       if (state === 'thinking' && !asleep) {
-        ctx.save(); if (style === 'cartoon') ctx.fillStyle = '#79513e';
+        ctx.save(); if (style === 'cartoon') ctx.fillStyle = readableInk('#b8c8d8', background);
         for (let i = 0; i < 3; i++) {
           ctx.globalAlpha = reduced ? 0.65 : 0.25 + 0.75 * ((Math.sin(time / 230 - i * 0.9) + 1) / 2);
-          dot(-7 + i * 7, style === 'cartoon' ? 36 : style === 'crt' ? 28 : 42, 1.8);
+          dot(-7 + i * 7, style === 'cartoon' ? 62 : style === 'crt' ? 28 : 42, 1.8);
         }
         ctx.restore();
       }
       if (state === 'listening' && !asleep) {
-        ctx.globalAlpha = 0.6; round(-14, style === 'crt' ? 28 : 40, 28, 1.5, 0.75); ctx.globalAlpha = 1;
+        ctx.globalAlpha = 0.6; round(-14, cartoon ? 65 : style === 'crt' ? 28 : 40, 28, 1.5, 0.75); ctx.globalAlpha = 1;
       }
       if (asleep) {
         ctx.save(); ctx.globalAlpha = 0.65; ctx.font = '600 8px Segoe UI, sans-serif';
-        if (style === 'cartoon') ctx.fillStyle = '#fff4df';
+        if (style === 'cartoon') ctx.fillStyle = readableInk('#b8c8d8', background);
         ctx.fillText('z', 48, -24); ctx.font = '600 11px Segoe UI, sans-serif'; ctx.fillText('z', 56, -32); ctx.restore();
       }
       if (state === 'error') {

@@ -1,7 +1,7 @@
 # Personas for the AI Voice face
 
 A persona is who the animated face on an **AI Voice** page is: a name, a prompt, and how the face looks.
-Bedrock Panel ships a starter set (**Rocky**, **Norm**, **Mimi**, **Jarvis**, **CRT Terminal**, **Startup Intern** and **Dust Sprite**). Any number more can be added by importing a
+Bedrock Panel ships a starter set (**Mimi**, **Jarvis**, **CRT Terminal**, **Startup Intern** and **Dust Sprite**); characters that belong to someone else are not built in and come as packs instead (see the [persona packs repository](https://github.com/TeeJS/bedrock-personas)). Any number more can be added by importing a
 small JSON file, so you never need a new build of the app to make your own.
 
 A persona is **data only**. It cannot contain code, and it can never carry credentials: API keys stay in
@@ -44,7 +44,7 @@ All of this is in **Settings → AI Profiles → Personas**.
 | `version` | Schema version. Leave at `1`. |
 | `prompt` | The personality. **Appended** to the page's Smart Profile, never replacing it (max 20,000 characters). |
 | `voice` | The Piper voice this persona speaks with, for example `en_US-ryan-high`. Empty = use the page's default voice. See *Voices* below. |
-| `face.style` | The drawing style: `oled` (rounded-rect eyes, bar mouth), `cartoon` (round eyes with pupils, wide grin), `kawaii` (soft sparkling eyes, cheeks), `crt` (amber phosphor face in a retro monitor bezel) or `sprite` (a round soot body with two big white eyes). An unknown value becomes `oled`. |
+| `face.style` | The drawing style: `oled` (rounded-rect eyes, bar mouth), `cartoon` (a detached, tall 2D cartoon head: outlined flat colours, with eyes and grin that are fixed shapes; it never blinks, closes its eyes or moves its jaw, expressing emotion with its pupils and eyebrows only, and the grin lights up green while it speaks), `kawaii` (soft sparkling eyes, cheeks), `crt` (amber phosphor face in a retro monitor bezel) or `sprite` (a round soot body with two big white eyes). An unknown value becomes `oled`. |
 | `face.color` / `face.cheekColor` | `#rrggbb`, or empty to use the page accent. `color` is the ink of the face's features (eyes, mouth); for the `sprite` style it is the colour of the round body instead (its eyes stay white). `cheekColor` is the blush. |
 | `face.eyeGap` | 0–60 (virtual pixels between the eyes). |
 | `face.dozeAfterSeconds` | Seconds of inactivity before the face falls asleep; 0 = never. |
@@ -58,7 +58,7 @@ text-to-speech server is set to. To give a persona its own voice, type a Piper v
 **Load available voices** (one button above the list) to fill the field's suggestions from the
 text-to-speech server in **Settings → TTS/STT**.
 
-- The built-in personas name stock Piper voices (for example Rocky uses `en_US-joe-medium`).
+- The built-in personas name stock Piper voices (for example Jarvis uses `en_GB-alan-medium`).
 - The names must be voices your Piper server has. The server itself does **not** substitute its default voice
   for a name it does not know: it may try to download it or refuse the request. So when the server rejects a
   persona's voice before any audio has played, Bedrock Panel asks once more with the page's default voice and

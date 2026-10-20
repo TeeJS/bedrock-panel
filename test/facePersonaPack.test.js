@@ -123,10 +123,10 @@ test('mergePersonas adds new ids and never overwrites an existing (possibly edit
   const c = ensurePersonas({});
   c.settings.personas[0].name = 'Rocky (mine)';
   const added = persona.mergePersonas(c, [
-    { id: 'rocky', name: 'Imposter', prompt: 'x', face: {} },
+    { id: 'kawaii', name: 'Imposter', prompt: 'x', face: {} },
     normalizePersona({ id: 'fresh', name: 'Fresh', prompt: 'Be brief.' }),
   ]);
   assert.equal(added, 1);
-  assert.equal(c.settings.personas.find(p => p.id === 'rocky').name, 'Rocky (mine)');
+  assert.equal(c.settings.personas.find(p => p.id === 'kawaii').name, 'Rocky (mine)');
   assert.ok(c.settings.personas.find(p => p.id === 'fresh'));
 });

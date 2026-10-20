@@ -6,7 +6,7 @@ const { createVoicePanelHost } = require('../app/voicepanel-host');
 const { ensurePersonas } = require('../app/face/persona');
 
 function make(options) {
-  const grid = { id: 'face-test', kind: 'app', app: 'ai-voice', options: { face: 'side', profilePick: 'chat', personaPick: 'rocky', projectDir: __dirname } };
+  const grid = { id: 'face-test', kind: 'app', app: 'ai-voice', options: { face: 'side', profilePick: 'chat', personaPick: 'jarvis', projectDir: __dirname } };
   Object.assign(grid.options, options || {});
   const config = { grids: [grid], settings: { aiProfiles: [{ id: 'chat', name: 'Chat', prompt: '' }, { id: 'panel', name: 'Panel', prompt: '' }] } };
   ensurePersonas(config);
@@ -83,11 +83,11 @@ test('profile switch stays deferred across multiple assistant messages in one to
 test('persona prompt switch waits for the live turn then starts a fresh conversation', t => {
   const x = make(); t.after(x.cleanup);
   x.h.onTurn('hello', false); x.adapter.emit('assistant-start');
-  x.h.setPersona('norm'); assert.equal(x.starts.length, 1);
+  x.h.setPersona('crt'); assert.equal(x.starts.length, 1);
   x.adapter.emit('assistant-delta', { text: '[neutral] Done.' });
   x.adapter.emit('turn-complete', { text: '[neutral] Done.', error: null });
   assert.equal(x.starts.length, 2);
-  assert.match(x.starts[1].profilePrompt, /Norm/);
+  assert.match(x.starts[1].profilePrompt, /mainframe terminal/);
 });
 
 test('approval snapshot retains the actionable request until a matching decision', t => {
