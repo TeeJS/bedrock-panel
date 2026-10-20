@@ -244,11 +244,16 @@ $('faceMic').onclick = function () { window.oqxToggleConversation(); syncFaceBar
 $('faceSpk').onclick = function () { $('spkBtn').onclick(); syncFaceBarUI(); showFaceBar(false); };
 $('faceStop').onclick = function () { stopTurnAudio(); showFaceBar(false); };
 $('faceSettings').onclick = function () { $('vpSettings').onclick(); };
+// Escape closes the TOPMOST layer only: a picker over Settings, then Settings, then (creature
+// mode) the reveal bar. Focus returns to what opened the layer.
 document.addEventListener('keydown', function (e) {
-  if (e.key !== 'Escape' || faceMode !== 'creature') return;
-  if (!$('settingsOverlay').classList.contains('hidden')) { $('settingsOverlay').classList.add('hidden'); $('faceCtl').focus(); return; }
+  if (e.key !== 'Escape') return;
+  if (!$('devOverlay').classList.contains('hidden')) { $('devCancel').onclick(); var back = { audioinput: 'micPickBtn', audiooutput: 'spkPickBtn', model: 'modelPickBtn', persona: 'personaPickBtn', face: 'facePickBtn' }[devOverlayKindLast] || 'settingsClose'; var el = $(back); if (el) el.focus(); return; }
+  if (!$('settingsOverlay').classList.contains('hidden')) { $('settingsOverlay').classList.add('hidden'); (faceMode === 'creature' ? $('faceCtl') : $('vpSettings')).focus(); return; }
+  if (faceMode !== 'creature') return;
   if ($('faceBar').classList.contains('show') && faceStatusName !== 'error' && faceStatusName !== 'approval') { hideFaceBar(); $('faceCtl').focus(); }
 });
+var devOverlayKindLast = '';   // which picker was open last, for Escape's focus return
 document.addEventListener('visibilitychange', function () {
   if (!face) return;
   if (document.hidden) { face.stop(); faceStopLevel(); }
@@ -828,6 +833,7 @@ function renderDevOverlay() {
 }
 function openDevOverlay(kind) {
   devOverlayKind = kind;
+  devOverlayKindLast = kind;
   $('devTitle').textContent = kind === 'audioinput' ? 'Microphone' : kind === 'audiooutput' ? 'Speaker' : kind === 'persona' ? 'Persona' : kind === 'face' ? 'Face' : 'Model';
   renderDevOverlay();                                  // cached entries paint instantly...
   if (kind === 'audioinput' || kind === 'audiooutput') {   // (the other lists are static -- no mic grab)

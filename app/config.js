@@ -852,7 +852,7 @@
       return `<div class="row" data-idx="${i}" style="margin-top:10px;align-items:flex-start;flex-wrap:wrap">
         <input class="psName" placeholder="Persona name" value="${esc(p.name || '')}" style="width:160px">
         <select class="psStyle" style="width:170px;margin-left:8px">${PERSONA_STYLES.map(s => `<option value="${s[0]}" ${(face.style || 'oled') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select>
-        <input class="psColor" placeholder="#rrggbb or blank = accent" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color; blank uses the page accent">
+        <input class="psColor" placeholder="#rrggbb or blank" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color as #rrggbb; blank uses the page accent. A value that is not #rrggbb is not saved.">
         <input class="psCheek" placeholder="cheek #rrggbb" value="${esc(face.cheekColor || '')}" style="width:130px;margin-left:8px" title="Blush/cheek color; blank uses the face color">
         <button class="psExport" type="button" data-ex="${i}" style="margin-left:8px" title="Copy this persona's JSON to the clipboard">Export</button>
         <button class="psExportFile" type="button" data-ex="${i}" style="margin-left:4px" title="Save this persona as a .persona.json file">Export file…</button>
@@ -884,7 +884,7 @@
           const json = await configApi.personaJson(p);
           if (!json) { btn.textContent = 'Not exportable'; setTimeout(() => { btn.textContent = 'Export'; }, 1800); return; }
           const out = document.getElementById('sPersonaExport');
-          if (out) { out.textContent = json; out.style.display = ''; }
+          if (out) { out.textContent = json; out.style.display = ''; try { out.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} }
           const done = ok => { btn.textContent = ok ? 'Copied' : 'Shown below'; setTimeout(() => { btn.textContent = 'Export'; }, 1800); };
           if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(json).then(() => done(true), () => done(false));
           else done(false);
