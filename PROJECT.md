@@ -1,12 +1,16 @@
 # Rocky Face — a built-in animated face for AI Voice (charter)
 
-**Status 2026-10-20:** phase 1 shipped on this branch and verified live (`npm start`, Open WebUI backend,
-Whisper/Piper from Settings → TTS/STT): Rocky, Norm and Mimi each answer in character with the emotion tag
-stripped from speech and transcript; Side and Creature layouts; persona import/export in the editor and a
-`<userData>/personas` drop-in folder. Not verified: the Claude Code / Codex / Copilot CLI backends live
-(their adapters pass the unit tests), and the "AI Voice - GLM-4.7" page's API endpoint, which returned
-HTTP 500 on every turn regardless of the face. To see it: open the **Open WebUI Voice** page (it is left
-on Side + Rocky), or any AI Voice page → Settings → Face / Persona.
+**Status 2026-10-20:** phases 1 and 2 shipped on this branch and verified live (`npm start`, Whisper/Piper
+from Settings → TTS/STT). Backends exercised with a real turn each: **Claude Code** (Rocky, then Jarvis after a
+persona switch), **Codex** (Norm), **Copilot** (Intern), **Open WebUI** (Rocky, Norm, Mimi). Each reply came
+back in character, the emotion tag was stripped from speech and transcript, Piper spoke it in the persona's
+voice (confirmed on the wire: joe / alan / ryan / bryce). Seven personas ship (Rocky, Norm, Mimi, Jarvis, CRT
+Terminal, Startup Intern, Dust Sprite), each with a stock Piper voice and a safe fallback to the server's
+default; import/export (paste, file, https URL) and a `<userData>/personas` drop-in folder; Side and Creature
+layouts. Not working, outside this branch: the "AI Voice - GLM-4.7" page's LiteLLM endpoint lists only the
+retired glm models (HTTP 500 on every turn); the Codex CLI's own config names `gpt-6.1-sol`, which the ChatGPT
+account refuses, so the Codex page is pinned to `gpt-6-astra` in its Model setting. Demo pages added to the
+config: "Codex Voice (face demo)" and "Copilot Voice (face demo)"; the Claude Code page is left on Side + Rocky.
 
 Branch: `rocky-face` (off `main`). Agent room `AM-AT37LVS2HVXBHCDM6LHV6UKUDC` (Fable chair, Codex UI, Sonnet QA).
 Source of the face and personality: `D:\Github\desk-robot` (`firmware/src/face.cpp`, `server/brain/personality.py`), read-only reference.
