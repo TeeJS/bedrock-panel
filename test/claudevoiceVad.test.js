@@ -234,3 +234,20 @@ test('matchMicLabel finds a saved mic by name across Windows default entries and
   assert.equal(match(devices.map(x => Object.assign({}, x, { label: '' })), 'Microphone (Jabra SPEAK 410 USB) (0b0e:0412)'), '');
   d.vad.stop();
 });
+
+test('reset() drops the utterance in progress and keeps capturing the next one', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const d = await loadVad({ hangoverMs: 400 });
+  d.feed(256);   // the speaker's tail, heard as speech
+  d.feed(256);
+  d.vad.reset();   // playback ended: what was captured so far is not a human utterance
+  d.feed(0);
+  t.mock.timers.tick(400);
+  assert.deepEqual(d.shipped, []);
+  d.feed(200);   // the human, right after
+  d.feed(0);
+  t.mock.timers.tick(400);
+  assert.equal(d.shipped.length, 1);
+  assert.equal(d.shipped[0], 2 * BUF);   // only the human's word and its trailing buffer: nothing from before the reset
+  d.vad.stop();
+});

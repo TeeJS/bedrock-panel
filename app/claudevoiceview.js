@@ -275,7 +275,10 @@ document.addEventListener('visibilitychange', function () {
   if (document.hidden && wakeOn() && conversationOpen && vad) { wakeHiddenPaused = true; vad.stop(); wakeArm(false); }
   else if (!document.hidden && wakeHiddenPaused) {
     wakeHiddenPaused = false;
-    if (conversationOpen && vad) wakeArm(true).then(function () { if (conversationOpen && !document.hidden) vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel); }).catch(function () {});
+    if (conversationOpen && vad) {
+      var p = wakeArm(true), epoch = captureEpoch;
+      p.then(function () { if (conversationOpen && !document.hidden && epoch === captureEpoch) vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel); }).catch(function () {});
+    }
   }
   if (!face) return;
   if (document.hidden) { face.stop(); faceStopLevel(); }
@@ -684,6 +687,10 @@ $('textInput').addEventListener('keydown', function (e) {
 // voice through the speakers and mistake it for the next user utterance (a real feedback-loop risk
 // in a fully hands-free loop -- there's no headset here, just the panel's own mic and speaker).
 var suppressVAD = false;
+// Capture epoch: bumped synchronously on every mic/arm boundary (mic tap, hide/show, arm/disarm). An
+// utterance whose STT round trip began under an older epoch never sends, even when the host's own
+// generation has not caught up yet (the /wake-arm response is still in flight).
+var captureEpoch = 0;
 function speak(text, onDone) {
   if (!text) { if (onDone) onDone(); return; }
   stopTurnAudio();   // the Test button supersedes any in-flight turn speech -- never two streams
@@ -730,6 +737,7 @@ $('ttsTestBtn').onclick = function () {
 var turnAudio = null;   // the current voice turn's <audio>, or null
 function endSpeechUI(errMsg) {
   suppressVAD = false;
+  if (vad && vad.reset) vad.reset();   // an utterance that began as the speaker's tail is dropped, not shipped
   $('spkBtn').classList.remove('pulsing');
   setStatus(turnInProgress ? 'thinking' : conversationOpen ? 'listening' : 'idle', errMsg || '');
 }
@@ -1004,19 +1012,19 @@ function onVADSpeechStart() {
   renderWakeLabel();
 }
 function onVADSpeechEnd(pcm16) {
-  if (suppressVAD) return;
+  if (suppressVAD || !conversationOpen) return;
   // With the wake word on, an utterance is just "something was said": no status change until the
   // host says it was addressed to the persona. Nothing about it is ever shown on the panel.
   if (!wakeOn()) setStatus('thinking');
-  var sentGen = wakeGen;
+  var sentGen = wakeGen, epoch = captureEpoch;
   fetch(BASE + '/audio' + (wakeOn() ? '?gen=' + encodeURIComponent(sentGen) : ''), { method: 'POST', cache: 'no-store', body: pcm16.buffer })
     .then(function (r) { return r.json(); })
     .then(function (r) {
       // Re-check AFTER the async STT round trip: if speech started playing while this was in
       // flight, the utterance may have caught the speaker's first words -- drop it, never
       // ghost-send it as a turn.
-      if (suppressVAD) return;
-      if (wakeOn() && sentGen !== wakeGen) return;   // mic toggled or persona switched meanwhile: stale
+      if (suppressVAD || !conversationOpen || epoch !== captureEpoch) return;   // mic closed / re-armed meanwhile: stale
+      if (wakeOn() && sentGen !== wakeGen) return;   // persona switched or host re-armed meanwhile: stale
       if (r && r.ok && r.text && r.text.trim()) {
         if (r.wake === 'addressed') wakeChime();
         sendText(r.text.trim());
@@ -1038,9 +1046,11 @@ var wakeChimeOn = Q.get('wakeChime') === '1';
 var wakeTick = null;
 function wakeOn() { return !!(wakeState && wakeState.enabled); }
 function wakeArm(on) {
+  captureEpoch++;   // synchronous: anything captured before this boundary is stale, whatever the host says later
   if (!wakeOn() && on) return Promise.resolve();
+  var epoch = captureEpoch;
   return postJSON('/wake-arm', { on: !!on }).then(function (r) { return r.json(); })
-    .then(function (r) { if (r && r.ok) { wakeGen = r.gen || 0; applyWakeState(r.wake); } })
+    .then(function (r) { if (r && r.ok && epoch === captureEpoch) { wakeGen = r.gen || 0; applyWakeState(r.wake); } })
     .catch(function () {});
 }
 function applyWakeState(w) {
@@ -1098,16 +1108,22 @@ window.oqxToggleConversation = function () {
   if (!vad) { $('textInput').focus(); return; }   // VAD script failed to load -- fall back to at least focusing input
   if (conversationOpen) {
     conversationOpen = false;
+    captureEpoch++;   // hard off, at once: in-flight STT results from this capture never send
     vad.stop();
     wakeArm(false);
     setStatus('idle');
   } else {
     conversationOpen = true;
+    captureEpoch++;
+    var epoch = captureEpoch;
     setStatus('listening');
     ensureDeviceIds().then(function () {
-      if (!conversationOpen) return;   // toggled back off while devices were enumerating
+      if (!conversationOpen || epoch !== captureEpoch) return;   // toggled back off while devices were enumerating
       vad.setInputDevice(micDeviceId);
-      return wakeArm(true).then(function () { return vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel); });
+      return wakeArm(true).then(function () {
+        if (!conversationOpen || epoch + 1 !== captureEpoch) return;   // muted during arming: capture must not reopen
+        return vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel);
+      });
     }).catch(function (e) {
       conversationOpen = false;
       syncMicUI();

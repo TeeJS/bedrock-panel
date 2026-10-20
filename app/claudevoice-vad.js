@@ -141,6 +141,14 @@ function createVAD(opts) {
     };
   }
 
+  // Drop the utterance in progress (if any) and keep capturing: the page calls this when its own
+  // playback has just ended, so an utterance that began as the speaker's tail never ships. The next
+  // voiced frame starts a fresh utterance.
+  function reset() {
+    clearTimeout(hangoverTimer); hangoverTimer = null;
+    speaking = false; chunks = []; voicedSamples = 0; continued = false;
+  }
+
   function stop() {
     gen++;
     clearTimeout(hangoverTimer); hangoverTimer = null;
@@ -169,7 +177,7 @@ function createVAD(opts) {
       sampleRate: audioCtx ? audioCtx.sampleRate : 0, threshold };
   }
 
-  return { start, stop, setHangoverMs, setInputDevice, info };
+  return { start, stop, reset, setHangoverMs, setInputDevice, info };
 }
 
 // Open a microphone by deviceId. The id goes in as `exact`: with `ideal`, Chromium (Electron 44,
