@@ -864,7 +864,10 @@
   }
   // Persona-only repository URLs (GitHub folder URLs). App repositories are searched for a personas/
   // folder automatically, so most users never need a row here.
-  let personaCatalogReopen = '';   // set by an install: re-open the catalog after the config reload re-renders Settings
+  // The latest Browse function: an install makes the main process save, which reloads the editor's
+  // config and re-renders Settings (closing the catalog) BEFORE the install call returns, so the
+  // install handler re-opens the catalog through whichever wiring is current.
+  let personaCatalogBrowse = null;
   function personaRepoRowsHtml(list) {
     const rows = Array.isArray(list) ? list : [];
     if (!rows.length) return '<p class="hint" style="margin:4px 0">No persona-only repositories; the app repositories\' <code>personas/</code> folders are searched automatically.</p>';
@@ -924,9 +927,9 @@
           }
           if (!res || !res.ok) { btn.disabled = false; btn.textContent = was; say(res && res.error ? res.error : 'Install failed.', true); return; }
           btn.textContent = 'Installed';
-          // The main process saved the new persona and the editor reloads its config copy (so a later
-          // Save cannot drop it); that re-render would close this list, so ask for it to come back.
-          personaCatalogReopen = 'Installed "' + res.name + '" v' + res.version + (res.replaced ? ' (replaced)' : '') + '.';
+          // The main process saved the new persona and the editor reloaded its config copy (so a
+          // later Save cannot drop it); re-open the list with fresh states and the result line.
+          if (personaCatalogBrowse) personaCatalogBrowse('Installed "' + res.name + '" v' + res.version + (res.replaced ? ' (replaced)' : '') + '.');
         };
       });
     };
@@ -941,7 +944,7 @@
       renderCatalog(r);
     };
     if (browseBtn) browseBtn.onclick = () => browse('');
-    if (personaCatalogReopen) { const n = personaCatalogReopen; personaCatalogReopen = ''; browse(n); }
+    personaCatalogBrowse = browse;
     const updBtn = document.getElementById('sPersonaUpdates');
     if (updBtn) updBtn.onclick = async () => {
       updBtn.disabled = true; say('Checking…');
