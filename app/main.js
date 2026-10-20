@@ -783,6 +783,16 @@ function migrateConfig(c) {
       }
     }
   });
+  // Zoom key mappings moved from the Meeting page's options to Settings > Meeting (app-level). Carry a
+  // customized page's values over once; the old page options are left in place, unused.
+  {
+    const zk = ['zoomUseDefaults', 'zoomMute', 'zoomVideo', 'zoomAccept', 'zoomDecline', 'zoomLeave'];
+    const me = c.settings.meeting || {};
+    if (!zk.some(k => k in me)) {
+      const page = (c.grids || []).find(g => g.kind === 'app' && g.app === 'meeting' && g.options && zk.some(k => k in g.options));
+      if (page) { c.settings.meeting = Object.assign({}, me); zk.forEach(k => { if (k in page.options) c.settings.meeting[k] = page.options[k]; }); }
+    }
+  }
   voiceConfig.migrateVoiceConfig(c);   // legacy per-page wyoming* -> global config.settings.voice + per-page override
   voiceConfig.ensureAiProfiles(c);     // seed the Smart Profiles library once (user edits are never touched)
   voiceConfig.ensurePanelProfile(c);   // add Panel Builder to libraries that predate it (once — deletions stick)
@@ -2398,11 +2408,10 @@ async function meetingActionInner(platform, action) {
   if (platform === 'zoom') {
     const optKey = ZOOM_OPTION_KEY[action];
     if (!optKey) return { ok: false, error: 'unknown Zoom action: ' + action };
-    const cfg = activeServedAppConfig('meeting');
-    const opts = (cfg && cfg.options) || {};
+    const ms = meetingSettings();   // app-level (Settings > Meeting), shared by every Meeting page
     // Default to Zoom's own shipped keybinds (matches Zoom out of the box, no setup needed);
     // only fall through to the user's custom combo when they've explicitly turned defaults off.
-    const combo = opts.zoomUseDefaults === false ? opts[optKey] : meetingControl.ZOOM_DEFAULT_COMBO[action];
+    const combo = ms.zoomUseDefaults === false ? ms[optKey] : meetingControl.ZOOM_DEFAULT_COMBO[action];
     return meetingControl.sendZoomAction(combo, { mediaKeys, action });   // macOS presses Zoom's menu item for it; the combo is the fallback
   }
   if (platform === 'teams' && action === 'focus') {
@@ -2422,7 +2431,7 @@ async function meetingActionInner(platform, action) {
 // Settings live under config.settings.meeting (global, like config.settings.monitor) so auto-record
 // works regardless of which app the panel is showing — the meeting page's per-grid options only
 // exist while it's the active app, which is useless for background recording.
-const MEETING_DEFAULTS = { folder: '', transcribedFolder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: process.platform === 'darwin' ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' };
+const MEETING_DEFAULTS = { folder: '', transcribedFolder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: process.platform === 'darwin' ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', zoomUseDefaults: true, zoomMute: 'alt+a', zoomVideo: 'alt+v', zoomAccept: 'control+shift+a', zoomDecline: 'control+shift+d', zoomLeave: 'alt+q', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' };
 function meetingSettings() { return Object.assign({}, MEETING_DEFAULTS, (config.settings || {}).meeting || {}); }
 // ---- Software-wide audio defaults (Settings > General > Audio) ----
 // One default mic + speaker for the whole app, stored as device LABELS ('' = OS system default) --
