@@ -125,11 +125,14 @@ const KAWAII_PROMPT = [
   '- Do not borrow names, phrases, or characters from any show, game, or brand.',
 ].join('\n');
 
+// Each built-in names a stock Piper voice (the names every Piper install uses); a server without
+// that voice answers with an error and the speech pipeline falls back to the server's default.
 const ROCKY_PERSONA = {
   id: 'rocky',
   name: 'Rocky',
   version: PERSONA_SCHEMA_VERSION,
   prompt: ROCKY_PROMPT,
+  voice: 'en_US-joe-medium',
   face: { style: 'oled', color: '', eyeGap: 16, dozeAfterSeconds: 60, emotions: ROCKY_EYES },
 };
 
@@ -139,6 +142,7 @@ const NORM_PERSONA = {
   name: 'Norm',
   version: PERSONA_SCHEMA_VERSION,
   prompt: NORM_PROMPT,
+  voice: 'en_US-ryan-high',
   face: {
     style: 'cartoon', color: '', cheekColor: '#e8a07a', eyeGap: 26, dozeAfterSeconds: 60, blinkMinMs: 4000, blinkMaxMs: 9000,
     emotions: {
@@ -159,6 +163,7 @@ const KAWAII_PERSONA = {
   name: 'Mimi',
   version: PERSONA_SCHEMA_VERSION,
   prompt: KAWAII_PROMPT,
+  voice: 'en_US-amy-medium',
   face: {
     style: 'kawaii', color: '#ff8fc8', cheekColor: '#ff6fa8', eyeGap: 18, dozeAfterSeconds: 60,
     emotions: {
@@ -245,7 +250,7 @@ const SPRITE_PROMPT = [
 ].join('\n');
 
 const JARVIS_PERSONA = {
-  id: 'jarvis', name: 'Jarvis', version: PERSONA_SCHEMA_VERSION, prompt: JARVIS_PROMPT,
+  id: 'jarvis', name: 'Jarvis', version: PERSONA_SCHEMA_VERSION, prompt: JARVIS_PROMPT, voice: 'en_GB-alan-medium',
   face: {
     style: 'oled', color: '#5ec8ff', eyeGap: 18, dozeAfterSeconds: 120, blinkMinMs: 3000, blinkMaxMs: 7000,
     emotions: {
@@ -262,7 +267,7 @@ const JARVIS_PERSONA = {
 
 // Amber phosphor, square-ish eyes, slow lazy blink: a terminal.
 const CRT_PERSONA = {
-  id: 'crt', name: 'CRT Terminal', version: PERSONA_SCHEMA_VERSION, prompt: CRT_PROMPT,
+  id: 'crt', name: 'CRT Terminal', version: PERSONA_SCHEMA_VERSION, prompt: CRT_PROMPT, voice: 'en_US-hfc_male-medium',
   face: {
     style: 'crt', color: '#ffb000', eyeGap: 20, dozeAfterSeconds: 45, blinkMinMs: 5000, blinkMaxMs: 12000,
     emotions: {
@@ -279,9 +284,9 @@ const CRT_PERSONA = {
 
 // Bright, wide-eyed, fast blink: the intern never sits still.
 const INTERN_PERSONA = {
-  id: 'intern', name: 'Startup Intern', version: PERSONA_SCHEMA_VERSION, prompt: INTERN_PROMPT,
+  id: 'intern', name: 'Startup Intern', version: PERSONA_SCHEMA_VERSION, prompt: INTERN_PROMPT, voice: 'en_US-bryce-medium',
   face: {
-    style: 'cartoon', color: '', cheekColor: '#ff9a62', eyeGap: 22, dozeAfterSeconds: 180, blinkMinMs: 1200, blinkMaxMs: 3500,
+    style: 'kawaii', color: '#ffbb6b', cheekColor: '#ff8f73', eyeGap: 22, dozeAfterSeconds: 180, blinkMinMs: 1200, blinkMaxMs: 3500,
     emotions: {
       neutral:   { eyeW: 32, eyeH: 34, radius: 16, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
       happy:     { eyeW: 34, eyeH: 34, radius: 17, browSlant: 0,  lowerLid: 14, upperLid: 0 },
@@ -296,9 +301,9 @@ const INTERN_PERSONA = {
 
 // Soft grey, huge round eyes, dozes quickly: a sleepy little spirit.
 const SPRITE_PERSONA = {
-  id: 'sprite', name: 'Dust Sprite', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT,
+  id: 'sprite', name: 'Dust Sprite', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT, voice: 'en_GB-southern_english_female-low',
   face: {
-    style: 'sprite', color: '#b8b8c8', cheekColor: '#d9a3a3', eyeGap: 14, dozeAfterSeconds: 25, blinkMinMs: 2500, blinkMaxMs: 7000,
+    style: 'sprite', color: '#272833', cheekColor: '#d9a3a3', eyeGap: 14, dozeAfterSeconds: 25, blinkMinMs: 2500, blinkMaxMs: 7000,   // color = body (soot); eyes stay white
     emotions: {
       neutral:   { eyeW: 38, eyeH: 42, radius: 21, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
       happy:     { eyeW: 40, eyeH: 42, radius: 21, browSlant: 0,  lowerLid: 22, upperLid: 0 },

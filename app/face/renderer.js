@@ -14,6 +14,17 @@
   const KEYS = ['eyeW', 'eyeH', 'radius', 'browSlant', 'lowerLid', 'upperLid'];
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const number = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
+  function readableInk(color, background) {
+    const rgb = value => /^#[\da-f]{6}$/i.test(value) ? [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16)) : null;
+    const fg = rgb(color), bg = rgb(background);
+    if (!fg || !bg) return color;
+    const luminance = c => c.map(n => n / 255).map(n => n <= 0.04045 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4)).reduce((s, n, i) => s + n * [0.2126, 0.7152, 0.0722][i], 0);
+    const b = luminance(bg), contrast = c => { const f = luminance(c); return (Math.max(f, b) + 0.05) / (Math.min(f, b) + 0.05); };
+    if (contrast(fg) >= 3) return color;
+    let adjusted = fg.slice();
+    for (let i = 0; i < 30 && contrast(adjusted) < 3; i++) adjusted = adjusted.map(n => b > 0.5 ? n * 0.9 : n + (255 - n) * 0.1);
+    return '#' + adjusted.map(n => Math.round(n).toString(16).padStart(2, '0')).join('');
+  }
 
   function create(canvas, options) {
     if (!canvas || !canvas.getContext) throw new TypeError('A face needs a canvas');
@@ -63,7 +74,8 @@
       const scale = Math.min(width / 164, height / 102);
       ctx.translate(width / 2, height / 2); ctx.scale(scale, scale);
       const f = face(), style = f.style || 'oled';
-      const ink = style === 'sprite' ? '#fffaf2' : f.color || accent;
+      const baseInk = f.color || accent;
+      const ink = style === 'sprite' ? '#fffaf2' : style === 'oled' ? readableInk(baseInk, background) : baseInk;
       const cutout = style === 'crt' ? '#111c16' : background;
       ctx.fillStyle = ink; ctx.strokeStyle = ink;
       if (style === 'crt') {

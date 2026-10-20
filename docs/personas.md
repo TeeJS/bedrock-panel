@@ -45,7 +45,7 @@ All of this is in **Settings → AI Profiles → Personas**.
 | `prompt` | The personality. **Appended** to the page's Smart Profile, never replacing it (max 20,000 characters). |
 | `voice` | The Piper voice this persona speaks with, for example `en_US-ryan-high`. Empty = use the page's default voice. See *Voices* below. |
 | `face.style` | The drawing style: `oled` (rounded-rect eyes, bar mouth), `cartoon` (round eyes with pupils, wide grin), `kawaii` (soft sparkling eyes, cheeks), `crt` (amber phosphor face in a retro monitor bezel) or `sprite` (a round soot body with two big white eyes). An unknown value becomes `oled`. |
-| `face.color` / `face.cheekColor` | `#rrggbb`, or empty to use the page accent. |
+| `face.color` / `face.cheekColor` | `#rrggbb`, or empty to use the page accent. `color` is the ink of the face's features (eyes, mouth); for the `sprite` style it is the colour of the round body instead (its eyes stay white). `cheekColor` is the blush. |
 | `face.eyeGap` | 0–60 (virtual pixels between the eyes). |
 | `face.dozeAfterSeconds` | Seconds of inactivity before the face falls asleep; 0 = never. |
 | `face.blinkMinMs` / `face.blinkMaxMs` | 300–60000. If min is larger than max they are swapped. |
