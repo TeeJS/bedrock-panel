@@ -59,6 +59,12 @@ Replaces the previous round's charter (Macro Deck preview), which lives in git h
 
 ## Phase 3 — persona repositories (approved by T.J. 2026-10-20, "give personas the same repository model as apps")
 
+**Status:** shipped and verified live in the editor against the private `TeeJS/bedrock-personas` repo
+through the existing GitHub connection: Browse listed it (marked private), Install added Rocky with
+`source` {url, version}, a catalog bump showed in Check for updates (1.0.0 → 1.0.1) and Update replaced it,
+Replace asked before overwriting the folder-imported Norm, and the catalog re-opens after each install.
+App repositories without a `personas/` folder show a muted note, not an error.
+
 1. **The one thing this must do:** personas install and update from GitHub repositories the way drop-in
    apps do: Settings → Personas → **Browse repositories…** lists the personas every configured source
    offers, **Install** adds one to the library, **Update** replaces it when the catalog's version is newer,
