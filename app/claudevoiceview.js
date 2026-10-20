@@ -1005,9 +1005,13 @@ var vad = window.createClaudeVoiceVAD ? window.createClaudeVoiceVAD({ hangoverMs
 // With the wake word on, speech before the phrase is nobody's business: no status change, no face,
 // no ripple until the human is expected to be talking to the persona (listening / follow-up).
 function wakeExpectsSpeech() { return !wakeOn() || wakeState.state === 'listening' || wakeState.state === 'followup'; }
+var vadSpeechStartedAt = 0;   // when the VAD saw the current utterance begin; sent with its audio (the host dates it by this)
+var wakeHold = false;         // speech began inside a window: hold the label (no countdown, no "Waiting") until STT answers
 function onVADSpeechStart() {
+  vadSpeechStartedAt = Date.now();
   if (suppressVAD) return;
   if (!wakeExpectsSpeech()) return;
+  if (wakeOn()) wakeHold = true;
   setStatus('listening');
   renderWakeLabel();
 }
@@ -1017,9 +1021,13 @@ function onVADSpeechEnd(pcm16) {
   // host says it was addressed to the persona. Nothing about it is ever shown on the panel.
   if (!wakeOn()) setStatus('thinking');
   var sentGen = wakeGen, epoch = captureEpoch;
-  fetch(BASE + '/audio' + (wakeOn() ? '?gen=' + encodeURIComponent(sentGen) : ''), { method: 'POST', cache: 'no-store', body: pcm16.buffer })
+  var startAgo = vadSpeechStartedAt ? Math.max(0, Date.now() - vadSpeechStartedAt) : 0;
+  var q = wakeOn() ? '?gen=' + encodeURIComponent(sentGen) + '&start=' + startAgo : '';
+  var release = function () { if (wakeHold) { wakeHold = false; renderWakeLabel(); } };
+  fetch(BASE + '/audio' + q, { method: 'POST', cache: 'no-store', body: pcm16.buffer })
     .then(function (r) { return r.json(); })
     .then(function (r) {
+      release();
       // Re-check AFTER the async STT round trip: if speech started playing while this was in
       // flight, the utterance may have caught the speaker's first words -- drop it, never
       // ghost-send it as a turn.
@@ -1034,7 +1042,7 @@ function onVADSpeechEnd(pcm16) {
         else if (r && r.error) setStatus(conversationOpen ? 'listening' : 'idle', r.error);
       }
     })
-    .catch(function () { setStatus('error', 'Transcription request failed.'); });
+    .catch(function () { release(); setStatus('error', 'Transcription request failed.'); });
 }
 
 // ---- Wake word (phase 1, transcript gate; the host decides, this page shows the state) ----
@@ -1047,6 +1055,7 @@ var wakeTick = null;
 function wakeOn() { return !!(wakeState && wakeState.enabled); }
 function wakeArm(on) {
   captureEpoch++;   // synchronous: anything captured before this boundary is stale, whatever the host says later
+  wakeHold = false;
   if (!wakeOn() && on) return Promise.resolve();
   var epoch = captureEpoch;
   return postJSON('/wake-arm', { on: !!on }).then(function (r) { return r.json(); })
@@ -1067,6 +1076,7 @@ function wakeLabelText() {
   var w = wakeState, phrase = w.phrase ? w.phrase.replace(/^\w/, function (c) { return c.toUpperCase(); }) : '';
   var left = w.until ? Math.max(0, Math.ceil((w.until - Date.now()) / 1000)) : 0;
   if (w.state === 'not-ready') return 'Wake word not ready: ' + (w.reason || 'no phrase');
+  if (wakeHold) return w.state === 'followup' ? 'Follow-up…' : 'Listening…';   // a request began inside the window: no countdown while it is transcribed
   if (w.state === 'waiting') return 'Waiting for "' + phrase + '"';
   if (w.state === 'listening') return 'Listening (' + left + ' s to start)';
   if (w.state === 'followup') return 'Follow-up window (' + left + ' s)';

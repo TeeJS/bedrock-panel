@@ -85,25 +85,30 @@ function createWakeState(opts) {
   let until = 0;            // when listening / followup / cooldown ends
   let gen = 0;              // bumped on arm/disarm/phrase change: stale utterances are dropped
   let pendingAfterActive = null;   // where to go when the reply is over (set when the turn starts)
-  let lastWindow = null;           // {state, until} of the listening/follow-up window that last expired: a
-                                   // request begun inside it still counts when its STT lands after the expiry
+  let openedAt = 0;                // when the current listening/follow-up window opened (speech begun before it is not for us)
+  let lastWindow = null;           // {state, openedAt, until} of the window that last expired: a request begun
+                                   // inside it still counts when its STT lands after the expiry
+  const SLACK_MS = 500;            // VAD onset vs. the host's clock: the window's lower bound is this lenient
 
   function snapshot() {
     tick();
     return { state, until: (state === 'listening' || state === 'followup' || state === 'cooldown') ? until : 0, gen, followUpMs, windowMs };
   }
-  function set(next, ms) { state = next; until = ms ? now() + ms : 0; }
+  function set(next, ms) { state = next; until = ms ? now() + ms : 0; if (ms) openedAt = now(); }
+  // A listening window opens at the moment the phrase utterance was RECEIVED (its speech had ended),
+  // not when STT returned: a human who goes on talking before the transcript is back is inside it.
+  function openListening(receivedAt) { state = 'listening'; until = now() + windowMs; openedAt = receivedAt != null ? receivedAt : now(); }
   // Expire timed states. Called before every decision and by the host's timer.
   function tick() {
     const t = now();
-    if ((state === 'listening' || state === 'followup') && until && t >= until) { lastWindow = { state, until }; set('waiting', 0); }
+    if ((state === 'listening' || state === 'followup') && until && t >= until) { lastWindow = { state, openedAt, until }; set('waiting', 0); }
     else if (state === 'cooldown' && until && t >= until) {
       // Timed from the cooldown's END, not from this (possibly late) tick: a lazy tick must never
       // stretch a follow-up window.
       const end = until, next = pendingAfterActive || 'waiting';
       pendingAfterActive = null;
-      state = next; until = next === 'followup' ? end + followUpMs : 0;
-      if (next === 'followup' && t >= until) set('waiting', 0);
+      state = next; until = next === 'followup' ? end + followUpMs : 0; openedAt = end;   // the follow-up opens when the cooldown ends
+      if (next === 'followup' && t >= until) { lastWindow = { state, openedAt, until }; set('waiting', 0); }
     }
     return state;
   }
@@ -117,32 +122,36 @@ function createWakeState(opts) {
   //   turn   addressed: send commandText as the turn
   //   listen the phrase alone: the listening window is open
   //   drop   unaddressed, stale, or arrived while active/cooldown
-  // `startedAt` (ms) is when the human started this utterance: a request begun inside a listening or
-  // follow-up window counts even when STT hands it back after the window has closed.
-  function onUtterance(text, utteranceGen, startedAt) {
+  // `startedAt` (ms) is when the human started this utterance and `receivedAt` when its audio arrived
+  // (its speech had ended). A request counts for a window when it BEGAN inside it: begun inside a
+  // window that has since closed still counts when STT is slow; begun before the window opened
+  // (ambient speech that straddled the phrase) does not.
+  function onUtterance(text, utteranceGen, startedAt, receivedAt) {
     tick();
+    const genOk = utteranceGen === undefined || utteranceGen === gen;
     if (startedAt != null) {
-      // Begun inside a window that has since expired (the host's timer already ticked it to waiting,
-      // or this tick did): bring that window back for this one decision.
-      if (state === 'waiting' && lastWindow && startedAt < lastWindow.until && (utteranceGen === undefined || utteranceGen === gen)) { state = lastWindow.state; until = now() + 1; }
+      if (state === 'waiting' && lastWindow && genOk && startedAt >= lastWindow.openedAt - SLACK_MS && startedAt < lastWindow.until) {
+        state = lastWindow.state; until = now() + 1; openedAt = lastWindow.openedAt;   // the window, back for this one decision
+      }
       lastWindow = null;
     }
     if (state === 'off') return { action: 'pass', commandText: String(text == null ? '' : text) };
-    if (utteranceGen !== undefined && utteranceGen !== gen) return { action: 'drop', reason: 'stale' };
+    if (!genOk) return { action: 'drop', reason: 'stale' };
     if (state === 'active' || state === 'cooldown') return { action: 'drop', reason: state };
+    if ((state === 'listening' || state === 'followup') && startedAt != null && startedAt < openedAt - SLACK_MS) return { action: 'drop', reason: 'early' };
     const raw = String(text == null ? '' : text);
     if (!raw.trim()) return { action: 'drop', reason: 'empty' };
     if (state === 'listening' || state === 'followup') {
       // The human is expected to speak without the phrase; if they say it anyway, strip it.
       const m = matcher ? matcher.match(raw) : { wake: false };
       const cmd = m.wake ? m.commandText : raw;
-      if (!cmd.trim()) { set('listening', windowMs); return { action: 'listen', reason: 'phrase-again' }; }
+      if (!cmd.trim()) { openListening(receivedAt); return { action: 'listen', reason: 'phrase-again' }; }
       return { action: 'turn', commandText: cmd, reason: state };   // onTurnStart follows; a late-window state expires on its next tick
     }
     // waiting
     const m = matcher ? matcher.match(raw) : { wake: false };
     if (!m.wake) return { action: 'drop', reason: 'unaddressed' };
-    if (!m.commandText.trim()) { set('listening', windowMs); return { action: 'listen', reason: 'phrase-alone' }; }
+    if (!m.commandText.trim()) { openListening(receivedAt); return { action: 'listen', reason: 'phrase-alone' }; }
     return { action: 'turn', commandText: m.commandText, reason: 'addressed' };
   }
   // The host sent a turn (ours or a typed one): the page is active until the reply is over.

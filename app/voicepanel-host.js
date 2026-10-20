@@ -793,11 +793,16 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
 
   // Transcribes one VAD-trimmed utterance (raw 16kHz/16-bit/mono PCM, matching the page's mic
   // pipeline -- see claudevoice-vad.js) via the configured wyoming-faster-whisper host/port.
-  async function transcribe(pcmBuffer, gen) {
-    // When the human started talking: the audio is 16 kHz 16-bit mono (32 bytes per ms), and it
-    // arrives the moment the utterance ends, so its length dates its start. A request begun inside
-    // a listening or follow-up window is honoured even when STT returns after the window closed.
-    const startedAt = Date.now() - Math.floor((pcmBuffer && pcmBuffer.length || 0) / 32) - 500;   // 500 ms: VAD hangover + transport
+  async function transcribe(pcmBuffer, gen, startAgo) {
+    // When the human started talking: the page sends how many ms ago its VAD saw speech start
+    // (`startAgo`); without it, the audio's length dates the start (16 kHz 16-bit mono = 32 bytes per
+    // ms, shipped the moment the utterance ends). A request begun inside a listening or follow-up
+    // window is honoured even when STT returns after the window closed, and one begun before the
+    // window opened is not.
+    const receivedAt = Date.now();
+    const ago = Number(startAgo);
+    const startedAt = (isFinite(ago) && ago >= 0 && ago <= 120000) ? receivedAt - Math.floor(ago)
+      : receivedAt - Math.floor((pcmBuffer && pcmBuffer.length || 0) / 32) - 500;   // 500 ms: VAD hangover + transport
     const { sttHost: host, sttPort: port } = deps.voiceEndpoints();
     if (!host || !port) return { ok: false, error: 'STT host/port not configured (Settings → TTS/STT)' };
     let text;
@@ -815,7 +820,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     }
     if (!wakeEnabled()) return { ok: true, text };
     // Wake word on: the gate decides. Unaddressed text is answered as nothing and is not logged.
-    const d = wake.onUtterance(text, gen, startedAt);
+    const d = wake.onUtterance(text, gen, startedAt, receivedAt);
     // 'pass' means the gate is not armed (the page has not opened its conversation since the wake
     // word went on). Fail closed: with the wake word on, nothing reaches the page until it arms.
     if (d.action === 'pass') { say('wake: utterance before the page armed, dropped'); return { ok: true, text: '', wake: 'off' }; }

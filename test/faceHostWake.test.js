@@ -38,7 +38,7 @@ let heard = '';
 const realTranscribe = wyoming.transcribe;
 wyoming.transcribe = async () => heard;
 test.after(() => { wyoming.transcribe = realTranscribe; });
-async function hear(x, text, gen) { heard = text; return x.h.transcribe(Buffer.alloc(320), gen); }
+async function hear(x, text, gen, startAgo) { heard = text; return x.h.transcribe(Buffer.alloc(320), gen, startAgo); }
 function finishReply(x, text) { x.adapter.emit('assistant-start'); x.adapter.emit('assistant-delta', { text }); x.adapter.emit('turn-complete', { text, error: null }); }
 
 test('wake off: STT text passes through unchanged, no wake field', async t => {
@@ -63,7 +63,7 @@ test('wake on: the name alone opens a listening window; the next utterance is th
   assert.deepEqual(await hear(x, 'Hey Jarvis.', armed.gen), { ok: true, text: '', wake: 'listening' });
   assert.equal(x.h.getState().wake.state, 'listening');
   assert.ok(x.h.getState().wake.until > Date.now());
-  assert.deepEqual(await hear(x, 'turn on the lights', armed.gen), { ok: true, text: 'turn on the lights', wake: 'addressed' });
+  assert.deepEqual(await hear(x, 'turn on the lights', armed.gen, 0), { ok: true, text: 'turn on the lights', wake: 'addressed' });   // began now, inside the window
 });
 
 test('one wake, one request: active while the reply runs, back to waiting after it (follow-up 0)', async t => {
@@ -95,7 +95,7 @@ test('follow-up window: the human may answer without the name, then it closes on
   x.h.onTurn('why seven', false); finishReply(x, 'Luck.');
   t.mock.timers.tick(1300 + 10000);
   assert.equal(x.h.getState().wake.state, 'waiting');
-  assert.deepEqual(await hear(x, 'because', armed.gen), { ok: true, text: '', wake: 'waiting' });
+  assert.deepEqual(await hear(x, 'because', armed.gen, 0), { ok: true, text: '', wake: 'waiting' });   // began after the window closed
 });
 
 test('a spoken reply ends at the page\'s playback end, not at turn-complete', async t => {
@@ -188,4 +188,15 @@ test('a cancelled or failed reply gets no follow-up window; a completed one does
   finishReply(x, 'Done.'); x.h.wakeReplyEnd(true);
   t.mock.timers.tick(1300);
   assert.equal(x.h.getState().wake.state, 'followup');
+});
+
+test('the page dates each utterance: begun before the listening window opened is dropped, begun inside it counts after expiry', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const x = make(); t.after(x.cleanup);
+  const armed = x.h.wakeArm(true);
+  assert.equal((await hear(x, 'hey jarvis', armed.gen, 600)).wake, 'listening');
+  assert.deepEqual(await hear(x, 'blah blah from before', armed.gen, 5000), { ok: true, text: '', wake: 'listening' });   // began 5 s ago: before the phrase
+  t.mock.timers.tick(8500);                                                                                              // the window expired
+  assert.equal(x.h.getState().wake.state, 'waiting');
+  assert.deepEqual(await hear(x, 'what time is it', armed.gen, 1200), { ok: true, text: 'what time is it', wake: 'addressed' });   // began at 7.3 s: inside
 });

@@ -857,7 +857,8 @@ async function handler(req, res) {
       // `gen` is the page's wake-word generation token: an utterance that was in flight when the mic
       // was toggled, the persona switched or the page changed is answered as nothing (see wakeword.js).
       const gen = parseInt(queryValue(full, 'gen') || '', 10);
-      let result; try { result = await h.transcribe(pcm, isFinite(gen) ? gen : undefined); } catch (e) { result = { ok: false, error: e.message }; }
+      const start = parseInt(queryValue(full, 'start') || '', 10);   // ms since the page's VAD saw this utterance begin
+      let result; try { result = await h.transcribe(pcm, isFinite(gen) ? gen : undefined, isFinite(start) ? start : undefined); } catch (e) { result = { ok: false, error: e.message }; }
       return json(res, result);
     }
     // Wake word: the page arms the gate when its conversation opens (mic on) and disarms when it

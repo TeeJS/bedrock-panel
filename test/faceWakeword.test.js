@@ -197,3 +197,21 @@ test('state: the window survives the host timer ticking it to waiting before a l
   st.onTurnStart(); st.onReplyEnd(true); t = 30000;
   assert.equal(st.onUtterance('way later', st.gen, 29000).action, 'drop'); // a used window does not come back
 });
+
+test('state: a request counts only when it BEGAN inside the window (lower bound at the phrase receipt, upper at expiry)', () => {
+  let t = 1000; const st = ww.createWakeState({ now: () => t, windowMs: 8000, cooldownMs: 1200, followUpMs: 5000, matcher: jarvis });
+  st.arm();
+  // The phrase utterance arrived at 1000 (its speech had ended); STT returned at 2000 and opened the window.
+  t = 2000; assert.equal(st.onUtterance('hey jarvis', st.gen, 200, 1000).action, 'listen');
+  // Ambient speech that straddled the phrase (begun long before it): not for us.
+  t = 3000; assert.equal(st.onUtterance('so I was saying', st.gen, 0, 2900).action, 'drop');
+  // The human went on talking 200 ms after the phrase shipped, before STT was back: inside.
+  t = 3500; assert.deepEqual(st.onUtterance('what time is it', st.gen, 1200, 3400).action, 'turn');
+  st.onTurnStart(); st.onReplyEnd(true);
+  t = 3700 + 1200; assert.equal(st.tick(), 'followup');                       // opened at the cooldown's end (4900)
+  assert.equal(st.onUtterance('echo tail', st.gen, 4000, 5000).action, 'drop'); // began during the cooldown: the speaker
+  t = 9901; assert.equal(st.tick(), 'waiting');                              // follow-up expired at 9900
+  t = 11000; assert.equal(st.onUtterance('late but inside', st.gen, 9500, 10900).action, 'turn');
+  st.onTurnStart(); st.onReplyEnd(true); t = 20000; st.tick(); t = 30000;
+  assert.equal(st.onUtterance('before that window', st.gen, 10000, 29900).action, 'drop');
+});
