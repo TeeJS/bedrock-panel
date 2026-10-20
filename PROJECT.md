@@ -1,6 +1,14 @@
 # Rocky Face — a built-in animated face for AI Voice (charter)
 
-Branch: `rocky-face` (off `main`). Agent room `AM-AT37LVS2HVXBHCDM6LHV6UKUDC` (Fable chair, Codex).
+**Status 2026-10-20:** phase 1 shipped on this branch and verified live (`npm start`, Open WebUI backend,
+Whisper/Piper from Settings → TTS/STT): Rocky, Norm and Mimi each answer in character with the emotion tag
+stripped from speech and transcript; Side and Creature layouts; persona import/export in the editor and a
+`<userData>/personas` drop-in folder. Not verified: the Claude Code / Codex / Copilot CLI backends live
+(their adapters pass the unit tests), and the "AI Voice - GLM-4.7" page's API endpoint, which returned
+HTTP 500 on every turn regardless of the face. To see it: open the **Open WebUI Voice** page (it is left
+on Side + Rocky), or any AI Voice page → Settings → Face / Persona.
+
+Branch: `rocky-face` (off `main`). Agent room `AM-AT37LVS2HVXBHCDM6LHV6UKUDC` (Fable chair, Codex UI, Sonnet QA).
 Source of the face and personality: `D:\Github\desk-robot` (`firmware/src/face.cpp`, `server/brain/personality.py`), read-only reference.
 Replaces the previous round's charter (Macro Deck preview), which lives in git history.
 
