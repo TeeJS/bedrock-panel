@@ -91,6 +91,36 @@ function createWakeMatcher({ phrase, aliases }) {
 }
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+// Does a finished reply invite an answer? Used to decide whether the follow-up window opens at all
+// (option "only after a question"): "It's 3:15." closes at once, "Want the lights on too?" opens it.
+// A question mark ending the reply, or a closing offer in its last sentence ("let me know", "would you
+// like", "do you want", "want me to", "shall I", "should I", "which one").
+const INVITES = /\b(let me know|would you like|do you want|want me to|shall i|should i|which (one|would|do)|tell me (which|what|if)|anything else)\b/i;
+function replyInvitesAnswer(text) {
+  const t = String(text == null ? '' : text).trim();
+  if (!t) return false;
+  if (/\?[\s"'”’)\]*_~`]*$/u.test(t)) return true;
+  const last = t.split(/(?<=[.!?])\s+/).pop() || '';
+  return INVITES.test(last);
+}
+
+// Said on its own, these end the conversation: no turn is sent, nothing is spoken back, and an open
+// listening or follow-up window closes at once. Matched against the WHOLE utterance (after the wake
+// phrase, if any), so "thanks for the update on the build" still goes through as a request.
+const CLOSERS = [
+  'thanks', 'thank you', 'thanks a lot', 'thank you very much', 'thanks so much', 'cheers', 'ok thanks', 'okay thanks', 'ok thank you', 'okay thank you',
+  "that's all", 'that is all', "that's it", 'that is it', "that'll be all", 'that will be all', "that's everything",
+  'never mind', 'nevermind', 'forget it', 'cancel that', 'no thanks', 'no thank you', 'nothing', 'nope',
+  'go to sleep', 'stop listening', 'goodbye', 'good bye', 'bye', 'bye bye', 'good night', 'goodnight',
+  "i'm done", 'i am done', "we're done", 'we are done', 'all done', 'all set', "i'm good", 'i am good', "we're good",
+];
+function isClosePhrase(text, names) {
+  let t = normalizeForMatch(String(text == null ? '' : text).replace(/[’‘]/g, "'"));   // Whisper sometimes writes a curly apostrophe
+  if (!t) return false;
+  for (const n of (names || [])) if (n && t.endsWith(' ' + n)) { t = t.slice(0, -(n.length + 1)); break; }   // "thanks Jarvis"
+  return CLOSERS.indexOf(t) !== -1;
+}
+
 // The page's wake state machine. States:
 //   off        wake word disabled for this page, or mic closed: everything passes as today
 //   waiting    mic open, only the phrase counts
@@ -101,6 +131,7 @@ function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 // `now` is injected (ms). Decisions come back from the event methods; the host acts on them.
 function createWakeState(opts) {
   const o = opts || {};
+  const closeNamesNow = () => (Array.isArray(o.closeNames) ? o.closeNames : []);   // read at call time: the host's phrase can change
   const now = typeof o.now === 'function' ? o.now : () => Date.now();
   const windowMs = o.windowMs != null ? o.windowMs : 8000;
   const cooldownMs = o.cooldownMs != null ? o.cooldownMs : 1200;
@@ -174,12 +205,15 @@ function createWakeState(opts) {
       const m = matcher ? matcher.match(raw) : { wake: false };
       const cmd = m.wake ? m.commandText : raw;
       if (!cmd.trim()) { openListening(receivedAt); return { action: 'listen', reason: 'phrase-again' }; }
+      // "thanks", "that's all", "never mind": the conversation is over; close the window, send nothing.
+      if (isClosePhrase(cmd, closeNamesNow())) { set('waiting', 0); lastWindow = null; return { action: 'drop', reason: 'closed' }; }
       return { action: 'turn', commandText: cmd, reason: state };   // onTurnStart follows; a late-window state expires on its next tick
     }
     // waiting
     const m = matcher ? matcher.match(raw) : { wake: false };
     if (!m.wake) return { action: 'drop', reason: 'unaddressed' };
     if (!m.commandText.trim()) { openListening(receivedAt); return { action: 'listen', reason: 'phrase-alone' }; }
+    if (isClosePhrase(m.commandText, closeNamesNow())) return { action: 'drop', reason: 'closed' };   // "Hey Jarvis, thanks": nothing to answer
     return { action: 'turn', commandText: m.commandText, reason: 'addressed' };
   }
   // The host sent a turn (ours or a typed one): the page is active until the reply is over.
@@ -200,4 +234,4 @@ function createWakeState(opts) {
   return { snapshot, tick, arm, disarm, setMatcher, setFollowUpMs, onUtterance, onTurnStart, onReplyEnd, onHumanActivity, current, get gen() { return gen; } };
 }
 
-module.exports = { MAX_PHRASE_LEN, normalizeForMatch, autoWakeName, resolvePhrase, createWakeMatcher, createWakeState };
+module.exports = { MAX_PHRASE_LEN, normalizeForMatch, autoWakeName, resolvePhrase, createWakeMatcher, createWakeState, replyInvitesAnswer, isClosePhrase };

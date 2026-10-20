@@ -6291,6 +6291,22 @@
         "default": false
       },
       {
+        "key": "wakeFollowUpWhen",
+        "label": "Follow-up window opens",
+        "type": "select",
+        "default": "question",
+        "choices": [
+          [
+            "question",
+            "Only after a question or an offer (\"Want the lights on too?\")"
+          ],
+          [
+            "always",
+            "After every reply"
+          ]
+        ]
+      },
+      {
         "key": "wakeFollowUpSeconds",
         "label": "Follow-up window after a reply, seconds (0 = one wake, one request)",
         "type": "text",

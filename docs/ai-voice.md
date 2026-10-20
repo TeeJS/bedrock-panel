@@ -107,9 +107,12 @@ editor's AI Voice page options) and the page waits for the persona's name.
   The status line (or a badge on a Creature page) says what the page is waiting for.
 - **When it stops listening.** As soon as the reply has finished playing the page goes back to
   waiting for the name — one wake, one request, so a name said in the morning never keeps the page
-  awake all day. **Follow-up window** (0 by default) adds a short window after each reply, in seconds,
+  awake all day. **Follow-up window** (0 by default) adds a short window after a reply, in seconds,
   during which you can speak again without the name; the countdown is on screen and it closes on its
-  own. Just after a reply ends there is a one-second guard so the speaker's own tail is not heard
+  own. By default it opens only when the reply asked something ("Want the lights on too?", "Let me
+  know if..."), so "It's 3:15." closes at once; **Follow-up opens: After every reply** restores the
+  always-open behaviour. Saying "thanks", "that's all", "never mind", "go to sleep" or "bye" on its own
+  closes the window immediately and sends nothing to the AI; "Hey Jarvis, thanks" is ignored the same way. Just after a reply ends there is a one-second guard so the speaker's own tail is not heard
   as a request.
 - **Chime.** Off by default. On, a short two-note chime through the page's speaker confirms the name
   was heard.

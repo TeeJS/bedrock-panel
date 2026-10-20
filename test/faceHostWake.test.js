@@ -84,7 +84,7 @@ test('one wake, one request: active while the reply runs, back to waiting after 
 
 test('follow-up window: the human may answer without the name, then it closes on its own', async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
-  const x = make({ wakeFollowUpSeconds: '10' }); t.after(x.cleanup);
+  const x = make({ wakeFollowUpSeconds: '10', wakeFollowUpWhen: 'always' }); t.after(x.cleanup);
   const armed = x.h.wakeArm(true);
   x.h.onTurn((await hear(x, 'hey jarvis pick a number', armed.gen)).text, false);
   finishReply(x, 'Seven.');
@@ -173,7 +173,7 @@ test('options: wakeWord off disarms at once; follow-up seconds and chime validat
 
 test('a cancelled or failed reply gets no follow-up window; a completed one does', async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
-  const x = make({ wakeFollowUpSeconds: '10' }); t.after(x.cleanup);
+  const x = make({ wakeFollowUpSeconds: '10', wakeFollowUpWhen: 'always' }); t.after(x.cleanup);
   const armed = x.h.wakeArm(true);
   x.h.onTurn((await hear(x, 'hey jarvis go on', armed.gen)).text, true);
   finishReply(x, 'Going.');
@@ -203,7 +203,7 @@ test('the page dates each utterance: begun before the listening window opened is
 
 test('a VAD-dated start is exact: speech begun during the cooldown is dropped; an estimated one gets the tolerance', async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
-  const x = make({ wakeFollowUpSeconds: '10' }); t.after(x.cleanup);
+  const x = make({ wakeFollowUpSeconds: '10', wakeFollowUpWhen: 'always' }); t.after(x.cleanup);
   const armed = x.h.wakeArm(true);
   x.h.onTurn((await hear(x, 'hey jarvis go', armed.gen, 0)).text, false);
   finishReply(x, 'Gone.');
@@ -211,4 +211,36 @@ test('a VAD-dated start is exact: speech begun during the cooldown is dropped; a
   assert.equal(x.h.getState().wake.state, 'followup');
   assert.deepEqual(await hear(x, 'echo tail', armed.gen, 400), { ok: true, text: '', wake: 'followup' });   // began 300 ms before the follow-up opened
   assert.deepEqual(await hear(x, 'echo tail', armed.gen), { ok: true, text: 'echo tail', wake: 'followup' }); // undated: estimate, tolerant
+});
+
+test('follow-up opens only after a question by default; "after every reply" opens it always', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const x = make({ wakeFollowUpSeconds: '10' }); t.after(x.cleanup);
+  const armed = x.h.wakeArm(true);
+  x.h.onTurn((await hear(x, 'hey jarvis time', armed.gen, 0)).text, false); finishReply(x, 'It is 3:15.');
+  t.mock.timers.tick(1300);
+  assert.equal(x.h.getState().wake.state, 'waiting');                       // a statement: no window
+  x.h.onTurn((await hear(x, 'hey jarvis lights', armed.gen, 0)).text, false); finishReply(x, 'Done. Want the lights on too?');
+  t.mock.timers.tick(1300);
+  assert.equal(x.h.getState().wake.state, 'followup');                      // a question: window
+  t.mock.timers.tick(10100);
+  assert.equal(x.h.setOption('wakeFollowUpWhen', 'always'), true);
+  assert.equal(x.h.setOption('wakeFollowUpWhen', 'sometimes'), false);
+  x.h.onTurn((await hear(x, 'hey jarvis time', armed.gen, 0)).text, false); finishReply(x, 'It is 3:16.');
+  t.mock.timers.tick(1300);
+  assert.equal(x.h.getState().wake.state, 'followup');                      // every reply
+});
+
+test('a close phrase in a follow-up window sends nothing, closes it and updates the page', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const x = make({ wakeFollowUpSeconds: '10', wakeFollowUpWhen: 'always' }); t.after(x.cleanup);
+  const armed = x.h.wakeArm(true);
+  x.h.onTurn((await hear(x, 'hey jarvis time', armed.gen, 0)).text, false); finishReply(x, 'It is 3:15.');
+  t.mock.timers.tick(1300);
+  assert.equal(x.h.getState().wake.state, 'followup');
+  x.events.length = 0;
+  assert.deepEqual(await hear(x, 'Thanks, Jarvis.', armed.gen, 0), { ok: true, text: '', wake: 'closed' });
+  assert.equal(x.h.getState().wake.state, 'waiting');
+  assert.equal(x.events.at(-1).type, 'wake-state'); assert.equal(x.events.at(-1).wake.state, 'waiting');
+  assert.equal(x.sent.length, 1);                                           // only the first request ever reached the model
 });

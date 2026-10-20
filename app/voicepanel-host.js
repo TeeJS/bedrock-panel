@@ -63,7 +63,14 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   // the page's wakeWord option is on, lets the state machine decide: addressed text comes back as the
   // turn text, everything else comes back empty (never logged, never shown, never queued). The page
   // arms the gate by opening its conversation (it sends a generation token with every utterance).
-  const wake = wakeword.createWakeState({ now: () => Date.now() });
+  const wake = wakeword.createWakeState({ now: () => Date.now(), get closeNames() { return wakeReady && wakeReady.ready ? [wakeReady.phrase.replace(/^hey\s+/, '')] : []; } });
+  let lastReplyInvites = false;   // the last finished reply asked something (question mark / closing offer)
+  // Does this finished reply earn a follow-up window? Option "only after a question" (default) says
+  // only when the reply invited an answer; "after every reply" says always.
+  function followWorthy() {
+    const opts = deps.activeServedAppConfig(appId);
+    return (opts && opts.options.wakeFollowUpWhen === 'always') || lastReplyInvites;
+  }
   let wakeTimer = null;        // fires when a timed wake state (listening / follow-up / cooldown) expires
   let wakeReady = null;        // last resolvePhrase() result for the active page, for /state and the UI
   function wakeEnabled() {
@@ -108,7 +115,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     wakeBroadcast();
     return { ok: true, gen: g, wake: wakeSnapshot() };
   }
-  function wakeReplyEnd(completed) { wake.onReplyEnd(completed !== false); wakeBroadcast(); return true; }
+  function wakeReplyEnd(completed) { wake.onReplyEnd(completed !== false && followWorthy()); wakeBroadcast(); return true; }
   // A reply cut short on the host (session error/exit/stop, new session) never reaches the page's
   // playback end: settle the gate here (no follow-up window for a reply that did not complete) so an
   // active page never sits deaf until the next mic tap.
@@ -299,10 +306,11 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       broadcastPanelReview();
     }
     panelTurnText = '';
+    lastReplyInvites = !panelOffered && !state.error && wakeword.replyInvitesAnswer(shownText);
     broadcast({ type: 'turn-complete', text: panelOffered ? null : shownText, error: state.error });
     // Wake word: a reply with no speech stream ends here; a spoken one ends when the page reports
     // its real playback end (/wake-reply-end), so the echo cooldown starts after the sound stops.
-    if (wakeEnabled() && (state.error || !turnSpeechOpen)) { wake.onReplyEnd(!state.error); wakeBroadcast(); }
+    if (wakeEnabled() && (state.error || !turnSpeechOpen)) { wake.onReplyEnd(!state.error && followWorthy()); wakeBroadcast(); }
     // CLI semantics: the finished turn hands off to the next queued entry, in order.
     turnActive = false;
     applyPendingPrompt();   // a profile/persona switch made mid-turn lands now, between turns
@@ -394,6 +402,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // Wake word (panel Settings rows): on/off, the chime, the follow-up window and a phrase override.
     wakeWord: v => (v === 'off' || v === 'on') ? v : null,
     wakeChime: v => (v === 'true' || v === '1') ? true : (v === 'false' || v === '0') ? false : null,
+    wakeFollowUpWhen: v => (v === 'question' || v === 'always') ? v : null,
     wakeFollowUpSeconds: v => { const n = parseInt(v, 10); return n >= 0 && n <= 600 ? String(n) : null; },
     wakePhrase: v => typeof v === 'string' && v.length <= wakeword.MAX_PHRASE_LEN ? v : null,
   };
@@ -675,7 +684,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // conversation), deferred past a live turn like any prompt change.
     if (key === 'face' && changed) { requestPromptApply('prompt'); broadcast({ type: 'face', mode: v }); }
     // Wake settings apply at once: re-resolve the phrase (override, follow-up) and tell the page.
-    if (changed && (key === 'wakeWord' || key === 'wakePhrase' || key === 'wakeFollowUpSeconds' || key === 'wakeChime')) {
+    if (changed && (key === 'wakeWord' || key === 'wakePhrase' || key === 'wakeFollowUpSeconds' || key === 'wakeFollowUpWhen' || key === 'wakeChime')) {
       if (key === 'wakeWord' && v === 'off') wake.disarm(); else if (wakeEnabled()) wakeResolve();
       wakeBroadcast();
     }
@@ -825,6 +834,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // 'pass' means the gate is not armed (the page has not opened its conversation since the wake
     // word went on). Fail closed: with the wake word on, nothing reaches the page until it arms.
     if (d.action === 'pass') { say('wake: utterance before the page armed, dropped'); return { ok: true, text: '', wake: 'off' }; }
+    if (d.reason === 'closed') { wakeBroadcast(); return { ok: true, text: '', wake: 'closed' }; }   // "thanks" / "that's all": the window is closed, nothing sent
     // 'addressed' = the phrase opened this request (the page may chime); 'followup' = spoken inside
     // a follow-up window without the phrase (no chime: one cue per accepted phrase).
     if (d.action === 'turn') { wakeBroadcast(); return { ok: true, text: d.commandText, wake: d.reason === 'followup' ? 'followup' : 'addressed' }; }
