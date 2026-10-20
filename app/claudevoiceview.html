@@ -37,6 +37,7 @@
      badge in Creature, above the reveal bar's space so it never covers approval/error controls. */
   /* Wake word: what the page is waiting for, on the status line (Side/Off) and as a bottom-centre badge
      in Creature; a countdown while a listening or follow-up window runs, so its end is visible. */
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   #wakeNote { display: none; font-size: 13px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
   #wakeNote.show { display: block; }
   #wakeNote.error { color: var(--danger); }
@@ -413,7 +414,7 @@
     </div>
     <div id="main">
       <div id="card"><div id="empty" class="empty">No conversation yet — type or tap the knob to start.</div><div id="list"></div></div>
-      <div id="statusRow"><div id="status">IDLE</div><div id="wakeNote" aria-live="polite"></div><div id="personaPendingNote"></div><div id="err"></div></div>
+      <div id="statusRow"><div id="status">IDLE</div><div id="wakeNote" aria-hidden="true"></div><div id="wakeSr" class="sr-only" aria-live="polite"></div><div id="personaPendingNote"></div><div id="err"></div></div>
       <div id="inputrow">
         <textarea id="textInput" placeholder="Type a message…" rows="1"></textarea>
         <button id="sendBtn">➤ Send</button>
@@ -582,7 +583,7 @@
     <button id="faceBarClose" class="faceBarBtn" type="button" title="Hide the controls">Hide</button>
   </div>
   <div id="facePendingBadge" aria-live="polite"></div>
-  <div id="faceWakeBadge" aria-live="polite"></div>
+  <div id="faceWakeBadge" aria-hidden="true"></div>
   <script src="claudevoice-vad.js"></script>
   <script src="claudevoice-markdown.js"></script>
   <script src="face/renderer.js"></script>

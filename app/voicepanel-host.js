@@ -818,7 +818,9 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // 'pass' means the gate is not armed (the page has not opened its conversation since the wake
     // word went on). Fail closed: with the wake word on, nothing reaches the page until it arms.
     if (d.action === 'pass') { say('wake: utterance before the page armed, dropped'); return { ok: true, text: '', wake: 'off' }; }
-    if (d.action === 'turn') { wakeBroadcast(); return { ok: true, text: d.commandText, wake: 'addressed' }; }
+    // 'addressed' = the phrase opened this request (the page may chime); 'followup' = spoken inside
+    // a follow-up window without the phrase (no chime: one cue per accepted phrase).
+    if (d.action === 'turn') { wakeBroadcast(); return { ok: true, text: d.commandText, wake: d.reason === 'followup' ? 'followup' : 'addressed' }; }
     if (d.action === 'listen') { wakeBroadcast(); return { ok: true, text: '', wake: 'listening' }; }
     return { ok: true, text: '', wake: wake.current() };
   }

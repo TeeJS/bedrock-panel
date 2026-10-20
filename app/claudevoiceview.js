@@ -1051,12 +1051,16 @@ function wakeLabelText() {
   if (w.state === 'cooldown') return 'One moment';
   return '';
 }
+var wakeSrLast = '';
 function renderWakeLabel() {
   var text = wakeLabelText();
   var el = $('wakeNote');
   if (el) { el.textContent = text; el.classList.toggle('show', !!text); el.classList.toggle('error', wakeState.state === 'not-ready'); }
   var badge = $('faceWakeBadge');
   if (badge) { badge.textContent = text; badge.classList.toggle('show', !!text && faceMode === 'creature'); }
+  // Screen readers hear state changes, not every second of the countdown.
+  var sr = text.replace(/\s*\(\d+ s[^)]*\)/, ''), srEl = $('wakeSr');
+  if (srEl && sr !== wakeSrLast) { wakeSrLast = sr; srEl.textContent = sr; }
   if (face && wakeOn() && conversationOpen && wakeState.state === 'waiting' && $('status').textContent === 'LISTENING') face.setState('idle');   // waiting looks idle (the face may doze); the label says why
 }
 // A short two-note chime through the picked speaker when the name is heard. Off by default.

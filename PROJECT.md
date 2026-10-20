@@ -11,8 +11,8 @@
    setting, counted only while waiting for the human (paused during generation, speech and approvals),
    and the page shows "Listening for a follow-up (n s)" while it runs so the end is visible.
 
-Branch: `wakeword-plan` (worktree, off `main` at v1.0.0-beta.4). Planning only, per T.J.'s rule: no change
-to the main checkout and no app launch while he works in it. Research inputs: Sonnet's brief (engine matrix,
+Branch: `wakeword-plan` (worktree, off `main` at v1.0.0-beta.4). Work happens in the worktree only, per T.J.'s
+rule: no change to the main checkout and no app launch while he works in it. Research inputs: Sonnet's brief (engine matrix,
 risk register) and Codex's UX/state contract, both in the agent room `AM-AT37LVS2HVXBHCDM6LHV6UKUDC`.
 
 ## Phase 1 status (2026-10-20, branch `wakeword-plan`, worktree only)
@@ -210,8 +210,8 @@ three controls (wake on/off, chime, follow-up seconds) as pick rows, like Face a
 ## Risks (from Sonnet's register, kept)
 
 Short names mishear (aliases + tester); Whisper hallucinations on silence (`isVoiceChatNoise`, higher
-minimum voiced time while waiting, rate limit); self-wake after playback (reset + cooldown); privacy is "LAN
-STT, discarded after", not "local" (say so); persona switch while listening (restart resets to waiting);
+minimum voiced time while waiting, rate limit); self-wake after playback (reset + cooldown); privacy is "the configured
+STT (maybe remote), discarded after", not "local" (say so); persona switch while listening (restart resets to waiting);
 hidden page must not listen; barge-in ("Jarvis, stop") is out of scope until echo cancellation exists; the
 privacy promise is scoped to Bedrock Panel: unaddressed speech is not kept in its buffers, logs or transcript.
 The configured STT may be a remote server that retains audio or text on its own terms; the UI says so.
