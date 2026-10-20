@@ -81,7 +81,8 @@ function annotate(entries, library, sourceUrl) {
     let state = 'available';
     if (have) {
       const src = have.source && have.source.url ? have.source : null;
-      const untouched = !!src && src.url === sourceUrl && (!src.hash || src.hash === contentHash(have));
+      // No recorded hash (installed before hashes existed) counts as edited: the user is asked once.
+      const untouched = !!src && src.url === sourceUrl && !!src.hash && src.hash === contentHash(have);
       if (untouched) state = appRepo.cmpVersion(e.version, src.version || '0.0.0') > 0 ? 'update' : 'installed';
       else state = 'edited';
     }

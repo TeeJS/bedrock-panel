@@ -42,7 +42,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   // Accumulated view of the current turn, for the /<app>/state snapshot (initial page load and
   // SSE-reconnect recovery -- a fresh subscriber knows the current status immediately, before any
   // new event arrives). Real-time updates go out over SSE via `subscribers`.
-  let state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null };
+  let state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null, personaPending: null };
   const subscribers = new Set();   // open SSE response objects (see subscribe below)
   // Face (app/face/*): the page's `face` option (off | side | creature) and `personaPick` decide
   // whether replies carry an emotion tag. The tag is stripped HERE, before speech and transcript,
@@ -53,6 +53,10 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   // 'prompt' = hand the adapter the new prompt (profile switch, face toggle); 'restart' = a persona
   // change, which the charter defines as a fresh session for that backend.
   let pendingApply = null;
+  // The persona id the running session's prompt was assembled with. The editor's Save writes
+  // personaPick straight into the page options without going through setPersona, so onTurn compares
+  // this against the current pick and restarts the session before sending when they differ.
+  let sessionPersonaId = null;
   // Whether the prompt the running session was given asks for emotion tags. Tracked separately from
   // the page's visual mode: the face can be switched Off while the model is still instructed to tag,
   // and those tags must still be stripped until the new prompt is in force.
@@ -287,9 +291,26 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (!pendingApply || turnActive || state.status === 'approval') return;
     const what = pendingApply;
     pendingApply = null;
-    if (what === 'restart' && adapter.isRunning()) { startSession(adapter.projectDir() || undefined); return; }
+    if (what === 'restart' && adapter.isRunning()) {
+      // Turns queued behind the old reply belong to the user, not to the old persona: carry them
+      // across the restart (startSession clears the queue) so the caller's dispatch sends them next.
+      const queued = turnQueue.slice();
+      startSession(adapter.projectDir() || undefined);
+      turnQueue = queued;
+      return;
+    }
     const prompt = assembledPrompt();
     if (adapter.setProfilePrompt) adapter.setProfilePrompt(prompt);
+  }
+  function personaChangedOutside() {
+    const cur = currentPersona();
+    return (cur ? cur.id : '') !== (sessionPersonaId || '');
+  }
+  // Tell the page a switch is waiting on the live turn (and keep it in /state for reloads).
+  function announcePendingPersona() {
+    const p = currentPersona();
+    state.personaPending = p ? { id: p.id, name: p.name } : { id: '', name: '' };
+    broadcast({ type: 'persona-pending', persona: state.personaPending });
   }
 
   // Panel-tunable options (Settings overlay): whitelist + validation. Written into the page's own
@@ -316,8 +337,14 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   function onTurn(text, speak) {
     const opts = deps.activeServedAppConfig(appId);
     if (!opts) return { ok: false };
-    const lazyStart = !adapter.isRunning();
+    let lazyStart = !adapter.isRunning();
     if (lazyStart && !startSession()) return { ok: false };
+    // A persona changed outside the panel (the editor's Save) must reach the model, not only the
+    // face: between turns restart now; mid-turn defer it like a panel switch and queue this turn.
+    if (!lazyStart && personaChangedOutside()) {
+      if (turnActive || state.status === 'approval') requestPromptApply('restart');
+      else { if (!startSession(adapter.projectDir() || undefined)) return { ok: false }; lazyStart = true; }
+    }
     // CLI semantics (explicitly required): a turn sent while one is in flight WAITS -- the current
     // reply finishes its text and speech, then the queued entry dispatches. Its speech-stream id
     // is announced later via the 'turn-speech' broadcast (there is no id to hand back yet).
@@ -440,6 +467,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   function requestPromptApply(how) {
     if (pendingApply !== 'restart') pendingApply = how === 'restart' ? 'restart' : 'prompt';
     applyPendingPrompt();
+    if (pendingApply === 'restart') announcePendingPersona();   // still waiting on the live turn
   }
 
   // Panel Builder review: holds an AI-authored page until the user Accepts it on the panel.
@@ -485,8 +513,11 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (g.options.personaPick === id) return true;
     g.options.personaPick = id;
     deps.saveConfig();
-    requestPromptApply('restart');
+    // Not running: nothing to restart, the next turn's lazy start uses the pick. Running: restart
+    // now, or after the live turn (announced to the page as pending); startSession broadcasts the
+    // applied persona. The face is told either way so it can redraw at once.
     broadcast({ type: 'persona', persona: personaLib.personaForPage(currentPersona()) });
+    if (adapter.isRunning()) requestPromptApply('restart');
     return true;
   }
 
@@ -633,6 +664,8 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (JSON.stringify(recents) !== JSON.stringify(store.recentProjects || [])) { store.recentProjects = recents; cfgDirty = true; }
     if (cfgDirty) deps.saveConfig();
     promptInstructedTags = false;   // a fresh session starts clean; assembledPrompt() below sets it if the face is on
+    const persona = currentPersona();
+    sessionPersonaId = persona ? persona.id : '';
     adapter.start({
       projectDir,
       // '' (the consolidated manifest's neutral default) must read as "adapter's own default",
@@ -642,10 +675,11 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       approvalsEnabled: !!opts.options.approvalsEnabled,
       profilePrompt: assembledPrompt(),
     });
-    state = { running: true, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null };
+    state = { running: true, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null, personaPending: null };
     resetTurns();
     turnTagActive = false;
     pendingApply = null;   // the fresh session already carries the current prompt
+    broadcast({ type: 'persona', persona: personaLib.personaForPage(persona) });   // the switch is applied: page clears "switching…" and redraws
     transcript = [];   // new session, fresh conversation
     speech.abortActive('new session started');   // a folder switch mid-reply silences the old folder's voice
     // permissionMode rides along so the page's Mode button is corrected the moment a lazy first-turn
@@ -658,10 +692,11 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     adapter.stop();
     resetTurns();
     speech.abortActive('session stopped');
-    state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null };
+    state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null, personaPending: null };
     turnTagActive = false;
     pendingApply = null;
     promptInstructedTags = false;
+    sessionPersonaId = null;
     deps.clearRingOverride();
     broadcast({ type: 'session-stopped' });
     return true;

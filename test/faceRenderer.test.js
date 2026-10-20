@@ -58,7 +58,7 @@ test('active speech prevents idle dozing and leaving speech closes the mouth', (
 });
 
 test('device pixel ratio is capped and all supported persona styles draw', () => {
-  for (const style of ['oled', 'cartoon', 'kawaii', 'crt', 'sprite']) {
+  for (const style of ['oled', 'cartoon', 'kawaii', 'crt', 'sprite', 'butler', 'intern']) {
     const h = harness({ style });
     assert.equal(h.canvas.width, 840); assert.equal(h.canvas.height, 900);
     h.renderer.setReducedMotion(true); h.renderer.start();
@@ -106,5 +106,55 @@ test('cartoon persona keeps open circular eyes and a fixed grille through every 
   assert.equal(check(), '#fffaf1', 'silence switches the mouth light off');
   h.renderer.setState('sleepy'); h.tick(34); check();
   assert.equal(h.pending.size, 0, 'fixed open eyes do not prevent idle suspension');
+  h.renderer.destroy();
+});
+test('CRT glass is 4:3 inside a near-square case', () => {
+  const h = harness({ style: 'crt' });
+  const glass = h.fills.find(f => f.color === '#111c16');
+  const body = h.fills.find(f => f.color === '#7b776b');
+  assert.equal(glass.path[0][3] / glass.path[0][4], 4 / 3);
+  assert.ok(body.path[0][3] / body.path[0][4] < 1.12);
+  assert.ok(body.path[0][4] > glass.path[0][4]);
+  h.renderer.destroy();
+});
+
+test('intern eye activity stays calm at idle and reduced motion suppresses active darts', () => {
+  const h = harness({ style: 'intern', dozeAfterSeconds: 0 });
+  const pupils = () => h.fills.filter(f => f.color === '#3c3549').map(f => f.path);
+  h.renderer.start(); h.fills.length = 0; h.tick(40);
+  const idle = pupils(); h.fills.length = 0; h.tick(140);
+  assert.deepEqual(pupils(), idle, 'no idle jitter');
+  h.renderer.setState('thinking'); h.fills.length = 0; h.tick(140);
+  const active = pupils(); h.fills.length = 0; h.tick(140);
+  assert.notDeepEqual(pupils(), active, 'real activity can animate the pupils');
+  h.renderer.setReducedMotion(true); h.fills.length = 0; h.tick(140);
+  const reduced = pupils(); h.fills.length = 0; h.tick(140);
+  assert.deepEqual(pupils(), reduced, 'reduced motion freezes the activity darts');
+  h.renderer.setState('sleepy'); h.tick(40);
+  assert.equal(h.pending.size, 0);
+  h.renderer.destroy();
+});
+
+test('butler can blink and sleep while cartoon shell remains rigid', () => {
+  const h = harness({ style: 'butler' });
+  h.renderer.start(); h.fills.length = 0; h.tick(34);
+  const whites = () => h.fills.filter(f => f.color === '#fffaf2' && f.path[0]?.[0] === 'roundRect');
+  assert.equal(whites()[0].path[0][4], 20);
+  h.renderer.setState('sleepy'); h.fills.length = 0; h.tick(34);
+  assert.equal(whites()[0].path[0][4], 2, 'butler lids close during sleep');
+  assert.equal(h.pending.size, 0);
+  h.renderer.destroy();
+});
+
+test('cartoon emphasis visibly lifts the brows independently while the eye and grille stay fixed', () => {
+  const h = harness({ style: 'cartoon', dozeAfterSeconds: 0 });
+  const brows = () => h.draws.filter(d => d[0] === 'translate' && d[1] === 0 && d[2] < -10).map(d => d[2]);
+  h.renderer.setState('speaking'); h.renderer.start(); h.draws.length = 0; h.tick(40);
+  const quiet = brows(); h.renderer.setLevel(1);
+  for (let i = 0; i < 5; i++) { h.draws.length = 0; h.tick(40); }
+  const peak = brows();
+  assert.equal(peak.length, 2);
+  assert.ok(quiet[0] - peak[0] > 9, 'audio peaks have a visible brow lift');
+  assert.ok(Math.abs(peak[0] - peak[1]) > 1, 'second brow follows with a smaller delayed lift');
   h.renderer.destroy();
 });

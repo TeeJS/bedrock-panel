@@ -1296,7 +1296,7 @@ async function fetchRepoPersonaText(idx, entry, src) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const cap = personaLib.MAX_PACK_BYTES;
     const declared = parseInt(r.headers.get('content-length') || '0', 10);
-    if (declared > cap) throw new Error('larger than 64 KB');
+    if (declared > cap) { try { ctl.abort(); } catch (e) {} throw new Error('larger than 64 KB'); }
     const reader = r.body.getReader();
     const chunks = []; let size = 0;
     for (;;) {
@@ -1332,7 +1332,7 @@ async function installRepoPersona(src, id, replace) {
   const at = list.findIndex(p => p && p.id === v.persona.id);
   if (at >= 0) {
     const have = list[at];
-    const untouched = !!(have.source && have.source.url === v.persona.source.url && (!have.source.hash || have.source.hash === personaRepo.contentHash(have)));
+    const untouched = !!(have.source && have.source.url === v.persona.source.url && have.source.hash && have.source.hash === personaRepo.contentHash(have));
     if (!untouched && !replace) {
       const why = have.source && have.source.url === v.persona.source.url ? 'was edited after it was installed' : 'did not come from this repository';
       return { ok: false, needsConfirm: true, existingName: have.name || have.id, error: '"' + (have.name || have.id) + '" is already in the library and ' + why + '.' };

@@ -843,7 +843,7 @@
   // ---- Personas rows (Settings -> AI Profiles -> Personas): name / style / colors / prompt per row,
   // add/remove, plus JSON import (validated) and per-row export (clipboard + on-screen JSON). Same
   // live-edit model as the profile rows: mutate config.settings.personas in place, Save persists.
-  const PERSONA_STYLES = [['oled', 'OLED robot (Jarvis)'], ['cartoon', 'Cartoon human'], ['kawaii', 'Kawaii (Mimi, Intern)'], ['crt', 'CRT terminal'], ['sprite', 'Dust sprite (color = body)']];
+  const PERSONA_STYLES = [['oled', 'OLED robot'], ['cartoon', 'Cartoon human'], ['kawaii', 'Kawaii (Mimi)'], ['crt', 'CRT terminal'], ['sprite', 'Dust sprite (color = body)'], ['butler', 'Butler (Jarvis)'], ['intern', 'Intern (vector head)']];
   function personaRowsHtml(list) {
     const rows = Array.isArray(list) ? list : [];
     if (!rows.length) return '<p class="hint">No personas yet — add one below, or import one.</p>';
@@ -2663,7 +2663,7 @@
           </select></div>
         <div class="row"><label>Persona</label>
           <select id="cvPersona" style="width:320px"><option value="" ${cvVal('personaPick', '') ? '' : 'selected'}>None — plain face</option>${(((config.settings || {}).personas) || []).map(p => `<option value="${esc(p.id)}" ${cvVal('personaPick', '') === p.id ? 'selected' : ''}>${esc(p.name || p.id)}</option>`).join('')}</select></div>
-        <details class="hint"><summary>An animated face that listens, thinks and talks with the reply. A persona adds a character on top of the profile (its words are appended, never replacing the profile).</summary> Off changes nothing. Side keeps the chat beside the face; Creature shows only the face and reveals the controls on a tap. Personas live under <b>Settings → AI Profiles → Personas</b>, where you can also import and export them.</details>` + (!cvModes ? '' : `
+        <details class="hint"><summary>An animated face that listens, thinks and talks with the reply. A persona adds a character on top of the profile (its words are appended, never replacing the profile).</summary> Off changes nothing. Side keeps the chat beside the face; Creature shows only the face and reveals the controls on a tap. Personas live under <b>Settings → AI Profiles → Personas</b>, where you can also import and export them. Changing the persona starts a new conversation: it applies on the next message (a reply in progress finishes first).</details>` + (!cvModes ? '' : `
         <p class="sectitle" style="margin-top:14px">Permissions</p>
         <div class="row"><label>Permission mode</label>
           <select id="cvPermMode" style="flex:1">${cvModes.choices.map(c => `<option value="${esc(c[0])}" ${cvMode === c[0] ? 'selected' : ''}>${esc(c[1])}</option>`).join('')}</select></div>

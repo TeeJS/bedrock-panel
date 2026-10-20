@@ -34,9 +34,11 @@ const OLED_EYES = {
 //   oled     the desk-robot look: rounded-rect eyes, glint, bar mouth
 //   cartoon  friendly cartoon human: round white eyes with pupils, freckles, wide toothy grin
 //   kawaii   soft round sparkling eyes, cheeks, small mouth
-//   crt      amber phosphor face inside a compact retro monitor bezel
+//   crt      amber phosphor face inside a near-square 4:3 retro monitor case
 //   sprite   a round soot body with two oversized white eyes and a tiny mouth
-const FACE_STYLES = ['oled', 'cartoon', 'kawaii', 'crt', 'sprite'];
+//   butler   an older cel-animated gentleman: gray side hair and mustache, heavy lids, modest mouth
+//   intern   an angular vector head with a dark cowlick, glasses and a headset; moves only on activity
+const FACE_STYLES = ['oled', 'cartoon', 'kawaii', 'crt', 'sprite', 'butler', 'intern'];
 
 const FACE_DEFAULTS = {
   style: 'oled',
@@ -164,7 +166,7 @@ const SPRITE_PROMPT = [
 const JARVIS_PERSONA = {
   id: 'jarvis', name: 'Jarvis', version: PERSONA_SCHEMA_VERSION, prompt: JARVIS_PROMPT, voice: 'en_GB-alan-medium',
   face: {
-    style: 'oled', color: '#5ec8ff', eyeGap: 18, dozeAfterSeconds: 120, blinkMinMs: 3000, blinkMaxMs: 7000,
+    style: 'butler', color: '#5ec8ff', eyeGap: 18, dozeAfterSeconds: 120, blinkMinMs: 3000, blinkMaxMs: 7000,
     emotions: {
       neutral:   { eyeW: 36, eyeH: 22, radius: 6,  browSlant: 0,  lowerLid: 0,  upperLid: 0 },
       happy:     { eyeW: 36, eyeH: 24, radius: 6,  browSlant: 0,  lowerLid: 8,  upperLid: 0 },
@@ -198,7 +200,7 @@ const CRT_PERSONA = {
 const INTERN_PERSONA = {
   id: 'intern', name: 'Startup Intern', version: PERSONA_SCHEMA_VERSION, prompt: INTERN_PROMPT, voice: 'en_US-bryce-medium',
   face: {
-    style: 'kawaii', color: '#ffbb6b', cheekColor: '#ff8f73', eyeGap: 22, dozeAfterSeconds: 180, blinkMinMs: 1200, blinkMaxMs: 3500,
+    style: 'intern', color: '#ffbb6b', cheekColor: '#ff8f73', eyeGap: 22, dozeAfterSeconds: 180, blinkMinMs: 1200, blinkMaxMs: 3500,
     emotions: {
       neutral:   { eyeW: 32, eyeH: 34, radius: 16, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
       happy:     { eyeW: 34, eyeH: 34, radius: 17, browSlant: 0,  lowerLid: 14, upperLid: 0 },

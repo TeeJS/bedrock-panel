@@ -153,6 +153,7 @@ function applyFaceMode(mode) {
   faceMode = FACE_MODES[mode] ? mode : 'off';
   document.body.classList.toggle('face-side', faceMode === 'side');
   document.body.classList.toggle('face-creature', faceMode === 'creature');
+  setPersonaPending(personaPending);   // the creature badge follows the layout
   if (faceMode === 'off') { destroyFace(); hideFaceBar(); return; }
   createFace();
   syncFaceBarUI();
@@ -204,6 +205,18 @@ function faceSetPersona(p) {
   currentPersonaId = p ? p.id : '';
   if (face) face.setPersona(facePersona);
   syncPersonaUI();
+}
+// A persona switch made during a reply is applied after it (the session restarts, new
+// conversation). Say so until the host confirms, on the status line and, in creature mode, as a
+// quiet badge that never displaces the approval or error controls.
+var personaPending = null;
+function setPersonaPending(p) {
+  personaPending = p && p.id !== undefined ? p : null;
+  var text = personaPending ? ('Switching to ' + (personaPending.name || 'no persona') + ' after this reply') : '';
+  var el = $('personaPendingNote');
+  if (el) { el.textContent = text; el.classList.toggle('show', !!text); }
+  var badge = $('facePendingBadge');
+  if (badge) { badge.textContent = text; badge.classList.toggle('show', !!text && faceMode === 'creature'); }
 }
 // Reveal bar (creature mode). `hold` = opened by an error/approval or by keyboard: never auto-hides.
 function showFaceBar(hold) {
@@ -412,6 +425,9 @@ function connectEvents() {
       if (face) face.setEmotion(msg.name);
     } else if (msg.type === 'persona') {
       faceSetPersona(msg.persona);
+      setPersonaPending(null);   // applied (startSession broadcasts this after the restart)
+    } else if (msg.type === 'persona-pending') {
+      setPersonaPending(msg.persona);
     } else if (msg.type === 'face') {
       applyFaceMode(msg.mode);
       syncPickButtons();
@@ -455,6 +471,7 @@ function connectEvents() {
       renderTranscript();
       setProjectHeader(msg.projectDir);
       if (face) face.setEmotion('neutral');   // a fresh conversation starts with a clean face
+      setPersonaPending(null);                // the restart is the applied switch
       setStatus('idle');
     }
   };
@@ -568,6 +585,7 @@ fetch(BASE + '/state', { cache: 'no-store' }).then(function (r) { return r.json(
     if (s.projectDir) setProjectHeader(s.projectDir);   // live truth beats the (possibly stale) page-load query param
     if (s.panel && s.panel.active) showPanelReview(s.panel);   // rotating away mid-review must not lose the proposal
     if (s.emotion && face) face.setEmotion(s.emotion);
+    setPersonaPending(s.personaPending || null);
     // A reload mid-approval (page switch, creature toggle) restores the actionable overlay; the
     // decision route checks the requestId, so a stale one is refused server-side, never misapplied.
     if (s.pendingApproval && s.pendingApproval.requestId && !pendingApprovalRequestId) {

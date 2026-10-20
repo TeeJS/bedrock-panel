@@ -7,6 +7,8 @@
 const path = require('path');
 const REPO = path.resolve(__dirname, '..', '..', '..');
 const personaLib = require(path.join(REPO, 'app', 'face', 'persona.js'));
+const personaRepo = require(path.join(REPO, 'app', 'face', 'persona-repo.js'));
+window.__repoHelpers = { contentHash: p => personaRepo.contentHash(p), normalize: p => personaLib.normalizePersona(p) };
 
 const later = fn => new Promise(res => setTimeout(() => res(fn()), 15));   // a real IPC hop is async
 window.__exportFileCalls = [];
@@ -57,7 +59,17 @@ const overrides = {
   }),
   // Phase 3: persona repositories. The harness sets window.__listResult / __installResult /
   // __updatesResult per scenario; calls are recorded in window.__installCalls.
-  listRepoPersonas: () => later(() => window.__listResult || { ok: true, sources: [] }),
+  // With window.__catalogEntries ({ sourceUrl: [index entries] }) + window.__library the states come from the REAL
+  // persona-repo.js annotate()/contentHash(), exactly as main.js computes them; otherwise a canned __listResult.
+  listRepoPersonas: () => later(() => {
+    if (window.__catalogEntries && window.__library) {
+      return { ok: true, sources: Object.keys(window.__catalogEntries).map(url => ({
+        source: url,
+        personas: personaRepo.annotate(personaRepo.parsePersonaIndex({ personas: window.__catalogEntries[url] }), window.__library, url),
+      })) };
+    }
+    return window.__listResult || { ok: true, sources: [] };
+  }),
   installRepoPersona: (src, id, replace) => later(() => {
     (window.__installCalls = window.__installCalls || []).push({ src, id, replace: !!replace });
     return typeof window.__installResult === 'function' ? window.__installResult(src, id, !!replace) : { ok: true, name: id, version: '1.0.0', replaced: false };

@@ -113,3 +113,11 @@ The catalog is a small JSON file:
 
 `file` is a bare file name beside `index.json`; bump `version` when you change a persona so installs can be
 updated.
+
+## Making a persona with Claude
+
+The [`bedrock-panel-persona-pack`](../community-apps/skills/bedrock-panel-persona-pack/SKILL.md) skill in
+`community-apps/skills/` guides Claude through writing a persona: the interview, a prompt that works when
+spoken aloud, the face style, colours and Piper voice, an `index.json` catalog for a repository, and a
+validator (`validate-pack.js`) you can also run by hand: `node community-apps/skills/bedrock-panel-persona-pack/validate-pack.js <file or folder>`.
+Copy the skill folder into your project's `.claude/skills/` folder (or invoke it with `/skill`) and ask for a new persona.

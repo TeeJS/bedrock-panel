@@ -302,6 +302,28 @@ app.whenReady().then(async () => {
     await shot('05-catalog-900');
     win.setSize(1180, 900); await sleep(300);
 
+    // Real classification (Codex #219): five library situations through the real annotate()/contentHash().
+    // Expected: untouched same-source copy -> Update; edited since install -> Replace…; pre-hash install (unknown) ->
+    // Replace…; hand-made (no source) -> Replace…; untouched at the same version -> Installed.
+    await js(`(function () {
+      var H = window.__repoHelpers, SRC = '${SRC_A}';
+      function mk(id, prompt) { return H.normalize({ id: id, name: id.toUpperCase(), prompt: prompt }); }
+      function fromSrc(id, hashOf, prompt, version, noHash) { var p = mk(id, prompt); var h = H.contentHash(hashOf || p); p.source = { url: SRC, version: version }; if (!noHash) p.source.hash = h; return p; }
+      var pristine = fromSrc('p1', null, 'Original.', '1.0.0');
+      var edited = fromSrc('p2', mk('p2', 'Original.'), 'I changed this.', '1.0.0');   // hash recorded for 'Original.', content differs now
+      var legacy = fromSrc('p3', null, 'Whatever.', '1.0.0', true);
+      var hand = mk('p4', 'Mine.');
+      var same = fromSrc('p5', null, 'Same.', '2.0.0');
+      window.__library = [pristine, edited, legacy, hand, same];
+      var e = function (id, v) { return { id: id, name: id.toUpperCase(), version: v, description: 'd', file: id + '.persona.json' }; };
+      window.__catalogEntries = {}; window.__catalogEntries[SRC] = [e('p1', '2.0.0'), e('p2', '2.0.0'), e('p3', '2.0.0'), e('p4', '2.0.0'), e('p5', '2.0.0'), e('p6', '1.0.0')];
+      return true;
+    })()`);
+    await browseClick();
+    check('classification through the real annotate/contentHash: Update / Replace… x3 / Installed / Install',
+      (await catBtns()).join(',') === 'p1:Update,p2:Replace…,p3:Replace…,p4:Replace…,p5:Installed:disabled,p6:Install', await catBtns());
+    await js('window.__catalogEntries = null; window.__library = null; true');
+
     // Screenshots for UI review (Codex #210): every kind of source group plus one error, at 1180 and 900
     await js('window.__listResult = ' + JSON.stringify({ ok: true, sources: [
       { source: SRC_A, personas: [P('ava', 'Ava', '1.2.0', 'available'), P('ben', 'Ben', '2.0.0', 'update', { installedVersion: '1.0.0' }), P('cy', 'Cy', '1.0.0', 'installed'), P('dot', 'Dot', '1.0.0', 'edited')] },

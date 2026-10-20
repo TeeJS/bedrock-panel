@@ -33,6 +33,15 @@
   #faceCtl:hover, #faceCtl:focus-visible, #faceCtl[aria-expanded="true"] { opacity: 1; color: var(--fg); }
   body.face-creature #faceCtl { display: block; }
   /* Mute is never implied: while the mic is off in creature mode a mic-off badge stays on screen. */
+  /* A persona switch waiting on the live reply: status-line note (Side/Off) and a quiet bottom-centre
+     badge in Creature, above the reveal bar's space so it never covers approval/error controls. */
+  #personaPendingNote { display: none; font-size: 13px; font-weight: 600; color: var(--warn); text-transform: uppercase; letter-spacing: .04em; }
+  #personaPendingNote.show { display: block; }
+  #facePendingBadge { display: none; position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 29;
+    padding: 6px 14px; border-radius: 12px; border: 1px solid var(--tile-bd); background: var(--surf); color: var(--warn);
+    font-size: 14px; font-weight: 600; user-select: none; pointer-events: none; }
+  #facePendingBadge.show { display: block; }
+  #faceBar.show ~ #facePendingBadge { bottom: 110px; }
   #faceMuted { display: none; position: fixed; top: 14px; left: 18px; z-index: 30; padding: 6px 12px; border-radius: 12px;
     border: 1px solid var(--danger); color: var(--danger); background: var(--surf); font-size: 14px; font-weight: 600; user-select: none; }
   body.face-creature #faceMuted.show { display: block; }
@@ -394,7 +403,7 @@
     </div>
     <div id="main">
       <div id="card"><div id="empty" class="empty">No conversation yet — type or tap the knob to start.</div><div id="list"></div></div>
-      <div id="statusRow"><div id="status">IDLE</div><div id="err"></div></div>
+      <div id="statusRow"><div id="status">IDLE</div><div id="personaPendingNote"></div><div id="err"></div></div>
       <div id="inputrow">
         <textarea id="textInput" placeholder="Type a message…" rows="1"></textarea>
         <button id="sendBtn">➤ Send</button>
@@ -553,6 +562,7 @@
     <div id="faceErr"></div>
     <button id="faceBarClose" class="faceBarBtn" type="button" title="Hide the controls">Hide</button>
   </div>
+  <div id="facePendingBadge" aria-live="polite"></div>
   <script src="claudevoice-vad.js"></script>
   <script src="claudevoice-markdown.js"></script>
   <script src="face/renderer.js"></script>

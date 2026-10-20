@@ -42,16 +42,18 @@ test('personaFileUrl resolves against the raw base', () => {
   assert.equal(repo.personaFileUrl('https://github.com/TeeJS/bedrock-personas/tree/main', { file: 'rocky.persona.json' }), 'https://raw.githubusercontent.com/TeeJS/bedrock-personas/main/rocky.persona.json');
 });
 
-test('annotate: available / installed / update / edited', () => {
+test('annotate: available / installed / update / edited (a missing hash counts as edited)', () => {
   const src = 'https://github.com/TeeJS/bedrock-personas/tree/main';
+  const fromSrc = (id, version) => { const p = normalizePersona({ id }); p.source = { url: src, version, hash: repo.contentHash(p) }; return p; };
   const library = [
-    { id: 'rocky', source: { url: src, version: '1.0' } },
-    { id: 'norm', source: { url: src, version: '2.0' } },
+    fromSrc('rocky', '1.0'),
+    fromSrc('norm', '2.0'),
     { id: 'mine' },
     { id: 'other', source: { url: 'https://github.com/x/y/tree/main', version: '1.0' } },
+    { id: 'legacy', source: { url: src, version: '1.0' } },   // installed before hashes existed: never silently replaced
   ];
-  const entries = repo.parsePersonaIndex([{ id: 'rocky', version: '1.1' }, { id: 'norm', version: '2.0' }, { id: 'mine', version: '1.0' }, { id: 'other', version: '9' }, { id: 'fresh', version: '1' }]);
-  assert.deepEqual(repo.annotate(entries, library, src).map(e => e.id + ':' + e.state), ['rocky:update', 'norm:installed', 'mine:edited', 'other:edited', 'fresh:available']);
+  const entries = repo.parsePersonaIndex([{ id: 'rocky', version: '1.1' }, { id: 'norm', version: '2.0' }, { id: 'mine', version: '1.0' }, { id: 'other', version: '9' }, { id: 'legacy', version: '2.0' }, { id: 'fresh', version: '1' }]);
+  assert.deepEqual(repo.annotate(entries, library, src).map(e => e.id + ':' + e.state), ['rocky:update', 'norm:installed', 'mine:edited', 'other:edited', 'legacy:edited', 'fresh:available']);
   assert.equal(repo.annotate(entries, library, src)[0].installedVersion, '1.0');
 });
 
@@ -68,7 +70,9 @@ test('annotate is not fooled by prototype property names', () => {
   const e = repo.parsePersonaIndex([{ id: 'constructor' }, { id: 'tostring' }, { id: '__proto__' }]);
   assert.deepEqual(e.map(x => x.id), ['constructor', 'tostring']);   // __proto__ fails the id alphabet (leading underscore)
   assert.deepEqual(repo.annotate(e, [], 'https://github.com/o/r/tree/main').map(x => x.state), ['available', 'available']);
-  assert.deepEqual(repo.annotate(e, [{ id: 'constructor', source: { url: 'https://github.com/o/r/tree/main', version: '0.0.0' } }], 'https://github.com/o/r/tree/main').map(x => x.state), ['installed', 'available']);
+  const ctor = normalizePersona({ id: 'constructor' });
+  ctor.source = { url: 'https://github.com/o/r/tree/main', version: '0.0.0', hash: repo.contentHash(ctor) };
+  assert.deepEqual(repo.annotate(e, [ctor], 'https://github.com/o/r/tree/main').map(x => x.state), ['installed', 'available']);
 });
 
 test('a persona edited after being installed from a source counts as edited, an untouched one as installed/update', () => {

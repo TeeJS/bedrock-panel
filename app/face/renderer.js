@@ -12,7 +12,12 @@
     thinking: [30, 30, 11, 0, 0, 5],
   };
 
-  const CARTOON_POSES = { neutral: [0, 0, 0, 0, 4.3], happy: [-5, 0, 0, -3, 4.3], sad: [1, 0.32, 0, 5, 4.3], angry: [3, -0.4, 0, 2, 3.8], surprised: [-6, 0, 0, -3, 5.5], sleepy: [3, 0, 0, 5, 4.3], thinking: [-5, 0.08, 5, -5, 4.3] };
+  const CARTOON_POSES = {
+    neutral: [0, 0, 0, 0, 4.3], happy: [-8, 0.08, 1, -4, 4.8],
+    sad: [1, 0.48, 0, 7, 4], angry: [5, -0.55, 0, 3, 3.5],
+    surprised: [-9, 0, 0, -4, 6], sleepy: [4, 0, 0, 7, 4.3],
+    thinking: [-8, 0.12, 7, -7, 4.3], listening: [-6, 0, 0, -2, 4.8],
+  };
   const KEYS = ['eyeW', 'eyeH', 'radius', 'browSlant', 'lowerLid', 'upperLid'];
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const number = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
@@ -41,7 +46,7 @@
     let accent = options.accent || '#7cffb2';
     let background = options.background || '#05080d';
     let reduced = !!options.reducedMotion;
-    let state = 'idle', emotion = 'neutral', level = 0, smoothLevel = 0;
+    let state = 'idle', emotion = 'neutral', level = 0, smoothLevel = 0, emphasisLevel = 0;
     let active = false, disposed = false, handle = null, asleep = false;
     let lastActivity = clock(), lastFrame = -Infinity, lastTick = clock();
     let nextBlink = clock() + 2800, blinkStart = -Infinity;
@@ -71,25 +76,155 @@
     }
     function dot(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
 
+    // Original human archetypes have their own silhouette and facial construction.
+    function drawCharacter(style, time, blink) {
+      const butler = style === 'butler';
+      const busy = !asleep && ['thinking', 'speaking', 'listening'].includes(state);
+      const pose = asleep ? 'sleepy' : state === 'thinking' ? 'thinking' : state === 'error' ? 'sad' : state === 'approval' ? 'surprised' : emotion;
+      const skin = butler ? '#e3b99d' : '#dba57b';
+      const outline = butler ? '#4c4646' : '#30283e';
+      ctx.strokeStyle = outline; ctx.lineWidth = 1.1; ctx.lineJoin = 'round';
+      ctx.fillStyle = skin;
+      for (const side of [-1, 1]) {
+        ctx.beginPath(); ctx.ellipse(side * (butler ? 35 : 43), -2, 6, 11, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+      ctx.beginPath();
+      if (butler) {
+        ctx.moveTo(-34, -25); ctx.quadraticCurveTo(-37, -61, 0, -63);
+        ctx.quadraticCurveTo(37, -61, 34, -25); ctx.lineTo(29, 27);
+        ctx.quadraticCurveTo(23, 58, 0, 59); ctx.quadraticCurveTo(-23, 58, -29, 27);
+      } else {
+        ctx.moveTo(-43, -37); ctx.lineTo(38, -39); ctx.lineTo(43, 22);
+        ctx.lineTo(29, 48); ctx.lineTo(-24, 52); ctx.lineTo(-42, 28);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      if (butler) {
+        ctx.fillStyle = '#b5bcc3';
+        for (const side of [-1, 1]) {
+          ctx.beginPath(); ctx.moveTo(side * 31, -43); ctx.quadraticCurveTo(side * 44, -35, side * 36, -12);
+          ctx.lineTo(side * 29, -5); ctx.lineTo(side * 27, -30); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.strokeStyle = '#e3e5e5'; line(side * 33, -34, side * 32, -16, 1.1); ctx.strokeStyle = outline;
+        }
+        ctx.strokeStyle = '#bd9e8d';
+        ctx.beginPath(); ctx.moveTo(-11, -39); ctx.quadraticCurveTo(0, -43, 11, -39); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-8, -34); ctx.quadraticCurveTo(0, -37, 8, -34); ctx.stroke();
+      } else {
+        ctx.fillStyle = '#30283e';
+        ctx.beginPath(); ctx.moveTo(-44, -17); ctx.lineTo(-49, -42); ctx.lineTo(-33, -42);
+        ctx.lineTo(-40, -58); ctx.lineTo(-17, -49); ctx.lineTo(-10, -67); ctx.lineTo(4, -52);
+        ctx.lineTo(22, -60); ctx.lineTo(21, -47); ctx.lineTo(42, -47); ctx.lineTo(47, -24);
+        ctx.lineTo(37, -16); ctx.lineTo(30, -36); ctx.lineTo(8, -29); ctx.lineTo(1, -40);
+        ctx.lineTo(-21, -30); ctx.lineTo(-33, -35); ctx.lineTo(-35, -17); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#7b6d8e'; line(-27, -44, -13, -39, 1.4);
+        ctx.strokeStyle = '#274e54';
+        ctx.beginPath(); ctx.moveTo(-45, -9); ctx.quadraticCurveTo(-55, -59, -18, -56); ctx.stroke();
+        ctx.fillStyle = '#65c9bb'; round(-53, -9, 13, 24, 5); ctx.stroke();
+        ctx.strokeStyle = '#274e54'; ctx.beginPath(); ctx.moveTo(-47, 12); ctx.quadraticCurveTo(-48, 32, -22, 32); ctx.stroke();
+        ctx.fillStyle = '#274e54'; round(-25, 29, 10, 5, 2);
+      }
+      const sep = butler ? 17 : 23;
+      const eyeY = butler ? -12 : -9;
+      const squash = asleep ? 0.08 : Math.max(0.08, 1 - blink);
+      const dart = !butler && busy && !reduced ? Math.sin(time / 125) * 2.2 : 0;
+      for (const side of [-1, 1]) {
+        ctx.save(); ctx.translate(side * sep, eyeY);
+        const eyeH = (butler ? (pose === 'surprised' ? 26 : pose === 'happy' ? 22 : 20) : 28) * squash;
+        ctx.fillStyle = '#fffaf2'; round(butler ? -12 : -16, -eyeH / 2, butler ? 24 : 32, Math.max(2, eyeH), butler ? 6 : 12);
+        if (eyeH > 5) {
+          ctx.save(); ctx.beginPath(); ctx.rect(butler ? -12 : -16, -eyeH / 2, butler ? 24 : 32, eyeH); ctx.clip();
+          const px = clamp(gazeX * (butler ? 0.7 : 1) + dart + (state === 'thinking' ? side * 1.2 : 0), -6, 6);
+          const py = state === 'thinking' ? -4 : pose === 'sad' ? 3 : 0;
+          ctx.fillStyle = butler ? '#527c9d' : '#3c3549'; dot(px, py, butler ? 4.2 : 6);
+          ctx.fillStyle = '#17232f'; dot(px, py, butler ? 2.1 : 3.2);
+          ctx.fillStyle = '#fffaf2'; dot(px - 1.2, py - 1.2, 1); ctx.restore();
+        }
+        ctx.strokeStyle = outline;
+        if (!butler) { ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(-18, -19, 36, 38, 15); ctx.stroke(); }
+        else {
+          if (eyeH > 5) {
+            const lid = pose === 'surprised' ? -5 : pose === 'angry' ? 2 : -3;
+            ctx.fillStyle = skin; ctx.beginPath(); ctx.moveTo(-13, -eyeH / 2 - 1);
+            ctx.lineTo(13, -eyeH / 2 - 1); ctx.lineTo(13, lid);
+            ctx.quadraticCurveTo(0, lid + 3, -13, lid); ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#9f7969'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(-12, lid); ctx.quadraticCurveTo(0, lid + 3, 12, lid); ctx.stroke();
+          }
+          ctx.strokeStyle = '#9f7969'; ctx.lineWidth = 0.9;
+          ctx.beginPath(); ctx.moveTo(-12, 12); ctx.quadraticCurveTo(0, 18, 11, 11); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(-10, 15); ctx.quadraticCurveTo(0, 19, 8, 15); ctx.stroke();
+        }
+        const browLift = pose === 'surprised' ? -8 : pose === 'happy' ? -4 : state === 'thinking' && side === -1 ? -7 : 0;
+        ctx.translate(0, (butler ? -15 : -24) + browLift);
+        ctx.rotate(side * (pose === 'angry' ? -0.35 : pose === 'sad' ? 0.3 : 0));
+        ctx.strokeStyle = butler ? '#363238' : outline; ctx.lineWidth = butler ? 6.2 : 2.2;
+        ctx.beginPath(); ctx.moveTo(-10, 0); ctx.quadraticCurveTo(0, butler ? -8 : -2, 10, 0); ctx.stroke(); ctx.restore();
+      }
+      ctx.strokeStyle = outline;
+      if (!butler) { line(-5, -10, 5, -10, 3); line(-41, -12, -43, -10, 3); line(41, -12, 43, -10, 3); }
+      ctx.fillStyle = butler ? '#d3ab96' : '#c78d65'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(butler ? -3 : -2, -5); ctx.quadraticCurveTo(butler ? 15 : 8, 15, 4, 18);
+      ctx.quadraticCurveTo(-6, 19, -6, 12); ctx.fill(); ctx.stroke();
+      if (butler) {
+        ctx.fillStyle = '#bcc2c5'; ctx.lineWidth = 0.8;
+        for (const side of [-1, 1]) {
+          ctx.beginPath(); ctx.moveTo(0, 21); ctx.quadraticCurveTo(side * 12, 14, side * 22, 28);
+          ctx.quadraticCurveTo(side * 8, 34, 0, 25); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        const h = state === 'speaking' ? 2 + smoothLevel * 9 : pose === 'surprised' ? 6 : 1.7;
+        ctx.fillStyle = '#705355'; round(-8, 36 - h / 2, 16, h, 3);
+        ctx.strokeStyle = '#bd9e8d'; line(-7, 46, 7, 46, 0.8);
+      } else {
+        if (state === 'speaking' && smoothLevel > 0.015) {
+          const h = 5 + smoothLevel * 16;
+          ctx.fillStyle = '#543544'; round(-19, 31 - h / 2, 38, h, 5);
+          ctx.fillStyle = '#fffaf2'; round(-16, 32 - h / 2, 32, Math.min(5, h - 2), 2);
+        } else {
+          ctx.fillStyle = '#fffaf2'; ctx.strokeStyle = '#543544'; ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.moveTo(-19, 28); ctx.quadraticCurveTo(0, 33, 19, 28);
+          ctx.quadraticCurveTo(16, 42, 0, 41); ctx.quadraticCurveTo(-16, 42, -19, 28); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        if (state === 'thinking' && !asleep) {
+          ctx.fillStyle = '#86dce8'; ctx.strokeStyle = '#346f84'; ctx.lineWidth = 0.8;
+          ctx.beginPath(); ctx.moveTo(48, -36); ctx.quadraticCurveTo(36, -21, 48, -19); ctx.quadraticCurveTo(58, -21, 48, -36); ctx.fill(); ctx.stroke();
+        }
+        if (pose === 'happy' && !asleep) {
+          ctx.strokeStyle = readableInk('#a68230', background);
+          for (const side of [-1, 1]) { line(side * 55, -30, side * 55, -20, 1.6); line(side * 55 - 5, -25, side * 55 + 5, -25, 1.6); }
+        }
+      }
+      ctx.fillStyle = readableInk('#b8c8d8', background); ctx.strokeStyle = ctx.fillStyle;
+      if (asleep) { ctx.font = '600 9px Segoe UI, sans-serif'; ctx.fillText('z', 46, -32); ctx.fillText('z', 53, -41); }
+      else if (state === 'thinking') { for (let i = 0; i < 3; i++) dot(-7 + i * 7, 67, 1.8); }
+      if (state === 'listening') round(-14, 67, 28, 1.5, 0.75);
+      if (state === 'approval') { ctx.font = '600 16px Segoe UI, sans-serif'; ctx.fillText('?', 53, 15); }
+      if (state === 'error') { line(53, 7, 53, 16, 2); dot(53, 21, 1.3); }
+    }
+
     function draw(time, blink) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
-      const cartoon = face().style === 'cartoon';
-      const scale = cartoon ? Math.min(width / 136, height / 148) : Math.min(width / 164, height / 102);
-      ctx.translate(width / 2, height / 2); ctx.scale(scale, scale);
       const f = face(), style = f.style || 'oled';
+      const cartoon = style === 'cartoon';
+      const tall = cartoon || style === 'butler' || style === 'intern' || style === 'crt';
+      const scale = tall ? Math.min(width / (style === 'crt' ? 156 : 136), height / 148) : Math.min(width / 164, height / 102);
+      ctx.translate(width / 2, height / 2); ctx.scale(scale, scale);
+      if (style === 'butler' || style === 'intern') { drawCharacter(style, time, blink); return; }
       const baseInk = f.color || accent;
       const ink = style === 'sprite' ? '#fffaf2' : style === 'oled' ? readableInk(baseInk, background) : baseInk;
       const cutout = style === 'crt' ? '#111c16' : background;
       ctx.fillStyle = ink; ctx.strokeStyle = ink;
       if (style === 'crt') {
-        ctx.fillStyle = '#736f60'; round(-75, -45, 150, 91, 9);
-        ctx.fillStyle = '#c8c0a7'; round(-73, -44, 146, 87, 8);
-        ctx.fillStyle = '#4a4b3e'; round(-67, -38, 134, 73, 7);
-        ctx.fillStyle = cutout; round(-64, -35, 128, 66, 6);
-        ctx.fillStyle = '#75715e';
-        for (let x = -50; x < -20; x += 4) round(x, 37, 2, 2, 0.5);
-        ctx.fillStyle = ink; dot(59, 38, 1.3);
-        ctx.fillStyle = '#827e6d'; round(-24, 45, 48, 3, 1);
+        ctx.fillStyle = '#7b776b'; round(-70, -65, 140, 129, 6);
+        ctx.fillStyle = '#c8c0a7'; round(-68, -64, 136, 126, 5);
+        ctx.fillStyle = '#e0d6ba'; round(-65, -61, 130, 4, 2);
+        ctx.fillStyle = '#555548'; round(-62, -55, 124, 96, 7);
+        // 112 x 84 glass: a real 4:3 screen inside a near-square monitor case.
+        ctx.fillStyle = cutout; round(-56, -49, 112, 84, 8);
+        ctx.fillStyle = '#a59e89'; round(-61, 45, 122, 12, 2);
+        ctx.fillStyle = '#535648'; round(-54, 47, 44, 8, 1);
+        ctx.fillStyle = '#e0d6ba'; ctx.font = '600 4px Segoe UI, sans-serif'; ctx.fillText('VIDEO MONITOR', -51, 52.5);
+        ctx.fillStyle = '#444b40'; round(39, 46, 12, 10, 2);
+        ctx.fillStyle = '#a8d188'; dot(45, 50.5, 1.2);
+        for (const x of [10, 23]) { ctx.fillStyle = '#ddd3b4'; dot(x, 51, 3.8); ctx.fillStyle = x === 10 ? '#bfa24a' : '#e5e2d1'; dot(x, 51, 2.6); ctx.fillStyle = '#272b24'; dot(x, 51, 1.3); }
         ctx.fillStyle = ink;
       }
       if (style === 'sprite') {
@@ -124,11 +259,11 @@
         ctx.beginPath(); ctx.moveTo(-49, -27); ctx.lineTo(-50, -49);
         ctx.quadraticCurveTo(-50, -64, -32, -64); ctx.lineTo(34, -64);
         ctx.quadraticCurveTo(51, -62, 50, -46); ctx.lineTo(49, -27);
-        ctx.lineTo(43, -30); ctx.lineTo(42, -48); ctx.lineTo(23, -59);
-        ctx.quadraticCurveTo(-4, -43, -39, -49); ctx.lineTo(-43, -29); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.lineTo(43, -30); ctx.lineTo(42, -53); ctx.lineTo(23, -63);
+        ctx.quadraticCurveTo(-4, -55, -39, -57); ctx.lineTo(-43, -29); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#b16a43';
-        ctx.beginPath(); ctx.moveTo(-43, -53); ctx.quadraticCurveTo(-14, -44, 23, -57);
-        ctx.lineTo(37, -53); ctx.quadraticCurveTo(0, -39, -43, -48); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-43, -60); ctx.quadraticCurveTo(-14, -54, 23, -64);
+        ctx.lineTo(37, -60); ctx.quadraticCurveTo(0, -53, -43, -57); ctx.closePath(); ctx.fill();
         ctx.fillStyle = '#e2a17b';
         ctx.beginPath(); ctx.moveTo(-4, 4); ctx.quadraticCurveTo(7, 1, 7, 10);
         ctx.quadraticCurveTo(3, 16, -5, 11); ctx.fill(); ctx.stroke();
@@ -141,7 +276,7 @@
       const separation = cartoon ? 23 : (ew + gap) / 2;
       const speaking = state === 'speaking' && !asleep;
       const eyeY = cartoon ? -17 : -10 + gazeY;
-      const pose = asleep ? 'sleepy' : state === 'thinking' ? 'thinking' : state === 'error' ? 'sad' : state === 'approval' ? 'surprised' : emotion;
+      const pose = asleep ? 'sleepy' : state === 'thinking' ? 'thinking' : state === 'error' ? 'sad' : state === 'approval' ? 'surprised' : cartoon && state === 'listening' ? 'listening' : emotion;
 
       const [browY, browAngle, pupilX, pupilY, pupilRadius] = CARTOON_POSES[pose];
       const squash = asleep ? 0.08 : Math.max(0.08, 1 - blink);
@@ -160,13 +295,19 @@
         } else if (style === 'cartoon') {
           ctx.fillStyle = '#fffaf1'; dot(0, 0, 14.5);
           ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.stroke();
-          const px = clamp(pupilX + gazeX * 0.65, -6, 6), py = clamp(pupilY + gazeY * 0.65, -6, 6);
-          ctx.fillStyle = '#355479'; dot(px, py, pupilRadius);
-          ctx.fillStyle = '#172b43'; dot(px, py, pupilRadius * 0.51);
+          const energy = speaking ? smoothLevel : 0;
+          const pupil = pupilRadius + energy * 0.8;
+          const travel = 13.5 - pupil;
+          const px = clamp((pupilX + gazeX) * (1 - energy * 0.85), -travel, travel);
+          const py = clamp((pupilY + gazeY) * (1 - energy * 0.65), -travel, travel);
+          ctx.fillStyle = '#355479'; dot(px, py, pupil);
+          ctx.fillStyle = '#172b43'; dot(px, py, pupil * 0.51);
           ctx.fillStyle = '#fffaf1'; dot(px - 1.2, py - 1.4, 1);
           ctx.fillStyle = '#543828';
-          ctx.save(); ctx.translate(0, Math.max(-25, -21 + browY + (pose === 'thinking' && side === 1 ? 8 : 0)));
-          ctx.rotate(side * browAngle); ctx.strokeStyle = '#422719'; ctx.lineWidth = 3.1; ctx.lineCap = 'round';
+          const browEnergy = speaking ? (side === -1 ? smoothLevel : emphasisLevel * 0.82) : 0;
+          const idleLift = !reduced && state === 'idle' && !asleep ? Math.sin(time / 1800 + side) * 0.8 : 0;
+          ctx.save(); ctx.translate(0, Math.max(-31, -19 + browY + (pose === 'thinking' && side === 1 ? 13 : 0) - browEnergy * 11 + idleLift));
+          ctx.rotate(side * (browAngle + browEnergy * 0.12)); ctx.strokeStyle = '#422719'; ctx.lineWidth = 3.1; ctx.lineCap = 'round';
           ctx.beginPath(); ctx.moveTo(-11, 0); ctx.quadraticCurveTo(0, pose === 'happy' || pose === 'surprised' ? -5 : -1.5, 11, 0); ctx.stroke(); ctx.restore();
           ctx.fillStyle = ink;
         } else {
@@ -273,7 +414,7 @@
       }
       if (style === 'crt') {
         ctx.save(); ctx.strokeStyle = cutout; ctx.globalAlpha = 0.18; ctx.lineWidth = 0.5;
-        for (let y = -33; y < 31; y += 3) line(-62, y, 62, y, 0.5);
+        for (let y = -46; y < 33; y += 3) line(-54, y, 54, y, 0.5);
         ctx.restore();
       }
     }
@@ -291,6 +432,7 @@
       current = current.map((value, i) => value + (target[i] - value) * ease);
       const volume = state === 'speaking' ? level : 0;
       smoothLevel += (volume - smoothLevel) * (volume > smoothLevel ? 0.65 : 0.3);
+      emphasisLevel += (smoothLevel - emphasisLevel) * 0.25;
       if (!reduced && !asleep) {
         if (time >= nextBlink && state !== 'error' && state !== 'approval') {
           blinkStart = time;
@@ -298,9 +440,10 @@
           nextBlink = time + min + Math.random() * Math.max(0, number(face().blinkMaxMs, 6000) - min);
         }
         if (time >= nextGaze) {
-          targetX = state === 'listening' ? 0 : (Math.random() - 0.5) * 7;
-          targetY = state === 'listening' ? 0 : (Math.random() - 0.5) * 3;
-          nextGaze = time + 2400 + Math.random() * 3600;
+          const expressive = face().style === 'cartoon';
+          targetX = state === 'listening' ? 0 : (Math.random() - 0.5) * (expressive ? 18 : 7);
+          targetY = state === 'listening' ? 0 : (Math.random() - 0.5) * (expressive ? 8 : 3);
+          nextGaze = time + (expressive ? 1500 : 2400) + Math.random() * (expressive ? 2500 : 3600);
         }
       } else { targetX = 0; targetY = 0; }
       gazeX += (targetX - gazeX) * 0.09; gazeY += (targetY - gazeY) * 0.09;
@@ -327,7 +470,7 @@
       setState(value) {
         if (disposed) return;
         const next = typeof value === 'string' ? value : (value && value.status) || 'idle';
-        if (next !== state) { state = next; if (next !== 'speaking') { level = 0; smoothLevel = 0; } wake(); }
+        if (next !== state) { state = next; if (next !== 'speaking') { level = 0; smoothLevel = 0; emphasisLevel = 0; } wake(); }
       },
       setEmotion(value) { const next = PRESETS[value] ? value : 'neutral'; if (next !== emotion) { emotion = next; wake(); } },
       setLevel(value) { level = clamp(number(value, 0), 0, 1); if (state === 'speaking') request(); },
@@ -335,7 +478,7 @@
       setReducedMotion(value) { reduced = !!value; request(); },
       wake, resize,
       start() { if (disposed) return; active = true; lastTick = clock(); request(); },
-      stop() { active = false; if (handle !== null) caf(handle); handle = null; level = 0; smoothLevel = 0; },
+      stop() { active = false; if (handle !== null) caf(handle); handle = null; level = 0; smoothLevel = 0; emphasisLevel = 0; },
       destroy() { active = false; disposed = true; if (handle !== null) caf(handle); handle = null; ctx.clearRect(0, 0, canvas.width, canvas.height); },
     };
   }
