@@ -2960,6 +2960,19 @@ function onMeetingLibraryRequest(op, params) {
       if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };
       return meetingLibrary ? meetingLibrary.deleteFile(p.kind, p.name) : { ok: false, error: 'library unavailable' };
     }
+    if (op === 'merge') {
+      const bad = meetingFoldersError();
+      if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };
+      let names; try { names = JSON.parse(p.names || '[]'); } catch (e) { return { ok: false, error: 'bad request' }; }
+      const tx = meetingTranscriber ? meetingTranscriber.getState() : null;
+      const recFile = meetingRecorder ? meetingRecorder.getState().file : null;
+      return require('./meetingMerge').mergeRecordings({
+        dir: resolveMeetingFolders().unprocessed,
+        safeName: require('./meetingLibrary').safeName,
+        isBusy: n => n === recFile || !!(tx && ((tx.current && tx.current.name === n) || (tx.queue || []).indexOf(n) >= 0)),
+        log: m => console.log('[meeting] ' + m),
+      }, names);
+    }
     if (op === 'transcribeStart') {
       const bad = meetingFoldersError();
       if (bad) return { ok: false, error: 'meeting folders misconfigured: ' + bad };

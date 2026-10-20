@@ -39,6 +39,7 @@ test('library routes dispatch to the right op with query params', async () => {
     ['/meeting-files?kind=unprocessed', 'files', 'unprocessed', ''],
     ['/meeting-file-delete?kind=unprocessed&name=a.wav', 'delete', 'unprocessed', 'a.wav'],
     ['/meeting-transcribe/start?name=a.wav', 'transcribeStart', '', 'a.wav'],
+    ['/meeting-merge?names=%5B%22a.wav%22%2C%22b.wav%22%5D', 'merge', '', ''],
     ['/meeting-transcribe/state', 'transcribeState', '', ''],
     ['/meeting-analyze/start?name=a.json', 'analyzeStart', '', 'a.json'],
     ['/meeting-analyze/state', 'analyzeState', '', ''],
