@@ -144,7 +144,7 @@ const FIXTURES = [
   ['hey jarvis', 'hey jarvis', ''],
   ['hey jarvis', 'Hey, Jarvis! Lights on.', 'Lights on.'],
   ['hey jarvis', 'HEY JARVIS ... are you there', 'are you there'],
-  ['hey jarvis', 'Hey Jarvis. Hey Jarvis. Hello?', 'Hey Jarvis. Hello?'],   // the first name wakes; the rest is the request as spoken
+  ['hey jarvis', 'Hey Jarvis. Hey Jarvis. Hello?', 'Hello?'],   // a repeated phrase is stripped; the request is what follows
   ['hey jarvis', 'Hey Jarvis what time is it', 'what time is it'],
   ['hey jarvis', 'hey jarvis.', ''],
   ['hey jarvis', 'Hey Jarvis?', ''],
@@ -166,6 +166,17 @@ const FIXTURES = [
   ['hey norm', 'Enorm, what time is it', 'what time is it'],
   ['hey norm', 'enormous', null],                             // fused form still ends on a word boundary
   ['hey norm', 'What time is it?', null],
+  // Second live test (Whisper, per built-in persona).
+  ['hey mimi', 'Say Mimi.', ''],
+  ['hey mimi', 'Hey Mimi. Hey Mimi. Hey Mimi.', ''],             // the phrase said three times is the phrase alone, not a request
+  ['hey terminal', 'Hey terminal, hey terminal.', ''],
+  ['hey intern', 'Hey intern, hey intern.', ''],
+  ['hey intern', 'a intern.', ''],
+  ['hey jarvis', 'Jarvis.', ''],                                  // a quick "hey" dropped: the bare name alone wakes
+  ['hey terminal', 'terminal.', ''],
+  ['hey terminal', 'The terminal is slow', null],                 // the bare name must be the WHOLE utterance
+  ['hey terminal', 'terminal, run the tests', null],              // ...and never carries a command
+  ['hey rocky', 'Hey, Rocky.', ''],
   ['hey norm', 'you', null],
   ['hey norm', 'A normal day', null],                         // the name must still match exactly
   ['hey norm', 'Pain is normal', null],
@@ -238,4 +249,12 @@ test('state: the lower bound is exact for a VAD-dated start; the 500 ms toleranc
   assert.equal(st.onUtterance('tail', st.gen, 2100, 2900).action, 'drop');           // VAD-dated, 100 ms into the cooldown: early
   assert.equal(st.onUtterance('tail', st.gen, 2100, 2900, true).action, 'turn');     // estimated start: within the tolerance
   assert.equal(st.onUtterance('tail', st.gen, 1600, 2900, true).action, 'drop');     // estimated, 600 ms early: still early
+});
+
+test('sprite aliases: what Whisper wrote for "Hey Sprite" in the live test all wake', () => {
+  const { SPRITE_PERSONA: sprite } = require('../app/face/persona');
+  assert.ok(sprite, 'built-in sprite persona');
+  const r = ww.resolvePhrase({ persona: sprite });
+  const m = ww.createWakeMatcher(r);
+  for (const t of ['Hastebrite.', 'Haste bright.', 'taste bright.', 'Peace, Bright.', 'Hey Sprite.']) assert.equal(m.match(t).wake, true, t);
 });

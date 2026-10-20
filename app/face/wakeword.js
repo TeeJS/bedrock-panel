@@ -52,28 +52,39 @@ function resolvePhrase({ persona, pageOverride, pageDefault }) {
 // "Hey Norm" came back as "A norm." and "pain norm." as often as "Hey Norm."). Every "hey <name>"
 // phrase also accepts these in front of the same name; the name itself is still matched exactly.
 const HEY_FUSED = ['e', 'he', 'hey', 'ey', 'ay', 'a'];   // glued straight onto the name, no space
-const HEY_VARIANTS = ['a', 'hay', 'hate', 'pain', 'ay', 'eh', 'hi', 'he'];
+const HEY_VARIANTS = ['a', 'hay', 'hate', 'pain', 'ay', 'eh', 'hi', 'he', 'say'];
 function createWakeMatcher({ phrase, aliases }) {
   const base = [phrase].concat(Array.isArray(aliases) ? aliases : []).map(normalizeForMatch).filter(Boolean);
   const forms = [];
+  const names = [];   // the bare names of "hey <name>" phrases: the whole utterance being just the name wakes too
   for (const f of base) {
     forms.push(f);
     if (/^hey\s+\S/.test(f)) {
       const name = f.slice(4).trim();
+      names.push(name);
       for (const v of HEY_VARIANTS) forms.push(v + ' ' + name);
       for (const v of HEY_FUSED) forms.push(v + name);   // a fast "Hey Norm" comes back as one word: "Enorm."
     }
   }
   const res = forms.map(f => new RegExp('^\\s*' + f.split(' ').map(escapeRe).join('[\\s\\p{P}]+') + '(?![\\p{L}\\p{N}\'])', 'iu'));
+  // The utterance is only the name (Whisper drops a quick "hey": "Jarvis.", "terminal."), said once or
+  // repeated. It opens the listening window like the full phrase alone; it can never carry a command.
+  const aloneRes = names.map(n => new RegExp('^[\s\p{P}]*(?:' + n.split(' ').map(escapeRe).join('[\s\p{P}]+') + '[\s\p{P}]*)+$', 'iu'));
   function match(text) {
     const raw = String(text == null ? '' : text);
     for (let i = 0; i < res.length; i++) {
       const m = res[i].exec(raw);
       if (!m) continue;
-      let rest = raw.slice(m[0].length);
-      rest = rest.replace(/^[\s\p{P}]+/u, '');   // the comma/period after the name, then the command as spoken
+      let rest = raw.slice(m[0].length).replace(/^[\s\p{P}]+/u, '');   // the comma/period after the name, then the command as spoken
+      // "Hey Mimi. Hey Mimi. Hey Mimi." is the phrase said three times, not a request: drop the repeats.
+      for (let guard = 0; guard < 6; guard++) {
+        const again = res.map(r => r.exec(rest)).find(Boolean);
+        if (!again) break;
+        rest = rest.slice(again[0].length).replace(/^[\s\p{P}]+/u, '');
+      }
       return { wake: true, phrase: forms[i], commandText: rest };
     }
+    for (let i = 0; i < aloneRes.length; i++) if (aloneRes[i].test(raw)) return { wake: true, phrase: 'hey ' + names[i], commandText: '' };
     return { wake: false };
   }
   return { match, forms };

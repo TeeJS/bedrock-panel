@@ -215,7 +215,7 @@ const INTERN_PERSONA = {
 
 // Soft grey, huge round eyes, dozes quickly: a sleepy little spirit.
 const SPRITE_PERSONA = {
-  id: 'sprite', wakeName: 'sprite', name: 'Dust Sprite', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT, voice: 'en_GB-southern_english_female-low',
+  id: 'sprite', wakeName: 'sprite', aliases: ['haste bright', 'hastebrite', 'haste brite', 'taste bright', 'peace bright'], name: 'Dust Sprite', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT, voice: 'en_GB-southern_english_female-low',
   face: {
     style: 'sprite', color: '#272833', cheekColor: '#d9a3a3', eyeGap: 14, dozeAfterSeconds: 25, blinkMinMs: 2500, blinkMaxMs: 7000,   // color = body (soot); eyes stay white
     emotions: {
