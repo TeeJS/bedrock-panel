@@ -840,6 +840,112 @@
       if (inputs.length) inputs[inputs.length - 1].focus();
     };
   }
+  // ---- Personas rows (Settings -> AI Profiles -> Personas): name / style / colors / prompt per row,
+  // add/remove, plus JSON import (validated) and per-row export (clipboard + on-screen JSON). Same
+  // live-edit model as the profile rows: mutate config.settings.personas in place, Save persists.
+  const PERSONA_STYLES = [['oled', 'OLED robot (Rocky)'], ['cartoon', 'Cartoon (Norm)'], ['kawaii', 'Kawaii (Mimi)']];
+  function personaRowsHtml(list) {
+    const rows = Array.isArray(list) ? list : [];
+    if (!rows.length) return '<p class="hint">No personas yet — add one below, or import one.</p>';
+    return rows.map((p, i) => {
+      const face = p.face || {};
+      return `<div class="row" data-idx="${i}" style="margin-top:10px;align-items:flex-start;flex-wrap:wrap">
+        <input class="psName" placeholder="Persona name" value="${esc(p.name || '')}" style="width:160px">
+        <select class="psStyle" style="width:170px;margin-left:8px">${PERSONA_STYLES.map(s => `<option value="${s[0]}" ${(face.style || 'oled') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select>
+        <input class="psColor" placeholder="#rrggbb or blank = accent" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color; blank uses the page accent">
+        <input class="psCheek" placeholder="cheek #rrggbb" value="${esc(face.cheekColor || '')}" style="width:130px;margin-left:8px" title="Blush/cheek color; blank uses the face color">
+        <button class="psExport" type="button" data-ex="${i}" style="margin-left:8px" title="Copy this persona's JSON to the clipboard">Export</button>
+        <button class="psExportFile" type="button" data-ex="${i}" style="margin-left:4px" title="Save this persona as a .persona.json file">Export file…</button>
+        <button class="psRemove" type="button" data-rm="${i}" title="Remove" style="margin-left:8px">✕</button>
+        <textarea class="psPrompt" placeholder="How this character talks (appended to the page's profile)" rows="3" style="flex:1 0 100%;margin-top:6px;font-family:inherit">${esc(p.prompt || '')}</textarea>
+      </div>`;
+    }).join('');
+  }
+  function wirePersonaRows() {
+    const host = document.getElementById('sPersonaRows');
+    if (!host) return;
+    const list = () => { if (!config.settings) config.settings = {}; if (!Array.isArray(config.settings.personas)) config.settings.personas = []; return config.settings.personas; };
+    const face = p => { if (!p.face) p.face = {}; return p.face; };
+    const redraw = () => { host.innerHTML = personaRowsHtml(list()); wireRows(); };
+    const hexOk = v => v === '' || /^#[0-9a-fA-F]{6}$/.test(v);
+    function wireRows() {
+      host.querySelectorAll('.psName').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].name = e.target.value; markDirty(); } }; });
+      host.querySelectorAll('.psStyle').forEach((sel, i) => { sel.onchange = e => { const l = list(); if (l[i]) { face(l[i]).style = e.target.value; markDirty(); } }; });
+      host.querySelectorAll('.psColor').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).color = v; markDirty(); } }; });
+      host.querySelectorAll('.psCheek').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).cheekColor = v; markDirty(); } }; });
+      host.querySelectorAll('.psPrompt').forEach((ta, i) => { ta.oninput = e => { const l = list(); if (l[i]) { l[i].prompt = e.target.value; markDirty(); } }; });
+      host.querySelectorAll('.psRemove').forEach(btn => { btn.onclick = () => { list().splice(parseInt(btn.getAttribute('data-rm'), 10), 1); markDirty(); redraw(); }; });
+      // Export writes the NORMALIZED persona (the main process fills defaults), so what a user
+      // shares is exactly what an import produces -- the seeded entries are raw until then.
+      host.querySelectorAll('.psExport').forEach(btn => {
+        btn.onclick = async () => {
+          const p = list()[parseInt(btn.getAttribute('data-ex'), 10)];
+          if (!p) return;
+          const json = await configApi.personaJson(p);
+          if (!json) { btn.textContent = 'Not exportable'; setTimeout(() => { btn.textContent = 'Export'; }, 1800); return; }
+          const out = document.getElementById('sPersonaExport');
+          if (out) { out.textContent = json; out.style.display = ''; }
+          const done = ok => { btn.textContent = ok ? 'Copied' : 'Shown below'; setTimeout(() => { btn.textContent = 'Export'; }, 1800); };
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(json).then(() => done(true), () => done(false));
+          else done(false);
+        };
+      });
+      host.querySelectorAll('.psExportFile').forEach(btn => {
+        btn.onclick = async () => {
+          const p = list()[parseInt(btn.getAttribute('data-ex'), 10)];
+          if (!p) return;
+          const r = await configApi.exportPersonaFile(p);
+          const label = r && r.ok ? 'Saved' : (r && r.canceled ? 'Export file…' : 'Failed');
+          btn.textContent = label;
+          if (label !== 'Export file…') setTimeout(() => { btn.textContent = 'Export file…'; }, 1800);
+        };
+      });
+    }
+    wireRows();
+    const addBtn = document.getElementById('sPersonaAdd');
+    if (addBtn) addBtn.onclick = () => {
+      list().push({ id: 'ps' + Date.now().toString(36), name: '', version: 1, prompt: '', face: { style: 'oled', color: '', cheekColor: '' } });
+      markDirty(); redraw();
+      const inputs = host.querySelectorAll('.psName');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    };
+    // Import: paste or pick a .json file, validate (shape + no credentials), add or replace by id.
+    const box = document.getElementById('sPersonaImportBox'), txt = document.getElementById('sPersonaImportText');
+    const msg = document.getElementById('sPersonaImportMsg'), file = document.getElementById('sPersonaFile');
+    const say = (t, bad) => { if (msg) { msg.textContent = t; msg.style.color = bad ? '#e05050' : ''; } };
+    const openBox = () => { if (box) box.style.display = ''; if (txt) txt.focus(); say(''); };
+    const importBtn = document.getElementById('sPersonaImportBtn');
+    if (importBtn) importBtn.onclick = openBox;
+    const fileBtn = document.getElementById('sPersonaImportFile');
+    if (fileBtn && file) fileBtn.onclick = () => { file.value = ''; file.click(); };
+    if (file) file.onchange = () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => { if (txt) txt.value = String(r.result || ''); say('Loaded ' + f.name + ' — check it, then Add to library.'); };
+      r.onerror = () => say('Could not read that file.', true);
+      r.readAsText(f);
+    };
+    const cancelBtn = document.getElementById('sPersonaImportCancel');
+    if (cancelBtn) cancelBtn.onclick = () => { if (box) box.style.display = 'none'; if (txt) txt.value = ''; say(''); };
+    const goBtn = document.getElementById('sPersonaImportGo');
+    if (goBtn) goBtn.onclick = () => {
+      let src;
+      try { src = JSON.parse(txt ? txt.value : ''); } catch (e) { say('That is not valid JSON.', true); return; }
+      const v = configApi.validatePersona ? configApi.validatePersona(src) : { ok: false, error: 'validation unavailable' };
+      if (!v || !v.ok) { say(v && v.error ? v.error : 'That persona could not be used.', true); return; }
+      const l = list();
+      const at = l.findIndex(p => p && p.id === v.persona.id);
+      if (at >= 0) {
+        if (!confirm('A persona with id "' + v.persona.id + '" already exists (' + (l[at].name || l[at].id) + '). Replace it?')) return;
+        l[at] = v.persona;
+      } else l.push(v.persona);
+      markDirty(); redraw();
+      if (box) box.style.display = 'none';
+      if (txt) txt.value = '';
+      say('');
+    };
+  }
   // ---- Routines (Settings -> Routines): searchable master-detail editor ----
   // Presentation only. Storage is unchanged: config.settings.routines, referenced by stable id
   // from tiles. Everything here selects and binds by routine ID, never array position, so filtering
@@ -2400,7 +2506,17 @@
         <p class="sectitle" style="margin-top:14px">Profile &amp; instructions</p>
         <div class="row"><label>Default profile</label>
           <select id="cvProfile" style="flex:1">${(((config.settings || {}).aiProfiles) || []).map((p, i) => `<option value="${esc(p.id)}" ${(cvVal('profilePick', '') || (((config.settings || {}).aiProfiles) || [{}])[0].id) === p.id ? 'selected' : ''}>${esc(p.name || '(unnamed)')}</option>`).join('')}</select></div>
-        <details class="hint"><summary>The AI profile this page starts with — a named instruction that shapes the AI (translate, summarize, write…).</summary> Switch live from the panel's <b>Profile</b> button; manage the list under <b>Settings → AI Profiles</b>.</details>` + (!cvModes ? '' : `
+        <details class="hint"><summary>The AI profile this page starts with — a named instruction that shapes the AI (translate, summarize, write…).</summary> Switch live from the panel's <b>Profile</b> button; manage the list under <b>Settings → AI Profiles</b>.</details>
+        <p class="sectitle" style="margin-top:14px">Face</p>
+        <div class="row"><label>Face</label>
+          <select id="cvFace" style="width:320px">
+            <option value="off" ${cvVal('face', 'off') === 'side' || cvVal('face', 'off') === 'creature' ? '' : 'selected'}>Off — the plain chat page</option>
+            <option value="side" ${cvVal('face', 'off') === 'side' ? 'selected' : ''}>Side — animated face beside the chat</option>
+            <option value="creature" ${cvVal('face', 'off') === 'creature' ? 'selected' : ''}>Creature — face only, controls on tap</option>
+          </select></div>
+        <div class="row"><label>Persona</label>
+          <select id="cvPersona" style="width:320px"><option value="" ${cvVal('personaPick', '') ? '' : 'selected'}>None — plain face</option>${(((config.settings || {}).personas) || []).map(p => `<option value="${esc(p.id)}" ${cvVal('personaPick', '') === p.id ? 'selected' : ''}>${esc(p.name || p.id)}</option>`).join('')}</select></div>
+        <details class="hint"><summary>An animated face that listens, thinks and talks with the reply. A persona adds a character on top of the profile (its words are appended, never replacing the profile).</summary> Off changes nothing. Side keeps the chat beside the face; Creature shows only the face and reveals the controls on a tap. Personas live under <b>Settings → AI Profiles → Personas</b>, where you can also import and export them.</details>` + (!cvModes ? '' : `
         <p class="sectitle" style="margin-top:14px">Permissions</p>
         <div class="row"><label>Permission mode</label>
           <select id="cvPermMode" style="flex:1">${cvModes.choices.map(c => `<option value="${esc(c[0])}" ${cvMode === c[0] ? 'selected' : ''}>${esc(c[1])}</option>`).join('')}</select></div>
@@ -2630,6 +2746,10 @@
       if (cvPermMode) { syncPermModeUi(cvPermMode.value); cvPermMode.onchange = e => { setOpt('permissionMode', e.target.value); syncPermModeUi(e.target.value); }; }
       const cvProfile = document.getElementById('cvProfile');
       if (cvProfile) cvProfile.onchange = e => setOpt('profilePick', e.target.value);
+      const cvFace = document.getElementById('cvFace');
+      if (cvFace) cvFace.onchange = e => setOpt('face', e.target.value);
+      const cvPersona = document.getElementById('cvPersona');
+      if (cvPersona) cvPersona.onchange = e => setOpt('personaPick', e.target.value);
       const cvApprovals = document.getElementById('cvApprovals');   // claude-only rows
       if (cvApprovals) cvApprovals.onchange = e => setOpt('approvalsEnabled', e.target.checked);
       const cvEditPrompt = document.getElementById('cvEditPrompt');
@@ -4772,7 +4892,21 @@ ${IS_MAC ? `
     const apHtml = `
       <details class="hint"><summary>Named instructions for the <b>AI Voice</b> app — pick one on the panel (the Profile button) and the AI behaves accordingly: translate, summarize, write, and so on.</summary> The instruction is sent to the AI as its role for the conversation. An empty instruction (General Chat) means plain, unmodified chat. Every AI Voice page remembers its own current profile. Remember to Save.</details>
       <div id="sAiProfileRows">${aiProfileRowsHtml((config.settings || {}).aiProfiles)}</div>
-      <button id="sAiProfileAdd" type="button" style="margin-top:10px">+ Add profile</button>`;
+      <button id="sAiProfileAdd" type="button" style="margin-top:10px">+ Add profile</button>
+      <p class="sectitle" style="margin-top:22px">Personas</p>
+      <details class="hint"><summary>A persona is a character for the <b>AI Voice</b> face: a name, how it talks, and how its face is drawn.</summary> Pick one per page (the page's <b>Persona</b> setting, or the panel's Settings). Its words are added to the page's profile, never in place of it. Personas are plain JSON: export one to share it, import one someone else made. A persona never holds a key or password — imports that do are refused. Remember to Save.</details>
+      <div id="sPersonaRows">${personaRowsHtml((config.settings || {}).personas)}</div>
+      <div class="row" style="margin-top:10px"><button id="sPersonaAdd" type="button">+ Add persona</button>
+        <button id="sPersonaImportBtn" type="button" style="margin-left:8px">Import persona JSON…</button>
+        <input id="sPersonaFile" type="file" accept=".json,application/json" style="display:none"></div>
+      <div id="sPersonaImportBox" style="display:none;margin-top:8px">
+        <textarea id="sPersonaImportText" rows="5" placeholder="Paste a persona's JSON here, or choose a .json file" style="width:100%;font-family:Consolas,monospace"></textarea>
+        <div class="row" style="margin-top:6px"><button id="sPersonaImportFile" type="button">Choose file…</button>
+          <button id="sPersonaImportGo" type="button" style="margin-left:8px">Add to library</button>
+          <button id="sPersonaImportCancel" type="button" style="margin-left:8px">Cancel</button>
+          <span id="sPersonaImportMsg" class="hint" style="margin:0 0 0 12px"></span></div>
+      </div>
+      <pre id="sPersonaExport" class="hint" style="display:none;margin-top:8px;white-space:pre-wrap;user-select:text;max-height:260px;overflow:auto"></pre>`;
 
     // Routines: saved prompts an "AI Routine" tile re-runs with one tap. Its own tab rather than a
     // second list under AI Profiles -- that tab is already full.
@@ -4838,6 +4972,7 @@ ${IS_MAC ? `
       const sc = document.querySelector('.col.editor'); if (sc) sc.scrollTop = 0;   // new category opens at its top
     });
     wireAiProfileRows();   // no-op unless the AI Profiles tab is showing
+    wirePersonaRows();     // same tab, below the profiles
     wireRoutineRows();     // no-op unless the Routines tab is showing
     const setS = (k, v) => { if (!config.settings) config.settings = {}; config.settings[k] = v; markDirty(); };
 

@@ -6306,6 +6306,32 @@
         "default": ""
       },
       {
+        "key": "face",
+        "label": "Face",
+        "type": "select",
+        "default": "off",
+        "choices": [
+          [
+            "off",
+            "Off — the plain chat page"
+          ],
+          [
+            "side",
+            "Side — animated face beside the chat"
+          ],
+          [
+            "creature",
+            "Creature — face only, controls on tap"
+          ]
+        ]
+      },
+      {
+        "key": "personaPick",
+        "label": "Persona (see Settings → AI Profiles → Personas; blank = none)",
+        "type": "text",
+        "default": ""
+      },
+      {
         "key": "approvalsEnabled",
         "label": "Touch approval when in Manual mode (Claude Code)",
         "type": "bool",

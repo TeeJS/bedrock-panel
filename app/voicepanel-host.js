@@ -25,6 +25,8 @@ const wyoming = require('./claudevoice-wyoming');    // pure: Wyoming STT/TTS pr
 const { resolveAiProfile, isVoiceChatNoise } = require('./voiceConfig'); // pure: AI-profile library lookup (Smart Profiles) + Whisper noise-phrase filter
 const { createPanelReview, PANEL_SYSTEM_PROMPT, PANEL_PROFILE } = require('./panelGenerate'); // pure: Panel Builder review
 const routinesLib = require('./routines');            // pure: saved AI routines (shape + auto-name)
+const personaLib = require('./face/persona');          // pure: face personas (library, per-page pick)
+const emotionTag = require('./face/emotion-tag');      // pure: "[happy]" reply-prefix protocol for the face
 
 // deps: { activeServedAppConfig(appId), activeGrid(), getConfig(), saveConfig(),
 //         setRingState(state), clearRingOverride(), getDocumentsPath() }
@@ -40,8 +42,21 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   // Accumulated view of the current turn, for the /<app>/state snapshot (initial page load and
   // SSE-reconnect recovery -- a fresh subscriber knows the current status immediately, before any
   // new event arrives). Real-time updates go out over SSE via `subscribers`.
-  let state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null };
+  let state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null };
   const subscribers = new Set();   // open SSE response objects (see subscribe below)
+  // Face (app/face/*): the page's `face` option (off | side | creature) and `personaPick` decide
+  // whether replies carry an emotion tag. The tag is stripped HERE, before speech and transcript,
+  // so Piper never reads it and the chat never shows it. One parser per turn (see assistant-start).
+  const tagParser = emotionTag.createTagParser({ emotions: emotionTag.EMOTIONS });
+  // A profile/persona prompt change while a turn or approval is live is applied AFTER that turn
+  // ends (the CLI backends restart their child to take a new prompt, which would cut the reply).
+  // 'prompt' = hand the adapter the new prompt (profile switch, face toggle); 'restart' = a persona
+  // change, which the charter defines as a fresh session for that backend.
+  let pendingApply = null;
+  // Whether the prompt the running session was given asks for emotion tags. Tracked separately from
+  // the page's visual mode: the face can be switched Off while the model is still instructed to tag,
+  // and those tags must still be stripped until the new prompt is in force.
+  let promptInstructedTags = false;
   // Transcript history for the current session, owned HERE rather than by the guest page: the
   // webview reloads its page on every page switch, so anything only the page remembers is lost the
   // moment the user rotates away and back. getState() returns this so a freshly-(re)loaded page can
@@ -98,13 +113,27 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   adapter.on('assistant-start', () => {
     state.status = 'thinking';
     panelTurnText = '';
+    tagParser.start();
+    freezeTurnProtocol();   // decided per message, so a mid-turn profile/option change can't half-parse
     broadcast({ type: 'assistant-start' });
-    if (panelProfileActive()) broadcast({ type: 'notice', text: 'Building your panel…' });
+    if (turnPanel) broadcast({ type: 'notice', text: 'Building your panel…' });
   });
   adapter.on('assistant-delta', ({ text }) => {
     // Never stream a panel's JSON into the chat: the user should see a panel appear, not a wall of
     // braces. A prose reply on this profile (a clarifying question) still renders at turn-complete.
-    if (panelProfileActive()) { panelTurnText += (text || ''); return; }
+    if (turnPanel) { panelTurnText += (text || ''); return; }
+    // Face on: hold the first few characters until the "[emotion]" question is settled, then
+    // release them with the tag removed. Off: the delta passes through untouched.
+    if (turnTagActive) {
+      const r = tagParser.push(text);
+      if (r.emotion) setEmotion(r.emotion);
+      text = r.text;
+      if (!text) return;   // still judging the prefix; nothing to speak or show yet
+    }
+    releaseDelta(text);
+  });
+  // The part of assistant-delta that runs for text that is cleared to go downstream.
+  function releaseDelta(text) {
     // A dequeued turn's speech starts on its FIRST delta, not at dispatch -- so the previous
     // reply's spoken tail gets to finish (CLI semantics: complete the current task, then answer).
     if (queuedSpeakPending) {
@@ -113,13 +142,46 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     }
     speech.feed(text);   // no-op unless this turn was started with speak
     broadcast({ type: 'assistant-delta', text });
-  });
+  }
+  // The protocol of the message in flight, frozen when it starts (assistant-start) or is sent
+  // (dispatchTurn, for result-only turns that never stream): is it a Panel Builder JSON reply, and
+  // are emotion tags expected? Handlers read these, never the live config, so a profile or face
+  // switch made mid-reply cannot reroute the reply that is already streaming.
+  let turnPanel = false;
+  let turnTagActive = false;
+  function freezeTurnProtocol() {
+    turnPanel = panelProfileActive();
+    // Strip tags whenever they could plausibly appear: the face is on, a persona is picked (its
+    // prompt may carry stray tags, and a model that saw tags earlier keeps producing them), or the
+    // running session's prompt still asks for them.
+    turnTagActive = !turnPanel && (faceMode() !== 'off' || !!currentPersona() || promptInstructedTags);
+  }
+  function setEmotion(name) {
+    if (!name || state.emotion === name) return;
+    state.emotion = name;
+    broadcast({ type: 'emotion', name });
+  }
   adapter.on('assistant-final', ({ text }) => {
     state.status = 'thinking';
-    state.lastAssistantText = text;
+    // The raw reply may carry the tag; /state must never expose it (a page reconnecting mid-turn
+    // reads lastAssistantText).
+    state.lastAssistantText = (turnTagActive && typeof text === 'string') ? emotionTag.stripEmotionTag(text, emotionTag.EMOTIONS).text : text;
   });
   adapter.on('turn-complete', ({ text, error }) => {
     state.status = 'idle';
+    // Face on: a reply shorter than the tag window may still be held by the parser -- release it
+    // as a last delta so speech and the live bubble get it; then strip the tag from the backend's
+    // authoritative final text too (it is the raw reply, tag included).
+    if (turnTagActive) {
+      const held = tagParser.flush();
+      if (held && !turnPanel) releaseDelta(held);
+      if (typeof text === 'string') {
+        const r = emotionTag.stripEmotionTag(text, emotionTag.EMOTIONS);
+        if (r.emotion) setEmotion(r.emotion);
+        text = r.text;
+      }
+      turnTagActive = false;
+    }
     // THIS turn's text only: a turn that died without producing anything must broadcast null, not
     // echo the previous reply out of lastAssistantText (which made every errored turn "answer"
     // with the prior response, hardware-observed as the agent repeating itself).
@@ -133,7 +195,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // Ordinary conversation on the same profile (e.g. a clarifying question) parses as nothing and
     // falls through untouched.
     let panelOffered = false;
-    if (!state.error && turnFinalText && panelProfileActive()) {
+    if (!state.error && turnFinalText && turnPanel) {
       try { panelOffered = panelReview.offer(turnFinalText); }
       catch (e) { say('panel review failed: ' + ((e && e.message) || e)); }
     }
@@ -141,7 +203,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // shape) must not be pasted at the user as braces — that is the "gibberish" case. Say something
     // human instead, and speak that rather than the JSON.
     let shownText = turnFinalText;
-    if (!panelOffered && turnFinalText && panelProfileActive()) {
+    if (!panelOffered && turnFinalText && turnPanel) {
       const t = turnFinalText.trim();
       if (t.charAt(0) === '{' || t.slice(0, 3) === '```') {
         shownText = "I couldn't build that panel. Try saying it again, or describe it a bit differently.";
@@ -171,6 +233,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     broadcast({ type: 'turn-complete', text: panelOffered ? null : shownText, error: state.error });
     // CLI semantics: the finished turn hands off to the next queued entry, in order.
     turnActive = false;
+    applyPendingPrompt();   // a profile/persona switch made mid-turn lands now, between turns
     if (turnQueue.length) {
       const next = turnQueue.shift();
       dispatchTurn(next.text, next.speak, true);
@@ -179,8 +242,10 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   adapter.on('error', ({ message }) => {
     state.status = 'error'; state.error = message;
     resetTurns();
+    turnTagActive = false;
     speech.abortActive('session error');
     broadcast({ type: 'error', error: state.error });
+    applyPendingPrompt();
   });
   adapter.on('exit', ({ stillRunning }) => {
     state.running = false;
@@ -202,6 +267,18 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       broadcast({ type: evt.type, requestId: evt.requestId, decision: evt.decision });
     }
   });
+  // Deferred prompt application (see pendingApply): only between turns and never while an
+  // approval is on screen. Idempotent; cheap to call from every "turn is over" path. A persona
+  // change restarts the session (fresh conversation, as the charter defines it); a profile or face
+  // change hands the adapter the new prompt and keeps the conversation.
+  function applyPendingPrompt() {
+    if (!pendingApply || turnActive || state.status === 'approval') return;
+    const what = pendingApply;
+    pendingApply = null;
+    if (what === 'restart' && adapter.isRunning()) { startSession(adapter.projectDir() || undefined); return; }
+    const prompt = assembledPrompt();
+    if (adapter.setProfilePrompt) adapter.setProfilePrompt(prompt);
+  }
 
   // Panel-tunable options (Settings overlay): whitelist + validation. Written into the page's own
   // options in config.json so they persist across app restarts (the page's localStorage can't --
@@ -215,6 +292,9 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     micDevice: v => typeof v === 'string' && v.length <= 200 ? v : null,
     spkDevice: v => typeof v === 'string' && v.length <= 200 ? v : null,
     modelPick: v => adapter.validModel(v) ? v : null,
+    // Face layout for this page: off = today's page byte-for-byte; side = face pane beside the chat;
+    // creature = graphics only. A layout change never restarts the session (the page just redraws).
+    face: v => (v === 'off' || v === 'side' || v === 'creature') ? v : null,
   };
 
   // Ensures a session is running for the panel's currently-active page (starting one on first
@@ -282,6 +362,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     const sent = adapter.sendTurn(text);
     if (!sent) return false;
     turnActive = true;
+    freezeTurnProtocol();   // result-only turns (slash commands) never see assistant-start
     transcript.push({ role: 'user', text });
     if (fromQueue) {
       queuedSpeakPending = !!speak;
@@ -309,6 +390,42 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (!prof || prof.id !== PANEL_PROFILE.id) return base;
     return (base ? base + '\n\n' : '') + PANEL_SYSTEM_PROMPT;
   }
+  // ---- Face: persona + layout for the active page ----
+  // The persona is optional and ADDITIVE: its prompt is appended to the profile's, never in place
+  // of it, so a Writer or Translator page keeps its job and merely gains a character. A structured-
+  // output profile (Panel Builder) wins outright: no persona text, no emotion instruction, no tag
+  // parsing -- its JSON contract must not be disturbed.
+  function currentPersona() {
+    const opts = deps.activeServedAppConfig(appId);
+    const settings = (deps.getConfig() || {}).settings;
+    return personaLib.resolvePersona(settings, (opts && opts.options.personaPick) || '');
+  }
+  function faceMode() {
+    const opts = deps.activeServedAppConfig(appId);
+    const v = opts && opts.options.face;
+    return (v === 'side' || v === 'creature') ? v : 'off';
+  }
+  // Emotion tags are requested and parsed only when the face is on and the profile is prose.
+  function faceActive() { return faceMode() !== 'off' && !panelProfileActive(); }
+  function assembledPrompt() {
+    const prof = currentProfile();
+    const parts = [profilePromptFor(prof)];
+    let tags = false;
+    if (prof.id !== PANEL_PROFILE.id) {
+      const persona = currentPersona();
+      if (persona && persona.prompt) parts.push(persona.prompt);
+      if (faceMode() !== 'off') { parts.push(emotionTag.emotionInstruction(emotionTag.EMOTIONS)); tags = true; }
+    }
+    promptInstructedTags = tags;   // what the session is (about to be) told; see freezeTurnProtocol
+    return parts.filter(Boolean).join('\n\n');
+  }
+  // Hand the assembled prompt to the adapter now, or after the live turn/approval ends.
+  // `how` = 'prompt' (default) or 'restart' (persona change); a restart request wins over a
+  // prompt request already waiting.
+  function requestPromptApply(how) {
+    if (pendingApply !== 'restart') pendingApply = how === 'restart' ? 'restart' : 'prompt';
+    applyPendingPrompt();
+  }
 
   // Panel Builder review: holds an AI-authored page until the user Accepts it on the panel.
   const panelReview = createPanelReview({
@@ -332,7 +449,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     g.options.profilePick = id;
     deps.saveConfig();
     const prof = currentProfile();
-    if (adapter.setProfilePrompt) adapter.setProfilePrompt(profilePromptFor(prof));
+    requestPromptApply();
     // Leaving Panel Builder drops any panel still awaiting review — it can't be accepted from
     // another mode, and a stale proposal reappearing later would be baffling.
     if (prof.id !== PANEL_PROFILE.id && panelReview.isActive()) {
@@ -340,6 +457,21 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       broadcastPanelReview();
     }
     broadcast({ type: 'profile', id: prof.id, name: prof.name });
+    return true;
+  }
+  // Persona picker: persist on the page, re-assemble the prompt (deferred past a live turn), and
+  // tell every subscribed page which face to draw. '' = no persona. A prompt-less persona (face
+  // only) still re-applies, harmlessly, so one code path covers both.
+  function setPersona(id) {
+    if (typeof id !== 'string' || id.length > 64) return false;
+    const g = ownedGrid();
+    if (!g) return false;
+    if (id && !personaLib.resolvePersona((deps.getConfig() || {}).settings, id)) return false;
+    if (g.options.personaPick === id) return true;
+    g.options.personaPick = id;
+    deps.saveConfig();
+    requestPromptApply('restart');
+    broadcast({ type: 'persona', persona: personaLib.personaForPage(currentPersona()) });
     return true;
   }
 
@@ -375,6 +507,10 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       // Smart Profiles: the global library (names only) + this page's current pick.
       profiles: ((((deps.getConfig() || {}).settings || {}).aiProfiles) || []).map(p => ({ id: p.id, name: p.name })),
       profile: currentProfile().id,
+      // Face: the page's layout, the library of personas (names only) and the current one's face.
+      face: faceMode(),
+      personas: ((((deps.getConfig() || {}).settings || {}).personas) || []).map(p => ({ id: p.id, name: p.name })),
+      persona: personaLib.personaForPage(currentPersona()),
     };
   }
 
@@ -414,8 +550,12 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (v == null) return false;
     const g = ownedGrid();
     if (!g) return false;
+    const changed = g.options[key] !== v;
     g.options[key] = v;
     deps.saveConfig();
+    // Face on/off changes whether the model is asked for emotion tags: re-issue the prompt (kept
+    // conversation), deferred past a live turn like any prompt change.
+    if (key === 'face' && changed) { requestPromptApply('prompt'); broadcast({ type: 'face', mode: v }); }
     return true;
   }
 
@@ -484,10 +624,12 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       mode: opts.options.permissionMode || undefined,
       model: opts.options.modelPick,
       approvalsEnabled: !!opts.options.approvalsEnabled,
-      profilePrompt: profilePromptFor(currentProfile()),
+      profilePrompt: assembledPrompt(),
     });
-    state = { running: true, status: 'idle', lastUserText: '', lastAssistantText: '', error: null };
+    state = { running: true, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null };
     resetTurns();
+    turnTagActive = false;
+    pendingApply = null;   // the fresh session already carries the current prompt
     transcript = [];   // new session, fresh conversation
     speech.abortActive('new session started');   // a folder switch mid-reply silences the old folder's voice
     // permissionMode rides along so the page's Mode button is corrected the moment a lazy first-turn
@@ -500,7 +642,10 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     adapter.stop();
     resetTurns();
     speech.abortActive('session stopped');
-    state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null };
+    state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null };
+    turnTagActive = false;
+    pendingApply = null;
+    promptInstructedTags = false;
     deps.clearRingOverride();
     broadcast({ type: 'session-stopped' });
     return true;
@@ -579,6 +724,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       setOption,
       setPermissionMode,
       setProfile,
+      setPersona,
       panelAccept,
       panelCancel,
       saveRoutine,

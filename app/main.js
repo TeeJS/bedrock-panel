@@ -279,6 +279,7 @@ const ahk = require('./ahk');                  // macro "ahk" step backend (shel
 const { createReservedDisplay } = require('./reservedDisplay'); // Windows helper that keeps foreign windows off the panel display
 const { createDisplayArrange } = require('./displayArrange');   // macOS helper that keeps the panel display far right, never mirrored/main
 const { createVoicePanelHost } = require('./voicepanel-host'); // generic voice-panel app host (state/SSE/speech/STT-TTS plumbing)
+const personaLib = require('./face/persona');                   // AI Voice face personas (library seeding)
 const { createClaudeVoiceAdapter } = require('./claudevoice-adapter'); // Claude Code session adapter (CLI spawn, events, approval hook)
 const { createCodexVoiceAdapter, findCodexExe } = require('./codexvoice-session'); // OpenAI Codex session adapter (app-server JSON-RPC over stdio)
 const { createCopilotVoiceAdapter, findCopilotExe } = require('./copilotvoice-session'); // GitHub Copilot CLI session adapter (ACP JSON-RPC over stdio)
@@ -783,6 +784,15 @@ function migrateConfig(c) {
   voiceConfig.migrateVoiceConfig(c);   // legacy per-page wyoming* -> global config.settings.voice + per-page override
   voiceConfig.ensureAiProfiles(c);     // seed the Smart Profiles library once (user edits are never touched)
   voiceConfig.ensurePanelProfile(c);   // add Panel Builder to libraries that predate it (once — deletions stick)
+  personaLib.ensurePersonas(c);        // seed the face personas (Rocky, Norm, Mimi) once; normalize what is there
+  // Drop-in persona packs: <userData>/personas/*.persona.json join the library when their id is new.
+  // A file never overwrites an entry the user may have edited; bad files are logged and skipped.
+  try {
+    const scan = personaLib.scanPersonaDir(path.join(app.getPath('userData'), 'personas'));
+    scan.errors.forEach(x => console.log('[personas] skipped ' + x.file + ': ' + x.error));
+    const added = personaLib.mergePersonas(c, scan.personas);
+    if (added) console.log('[personas] added ' + added + ' from the personas folder');
+  } catch (e) { console.log('[personas] folder scan failed: ' + e.message); }
   voiceConfig.ensureRoutines(c);       // drop half-saved routines so the tile picker never offers a dud
   return c;
 }
@@ -4903,6 +4913,23 @@ app.whenReady().then(async () => {
   // both in one dialog, so the editor offers two buttons.
   ipcMain.handle('pickFile', (e) => pickOne(e, { properties: ['openFile'], filters: [{ name: 'All Files', extensions: ['*'] }] }));
   ipcMain.handle('pickFolder', (e) => pickOne(e, { properties: ['openDirectory'] }));
+  // AI Voice face personas (Settings → AI Profiles → Personas): validate a pasted or loaded pack,
+  // hand back the normalized JSON for the clipboard, or save it as <id>.persona.json where the
+  // user chooses. Data only; a pack that carries a credential-looking key is refused by validatePersona.
+  ipcMain.handle('validatePersona', (e, src) => isFrom(e, configWin) ? personaLib.validatePersona(src) : { ok: false, persona: null, error: 'not allowed' });
+  ipcMain.handle('personaJson', (e, p) => isFrom(e, configWin) ? personaLib.exportPersonaJson(p) : '');
+  ipcMain.handle('exportPersonaFile', async (e, p) => {
+    if (!isFrom(e, configWin)) return { ok: false, error: 'not allowed' };
+    const json = personaLib.exportPersonaJson(p);
+    if (!json) return { ok: false, error: 'that persona cannot be exported' };
+    const r = await dialog.showSaveDialog(configWin, {
+      defaultPath: path.join(app.getPath('documents'), personaLib.personaFileName(p)),
+      filters: [{ name: 'Persona', extensions: ['json'] }],
+    });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    try { fs.writeFileSync(r.filePath, json, 'utf8'); return { ok: true, path: r.filePath }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
   // Settings → Meeting: the three stage folders as typed; '' when they are distinct and not nested.
   ipcMain.handle('meetingFoldersCheck', (e, fields) => isFrom(e, configWin) ? meetingFoldersCheck(fields) : '');
   // Screensaver "Open photos/videos folder": resolve the effective folder (custom or the app's

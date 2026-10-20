@@ -942,6 +942,14 @@ async function handler(req, res) {
       let ok = false; try { ok = !!h.setProfile(id); } catch (e) {}
       return done(res, ok);
     }
+    // Face persona switch: the page's picker posts the chosen persona id ('' = none).
+    if (voicePath === '/persona' && req.method === 'POST') {
+      let body; try { body = await readJsonBody(req); } catch (e) { return done(res, false); }
+      const id = body && typeof body.id === 'string' ? body.id : null;
+      if (id == null || !h.setPersona) return done(res, false);
+      let ok = false; try { ok = !!h.setPersona(id); } catch (e) {}
+      return done(res, ok);
+    }
     // "+ Routine" beside Send: save what's in the message field, or (empty field) the last request
     // that was sent, as a reusable routine. Returns the auto-generated name for the on-screen
     // confirmation -- the panel has no keyboard, so naming happens here, not in a dialog.
