@@ -927,9 +927,18 @@
           }
           if (!res || !res.ok) { btn.disabled = false; btn.textContent = was; say(res && res.error ? res.error : 'Install failed.', true); return; }
           btn.textContent = 'Installed';
-          // The main process saved the new persona and the editor reloaded its config copy (so a
-          // later Save cannot drop it); re-open the list with fresh states and the result line.
-          if (personaCatalogBrowse) personaCatalogBrowse('Installed "' + res.name + '" v' + res.version + (res.replaced ? ' (replaced)' : '') + '.');
+          // The main process saved the new persona and the editor reloads its config copy (so a
+          // later Save cannot drop it). That reload re-renders Settings asynchronously, on its own
+          // schedule; wait for the re-wired Browse (or give up after ~2 s) before re-opening the
+          // list, so the catalog lands in the live DOM with fresh states and the result line.
+          const note = 'Installed "' + res.name + '" v' + res.version + (res.replaced ? ' (replaced)' : '') + '.';
+          const before = personaCatalogBrowse;
+          let tries = 0;
+          const tick = () => {
+            if (personaCatalogBrowse !== before || tries++ >= 10) { if (personaCatalogBrowse) personaCatalogBrowse(note); }
+            else setTimeout(tick, 200);
+          };
+          setTimeout(tick, 200);
         };
       });
     };
