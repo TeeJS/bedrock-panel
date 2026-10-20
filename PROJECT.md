@@ -19,7 +19,8 @@ risk register) and Codex's UX/state contract, both in the agent room `AM-AT37LVS
 3. **Off-limits as a workaround:**
    - a trained-model engine whose models are non-commercial (openWakeWord's shipped models) or need an
      account key per name (Porcupine) for the base feature;
-   - a second microphone stream, a new process, a listening socket, or audio shipped off the LAN;
+   - a second microphone stream, a new process, a listening socket, or audio sent anywhere but the STT
+     destination the page is already configured to use;
    - auto-deriving a spoken name from a display name without showing it ("CRT Terminal" is not a phrase);
    - rewriting the page's permission mode when wake word is turned on;
    - logging or storing the speech that was discarded while waiting.
@@ -106,7 +107,9 @@ is chosen from measured same-breath onset loss, not assumed. A `text` event neve
 the text it was decided on. Phase 1 implements the text engine in `app/face/wakeword.js` (pure): normalize
 (lowercase, strip punctuation, collapse spaces), anchored match at the START of the text against the phrase
 and its aliases, with a word boundary after it ("Norm" must not match "normal"), strip it and its trailing
-punctuation, return the rest. Only case, punctuation and spacing are normalized by default. Tolerated
+punctuation, and return the rest **as the STT produced it**: normalization is only for matching; the command
+text keeps its original case and punctuation (code and dictation depend on that). Only case, punctuation and
+spacing are normalized for the match by default. Tolerated
 leading fillers ("uh", "okay") and STT mishearings ("hey travis" for "hey jarvis") are **experimental, off by
 default, enabled per persona after real recordings show they help**, because every broadening raises false
 accepts and "okay" would change the displayed required phrase. A near-miss is discarded silently: no "did
@@ -126,7 +129,7 @@ at any level (the existing noise-phrase drop log stays as is). Re-arm: `turn-com
 persona switched, or the page changed carries a stale `gen` and is dropped. Events: `wake-state {state,
 phrase, until, reason}` over SSE and in `/state`, where `state` includes `not-ready`.
 
-Page (`claudevoiceview.js`): sends utterances to the new route with its generation token; renders the state
+Page (`claudevoiceview.js`): keeps sending utterances to `/audio`, now with its generation token; renders the state
 label and the Creature badge; on playback end tells the host (it already knows `ended`); the mic icon is the
 hard off; the mic-off badge stays. The face gets `setState('waiting')` (renderer: dozing look where the style
 allows, otherwise idle).
@@ -169,4 +172,5 @@ Short names mishear (aliases + tester); Whisper hallucinations on silence (`isVo
 minimum voiced time while waiting, rate limit); self-wake after playback (reset + cooldown); privacy is "LAN
 STT, discarded after", not "local" (say so); persona switch while listening (restart resets to waiting);
 hidden page must not listen; barge-in ("Jarvis, stop") is out of scope until echo cancellation exists; the
-configured STT may be a remote server, so "discarded after transcription" is the promise, not "stays local".
+privacy promise is scoped to Bedrock Panel: unaddressed speech is not kept in its buffers, logs or transcript.
+The configured STT may be a remote server that retains audio or text on its own terms; the UI says so.
