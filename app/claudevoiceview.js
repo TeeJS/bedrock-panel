@@ -314,11 +314,18 @@ function faceStopLevel() {
   if (faceLevelRaf !== null) { cancelAnimationFrame(faceLevelRaf); faceLevelRaf = null; }
   if (face) face.setLevel(0);
 }
+// Called when the element is finished with (ended, error, stopped): tear its graph down so no
+// source/analyser pair is retained per reply. A hide or layout change uses faceStopLevel instead
+// and keeps the graph, since the element is still playing.
 function faceDetachAnalyser(audio) {
   if (faceAnalysedEl !== audio) return;
   faceStopLevel();
   faceAnalysedEl = null;
-  faceAnalyser = null;   // the element's own graph stays connected until the element is dropped
+  faceAnalyser = null;
+  try { if (audio._oqxAnalyser) audio._oqxAnalyser.disconnect(); } catch (e) {}
+  try { if (audio._oqxSource) audio._oqxSource.disconnect(); } catch (e) {}
+  audio._oqxAnalyser = null;
+  audio._oqxSource = null;
 }
 function faceApplyCtxSink() {
   if (faceAudioCtx && faceAudioCtx.setSinkId) faceAudioCtx.setSinkId(spkDeviceId || '').catch(function () {});

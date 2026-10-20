@@ -428,7 +428,10 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       if (persona && persona.prompt) parts.push(persona.prompt);
       if (faceMode() !== 'off') { parts.push(emotionTag.emotionInstruction(emotionTag.EMOTIONS)); tags = true; }
     }
-    promptInstructedTags = tags;   // what the session is (about to be) told; see freezeTurnProtocol
+    // A latch for the life of the session: once a session has been told to tag, its history (and a
+    // CLI backend's prefixed instructions) can keep producing tags after the face is turned off, so
+    // the parser stays on until a fresh session. Reset in startSession/stopSession.
+    promptInstructedTags = promptInstructedTags || tags;
     return parts.filter(Boolean).join('\n\n');
   }
   // Hand the assembled prompt to the adapter now, or after the live turn/approval ends.
@@ -629,6 +632,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     const recents = [projectDir].concat((store.recentProjects || []).filter(p => p !== projectDir)).slice(0, 5);
     if (JSON.stringify(recents) !== JSON.stringify(store.recentProjects || [])) { store.recentProjects = recents; cfgDirty = true; }
     if (cfgDirty) deps.saveConfig();
+    promptInstructedTags = false;   // a fresh session starts clean; assembledPrompt() below sets it if the face is on
     adapter.start({
       projectDir,
       // '' (the consolidated manifest's neutral default) must read as "adapter's own default",

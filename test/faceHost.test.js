@@ -5,8 +5,9 @@ const { EventEmitter } = require('node:events');
 const { createVoicePanelHost } = require('../app/voicepanel-host');
 const { ensurePersonas } = require('../app/face/persona');
 
-function make() {
+function make(options) {
   const grid = { id: 'face-test', kind: 'app', app: 'ai-voice', options: { face: 'side', profilePick: 'chat', personaPick: 'rocky', projectDir: __dirname } };
+  Object.assign(grid.options, options || {});
   const config = { grids: [grid], settings: { aiProfiles: [{ id: 'chat', name: 'Chat', prompt: '' }, { id: 'panel', name: 'Panel', prompt: '' }] } };
   ensurePersonas(config);
   const adapter = new EventEmitter(); let running = false;
@@ -43,6 +44,21 @@ test('turns from a previously tag-instructed session stay clean after hiding fac
   x.adapter.emit('turn-complete', { text: '[happy] Hello.', error: null });
   assert.equal(x.h.getState().transcript.at(-1).text, 'Hello.');
   assert.equal(x.events.filter(e => e.type === 'assistant-delta').map(e => e.text).join(''), 'Hello.');
+});
+
+test('hiding a persona-free face keeps tag cleanup until a fresh conversation', t => {
+  const x = make({ personaPick: '' }); t.after(x.cleanup);
+  assert.match(x.starts[0].profilePrompt, /emotion tag/);
+  x.h.setOption('face', 'off');
+  x.h.onTurn('hello', false); x.adapter.emit('assistant-start');
+  x.adapter.emit('assistant-delta', { text: '[happy] Existing instruction.' });
+  x.adapter.emit('turn-complete', { text: '[happy] Existing instruction.', error: null });
+  assert.equal(x.h.getState().transcript.at(-1).text, 'Existing instruction.');
+  x.h.sessionStart();
+  x.h.onTurn('literal prefix', false); x.adapter.emit('assistant-start');
+  x.adapter.emit('assistant-delta', { text: '[happy] Literal text.' });
+  x.adapter.emit('turn-complete', { text: '[happy] Literal text.', error: null });
+  assert.equal(x.h.getState().transcript.at(-1).text, '[happy] Literal text.');
 });
 
 test('a requested profile switch does not reroute the live prose turn', t => {

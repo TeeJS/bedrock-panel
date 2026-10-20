@@ -58,15 +58,18 @@ text-to-speech server is set to. To give a persona its own voice, type a Piper v
 **Load available voices** (one button above the list) to fill the field's suggestions from the
 text-to-speech server in **Settings → TTS/STT**.
 
-- The names must be voices your Piper server has. The server does **not** substitute its default voice for
-  a name it does not know: depending on its setup it may try to download that voice or refuse the request,
-  and a refused request means that reply is not spoken. Prefer picking from **Load available voices**.
+- The built-in personas name stock Piper voices (for example Rocky uses `en_US-joe-medium`).
+- The names must be voices your Piper server has. The server itself does **not** substitute its default voice
+  for a name it does not know: it may try to download it or refuse the request. So when the server rejects a
+  persona's voice before any audio has played, Bedrock Panel asks once more with the page's default voice and
+  shows a notice that the voice is not available; the reply is still spoken. Once audio has started, a failure
+  is never retried (nothing is spoken twice). Prefer picking from **Load available voices**.
 - A page can override the text-to-speech server in its Advanced settings. The list shows the app-wide
   server's voices; a page that points elsewhere may offer different ones.
 - Loading voices never chooses one for you and never blocks Save; if the server cannot be reached you can
   still type the name.
-- Sharing a persona shares its voice *name* only. The receiver needs the same voice installed, or they hear
-  their default voice.
+- Sharing a persona shares its voice *name* only. If the receiver does not have that voice, they hear their
+  page's default voice (and the notice above).
 
 ### Writing the prompt
 

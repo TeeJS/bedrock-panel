@@ -147,10 +147,10 @@ app.whenReady().then(async () => {
     // ---- phase 2: per-persona Voice field, shared "Load available voices", import from a URL ----
     const voiceVals = () => js("Array.from(document.querySelectorAll('#sPersonaRows .psVoice')).map(function (i) { return i.value; })");
     const nRows = await rows();
-    check('every row has a Voice field, blank by default, placeholder says page default',
+    check('every row has a Voice field with a page-default placeholder; the built-ins name a stock Piper voice',
       (await js("document.querySelectorAll('#sPersonaRows .psVoice').length")) === nRows
-      && (await voiceVals()).slice(0, 3).every(v => v === '')
-      && /page default/i.test(await js("document.querySelector('#sPersonaRows .psVoice').placeholder")));
+      && /page default/i.test(await js("document.querySelector('#sPersonaRows .psVoice').placeholder"))
+      && (await voiceVals()).slice(0, 3).every(v => /^[a-z]{2}_[A-Z]{2}-/.test(v)), (await voiceVals()).slice(0, 7));
     const rockyIdx = (await names()).indexOf('Rocky');
     await js("(function () { var i = document.querySelectorAll('#sPersonaRows .psVoice')[" + rockyIdx + "]; i.value = 'en_US-ryan-high'; i.dispatchEvent(new Event('input', { bubbles: true })); })()");
     await js("document.querySelectorAll('#sPersonaRows .psExport')[" + rockyIdx + '].click()'); await sleep(200);
