@@ -263,6 +263,8 @@ function normalizeEyePreset(src, base) {
 
 // Fills defaults and clamps ranges so the renderer can trust every number. Returns null when `src`
 // is not a usable persona (no object, no usable id) -- the caller drops it.
+// A spoken name from free text: letters, digits, apostrophes and spaces, at most 40 characters.
+function wakeNameFrom(text) { return String(text == null ? '' : text).replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40); }
 function normalizePersona(src) {
   if (!src || typeof src !== 'object' || Array.isArray(src)) return null;
   const id = String(src.id || '').trim().toLowerCase();
@@ -285,9 +287,10 @@ function normalizePersona(src) {
     // written for it survives this version's normalization.
     voice: typeof src.voice === 'string' ? src.voice.slice(0, 120) : '',
     // Wake word (app/face/wakeword.js): the spoken name the page listens for as "hey <wakeName>", and
-    // alternative spellings STT tends to produce for the whole phrase. Blank = the persona cannot be
-    // woken by name until one is set (the editor says so); never auto-derived from a display name.
-    wakeName: typeof src.wakeName === 'string' ? src.wakeName.replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) : '',
+    // alternative spellings STT tends to produce for the whole phrase. Defaults to the persona's name
+    // ("Rocky" -> "hey rocky"), so every persona wakes by name out of the box; the editor shows the
+    // filled-in value and it can be changed.
+    wakeName: wakeNameFrom(typeof src.wakeName === 'string' && src.wakeName.trim() ? src.wakeName : src.name),
     aliases: Array.isArray(src.aliases) ? src.aliases.filter(a => typeof a === 'string').map(a => a.trim().slice(0, 60)).filter(Boolean).slice(0, 10) : [],
     // Where it was installed from (a persona repository) and at which catalog version, so updates
     // can be offered; null for hand-made or pasted personas.

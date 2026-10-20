@@ -96,7 +96,7 @@ room where people talk, that is the wrong default. Turn **Wake word** on (Settin
 editor's AI Voice page options) and the page waits for the persona's name.
 
 - **What is listened for.** `hey` + the persona's **wake name** (Jarvis → "Hey Jarvis", Mimi →
-  "Hey Mimi"; each built-in persona has one, and your own personas get a *Wake name* field under
+  "Hey Mimi"; every persona has one, its own name unless you change the *Wake name* field under
   **Settings → AI Profiles → Personas**). A page can set its own phrase instead (**Wake phrase**),
   for example `computer please`. Two words at least: a single word wakes the page on everyday speech.
   With no persona, the page listens for "hey panel". The editor shows the phrase the page will use.

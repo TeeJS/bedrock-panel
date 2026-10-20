@@ -25,8 +25,8 @@ the technical text says.
    "Hey Jarvis, what time is it?" Everything else said in the room is ignored: it never appears on the
    screen, never goes to the AI, never shows up in the transcript. The status line reads
    *Waiting for "Hey Jarvis"* so you can see it is listening for the name.
-2. **The name.** Each persona has a spoken name (Jarvis → "Hey Jarvis", Mimi → "Hey Mimi"). Your own
-   personas get a *Wake name* field. A page can use its own phrase instead ("computer please"). A page
+2. **The name.** Every persona wakes to "Hey" + its name (Rocky → "Hey Rocky"), filled into its *Wake name*
+   box for you; change the box only when the name is awkward to say (CRT Terminal → "Hey Terminal"). A page can use its own phrase instead ("computer please"). A page
    with no persona listens for "Hey panel". The editor always shows the exact phrase the page will use.
 3. **Name alone.** Say just "Hey Jarvis" and the page shows *Listening (8 s to start)*: you have eight
    seconds to begin your request. If you say nothing, it goes back to waiting for the name. Start talking

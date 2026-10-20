@@ -855,7 +855,7 @@
         <input class="psColor" placeholder="#rrggbb or blank" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color as #rrggbb; blank uses the page accent. A value that is not #rrggbb is not saved.">
         <input class="psCheek" placeholder="cheek #rrggbb" value="${esc(face.cheekColor || '')}" style="width:130px;margin-left:8px" title="Blush/cheek color; blank uses the face color">
         <input class="psVoice" list="psVoiceList" placeholder="Voice: page default" value="${esc(p.voice || '')}" style="width:200px;margin-left:8px" title="Piper voice name for this persona (e.g. en_US-lessac-medium). Blank = the page's default voice. Use 'Load available voices' to see what the TTS server offers.">
-        <input class="psWake" placeholder="Wake name" value="${esc(p.wakeName || '')}" maxlength="40" style="width:120px;margin-left:8px" title="The spoken name a page with the wake word on listens for, as &quot;hey &lt;wake name&gt;&quot; (letters, digits, spaces). Blank = this persona cannot be woken by name.">
+        <input class="psWake" placeholder="Wake name" value="${esc(p.wakeName || p.name || '')}" maxlength="40" style="width:120px;margin-left:8px" title="The spoken name a page with the wake word on listens for, as &quot;hey &lt;wake name&gt;&quot; (letters, digits, spaces). Filled in with the persona's name; change it if that is awkward to say.">
         <input class="psAliases" placeholder="Aliases, comma-separated" value="${esc(Array.isArray(p.aliases) ? p.aliases.join(', ') : '')}" style="width:200px;margin-left:8px" title="Other full phrases that also wake the page, e.g. &quot;okay jarvis, hi jarvis&quot;. Up to 10.">
         <button class="psExport" type="button" data-ex="${i}" style="margin-left:8px" title="Copy this persona's JSON to the clipboard">Export</button>
         <button class="psExportFile" type="button" data-ex="${i}" style="margin-left:4px" title="Save this persona as a .persona.json file">Export file…</button>
@@ -980,7 +980,7 @@
     const redraw = () => { host.innerHTML = personaRowsHtml(list()); wireRows(); };
     const hexOk = v => v === '' || /^#[0-9a-fA-F]{6}$/.test(v);
     function wireRows() {
-      host.querySelectorAll('.psName').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].name = e.target.value; markDirty(); } }; });
+      host.querySelectorAll('.psName').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].name = e.target.value; markDirty(); const w = host.querySelectorAll('.psWake')[i]; if (w && !l[i].wakeName) w.value = e.target.value; } }; });   // the wake name follows the name until set by hand
       host.querySelectorAll('.psStyle').forEach((sel, i) => { sel.onchange = e => { const l = list(); if (l[i]) { face(l[i]).style = e.target.value; markDirty(); } }; });
       host.querySelectorAll('.psColor').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).color = v; markDirty(); } }; });
       host.querySelectorAll('.psCheek').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).cheekColor = v; markDirty(); } }; });
@@ -2931,7 +2931,7 @@
         if (on) {
           const override = wakeNorm(document.getElementById('cvWakePhrase').value);
           const persona = (((config.settings || {}).personas) || []).find(p => p && p.id === (cvPersona ? cvPersona.value : ''));
-          const wakeName = persona ? wakeNorm(persona.wakeName) : '';
+          const wakeName = persona ? wakeNorm(persona.wakeName || persona.name) : '';
           const phrase = override || (wakeName ? 'hey ' + wakeName : persona ? '' : 'hey panel');
           if (!phrase) prev.textContent = `The persona "${persona.name || persona.id}" has no wake name yet: set one under Settings → AI Profiles → Personas, or type a phrase above.`;
           else if (!/\s/.test(phrase)) prev.textContent = `Use at least two words ("hey ${phrase}"): a single word wakes the page on everyday speech.`;
