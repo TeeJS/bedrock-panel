@@ -626,6 +626,7 @@ const VOICE_POST_SUFFIXES = new Set([
   '/session/stop',
   '/permission-mode',
   '/profile',
+  '/persona',
   '/panel-accept',
   '/routine-save',
   '/panel-cancel',

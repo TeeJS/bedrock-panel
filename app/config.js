@@ -918,9 +918,11 @@
     if (importBtn) importBtn.onclick = openBox;
     const fileBtn = document.getElementById('sPersonaImportFile');
     if (fileBtn && file) fileBtn.onclick = () => { file.value = ''; file.click(); };
+    const MAX_PACK_BYTES = 64 * 1024;   // same cap as app/face/persona.js importPersonaText
     if (file) file.onchange = () => {
       const f = file.files && file.files[0];
       if (!f) return;
+      if (f.size > MAX_PACK_BYTES) { say('That file is larger than 64 KB, which is more than a persona can be.', true); return; }
       const r = new FileReader();
       r.onload = () => { if (txt) txt.value = String(r.result || ''); say('Loaded ' + f.name + ' — check it, then Add to library.'); };
       r.onerror = () => say('Could not read that file.', true);
@@ -929,10 +931,18 @@
     const cancelBtn = document.getElementById('sPersonaImportCancel');
     if (cancelBtn) cancelBtn.onclick = () => { if (box) box.style.display = 'none'; if (txt) txt.value = ''; say(''); };
     const goBtn = document.getElementById('sPersonaImportGo');
-    if (goBtn) goBtn.onclick = () => {
+    // Validation runs in the main process (IPC, async): the text stays in the box on any failure so
+    // the user can fix it, and the reason is shown next to the button.
+    if (goBtn) goBtn.onclick = async () => {
+      const text = txt ? txt.value : '';
+      if (new TextEncoder().encode(text).length > MAX_PACK_BYTES) { say('That is larger than 64 KB, which is more than a persona can be.', true); return; }
       let src;
-      try { src = JSON.parse(txt ? txt.value : ''); } catch (e) { say('That is not valid JSON.', true); return; }
-      const v = configApi.validatePersona ? configApi.validatePersona(src) : { ok: false, error: 'validation unavailable' };
+      try { src = JSON.parse(text); } catch (e) { say('That is not valid JSON.', true); return; }
+      goBtn.disabled = true;
+      let v;
+      try { v = configApi.validatePersona ? await configApi.validatePersona(src) : { ok: false, error: 'validation unavailable' }; }
+      catch (e) { v = { ok: false, error: 'Could not validate: ' + (e && e.message ? e.message : e) }; }
+      goBtn.disabled = false;
       if (!v || !v.ok) { say(v && v.error ? v.error : 'That persona could not be used.', true); return; }
       const l = list();
       const at = l.findIndex(p => p && p.id === v.persona.id);
