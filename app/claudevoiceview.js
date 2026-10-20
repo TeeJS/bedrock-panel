@@ -170,9 +170,12 @@ function createFace() {
   } catch (e) { console.log('face: renderer unavailable: ' + (e && e.message ? e.message : e)); face = null; return; }
   face.setState(faceStatusName);
   if (!document.hidden) face.start();
+  // Face turned on mid-reply: route (or re-join) the playing element so the mouth moves now.
+  if (turnAudio) faceAttachAnalyser(turnAudio);
 }
 function destroyFace() {
   if (!face) return;
+  faceStopLevel();
   try { face.destroy(); } catch (e) {}
   face = null;
 }
@@ -248,7 +251,8 @@ document.addEventListener('keydown', function (e) {
 });
 document.addEventListener('visibilitychange', function () {
   if (!face) return;
-  if (document.hidden) face.stop(); else { face.start(); face.resize(); }
+  if (document.hidden) { face.stop(); faceStopLevel(); }
+  else { face.start(); face.resize(); faceResumeLevel(); }
 });
 window.addEventListener('resize', function () { if (face) face.resize(); });
 if (reducedMotionMq && reducedMotionMq.addEventListener) reducedMotionMq.addEventListener('change', function () { if (face) face.setReducedMotion(reducedMotionMq.matches); });
@@ -258,45 +262,58 @@ if (reducedMotionMq && reducedMotionMq.addEventListener) reducedMotionMq.addEven
 // the CONTEXT, since a routed element's own setSinkId no longer decides where the sound goes.
 // If any of that fails the reply still plays normally and the face just stops animating its mouth
 // (logged once): an honest still mouth beats a fake one.
-var faceAudioCtx = null, faceAnalyser = null, faceAnalysedEl = null, faceLevelRaf = null, faceAnalyserWarned = false;
+// One MediaElementSource per <audio> (it can only ever be created once per element), cached on the
+// element itself; the level loop is separate from the routing so it can stop while the page is
+// hidden or the face is off, and resume when the face comes back mid-reply.
+var faceAudioCtx = null, faceAnalyser = null, faceAnalysedEl = null, faceLevelRaf = null, faceAnalyserWarned = false, faceLevelBuf = null;
 function faceAttachAnalyser(audio) {
-  if (!face) return;
+  if (!face || !audio) return;
   try {
     if (!faceAudioCtx) faceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    var src = faceAudioCtx.createMediaElementSource(audio);
-    var an = faceAudioCtx.createAnalyser();
-    an.fftSize = 512;
-    an.smoothingTimeConstant = 0.5;
-    src.connect(an);
-    an.connect(faceAudioCtx.destination);
-    faceAnalyser = an;
+    if (!audio._oqxSource) {
+      audio._oqxSource = faceAudioCtx.createMediaElementSource(audio);
+      audio._oqxAnalyser = faceAudioCtx.createAnalyser();
+      audio._oqxAnalyser.fftSize = 512;
+      audio._oqxAnalyser.smoothingTimeConstant = 0.5;
+      audio._oqxSource.connect(audio._oqxAnalyser);
+      audio._oqxAnalyser.connect(faceAudioCtx.destination);
+      audio.addEventListener('playing', function () { if (faceAnalysedEl === audio) faceResumeLevel(); });
+    }
+    faceAnalyser = audio._oqxAnalyser;
     faceAnalysedEl = audio;
     faceApplyCtxSink();
     if (faceAudioCtx.state === 'suspended') faceAudioCtx.resume().catch(function () {});
-    var buf = new Uint8Array(an.fftSize);
-    var tick = function () {
-      faceLevelRaf = null;
-      if (faceAnalysedEl !== audio || !face) return;
-      an.getByteTimeDomainData(buf);
-      var sum = 0;
-      for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
-      var rms = Math.sqrt(sum / buf.length);
-      face.setLevel(Math.min(1, rms * 5));
-      if (!audio.paused && !audio.ended) faceLevelRaf = requestAnimationFrame(tick);
-      else face.setLevel(0);   // paused or ended: the mouth closes, honestly
-    };
-    audio.addEventListener('playing', function () { if (faceAnalysedEl === audio && faceLevelRaf === null) faceLevelRaf = requestAnimationFrame(tick); });
+    faceResumeLevel();
   } catch (e) {
     if (!faceAnalyserWarned) { faceAnalyserWarned = true; console.log('face: playback analyser unavailable, mouth stays still: ' + (e && e.message ? e.message : e)); }
     faceAnalyser = null; faceAnalysedEl = null;
   }
 }
+function faceLevelTick() {
+  faceLevelRaf = null;
+  var audio = faceAnalysedEl, an = faceAnalyser;
+  if (!audio || !an || !face) return;
+  if (document.hidden) { face.setLevel(0); return; }   // resumed by visibilitychange
+  if (!faceLevelBuf || faceLevelBuf.length !== an.fftSize) faceLevelBuf = new Uint8Array(an.fftSize);
+  an.getByteTimeDomainData(faceLevelBuf);
+  var sum = 0;
+  for (var i = 0; i < faceLevelBuf.length; i++) { var v = (faceLevelBuf[i] - 128) / 128; sum += v * v; }
+  face.setLevel(Math.min(1, Math.sqrt(sum / faceLevelBuf.length) * 5));
+  if (!audio.paused && !audio.ended) faceLevelRaf = requestAnimationFrame(faceLevelTick);
+  else face.setLevel(0);   // paused or ended: the mouth closes, honestly
+}
+function faceResumeLevel() {
+  if (faceLevelRaf === null && faceAnalysedEl && face && !document.hidden) faceLevelRaf = requestAnimationFrame(faceLevelTick);
+}
+function faceStopLevel() {
+  if (faceLevelRaf !== null) { cancelAnimationFrame(faceLevelRaf); faceLevelRaf = null; }
+  if (face) face.setLevel(0);
+}
 function faceDetachAnalyser(audio) {
   if (faceAnalysedEl !== audio) return;
+  faceStopLevel();
   faceAnalysedEl = null;
-  if (faceLevelRaf !== null) { cancelAnimationFrame(faceLevelRaf); faceLevelRaf = null; }
-  if (faceAnalyser) { try { faceAnalyser.disconnect(); } catch (e) {} faceAnalyser = null; }
-  if (face) face.setLevel(0);
+  faceAnalyser = null;   // the element's own graph stays connected until the element is dropped
 }
 function faceApplyCtxSink() {
   if (faceAudioCtx && faceAudioCtx.setSinkId) faceAudioCtx.setSinkId(spkDeviceId || '').catch(function () {});
