@@ -1260,13 +1260,22 @@ async function fetchRepoIndex(settingUrl, parse) {
 // then each file goes through importPersonaText (size, shape, no credentials) before it touches the
 // library. An installed persona remembers {url, version} as `source` so updates can be offered.
 async function listRepoPersonas() {
-  const sources = personaRepo.personaSources(config.settings || {});
-  const library = (config.settings && config.settings.personas) || [];
+  const settings = config.settings || {};
+  const sources = personaRepo.personaSources(settings);
+  // Sources derived from app repositories are optional: most app repos have no personas/ folder,
+  // and that is not an error worth a red line, just "nothing here".
+  const appRepos = (Array.isArray(settings.appRepos) && settings.appRepos.length) ? settings.appRepos : (settings.appRepo ? [settings.appRepo] : []);
+  const implicit = new Set(appRepos.map(personaRepo.personaSourceFromAppRepo).filter(Boolean));
+  const library = settings.personas || [];
   const out = [];
   for (const src of sources) {
     const idx = await fetchRepoIndex(src, personaRepo.parsePersonaIndex);
-    if (idx.error) { out.push({ source: src, error: idx.error, personas: [] }); continue; }
-    out.push({ source: src, authed: !!idx.authed, personas: personaRepo.annotate(idx.apps, library, src) });
+    if (idx.error) {
+      if (implicit.has(src) && /404/.test(idx.error)) out.push({ source: src, implicit: true, missing: true, personas: [] });
+      else out.push({ source: src, implicit: implicit.has(src), error: idx.error, personas: [] });
+      continue;
+    }
+    out.push({ source: src, implicit: implicit.has(src), authed: !!idx.authed, personas: personaRepo.annotate(idx.apps, library, src) });
   }
   return { ok: true, sources: out };
 }

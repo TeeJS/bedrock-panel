@@ -864,6 +864,7 @@
   }
   // Persona-only repository URLs (GitHub folder URLs). App repositories are searched for a personas/
   // folder automatically, so most users never need a row here.
+  let personaCatalogReopen = '';   // set by an install: re-open the catalog after the config reload re-renders Settings
   function personaRepoRowsHtml(list) {
     const rows = Array.isArray(list) ? list : [];
     if (!rows.length) return '<p class="hint" style="margin:4px 0">No persona-only repositories; the app repositories\' <code>personas/</code> folders are searched automatically.</p>';
@@ -898,7 +899,8 @@
       catalog.style.display = '';
       const stateLabel = { available: 'Install', update: 'Update', installed: 'Installed', edited: 'Replace…' };
       catalog.innerHTML = (r.sources || []).map(s => {
-        const head = `<div class="row" style="margin-top:8px"><b style="font-size:13px">${esc(s.source)}</b>${s.authed ? '<span class="hint" style="margin:0 0 0 8px">private, via your GitHub connection</span>' : ''}</div>`;
+        const head = `<div class="row" style="margin-top:8px"><b style="font-size:13px">${esc(s.source)}</b>${s.authed ? '<span class="hint" style="margin:0 0 0 8px">private, via your GitHub connection</span>' : ''}${s.implicit ? '<span class="hint" style="margin:0 0 0 8px">(app repository)</span>' : ''}</div>`;
+        if (s.missing) return head + '<p class="hint" style="margin:2px 0 0 12px">No personas folder in this app repository.</p>';
         if (s.error) return head + `<p class="hint" style="color:#e05050;margin:2px 0 0 12px">${esc(s.error)}</p>`;
         if (!s.personas.length) return head + '<p class="hint" style="margin:2px 0 0 12px">No personas in this source.</p>';
         return head + s.personas.map(p => `<div class="row" style="margin:4px 0 0 12px;align-items:center">
@@ -922,19 +924,24 @@
           }
           if (!res || !res.ok) { btn.disabled = false; btn.textContent = was; say(res && res.error ? res.error : 'Install failed.', true); return; }
           btn.textContent = 'Installed';
-          say('Installed "' + res.name + '" v' + res.version + (res.replaced ? ' (replaced)' : '') + '. The library below refreshes when the saved config reloads.');
+          // The main process saved the new persona and the editor reloads its config copy (so a later
+          // Save cannot drop it); that re-render would close this list, so ask for it to come back.
+          personaCatalogReopen = 'Installed "' + res.name + '" v' + res.version + (res.replaced ? ' (replaced)' : '') + '.';
         };
       });
     };
-    if (browseBtn) browseBtn.onclick = async () => {
-      browseBtn.disabled = true; say(dirty ? 'Browsing saved repositories (Save first to include unsaved rows)…' : 'Loading catalogs…');
+    const browse = async (note) => {
+      if (browseBtn) browseBtn.disabled = true;
+      say(note || (dirty ? 'Browsing saved repositories (Save first to include unsaved rows)…' : 'Loading catalogs…'));
       let r;
       try { r = await configApi.listRepoPersonas(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
-      browseBtn.disabled = false;
+      if (browseBtn) browseBtn.disabled = false;
       if (!r || !r.ok) { say((r && r.error) || 'Could not load the catalogs.', true); return; }
-      say('');
+      say(note || '');
       renderCatalog(r);
     };
+    if (browseBtn) browseBtn.onclick = () => browse('');
+    if (personaCatalogReopen) { const n = personaCatalogReopen; personaCatalogReopen = ''; browse(n); }
     const updBtn = document.getElementById('sPersonaUpdates');
     if (updBtn) updBtn.onclick = async () => {
       updBtn.disabled = true; say('Checking…');
