@@ -3272,7 +3272,7 @@
   }
 
   function renderOptions(options, values, cssClass) {
-    let lastSection = null, inCollapsed = false;
+    let lastSection = null;
     return (options || []).map(o => {
       let v = (o.key in values) ? values[o.key] : o.default;
       let field;
@@ -3308,16 +3308,7 @@
           ? `<details class="hint" id="${esc(helpId)}" style="margin:-2px 0 10px 78px"><summary>${esc(o.helpSummary)}</summary> ${esc(o.help || '')}</details>`
           : o.help ? `<p class="hint" id="${esc(helpId)}" style="margin:-2px 0 10px 78px">${esc(o.help)}</p>` : '';
       let heading = '';
-      if (o.section !== lastSection && inCollapsed) { heading = '</details>'; inCollapsed = false; }
-      if (o.section && o.section !== lastSection) {
-        // sectionCollapsed on a section's first option wraps the whole section in a collapsed <details> (open state survives re-renders)
-        if (o.sectionCollapsed) {
-          const secKey = 'sec-' + cssClass + '-' + o.section;
-          heading += `<details class="advsec" data-adv="${esc(secKey)}"${openAdv.has(secKey) ? ' open' : ''} style="margin-top:16px"><summary>${esc(o.section)}</summary>`;
-          inCollapsed = true;
-        } else heading += `<p class="sectitle" style="margin-top:16px">${esc(o.section)}</p>`;
-        lastSection = o.section;
-      }
+      if (o.section && o.section !== lastSection) { heading = `<p class="sectitle" style="margin-top:16px">${esc(o.section)}</p>`; lastSection = o.section; }
       // bool without inline text: keep the checkbox and its label together in one clickable row
       const rowHtml = (o.type === 'bool' && !o.inline)
         ? `<div class="row"><label class="iconopt" style="width:auto">${field} ${esc(o.label)}</label>${inlineMore}</div>`
@@ -3325,7 +3316,7 @@
       const errHtml = (o.type === 'number')
         ? `<span class="opterr" id="${esc(id)}-err" role="alert" style="display:none;color:#e23b54;margin:-6px 0 10px 78px;font-size:13px"></span>` : '';
       return heading + rowHtml + errHtml + help;
-    }).join('') + (inCollapsed ? '</details>' : '');
+    }).join('');
   }
   function renderAppOpts(g, def) {
     const el = document.getElementById('appOpts'); if (!el) return;
