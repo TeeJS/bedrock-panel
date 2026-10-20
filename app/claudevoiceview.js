@@ -754,13 +754,13 @@ function stopTurnAudio() {
 function startTurnAudio(turnId) {
   stopTurnAudio();
   var a = turnAudio = new Audio(BASE + '/turn-audio?turn=' + encodeURIComponent(turnId));
-  var done = function () {   // ended and error land in the same place: release the mic, settle status
+  var done = function (completed) {   // ended and error land in the same place: release the mic, settle status
     if (turnAudio !== a) return;
     turnAudio = null;
     faceDetachAnalyser(a);
     endSpeechUI();
-    wakeReplyEnded(true);   // the real end of the sound: the wake gate starts its echo cooldown now
-  };
+    wakeReplyEnded(completed === true);   // the end of the sound: the wake gate starts its echo cooldown now;
+  };                                       // only a natural end earns a follow-up window (error / rejected play do not)
   faceAttachAnalyser(a);   // before play(): the element must be routed before its first sample
   a.addEventListener('playing', function () {
     if (turnAudio !== a) return;
@@ -769,10 +769,10 @@ function startTurnAudio(turnId) {
     setStatus('speaking');
     $('spkBtn').classList.add('pulsing');
   });
-  a.addEventListener('ended', done);
-  a.addEventListener('error', done);
+  a.addEventListener('ended', function () { done(true); });
+  a.addEventListener('error', function () { done(false); });
   applySinkId(a);   // route to the picked speaker (no-op on system default)
-  a.play().catch(done);
+  a.play().catch(function () { done(false); });
 }
 
 // ---- Audio device pickers (Settings overlay) ----

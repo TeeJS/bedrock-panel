@@ -215,3 +215,14 @@ test('state: a request counts only when it BEGAN inside the window (lower bound 
   st.onTurnStart(); st.onReplyEnd(true); t = 20000; st.tick(); t = 30000;
   assert.equal(st.onUtterance('before that window', st.gen, 10000, 29900).action, 'drop');
 });
+
+test('state: the lower bound is exact for a VAD-dated start; the 500 ms tolerance applies only to an estimated one', () => {
+  let t = 1000; const st = ww.createWakeState({ now: () => t, windowMs: 8000, cooldownMs: 1200, followUpMs: 5000, matcher: jarvis });
+  st.arm();
+  st.onUtterance('hey jarvis go', st.gen, 500, 1000); st.onTurnStart(); st.onReplyEnd(true);
+  t = 2300; assert.equal(st.tick(), 'followup');                                   // the cooldown ended at 2200: openedAt
+  t = 3000;
+  assert.equal(st.onUtterance('tail', st.gen, 2100, 2900).action, 'drop');           // VAD-dated, 100 ms into the cooldown: early
+  assert.equal(st.onUtterance('tail', st.gen, 2100, 2900, true).action, 'turn');     // estimated start: within the tolerance
+  assert.equal(st.onUtterance('tail', st.gen, 1600, 2900, true).action, 'drop');     // estimated, 600 ms early: still early
+});

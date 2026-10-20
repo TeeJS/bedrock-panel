@@ -200,3 +200,15 @@ test('the page dates each utterance: begun before the listening window opened is
   assert.equal(x.h.getState().wake.state, 'waiting');
   assert.deepEqual(await hear(x, 'what time is it', armed.gen, 1200), { ok: true, text: 'what time is it', wake: 'addressed' });   // began at 7.3 s: inside
 });
+
+test('a VAD-dated start is exact: speech begun during the cooldown is dropped; an estimated one gets the tolerance', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const x = make({ wakeFollowUpSeconds: '10' }); t.after(x.cleanup);
+  const armed = x.h.wakeArm(true);
+  x.h.onTurn((await hear(x, 'hey jarvis go', armed.gen, 0)).text, false);
+  finishReply(x, 'Gone.');
+  t.mock.timers.tick(1300);
+  assert.equal(x.h.getState().wake.state, 'followup');
+  assert.deepEqual(await hear(x, 'echo tail', armed.gen, 400), { ok: true, text: '', wake: 'followup' });   // began 300 ms before the follow-up opened
+  assert.deepEqual(await hear(x, 'echo tail', armed.gen), { ok: true, text: 'echo tail', wake: 'followup' }); // undated: estimate, tolerant
+});

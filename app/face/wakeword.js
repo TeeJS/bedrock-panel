@@ -88,7 +88,7 @@ function createWakeState(opts) {
   let openedAt = 0;                // when the current listening/follow-up window opened (speech begun before it is not for us)
   let lastWindow = null;           // {state, openedAt, until} of the window that last expired: a request begun
                                    // inside it still counts when its STT lands after the expiry
-  const SLACK_MS = 500;            // VAD onset vs. the host's clock: the window's lower bound is this lenient
+  const SLACK_MS = 500;            // lower-bound tolerance ONLY for an estimated start (no VAD onset from the page)
 
   function snapshot() {
     tick();
@@ -123,14 +123,17 @@ function createWakeState(opts) {
   //   listen the phrase alone: the listening window is open
   //   drop   unaddressed, stale, or arrived while active/cooldown
   // `startedAt` (ms) is when the human started this utterance and `receivedAt` when its audio arrived
-  // (its speech had ended). A request counts for a window when it BEGAN inside it: begun inside a
-  // window that has since closed still counts when STT is slow; begun before the window opened
-  // (ambient speech that straddled the phrase) does not.
-  function onUtterance(text, utteranceGen, startedAt, receivedAt) {
+  // (its speech had ended). A request counts for a window when it BEGAN inside it (openedAt <= start
+  // < until): begun inside a window that has since closed still counts when STT is slow; begun before
+  // the window opened (ambient speech that straddled the phrase, the speaker's tail in the cooldown)
+  // does not. `startedEstimated` true = the start was derived from the audio length, not the page's
+  // VAD onset: only then is the lower bound SLACK_MS lenient.
+  function onUtterance(text, utteranceGen, startedAt, receivedAt, startedEstimated) {
     tick();
     const genOk = utteranceGen === undefined || utteranceGen === gen;
+    const slack = startedEstimated ? SLACK_MS : 0;
     if (startedAt != null) {
-      if (state === 'waiting' && lastWindow && genOk && startedAt >= lastWindow.openedAt - SLACK_MS && startedAt < lastWindow.until) {
+      if (state === 'waiting' && lastWindow && genOk && startedAt >= lastWindow.openedAt - slack && startedAt < lastWindow.until) {
         state = lastWindow.state; until = now() + 1; openedAt = lastWindow.openedAt;   // the window, back for this one decision
       }
       lastWindow = null;
@@ -138,7 +141,7 @@ function createWakeState(opts) {
     if (state === 'off') return { action: 'pass', commandText: String(text == null ? '' : text) };
     if (!genOk) return { action: 'drop', reason: 'stale' };
     if (state === 'active' || state === 'cooldown') return { action: 'drop', reason: state };
-    if ((state === 'listening' || state === 'followup') && startedAt != null && startedAt < openedAt - SLACK_MS) return { action: 'drop', reason: 'early' };
+    if ((state === 'listening' || state === 'followup') && startedAt != null && startedAt < openedAt - slack) return { action: 'drop', reason: 'early' };
     const raw = String(text == null ? '' : text);
     if (!raw.trim()) return { action: 'drop', reason: 'empty' };
     if (state === 'listening' || state === 'followup') {

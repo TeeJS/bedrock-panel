@@ -801,8 +801,9 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // window opened is not.
     const receivedAt = Date.now();
     const ago = Number(startAgo);
-    const startedAt = (isFinite(ago) && ago >= 0 && ago <= 120000) ? receivedAt - Math.floor(ago)
-      : receivedAt - Math.floor((pcmBuffer && pcmBuffer.length || 0) / 32) - 500;   // 500 ms: VAD hangover + transport
+    const startedDated = isFinite(ago) && ago >= 0 && ago <= 120000;
+    const startedAt = startedDated ? receivedAt - Math.floor(ago)
+      : receivedAt - Math.floor((pcmBuffer && pcmBuffer.length || 0) / 32) - 500;   // estimate: 500 ms for VAD hangover + transport
     const { sttHost: host, sttPort: port } = deps.voiceEndpoints();
     if (!host || !port) return { ok: false, error: 'STT host/port not configured (Settings → TTS/STT)' };
     let text;
@@ -820,7 +821,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     }
     if (!wakeEnabled()) return { ok: true, text };
     // Wake word on: the gate decides. Unaddressed text is answered as nothing and is not logged.
-    const d = wake.onUtterance(text, gen, startedAt, receivedAt);
+    const d = wake.onUtterance(text, gen, startedAt, receivedAt, !startedDated);
     // 'pass' means the gate is not armed (the page has not opened its conversation since the wake
     // word went on). Fail closed: with the wake word on, nothing reaches the page until it arms.
     if (d.action === 'pass') { say('wake: utterance before the page armed, dropped'); return { ok: true, text: '', wake: 'off' }; }
