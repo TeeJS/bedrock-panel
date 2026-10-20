@@ -32,7 +32,7 @@ not run; do not infer a pass from source inspection.
 | Spend time generating, playing speech, or waiting on an approval | Human-listening countdown does not decrease during those states. Approval remains visible and its permission policy is unchanged. |
 | Start a follow-up just before zero | Request is accepted even when capture/STT ends later; there is no timeout halfway through speech. New completed reply starts a fresh configured window. |
 | Let follow-up reach zero | Waiting for Hey Jarvis appears immediately, remaining countdown clears, and later unaddressed speech is discarded. |
-| Cancel an active turn or deny an approval | No stuck active state or indefinite window. Return/resume follows the documented timer policy; no automatic new full budget without a completed reply. |
+| Cancel an active turn or deny an approval | Return after cooldown to Waiting for the phrase; no fresh follow-up window after cancellation, denied/failed turn or audio error. Only a completed reply earns a fresh configured window. |
 | Enable chime, detect once, reconnect state/SSE | One short cue for the accepted detection; no cue from reconnect or ordinary follow-up utterances. Selected output, volume and speaker mute are respected. |
 | Assistant says its own name | No self-wake after playback, including the reply tail. Repeat with room echo; record residual false accepts rather than assuming cancellation works. |
 | Mute or change page/persona while STT is pending | Result is discarded; no late user bubble, chime, turn or reopening of the gate. |
@@ -53,3 +53,4 @@ insufficient. Report false accepts per hour, rejected true wakes, phrase-alone s
 VAD/noise filters, p95 wake-cue latency including STT, command-onset loss, and test conditions.
 Do not claim instant detection or local-only audio for the transcript gate. A TV/guest using the
 exact phrase can activate it while armed: wake is not authentication. Voice barge-in is outside v1.
+
