@@ -85,6 +85,8 @@ function createWakeState(opts) {
   let until = 0;            // when listening / followup / cooldown ends
   let gen = 0;              // bumped on arm/disarm/phrase change: stale utterances are dropped
   let pendingAfterActive = null;   // where to go when the reply is over (set when the turn starts)
+  let lastWindow = null;           // {state, until} of the listening/follow-up window that last expired: a
+                                   // request begun inside it still counts when its STT lands after the expiry
 
   function snapshot() {
     tick();
@@ -94,7 +96,7 @@ function createWakeState(opts) {
   // Expire timed states. Called before every decision and by the host's timer.
   function tick() {
     const t = now();
-    if ((state === 'listening' || state === 'followup') && until && t >= until) set('waiting', 0);
+    if ((state === 'listening' || state === 'followup') && until && t >= until) { lastWindow = { state, until }; set('waiting', 0); }
     else if (state === 'cooldown' && until && t >= until) {
       // Timed from the cooldown's END, not from this (possibly late) tick: a lazy tick must never
       // stretch a follow-up window.
@@ -105,9 +107,9 @@ function createWakeState(opts) {
     }
     return state;
   }
-  function arm(m) { if (m) matcher = m; gen++; set(matcher ? 'waiting' : 'off', 0); return gen; }
-  function disarm() { gen++; set('off', 0); pendingAfterActive = null; return gen; }
-  function setMatcher(m) { matcher = m; if (state !== 'off') { gen++; set('waiting', 0); } return gen; }
+  function arm(m) { if (m) matcher = m; gen++; lastWindow = null; set(matcher ? 'waiting' : 'off', 0); return gen; }
+  function disarm() { gen++; set('off', 0); pendingAfterActive = null; lastWindow = null; return gen; }
+  function setMatcher(m) { matcher = m; lastWindow = null; if (state !== 'off') { gen++; set('waiting', 0); } return gen; }
   function setFollowUpMs(ms) { followUpMs = Math.max(0, Number(ms) || 0); }
 
   // An utterance's STT text arrived. Returns { action: 'pass' | 'drop' | 'turn' | 'listen', commandText?, reason }.
@@ -118,9 +120,13 @@ function createWakeState(opts) {
   // `startedAt` (ms) is when the human started this utterance: a request begun inside a listening or
   // follow-up window counts even when STT hands it back after the window has closed.
   function onUtterance(text, utteranceGen, startedAt) {
-    const inWindow = (state === 'listening' || state === 'followup') && until && startedAt != null && startedAt < until;
-    if (inWindow) { if (now() >= until) until = now() + 1; }   // keep the window open for this one decision
     tick();
+    if (startedAt != null) {
+      // Begun inside a window that has since expired (the host's timer already ticked it to waiting,
+      // or this tick did): bring that window back for this one decision.
+      if (state === 'waiting' && lastWindow && startedAt < lastWindow.until && (utteranceGen === undefined || utteranceGen === gen)) { state = lastWindow.state; until = now() + 1; }
+      lastWindow = null;
+    }
     if (state === 'off') return { action: 'pass', commandText: String(text == null ? '' : text) };
     if (utteranceGen !== undefined && utteranceGen !== gen) return { action: 'drop', reason: 'stale' };
     if (state === 'active' || state === 'cooldown') return { action: 'drop', reason: state };
@@ -140,11 +146,14 @@ function createWakeState(opts) {
     return { action: 'turn', commandText: m.commandText, reason: 'addressed' };
   }
   // The host sent a turn (ours or a typed one): the page is active until the reply is over.
-  function onTurnStart() { if (state === 'off') return; set('active', 0); pendingAfterActive = followUpMs > 0 ? 'followup' : 'waiting'; }
+  function onTurnStart() { if (state === 'off') return; lastWindow = null; set('active', 0); pendingAfterActive = followUpMs > 0 ? 'followup' : 'waiting'; }
   // The reply is over: when the speaker was on this is the real playback end, otherwise turn-complete.
-  function onReplyEnd() {
+  // `completed` false = cancelled or failed: no follow-up window for that (back to waiting after the
+  // cooldown); only a completed reply earns the configured window.
+  function onReplyEnd(completed) {
     if (state === 'off') return;
     if (state !== 'active') return;
+    if (completed === false) pendingAfterActive = 'waiting';
     set('cooldown', cooldownMs);
   }
   // Something the human did (a tap, a typed message) counts as presence: extend a follow-up window.

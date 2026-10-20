@@ -869,9 +869,11 @@ async function handler(req, res) {
       return json(res, out && out.ok ? out : { ok: false });
     }
     // Wake word: the page reports the real end of a spoken reply so the gate can re-arm (echo cooldown).
+    // {completed:false} = the sound was stopped early (mute, Stop speaking): no follow-up window for it.
     if (voicePath === '/wake-reply-end' && req.method === 'POST') {
+      let body = null; try { body = await readJsonBody(req); } catch (e) { return done(res, false); }
       if (!h.wakeReplyEnd) return done(res, false);
-      let ok = false; try { ok = !!h.wakeReplyEnd(); } catch (e) {}
+      let ok = false; try { ok = !!h.wakeReplyEnd(!(body && body.completed === false)); } catch (e) {}
       return done(res, ok);
     }
     if (voicePath === '/option' && req.method === 'POST') {

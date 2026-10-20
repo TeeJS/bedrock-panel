@@ -268,7 +268,15 @@ document.addEventListener('keydown', function (e) {
   if ($('faceBar').classList.contains('show') && faceStatusName !== 'error' && faceStatusName !== 'approval') { hideFaceBar(); $('faceCtl').focus(); }
 });
 var devOverlayKindLast = '';   // which picker was open last, for Escape's focus return
+var wakeHiddenPaused = false;   // the wake-word mic was released because the page was hidden; re-arm on return
 document.addEventListener('visibilitychange', function () {
+  // Wake word on: a hidden page must not listen. Release capture and disarm; a page that comes back
+  // re-arms to waiting (never to an old listening window).
+  if (document.hidden && wakeOn() && conversationOpen && vad) { wakeHiddenPaused = true; vad.stop(); wakeArm(false); }
+  else if (!document.hidden && wakeHiddenPaused) {
+    wakeHiddenPaused = false;
+    if (conversationOpen && vad) wakeArm(true).then(function () { if (conversationOpen && !document.hidden) vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel); }).catch(function () {});
+  }
   if (!face) return;
   if (document.hidden) { face.stop(); faceStopLevel(); }
   else { face.start(); face.resize(); faceResumeLevel(); }
@@ -733,7 +741,7 @@ function stopTurnAudio() {
   try { a.pause(); } catch (e) {}
   try { a.removeAttribute('src'); a.load(); } catch (e) {}   // closes the HTTP stream -> server aborts synthesis
   endSpeechUI();
-  wakeReplyEnded();   // stopped early is still the end of the sound
+  wakeReplyEnded(false);   // stopped early: the end of the sound, but no follow-up window for it
 }
 function startTurnAudio(turnId) {
   stopTurnAudio();
@@ -743,7 +751,7 @@ function startTurnAudio(turnId) {
     turnAudio = null;
     faceDetachAnalyser(a);
     endSpeechUI();
-    wakeReplyEnded();   // the real end of the sound: the wake gate starts its echo cooldown now
+    wakeReplyEnded(true);   // the real end of the sound: the wake gate starts its echo cooldown now
   };
   faceAttachAnalyser(a);   // before play(): the element must be routed before its first sample
   a.addEventListener('playing', function () {
@@ -986,8 +994,12 @@ $('devCancel').onclick = function () { $('devOverlay').classList.add('hidden'); 
 var conversationOpen = false;
 var vadHangoverMs = parseInt(Q.get('vadHangoverMs'), 10) || 400;   // 0.4s default — snappier out of the box (matches LucidType)
 var vad = window.createClaudeVoiceVAD ? window.createClaudeVoiceVAD({ hangoverMs: vadHangoverMs }) : null;
+// With the wake word on, speech before the phrase is nobody's business: no status change, no face,
+// no ripple until the human is expected to be talking to the persona (listening / follow-up).
+function wakeExpectsSpeech() { return !wakeOn() || wakeState.state === 'listening' || wakeState.state === 'followup'; }
 function onVADSpeechStart() {
   if (suppressVAD) return;
+  if (!wakeExpectsSpeech()) return;
   setStatus('listening');
   renderWakeLabel();
 }
@@ -1066,19 +1078,21 @@ function renderWakeLabel() {
 // A short two-note chime through the picked speaker when the name is heard. Off by default.
 var chimeCtx = null;
 function wakeChime() {
-  if (!wakeChimeOn) return;
+  if (!wakeChimeOn || !speakEnabled) return;   // the speaker button mutes the chime too
   try {
     if (!chimeCtx) chimeCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (chimeCtx.setSinkId && spkDeviceId) chimeCtx.setSinkId(spkDeviceId).catch(function () {});
-    var t = chimeCtx.currentTime, g = chimeCtx.createGain();
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-    g.connect(chimeCtx.destination);
-    [[880, 0], [1320, 0.12]].forEach(function (n) { var o = chimeCtx.createOscillator(); o.type = 'sine'; o.frequency.value = n[0]; o.connect(g); o.start(t + n[1]); o.stop(t + 0.36); });
+    var routed = (chimeCtx.setSinkId && spkDeviceId) ? chimeCtx.setSinkId(spkDeviceId).catch(function () {}) : Promise.resolve();
+    routed.then(function () {   // the picked speaker is in place before the first note
+      var t = chimeCtx.currentTime, g = chimeCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      g.connect(chimeCtx.destination);
+      [[880, 0], [1320, 0.12]].forEach(function (n) { var o = chimeCtx.createOscillator(); o.type = 'sine'; o.frequency.value = n[0]; o.connect(g); o.start(t + n[1]); o.stop(t + 0.36); });
+    });
   } catch (e) {}
 }
-function wakeReplyEnded() {
+function wakeReplyEnded(completed) {
   if (!wakeOn()) return;
-  postJSON('/wake-reply-end', {}).catch(function () {});
+  postJSON('/wake-reply-end', { completed: completed !== false }).catch(function () {});
 }
 window.oqxToggleConversation = function () {
   if (!vad) { $('textInput').focus(); return; }   // VAD script failed to load -- fall back to at least focusing input
@@ -1129,7 +1143,7 @@ $('spkBtn').onclick = function () {
 // sustained voice reads as a steady outward pulse rather than a solid blob.
 var lastRippleAt = 0;
 function onVADLevel(level) {
-  if (!conversationOpen || suppressVAD) return;
+  if (!conversationOpen || suppressVAD || !wakeExpectsSpeech()) return;
   var now = Date.now();
   if (level < 0.012 || now - lastRippleAt < 180) return;
   lastRippleAt = now;

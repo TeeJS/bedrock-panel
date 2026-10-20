@@ -108,10 +108,11 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     wakeBroadcast();
     return { ok: true, gen: g, wake: wakeSnapshot() };
   }
-  function wakeReplyEnd() { wake.onReplyEnd(); wakeBroadcast(); return true; }
+  function wakeReplyEnd(completed) { wake.onReplyEnd(completed !== false); wakeBroadcast(); return true; }
   // A reply cut short on the host (session error/exit/stop, new session) never reaches the page's
-  // playback end: settle the gate here so an active page never sits deaf until the next mic tap.
-  function wakeSettle() { if (wakeEnabled() && wake.current() === 'active') { wake.onReplyEnd(); wakeBroadcast(); } }
+  // playback end: settle the gate here (no follow-up window for a reply that did not complete) so an
+  // active page never sits deaf until the next mic tap.
+  function wakeSettle() { if (wakeEnabled() && wake.current() === 'active') { wake.onReplyEnd(false); wakeBroadcast(); } }
   // Whether the prompt the running session was given asks for emotion tags. Tracked separately from
   // the page's visual mode: the face can be switched Off while the model is still instructed to tag,
   // and those tags must still be stripped until the new prompt is in force.
@@ -301,7 +302,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     broadcast({ type: 'turn-complete', text: panelOffered ? null : shownText, error: state.error });
     // Wake word: a reply with no speech stream ends here; a spoken one ends when the page reports
     // its real playback end (/wake-reply-end), so the echo cooldown starts after the sound stops.
-    if (wakeEnabled() && (state.error || !turnSpeechOpen)) { wake.onReplyEnd(); wakeBroadcast(); }
+    if (wakeEnabled() && (state.error || !turnSpeechOpen)) { wake.onReplyEnd(!state.error); wakeBroadcast(); }
     // CLI semantics: the finished turn hands off to the next queued entry, in order.
     turnActive = false;
     applyPendingPrompt();   // a profile/persona switch made mid-turn lands now, between turns
@@ -796,7 +797,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // When the human started talking: the audio is 16 kHz 16-bit mono (32 bytes per ms), and it
     // arrives the moment the utterance ends, so its length dates its start. A request begun inside
     // a listening or follow-up window is honoured even when STT returns after the window closed.
-    const startedAt = Date.now() - Math.floor((pcmBuffer && pcmBuffer.length || 0) / 32);
+    const startedAt = Date.now() - Math.floor((pcmBuffer && pcmBuffer.length || 0) / 32) - 500;   // 500 ms: VAD hangover + transport
     const { sttHost: host, sttPort: port } = deps.voiceEndpoints();
     if (!host || !port) return { ok: false, error: 'STT host/port not configured (Settings → TTS/STT)' };
     let text;

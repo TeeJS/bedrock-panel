@@ -170,3 +170,22 @@ test('options: wakeWord off disarms at once; follow-up seconds and chime validat
   assert.equal(x.events.at(-1).type, 'wake-state'); assert.equal(x.events.at(-1).wake.enabled, false);
   assert.deepEqual(await hear(x, 'hey jarvis hello', armed.gen), { ok: true, text: 'hey jarvis hello' });
 });
+
+test('a cancelled or failed reply gets no follow-up window; a completed one does', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const x = make({ wakeFollowUpSeconds: '10' }); t.after(x.cleanup);
+  const armed = x.h.wakeArm(true);
+  x.h.onTurn((await hear(x, 'hey jarvis go on', armed.gen)).text, true);
+  finishReply(x, 'Going.');
+  x.h.wakeReplyEnd(false);                        // the page stopped the sound early (Stop speaking / mute)
+  t.mock.timers.tick(1300);
+  assert.equal(x.h.getState().wake.state, 'waiting');
+  x.h.onTurn((await hear(x, 'hey jarvis again', armed.gen)).text, false);
+  x.adapter.emit('turn-complete', { text: '', error: 'model failed' });
+  t.mock.timers.tick(1300);
+  assert.equal(x.h.getState().wake.state, 'waiting');
+  x.h.onTurn((await hear(x, 'hey jarvis once more', armed.gen)).text, true);
+  finishReply(x, 'Done.'); x.h.wakeReplyEnd(true);
+  t.mock.timers.tick(1300);
+  assert.equal(x.h.getState().wake.state, 'followup');
+});

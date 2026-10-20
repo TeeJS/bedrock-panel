@@ -180,3 +180,20 @@ test('state: a request begun inside a window counts even when STT returns after 
   assert.equal(st.onUtterance('too late', st.gen, 22000).action, 'drop');
   assert.equal(st.current(), 'waiting');
 });
+
+test('state: the window survives the host timer ticking it to waiting before a late STT result lands', () => {
+  let t = 1000; const st = ww.createWakeState({ now: () => t, windowMs: 8000, cooldownMs: 1200, followUpMs: 5000, matcher: jarvis });
+  st.arm();
+  st.onUtterance('hey jarvis', st.gen);                                   // listening until 9000
+  t = 9001; assert.equal(st.tick(), 'waiting');                           // the host's timer fires at the deadline
+  t = 11000;
+  assert.equal(st.onUtterance('what time is it', st.gen, 8500).action, 'turn');   // began at 8.5 s: still counts
+  st.onTurnStart(); st.onReplyEnd(false); t = 13000;                      // cancelled: no follow-up window
+  assert.equal(st.current(), 'waiting');
+  st.onUtterance('hey jarvis go', st.gen); st.onTurnStart(); st.onReplyEnd(true); t = 15000;
+  assert.equal(st.current(), 'followup');                                 // completed: the configured window
+  t = 19201; assert.equal(st.tick(), 'waiting');
+  assert.equal(st.onUtterance('one more', st.gen, 19100).action, 'turn');  // began inside the follow-up
+  st.onTurnStart(); st.onReplyEnd(true); t = 30000;
+  assert.equal(st.onUtterance('way later', st.gen, 29000).action, 'drop'); // a used window does not come back
+});
