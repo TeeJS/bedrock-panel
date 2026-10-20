@@ -15,6 +15,56 @@ Branch: `wakeword-plan` (worktree, off `main` at v1.0.0-beta.4). Work happens in
 rule: no change to the main checkout and no app launch while he works in it. Research inputs: Sonnet's brief (engine matrix,
 risk register) and Codex's UX/state contract, both in the agent room `AM-AT37LVS2HVXBHCDM6LHV6UKUDC`.
 
+## What you will see and do (plain-language version of every decision below)
+
+Read this part first. If anything here is not what you want, the decision under it is wrong, whatever
+the technical text says.
+
+1. **Turning it on.** On an AI Voice page's Settings card (or in the editor) you set **Wake word: On**.
+   From then on the page only answers when something you say *starts with* the persona's name:
+   "Hey Jarvis, what time is it?" Everything else said in the room is ignored: it never appears on the
+   screen, never goes to the AI, never shows up in the transcript. The status line reads
+   *Waiting for "Hey Jarvis"* so you can see it is listening for the name.
+2. **The name.** Each persona has a spoken name (Jarvis → "Hey Jarvis", Mimi → "Hey Mimi"). Your own
+   personas get a *Wake name* field. A page can use its own phrase instead ("computer please"). A page
+   with no persona listens for "Hey panel". The editor always shows the exact phrase the page will use.
+3. **Name alone.** Say just "Hey Jarvis" and the page shows *Listening (8 s to start)*: you have eight
+   seconds to begin your request. If you say nothing, it goes back to waiting for the name. Start talking
+   at the seven-second mark and the whole request still counts, even if the transcription comes back late.
+4. **After the reply.** Once the reply has finished playing, the page goes straight back to waiting for
+   the name. Saying "Hey Jarvis" once in the morning never leaves the page listening all day.
+5. **Follow-up window (off by default).** Set it to, say, 10 seconds and after each reply you have ten
+   seconds to speak again without the name. The countdown is on screen; when it reaches zero the page is
+   back to waiting for the name. A reply you stop early, or one that fails, does not open the window.
+   *(You said a bare timer feels lazy: a reply-shape rule and close phrases are proposed, see below.)*
+6. **Chime (off by default).** Turn it on and a short two-note chime confirms the name was heard, through
+   the page's speaker. Muting the speaker mutes the chime.
+7. **The mic button.** ~~Decided originally: the page still starts muted and you have to tap the mic
+   before "Hey Jarvis" works; the tap "arms" the wake word, a second tap turns the mic off.~~ **You
+   rejected this live (2026-10-20): "having to unmute when there is a wake word in play feels stupid".
+   New decision, awaiting your yes:** with the wake word on, the mic opens by itself when the page loads
+   and the page is already waiting for the name. The mic button is only a mute, and a deliberate mute
+   stays muted across page switches and reloads until you tap it again.
+8. **Hidden page.** When the panel rotates away from the page (or the screensaver covers it) the mic is
+   released. Coming back, the page is waiting for the name again, never halfway through an old request.
+9. **Not ready.** If the page cannot work out a phrase (persona with no wake name, a one-word phrase), the
+   status line says *Wake word not ready: <why>* and nothing is heard at all. It never silently falls back
+   to answering everything.
+10. **Where your speech goes.** With the wake word on, the microphone audio still goes to your configured
+    speech-to-text server (Whisper) exactly as it does today, and the *text* is checked for the name.
+    Bedrock Panel discards what was not addressed to the persona. If that server is remote, it may keep
+    what it hears under its own terms; the settings text says so.
+11. **Full auto.** With the permission mode set to run commands without asking, anything said after the
+    name is acted on. The editor shows a warning; nothing else changes.
+12. **Not in this version.** "Jarvis, stop" while it is talking (barge-in). A separate on-device wake-word
+    model that would avoid sending audio to Whisper before the name (phase 2, needs a trial first).
+
+### Proposed next (after your live test), not yet agreed
+- **Reply-shape rule:** the follow-up window only opens when the reply ends with a question or offers
+  choices ("Do you want the lights on too?"); a plain statement ("It's 3:15.") closes at once.
+- **Close phrases:** "thanks", "that's all", "never mind", "go to sleep" end the window immediately.
+- The timer stays as the hard cap underneath both.
+
 ## Phase 1 status (2026-10-20, branch `wakeword-plan`, worktree only)
 
 Built and unit-tested; **not yet run in the app** (T.J.'s no-launch rule while he works in the main checkout).
@@ -200,10 +250,10 @@ three controls (wake on/off, chime, follow-up seconds) as pick rows, like Face a
 3. Phrase-alone listening window: 8 s to start speaking, then back to waiting?
 4. A spoken "go to sleep" command: in or out of v1?
 5. Who does the spike for Phase 2, and is it worth doing before Phase 1 ships?
-6. Mic arming with wake word on: today the mic is off until tapped (the `micOnLaunch` setting is the only
-   auto-arm). Proposed: unchanged. The mic icon in wake mode means tap = arm "waiting", second tap = hard off;
-   a page rotated away and back comes back in the state it left (armed pages re-arm to "waiting", never to
-   "listening"). Agree?
+6. ~~Mic arming with wake word on: unchanged (tap = arm "waiting", second tap = hard off).~~ **Rejected by
+   T.J. at the live test (2026-10-20).** Replacement in plain words: with the wake word on, the mic opens
+   by itself on page load and the page is already waiting for the name; the mic button is only a mute and a
+   deliberate mute sticks until tapped again. (Item 7 of "What you will see and do".)
 7. Measuring p95 and false accepts needs real STT runs against the configured Whisper server; that is a
    later step that needs your explicit OK for the agents to call it.
 
