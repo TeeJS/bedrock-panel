@@ -119,7 +119,7 @@ editor's AI Voice page options) and the page waits for the persona's name.
 
 Whisper often writes a spoken "hey" as "a", "hay", "hate", "pain", "ay", "eh", "hi" or "he" ("A norm." for
 "Hey Norm"), so every "Hey <name>" phrase also accepts those in front of the same name. The name itself must
-still match exactly. A page phrase that does not start with "hey" gets no such leniency.
+still match exactly. A quickly said "Hey Norm" is sometimes written as one word ("Enorm."), so those fused forms are accepted too. A page phrase that does not start with "hey" gets no such leniency.
 
 Recognition is done on the STT transcript (there is no separate wake-word model), so what counts is
 what Whisper writes: "Hey, Jarvis!" and "hey jarvis" both wake the page; "Hey Travis" does not.

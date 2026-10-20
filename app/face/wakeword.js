@@ -51,13 +51,18 @@ function resolvePhrase({ persona, pageOverride, pageDefault }) {
 // What Whisper tends to write for a spoken "hey" in front of a name (measured on the live panel:
 // "Hey Norm" came back as "A norm." and "pain norm." as often as "Hey Norm."). Every "hey <name>"
 // phrase also accepts these in front of the same name; the name itself is still matched exactly.
+const HEY_FUSED = ['e', 'he', 'hey', 'ey', 'ay', 'a'];   // glued straight onto the name, no space
 const HEY_VARIANTS = ['a', 'hay', 'hate', 'pain', 'ay', 'eh', 'hi', 'he'];
 function createWakeMatcher({ phrase, aliases }) {
   const base = [phrase].concat(Array.isArray(aliases) ? aliases : []).map(normalizeForMatch).filter(Boolean);
   const forms = [];
   for (const f of base) {
     forms.push(f);
-    if (/^hey\s+\S/.test(f)) for (const v of HEY_VARIANTS) forms.push(v + f.slice(3));
+    if (/^hey\s+\S/.test(f)) {
+      const name = f.slice(4).trim();
+      for (const v of HEY_VARIANTS) forms.push(v + ' ' + name);
+      for (const v of HEY_FUSED) forms.push(v + name);   // a fast "Hey Norm" comes back as one word: "Enorm."
+    }
   }
   const res = forms.map(f => new RegExp('^\\s*' + f.split(' ').map(escapeRe).join('[\\s\\p{P}]+') + '(?![\\p{L}\\p{N}\'])', 'iu'));
   function match(text) {

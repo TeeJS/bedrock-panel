@@ -162,6 +162,10 @@ const FIXTURES = [
   ['hey norm', 'pain norm.', ''],
   ['hey norm', 'Hey Norm.', ''],
   ['hey norm', 'a norm, what time is it', 'what time is it'],
+  ['hey norm', 'Enorm.', ''],                                 // a fast "Hey Norm" fused into one word
+  ['hey norm', 'Enorm, what time is it', 'what time is it'],
+  ['hey norm', 'enormous', null],                             // fused form still ends on a word boundary
+  ['hey norm', 'What time is it?', null],
   ['hey norm', 'you', null],
   ['hey norm', 'A normal day', null],                         // the name must still match exactly
   ['hey norm', 'Pain is normal', null],
