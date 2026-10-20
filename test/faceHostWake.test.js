@@ -91,7 +91,7 @@ test('follow-up window: the human may answer without the name, then it closes on
   t.mock.timers.tick(1300);
   const w = x.h.getState().wake;
   assert.equal(w.state, 'followup'); assert.equal(w.followUpMs, 10000); assert.ok(w.until > Date.now());
-  assert.deepEqual(await hear(x, 'why seven', armed.gen), { ok: true, text: 'why seven', wake: 'addressed' });
+  assert.deepEqual(await hear(x, 'why seven', armed.gen), { ok: true, text: 'why seven', wake: 'followup' });   // no phrase, no chime
   x.h.onTurn('why seven', false); finishReply(x, 'Luck.');
   t.mock.timers.tick(1300 + 10000);
   assert.equal(x.h.getState().wake.state, 'waiting');
