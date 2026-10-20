@@ -78,6 +78,7 @@ const STATIC_FILES = {
   '/screensaverview.js': 'application/javascript; charset=utf-8',
   '/claudevoice-vad.js': 'application/javascript; charset=utf-8',
   '/claudevoice-markdown.js': 'application/javascript; charset=utf-8',
+  '/face/renderer.js': 'application/javascript; charset=utf-8',   // AI Voice face (OqxFace canvas renderer)
   '/recorderview.js': 'application/javascript; charset=utf-8',
   '/system-audio-capture.js': 'application/javascript; charset=utf-8',
   '/slidecapture-view.js': 'application/javascript; charset=utf-8',

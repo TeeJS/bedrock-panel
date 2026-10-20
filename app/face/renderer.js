@@ -122,6 +122,18 @@
         }
         ctx.restore();
       }
+      if (style === 'kawaii' && emotion === 'angry' && !asleep) {
+        for (const side of [-1, 1]) {
+          const x = side * separation + gazeX, y = eyeY - eyeHeight / 2 - 6;
+          line(x - 12, y + side * 4, x + 12, y - side * 4, 2.8);
+        }
+      }
+      if ((emotion === 'sad' || state === 'error') && !asleep) {
+        const x = separation + ew * 0.37 + gazeX, y = eyeY + eyeHeight * 0.35;
+        ctx.save(); ctx.fillStyle = style === 'cartoon' ? '#7aaacc' : ink;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x - 6, y + 8, x, y + 9);
+        ctx.quadraticCurveTo(x + 6, y + 8, x, y); ctx.fill(); ctx.restore();
+      }
       if (style === 'kawaii' && !asleep) {
         ctx.save(); ctx.globalAlpha = 0.82; ctx.fillStyle = f.cheekColor || '#f49ab9';
         for (const side of [-1, 1]) { ctx.beginPath(); ctx.ellipse(side * (separation + ew * 0.47), 8, 7, 3.5, -side * 0.15, 0, Math.PI * 2); ctx.fill(); }
@@ -164,17 +176,19 @@
       } else round(-8, mouthY, 16, 2.5, 1.25);
 
       if (state === 'thinking' && !asleep) {
+        ctx.save(); if (style === 'cartoon') ctx.fillStyle = '#79513e';
         for (let i = 0; i < 3; i++) {
           ctx.globalAlpha = reduced ? 0.65 : 0.25 + 0.75 * ((Math.sin(time / 230 - i * 0.9) + 1) / 2);
-          dot(-7 + i * 7, 42, 1.8);
+          dot(-7 + i * 7, style === 'cartoon' ? 36 : 42, 1.8);
         }
-        ctx.globalAlpha = 1;
+        ctx.restore();
       }
       if (state === 'listening' && !asleep) {
         ctx.globalAlpha = 0.6; round(-14, 40, 28, 1.5, 0.75); ctx.globalAlpha = 1;
       }
       if (asleep) {
         ctx.save(); ctx.globalAlpha = 0.65; ctx.font = '600 8px Segoe UI, sans-serif';
+        if (style === 'cartoon') ctx.fillStyle = '#fff4df';
         ctx.fillText('z', 48, -24); ctx.font = '600 11px Segoe UI, sans-serif'; ctx.fillText('z', 56, -32); ctx.restore();
       }
       if (state === 'error') {

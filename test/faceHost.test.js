@@ -54,6 +54,16 @@ test('a requested profile switch does not reroute the live prose turn', t => {
   assert.equal(x.events.filter(e => e.type === 'assistant-delta').map(e => e.text).join(''), 'First second.');
 });
 
+test('profile switch stays deferred across multiple assistant messages in one tool-use turn', t => {
+  const x = make(); t.after(x.cleanup);
+  x.h.onTurn('hello', false); x.adapter.emit('assistant-start');
+  x.adapter.emit('assistant-delta', { text: '[happy] First message.' });
+  x.h.setProfile('panel');
+  x.adapter.emit('assistant-start');
+  x.adapter.emit('assistant-delta', { text: '[neutral] After tool use.' });
+  assert.equal(x.events.filter(e => e.type === 'assistant-delta').at(-1).text, 'After tool use.');
+});
+
 test('persona prompt switch waits for the live turn then starts a fresh conversation', t => {
   const x = make(); t.after(x.cleanup);
   x.h.onTurn('hello', false); x.adapter.emit('assistant-start');
@@ -62,4 +72,16 @@ test('persona prompt switch waits for the live turn then starts a fresh conversa
   x.adapter.emit('turn-complete', { text: '[neutral] Done.', error: null });
   assert.equal(x.starts.length, 2);
   assert.match(x.starts[1].profilePrompt, /Norm/);
+});
+
+test('approval snapshot retains the actionable request until a matching decision', t => {
+  const x = make(); t.after(x.cleanup);
+  x.adapter.emit('approval', { type: 'approval-request', requestId: 'request-1', toolName: 'Write', toolInput: { file_path: 'example.txt' } });
+  const pending = x.h.getState().pendingApproval;
+  assert.equal(pending && pending.requestId, 'request-1');
+  assert.equal(pending.toolName, 'Write');
+  x.adapter.emit('approval', { type: 'approval-decision', requestId: 'other', decision: 'allow' });
+  assert.equal(x.h.getState().pendingApproval.requestId, 'request-1');
+  x.adapter.emit('approval', { type: 'approval-decision', requestId: 'request-1', decision: 'deny' });
+  assert.equal(x.h.getState().pendingApproval, null);
 });

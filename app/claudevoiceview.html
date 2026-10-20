@@ -14,6 +14,49 @@
   #wrap { display: flex; flex-direction: row; width: 100vw; height: 100vh; padding: 14px 18px 16px 24px; gap: 16px; }
   #main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 
+  /* Face (app/face/renderer.js). Off: #faceCol is not in the layout and no canvas exists. Side: a
+     420px column at the LEFT of the chat (about a fifth of 1920), accent shapes straight on the page
+     background, no card chrome. Creature: the face is the whole page; the chat column and the right
+     rail are gone, and the controls live in a reveal bar plus one quiet, always-present Controls
+     button (touch and keyboard reachable). Approval and settings overlays are position:fixed, so
+     they still sit on top of the creature. */
+  #faceCol { display: none; position: relative; min-width: 0; align-items: stretch; justify-content: stretch; }
+  body.face-side #faceCol { display: flex; flex: 0 0 420px; }
+  body.face-creature #faceCol { display: flex; flex: 1; }
+  body.face-creature #main, body.face-creature #voicePanel { display: none; }
+  body.face-creature #wrap { padding: 0; gap: 0; }
+  #faceCanvas { width: 100%; height: 100%; display: block; }
+  /* Persistent, quiet Controls affordance: only in creature mode; >=48px target; keyboard focusable. */
+  #faceCtl { display: none; position: fixed; top: 14px; right: 18px; z-index: 30; min-width: 48px; min-height: 48px;
+    padding: 6px 14px; border-radius: 12px; border: 1px solid var(--tile-bd); background: var(--surf);
+    color: var(--muted); font-size: 15px; font-weight: 600; cursor: pointer; opacity: .55; user-select: none; }
+  #faceCtl:hover, #faceCtl:focus-visible, #faceCtl[aria-expanded="true"] { opacity: 1; color: var(--fg); }
+  body.face-creature #faceCtl { display: block; }
+  /* Mute is never implied: while the mic is off in creature mode a mic-off badge stays on screen. */
+  #faceMuted { display: none; position: fixed; top: 14px; left: 18px; z-index: 30; padding: 6px 12px; border-radius: 12px;
+    border: 1px solid var(--danger); color: var(--danger); background: var(--surf); font-size: 14px; font-weight: 600; user-select: none; }
+  body.face-creature #faceMuted.show { display: block; }
+  /* Reveal bar: bottom strip with the same transport-style buttons as the right rail. Opens on a tap
+     of the face, the Controls button, or Enter/Space; auto-hides after 6 s only when nothing inside it
+     has focus and there is no error or approval waiting. */
+  #faceBar { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; padding: 12px 24px 14px;
+    background: linear-gradient(180deg, transparent, var(--bg) 35%); align-items: center; gap: 14px; }
+  #faceBar.show { display: flex; }
+  #faceBar .iconBtn { width: 72px; height: 72px; }
+  #faceBar .iconBtn svg.glyph { width: 46%; height: 46%; }
+  .faceBarBtn { min-height: 56px; min-width: 110px; padding: 8px 16px; border-radius: 12px; border: 1px solid var(--tile-bd);
+    background: var(--surf); color: var(--fg); font-size: 17px; font-weight: 600; cursor: pointer; user-select: none; }
+  .faceBarBtn:active { background: var(--surf2); }
+  #faceStatus { font-size: 13px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .04em; min-width: 90px; }
+  #faceStatus.thinking, #faceStatus.listening { color: var(--accent); }
+  #faceStatus.error { color: var(--danger); }
+  #faceStatus.approval { color: var(--warn); }
+  #faceErr { flex: 1; min-width: 0; font-size: 15px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #faceErr.ok { color: var(--accent); }
+  /* Screen-reader status for the decorative canvas (visually hidden). */
+  #faceA11y { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  @media (prefers-reduced-motion: reduce) { .iconBtn.pulsing svg.glyph, .ripple { animation: none; } }
+
   /* Right-hand voice panel: a single 1x4 column -- mic toggle, speaker toggle, Change project,
      Settings. Icon buttons follow the Music page's transport aesthetic exactly: circular, 2px
      border, soft gradient fill, currentColor SVG glyphs, scale-down on press. All chrome, so
@@ -339,6 +382,10 @@
 </head>
 <body>
   <div id="wrap">
+    <div id="faceCol" tabindex="-1">
+      <canvas id="faceCanvas" aria-hidden="true"></canvas>
+      <div id="faceA11y" role="status" aria-live="polite"></div>
+    </div>
     <div id="main">
       <div id="card"><div id="empty" class="empty">No conversation yet — type or tap the knob to start.</div><div id="list"></div></div>
       <div id="statusRow"><div id="status">IDLE</div><div id="err"></div></div>
@@ -446,6 +493,12 @@
           <button id="modelPickBtn" class="pickRow" type="button">
             <span class="pickName">Model</span><span id="modelPickVal" class="pickVal"></span><span class="pickChevron">›</span>
           </button>
+          <button id="personaPickBtn" class="pickRow" type="button">
+            <span class="pickName">Persona</span><span id="personaPickVal" class="pickVal"></span><span class="pickChevron">›</span>
+          </button>
+          <button id="facePickBtn" class="pickRow" type="button">
+            <span class="pickName">Face</span><span id="facePickVal" class="pickVal"></span><span class="pickChevron">›</span>
+          </button>
           <div class="srow" style="margin:0"><button id="ttsTestBtn" class="vpBtn" type="button" style="width:auto;flex:0 0 auto;padding:8px 20px">🔊 Test speech</button>
             <span class="hint" style="flex:1;min-width:0">Speaks the last reply through the configured voice.</span></div>
         </div>
@@ -477,8 +530,26 @@
       </div>
     </div>
   </div>
+  <button id="faceCtl" type="button" aria-expanded="false" aria-controls="faceBar" title="Show the controls">Controls</button>
+  <div id="faceMuted" aria-live="polite">Mic off</div>
+  <div id="faceBar" role="toolbar" aria-label="Face controls">
+    <button id="faceMic" class="iconBtn off" type="button" title="Tap to start/stop listening">
+      <svg class="glyph" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2h-2v2a5 5 0 0 1-10 0v-2H5z"/><rect x="11" y="18.4" width="2" height="2.9"/><rect x="8" y="21.3" width="8" height="1.8" rx=".9"/></svg>
+      <svg class="ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.6"/><line x1="4.6" y1="4.6" x2="19.4" y2="19.4"/></svg>
+    </button>
+    <button id="faceSpk" class="iconBtn on" type="button" title="Tap to turn spoken replies on/off">
+      <svg class="glyph" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path class="wave" d="M16.5 12A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/><path class="wave" d="M14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      <svg class="ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.6"/><line x1="4.6" y1="4.6" x2="19.4" y2="19.4"/></svg>
+    </button>
+    <button id="faceStop" class="faceBarBtn" type="button" title="Stop the reply being spoken">■ Stop</button>
+    <button id="faceSettings" class="faceBarBtn" type="button">Settings</button>
+    <div id="faceStatus">IDLE</div>
+    <div id="faceErr"></div>
+    <button id="faceBarClose" class="faceBarBtn" type="button" title="Hide the controls">Hide</button>
+  </div>
   <script src="claudevoice-vad.js"></script>
   <script src="claudevoice-markdown.js"></script>
+  <script src="face/renderer.js"></script>
   <script src="claudevoiceview.js"></script>
 </body>
 </html>

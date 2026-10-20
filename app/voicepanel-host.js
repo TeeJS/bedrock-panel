@@ -42,7 +42,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   // Accumulated view of the current turn, for the /<app>/state snapshot (initial page load and
   // SSE-reconnect recovery -- a fresh subscriber knows the current status immediately, before any
   // new event arrives). Real-time updates go out over SSE via `subscribers`.
-  let state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null };
+  let state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null };
   const subscribers = new Set();   // open SSE response objects (see subscribe below)
   // Face (app/face/*): the page's `face` option (off | side | creature) and `personaPick` decide
   // whether replies carry an emotion tag. The tag is stripped HERE, before speech and transcript,
@@ -113,8 +113,10 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   adapter.on('assistant-start', () => {
     state.status = 'thinking';
     panelTurnText = '';
-    tagParser.start();
-    freezeTurnProtocol();   // decided per message, so a mid-turn profile/option change can't half-parse
+    tagParser.start();   // a new assistant message may start with its own tag
+    // The protocol was frozen at dispatch for the whole user turn (a CLI tool-use turn emits several
+    // assistant messages). Only a message that arrives with no turn in flight decides for itself.
+    if (!turnActive) freezeTurnProtocol();
     broadcast({ type: 'assistant-start' });
     if (turnPanel) broadcast({ type: 'notice', text: 'Building your panel…' });
   });
@@ -241,6 +243,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   });
   adapter.on('error', ({ message }) => {
     state.status = 'error'; state.error = message;
+    state.pendingApproval = null;
     resetTurns();
     turnTagActive = false;
     speech.abortActive('session error');
@@ -259,10 +262,14 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   adapter.on('approval', evt => {
     if (evt.type === 'approval-request') {
       state.status = 'approval';
+      // Kept in the snapshot until it is decided, so a page that reloads (page switch, creature
+      // mode toggle) restores the overlay instead of stranding the agent.
+      state.pendingApproval = { requestId: evt.requestId, toolName: evt.toolName, toolInput: evt.toolInput };
       deps.setRingState('approval');
       broadcast({ type: 'approval-request', requestId: evt.requestId, toolName: evt.toolName, toolInput: evt.toolInput });
     } else if (evt.type === 'approval-decision' || evt.type === 'approval-timeout') {
       state.status = 'thinking';   // control returns to the agent, which keeps working or asks again
+      if (!state.pendingApproval || state.pendingApproval.requestId === evt.requestId) state.pendingApproval = null;
       deps.setRingState('thinking');
       broadcast({ type: evt.type, requestId: evt.requestId, decision: evt.decision });
     }
@@ -626,7 +633,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       approvalsEnabled: !!opts.options.approvalsEnabled,
       profilePrompt: assembledPrompt(),
     });
-    state = { running: true, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null };
+    state = { running: true, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null };
     resetTurns();
     turnTagActive = false;
     pendingApply = null;   // the fresh session already carries the current prompt
@@ -642,7 +649,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     adapter.stop();
     resetTurns();
     speech.abortActive('session stopped');
-    state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null };
+    state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null };
     turnTagActive = false;
     pendingApply = null;
     promptInstructedTags = false;

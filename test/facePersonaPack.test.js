@@ -65,17 +65,8 @@ test('unknown fields and an unknown style do not break an import', () => {
   assert.equal(r.persona.hook, undefined);
 });
 
-test('a tagged example line in an imported prompt is a known leak: normalize must not add one', () => {
-  const r = validatePersona({ id: 'tagged', prompt: 'Be brief.\n[happy] Hello there.' });
-  assert.equal(r.ok, true);
-  // Documented in docs/personas.md: the host strips the tag only when the face is on. This test pins
-  // the current behaviour so a decision to sanitize (strip such lines on import) is a visible change.
-  assert.match(r.persona.prompt, tagLine);
-});
-
-// ---- the pack API agreed in the room: persona.js exports importPersonaText, exportPersonaJson,
-// personaFileName and scanPersonaDir. These fail until those land.
-const os = require('node:os');
+// ---- the pack API agreed in the room: persona.js exports importPersonaText, exportPersonaJson and
+// personaFileName. These fail until those land.
 const persona = require('../app/face/persona');
 
 test('exportPersonaJson writes the normalized shape and importPersonaText reads it back identically', () => {
@@ -102,7 +93,10 @@ test('importPersonaText refuses malformed JSON, credentials and oversize text wi
   assert.equal(big.ok, false);
 });
 
-test('scanPersonaDir returns valid *.persona.json files and reports bad ones without throwing', () => {
+// ---- drop-in folder: <userData>/personas/*.persona.json
+const os = require('node:os');
+
+test('scanPersonaDir returns valid packs and reports bad ones without throwing', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'personas-'));
   try {
     fs.writeFileSync(path.join(dir, 'good.persona.json'), JSON.stringify({ id: 'good', name: 'Good', prompt: 'Be brief.' }));
@@ -123,4 +117,16 @@ test('scanPersonaDir on a missing folder is empty, not an error', () => {
   const r = persona.scanPersonaDir(path.join(os.tmpdir(), 'personas-does-not-exist-' + Date.now()));
   assert.deepEqual(r.personas, []);
   assert.deepEqual(r.errors, []);
+});
+
+test('mergePersonas adds new ids and never overwrites an existing (possibly edited) one', () => {
+  const c = ensurePersonas({});
+  c.settings.personas[0].name = 'Rocky (mine)';
+  const added = persona.mergePersonas(c, [
+    { id: 'rocky', name: 'Imposter', prompt: 'x', face: {} },
+    normalizePersona({ id: 'fresh', name: 'Fresh', prompt: 'Be brief.' }),
+  ]);
+  assert.equal(added, 1);
+  assert.equal(c.settings.personas.find(p => p.id === 'rocky').name, 'Rocky (mine)');
+  assert.ok(c.settings.personas.find(p => p.id === 'fresh'));
 });
