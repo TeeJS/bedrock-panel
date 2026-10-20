@@ -6263,6 +6263,40 @@
         "default": ""
       },
       {
+        "key": "wakeWord",
+        "label": "Wake word",
+        "type": "select",
+        "default": "off",
+        "choices": [
+          [
+            "off",
+            "Off — the open mic listens to everything, as today"
+          ],
+          [
+            "on",
+            "On — wait for the persona's name before anything goes to the AI"
+          ]
+        ]
+      },
+      {
+        "key": "wakePhrase",
+        "label": "Wake phrase override (blank = hey <persona's wake name>)",
+        "type": "text",
+        "default": ""
+      },
+      {
+        "key": "wakeChime",
+        "label": "Chime when the wake phrase is heard",
+        "type": "bool",
+        "default": false
+      },
+      {
+        "key": "wakeFollowUpSeconds",
+        "label": "Follow-up window after a reply, seconds (0 = one wake, one request)",
+        "type": "text",
+        "default": "0"
+      },
+      {
         "key": "approvalsEnabled",
         "label": "Touch approval when in Manual mode (Claude Code)",
         "type": "bool",

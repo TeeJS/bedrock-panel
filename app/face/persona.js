@@ -73,7 +73,7 @@ const KAWAII_PROMPT = [
 // that voice answers with an error and the speech pipeline falls back to the server's default.
 // Big round sparkling eyes, pink, quick to blush.
 const KAWAII_PERSONA = {
-  id: 'kawaii',
+  id: 'kawaii', wakeName: 'mimi',
   name: 'Mimi',
   version: PERSONA_SCHEMA_VERSION,
   prompt: KAWAII_PROMPT,
@@ -164,7 +164,7 @@ const SPRITE_PROMPT = [
 ].join('\n');
 
 const JARVIS_PERSONA = {
-  id: 'jarvis', name: 'Jarvis', version: PERSONA_SCHEMA_VERSION, prompt: JARVIS_PROMPT, voice: 'en_GB-alan-medium',
+  id: 'jarvis', wakeName: 'jarvis', name: 'Jarvis', version: PERSONA_SCHEMA_VERSION, prompt: JARVIS_PROMPT, voice: 'en_GB-alan-medium',
   face: {
     style: 'butler', color: '#5ec8ff', eyeGap: 18, dozeAfterSeconds: 120, blinkMinMs: 3000, blinkMaxMs: 7000,
     emotions: {
@@ -181,7 +181,7 @@ const JARVIS_PERSONA = {
 
 // Amber phosphor, square-ish eyes, slow lazy blink: a terminal.
 const CRT_PERSONA = {
-  id: 'crt', name: 'CRT Terminal', version: PERSONA_SCHEMA_VERSION, prompt: CRT_PROMPT, voice: 'en_US-hfc_male-medium',
+  id: 'crt', wakeName: 'terminal', name: 'CRT Terminal', version: PERSONA_SCHEMA_VERSION, prompt: CRT_PROMPT, voice: 'en_US-hfc_male-medium',
   face: {
     style: 'crt', color: '#ffb000', eyeGap: 20, dozeAfterSeconds: 45, blinkMinMs: 5000, blinkMaxMs: 12000,
     emotions: {
@@ -198,7 +198,7 @@ const CRT_PERSONA = {
 
 // Bright, wide-eyed, fast blink: the intern never sits still.
 const INTERN_PERSONA = {
-  id: 'intern', name: 'Startup Intern', version: PERSONA_SCHEMA_VERSION, prompt: INTERN_PROMPT, voice: 'en_US-bryce-medium',
+  id: 'intern', wakeName: 'intern', name: 'Startup Intern', version: PERSONA_SCHEMA_VERSION, prompt: INTERN_PROMPT, voice: 'en_US-bryce-medium',
   face: {
     style: 'intern', color: '#ffbb6b', cheekColor: '#ff8f73', eyeGap: 22, dozeAfterSeconds: 180, blinkMinMs: 1200, blinkMaxMs: 3500,
     emotions: {
@@ -215,7 +215,7 @@ const INTERN_PERSONA = {
 
 // Soft grey, huge round eyes, dozes quickly: a sleepy little spirit.
 const SPRITE_PERSONA = {
-  id: 'sprite', name: 'Dust Sprite', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT, voice: 'en_GB-southern_english_female-low',
+  id: 'sprite', wakeName: 'sprite', aliases: ['haste bright', 'hastebrite', 'haste brite', 'taste bright', 'peace bright'], name: 'Dust Sprite', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT, voice: 'en_GB-southern_english_female-low',
   face: {
     style: 'sprite', color: '#272833', cheekColor: '#d9a3a3', eyeGap: 14, dozeAfterSeconds: 25, blinkMinMs: 2500, blinkMaxMs: 7000,   // color = body (soot); eyes stay white
     emotions: {
@@ -263,6 +263,8 @@ function normalizeEyePreset(src, base) {
 
 // Fills defaults and clamps ranges so the renderer can trust every number. Returns null when `src`
 // is not a usable persona (no object, no usable id) -- the caller drops it.
+// A spoken name from free text: letters, digits, apostrophes and spaces, at most 40 characters.
+function wakeNameFrom(text) { return String(text == null ? '' : text).replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40); }
 function normalizePersona(src) {
   if (!src || typeof src !== 'object' || Array.isArray(src)) return null;
   const id = String(src.id || '').trim().toLowerCase();
@@ -284,6 +286,12 @@ function normalizePersona(src) {
     // Phase 2 (per-persona Piper voice) stores its pick here; carried through untouched so a pack
     // written for it survives this version's normalization.
     voice: typeof src.voice === 'string' ? src.voice.slice(0, 120) : '',
+    // Wake word (app/face/wakeword.js): the spoken name the page listens for as "hey <wakeName>", and
+    // alternative spellings STT tends to produce for the whole phrase. Defaults to the persona's name
+    // ("Rocky" -> "hey rocky"), so every persona wakes by name out of the box; the editor shows the
+    // filled-in value and it can be changed.
+    wakeName: wakeNameFrom(typeof src.wakeName === 'string' && src.wakeName.trim() ? src.wakeName : src.name),
+    aliases: Array.isArray(src.aliases) ? src.aliases.filter(a => typeof a === 'string').map(a => a.trim().slice(0, 60)).filter(Boolean).slice(0, 10) : [],
     // Where it was installed from (a persona repository) and at which catalog version, so updates
     // can be offered; null for hand-made or pasted personas.
     source: normalizeSource(src.source),

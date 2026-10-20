@@ -44,6 +44,8 @@ All of this is in **Settings → AI Profiles → Personas**.
 | `version` | Schema version. Leave at `1`. |
 | `prompt` | The personality. **Appended** to the page's Smart Profile, never replacing it (max 20,000 characters). |
 | `voice` | The Piper voice this persona speaks with, for example `en_US-ryan-high`. Empty = use the page's default voice. See *Voices* below. |
+| `wakeName` | The spoken name a page with the **wake word** on listens for, as "hey *wakeName*" (letters, digits, spaces; max 40 characters). Left out, it is the persona's `name` ("Rocky" wakes to "Hey Rocky"); set it when the name is awkward to say. See *Wake word* in [ai-voice.md](ai-voice.md). |
+| `aliases` | Up to 10 other full phrases that also wake the page, for example `["okay jarvis", "hi jarvis"]`. Useful when the STT server keeps writing the name a particular way. |
 | `face.style` | The drawing style: `oled` (rounded-rect eyes, bar mouth), `cartoon` (a detached, tall 2D cartoon head: outlined flat colours, with eyes and grin that are fixed shapes; it never blinks, closes its eyes or moves its jaw, expressing emotion with its pupils and eyebrows only, and the grin lights up green while it speaks), `kawaii` (soft sparkling eyes, cheeks), `crt` (amber phosphor face in a retro monitor bezel) or `sprite` (a round soot body with two big white eyes). An unknown value becomes `oled`. |
 | `face.color` / `face.cheekColor` | `#rrggbb`, or empty to use the page accent. `color` is the ink of the face's features (eyes, mouth); for the `sprite` style it is the colour of the round body instead (its eyes stay white). `cheekColor` is the blush. |
 | `face.eyeGap` | 0–60 (virtual pixels between the eyes). |

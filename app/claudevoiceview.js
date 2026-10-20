@@ -130,6 +130,7 @@ function setStatus(status, errorText) {
   $('err').textContent = errorText || speechErrText || '';
   console.log('OQX_RING::' + (RING_SIGNAL_STATES[status] ? status : 'idle'));
   faceOnStatus(status || 'idle', errorText || speechErrText || '');
+  if (typeof renderWakeLabel === 'function') renderWakeLabel();
 }
 
 // ---- Face (app/face/renderer.js) ----
@@ -261,13 +262,25 @@ $('faceSettings').onclick = function () { $('vpSettings').onclick(); };
 // mode) the reveal bar. Focus returns to what opened the layer.
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
-  if (!$('devOverlay').classList.contains('hidden')) { $('devCancel').onclick(); var back = { audioinput: 'micPickBtn', audiooutput: 'spkPickBtn', model: 'modelPickBtn', persona: 'personaPickBtn', face: 'facePickBtn' }[devOverlayKindLast] || 'settingsClose'; var el = $(back); if (el) el.focus(); return; }
+  if (!$('devOverlay').classList.contains('hidden')) { $('devCancel').onclick(); var back = { audioinput: 'micPickBtn', audiooutput: 'spkPickBtn', model: 'modelPickBtn', persona: 'personaPickBtn', face: 'facePickBtn', wake: 'wakePickBtn', chime: 'chimePickBtn', followup: 'followPickBtn' }[devOverlayKindLast] || 'settingsClose'; var el = $(back); if (el) el.focus(); return; }
   if (!$('settingsOverlay').classList.contains('hidden')) { $('settingsOverlay').classList.add('hidden'); (faceMode === 'creature' ? $('faceCtl') : $('vpSettings')).focus(); return; }
   if (faceMode !== 'creature') return;
   if ($('faceBar').classList.contains('show') && faceStatusName !== 'error' && faceStatusName !== 'approval') { hideFaceBar(); $('faceCtl').focus(); }
 });
 var devOverlayKindLast = '';   // which picker was open last, for Escape's focus return
+var wakeHiddenPaused = false;   // the wake-word mic was released because the page was hidden; re-arm on return
 document.addEventListener('visibilitychange', function () {
+  // Wake word on: a hidden page must not listen. Release capture and disarm; a page that comes back
+  // re-arms to waiting (never to an old listening window).
+  if (document.hidden && wakeOn() && conversationOpen && vad) { wakeHiddenPaused = true; vad.stop(); wakeArm(false); }
+  else if (!document.hidden && wakeHiddenPaused) {
+    wakeHiddenPaused = false;
+    if (conversationOpen && vad) {
+      var p = wakeArm(true), epoch = captureEpoch;
+      p.then(function () { if (conversationOpen && !document.hidden && epoch === captureEpoch) vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel); }).catch(function () {});
+    }
+  }
+  if (!document.hidden && !wakeHiddenPaused) wakeAutoOpen();
   if (!face) return;
   if (document.hidden) { face.stop(); faceStopLevel(); }
   else { face.start(); face.resize(); faceResumeLevel(); }
@@ -431,6 +444,12 @@ function connectEvents() {
     } else if (msg.type === 'face') {
       applyFaceMode(msg.mode);
       syncPickButtons();
+    } else if (msg.type === 'wake-state') {
+      applyWakeState(msg.wake);
+      syncPickButtons();
+      // Turned on from the editor while the mic is open: the gate is shut until this page arms it.
+      if (msg.wake && msg.wake.enabled && msg.wake.state === 'off' && conversationOpen) wakeArm(true);
+      else if (msg.wake && msg.wake.enabled && !conversationOpen) wakeAutoOpen();   // wake word just turned on: open the mic
     } else if (msg.type === 'permission-mode') {
       currentMode = msg.mode || currentMode;
       syncModeUI();
@@ -586,6 +605,7 @@ fetch(BASE + '/state', { cache: 'no-store' }).then(function (r) { return r.json(
     if (s.panel && s.panel.active) showPanelReview(s.panel);   // rotating away mid-review must not lose the proposal
     if (s.emotion && face) face.setEmotion(s.emotion);
     setPersonaPending(s.personaPending || null);
+    if (s.wake) applyWakeState(s.wake);
     // A reload mid-approval (page switch, creature toggle) restores the actionable overlay; the
     // decision route checks the requestId, so a stale one is refused server-side, never misapplied.
     if (s.pendingApproval && s.pendingApproval.requestId && !pendingApprovalRequestId) {
@@ -669,6 +689,10 @@ $('textInput').addEventListener('keydown', function (e) {
 // voice through the speakers and mistake it for the next user utterance (a real feedback-loop risk
 // in a fully hands-free loop -- there's no headset here, just the panel's own mic and speaker).
 var suppressVAD = false;
+// Capture epoch: bumped synchronously on every mic/arm boundary (mic tap, hide/show, arm/disarm). An
+// utterance whose STT round trip began under an older epoch never sends, even when the host's own
+// generation has not caught up yet (the /wake-arm response is still in flight).
+var captureEpoch = 0;
 function speak(text, onDone) {
   if (!text) { if (onDone) onDone(); return; }
   stopTurnAudio();   // the Test button supersedes any in-flight turn speech -- never two streams
@@ -715,6 +739,7 @@ $('ttsTestBtn').onclick = function () {
 var turnAudio = null;   // the current voice turn's <audio>, or null
 function endSpeechUI(errMsg) {
   suppressVAD = false;
+  if (vad && vad.reset) vad.reset();   // an utterance that began as the speaker's tail is dropped, not shipped
   $('spkBtn').classList.remove('pulsing');
   setStatus(turnInProgress ? 'thinking' : conversationOpen ? 'listening' : 'idle', errMsg || '');
 }
@@ -726,16 +751,18 @@ function stopTurnAudio() {
   try { a.pause(); } catch (e) {}
   try { a.removeAttribute('src'); a.load(); } catch (e) {}   // closes the HTTP stream -> server aborts synthesis
   endSpeechUI();
+  wakeReplyEnded(false);   // stopped early: the end of the sound, but no follow-up window for it
 }
 function startTurnAudio(turnId) {
   stopTurnAudio();
   var a = turnAudio = new Audio(BASE + '/turn-audio?turn=' + encodeURIComponent(turnId));
-  var done = function () {   // ended and error land in the same place: release the mic, settle status
+  var done = function (completed) {   // ended and error land in the same place: release the mic, settle status
     if (turnAudio !== a) return;
     turnAudio = null;
     faceDetachAnalyser(a);
     endSpeechUI();
-  };
+    wakeReplyEnded(completed === true);   // the end of the sound: the wake gate starts its echo cooldown now;
+  };                                       // only a natural end earns a follow-up window (error / rejected play do not)
   faceAttachAnalyser(a);   // before play(): the element must be routed before its first sample
   a.addEventListener('playing', function () {
     if (turnAudio !== a) return;
@@ -744,10 +771,10 @@ function startTurnAudio(turnId) {
     setStatus('speaking');
     $('spkBtn').classList.add('pulsing');
   });
-  a.addEventListener('ended', done);
-  a.addEventListener('error', done);
+  a.addEventListener('ended', function () { done(true); });
+  a.addEventListener('error', function () { done(false); });
   applySinkId(a);   // route to the picked speaker (no-op on system default)
-  a.play().catch(done);
+  a.play().catch(function () { done(false); });
 }
 
 // ---- Audio device pickers (Settings overlay) ----
@@ -805,6 +832,10 @@ function modelPrettyName(id) {   // 'claude-sonnet-5' -> 'Sonnet' (best-effort; 
 // Settings shows only the CURRENT pick per row (big row, tap to change); the actual list lives
 // in its own full-size overlay -- never an always-visible scrolling list inside a dialog.
 var FACE_PICKS = [['off', 'Off — plain chat page'], ['side', 'Side — face beside the chat'], ['creature', 'Creature — face only']];
+var WAKE_PICKS = [['off', 'Off — the open mic hears everything'], ['on', 'On — wait for the persona\'s name']];
+var CHIME_PICKS = [['0', 'Off'], ['1', 'On — a short two-note chime']];
+var FOLLOWUP_PICKS = [['0', 'Off — one wake, one request'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds'], ['30', '30 seconds'], ['60', '1 minute'], ['120', '2 minutes']];
+var wakeFollowUpSeconds = Q.get('wakeFollowUpSeconds') || '0';
 function syncPickButtons() {
   $('micPickVal').textContent = savedMicLabel || ('Default — ' + (globalMicLabel || 'System default'));
   $('spkPickVal').textContent = savedSpkLabel || ('Default — ' + (globalSpkLabel || 'System default'));
@@ -814,6 +845,12 @@ function syncPickButtons() {
   $('modelPickVal').textContent = label;
   var fp = FACE_PICKS.find(function (p) { return p[0] === faceMode; });
   $('facePickVal').textContent = fp ? fp[1] : faceMode;
+  var wp = WAKE_PICKS.find(function (p) { return p[0] === (wakeOn() ? 'on' : 'off'); });
+  $('wakePickVal').textContent = (wp ? wp[1] : 'Off') + (wakeOn() && wakeState.phrase ? ' ("' + wakeState.phrase + '")' : '');
+  var cp = CHIME_PICKS.find(function (p) { return p[0] === (wakeChimeOn ? '1' : '0'); });
+  $('chimePickVal').textContent = cp ? cp[1] : 'Off';
+  var fu = FOLLOWUP_PICKS.find(function (p) { return p[0] === String(wakeFollowUpSeconds); });
+  $('followPickVal').textContent = fu ? fu[1] : (wakeFollowUpSeconds + ' seconds');
   syncPersonaUI();
 }
 function syncPersonaUI() {
@@ -847,6 +884,9 @@ function renderDevOverlay() {
     FACE_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === faceMode); });
     return;
   }
+  if (kind === 'wake') { WAKE_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === (wakeOn() ? 'on' : 'off')); }); return; }
+  if (kind === 'chime') { CHIME_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === (wakeChimeOn ? '1' : '0')); }); return; }
+  if (kind === 'followup') { FOLLOWUP_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === String(wakeFollowUpSeconds)); }); return; }
   var savedLabel = kind === 'audioinput' ? savedMicLabel : savedSpkLabel;
   var globalLabel = kind === 'audioinput' ? globalMicLabel : globalSpkLabel;
   var devs = allDevices.filter(function (d) { return d.kind === kind && d.label; });
@@ -859,7 +899,7 @@ function renderDevOverlay() {
 function openDevOverlay(kind) {
   devOverlayKind = kind;
   devOverlayKindLast = kind;
-  $('devTitle').textContent = kind === 'audioinput' ? 'Microphone' : kind === 'audiooutput' ? 'Speaker' : kind === 'persona' ? 'Persona' : kind === 'face' ? 'Face' : 'Model';
+  $('devTitle').textContent = { audioinput: 'Microphone', audiooutput: 'Speaker', persona: 'Persona', face: 'Face', wake: 'Wake word', chime: 'Chime when the name is heard', followup: 'Follow-up window after a reply' }[kind] || 'Model';
   renderDevOverlay();                                  // cached entries paint instantly...
   if (kind === 'audioinput' || kind === 'audiooutput') {   // (the other lists are static -- no mic grab)
     ensureDeviceIds(true).then(function () {           // ...then a fresh enumeration replaces them
@@ -906,6 +946,15 @@ function pickDevice(kind, label) {
     syncPickButtons();
     return;
   }
+  if (kind === 'wake') {
+    postOption('wakeWord', label);   // the host re-resolves and broadcasts wake-state
+    wakeState.enabled = label === 'on';
+    if (conversationOpen) wakeArm(label === 'on'); else renderWakeLabel();
+    syncPickButtons();
+    return;
+  }
+  if (kind === 'chime') { wakeChimeOn = label === '1'; postOption('wakeChime', wakeChimeOn ? 'true' : 'false'); syncPickButtons(); return; }
+  if (kind === 'followup') { wakeFollowUpSeconds = label; postOption('wakeFollowUpSeconds', label); syncPickButtons(); return; }
   if (kind === 'model') {
     savedModelPick = label;
     postOption('modelPick', label);   // persists; also what a fresh session start reads
@@ -943,6 +992,9 @@ $('spkPickBtn').onclick = function () { openDevOverlay('audiooutput'); };
 $('modelPickBtn').onclick = function () { openDevOverlay('model'); };
 $('personaPickBtn').onclick = function () { openDevOverlay('persona'); };
 $('facePickBtn').onclick = function () { openDevOverlay('face'); };
+$('wakePickBtn').onclick = function () { openDevOverlay('wake'); };
+$('chimePickBtn').onclick = function () { openDevOverlay('chime'); };
+$('followPickBtn').onclick = function () { openDevOverlay('followup'); };
 $('devCancel').onclick = function () { $('devOverlay').classList.add('hidden'); devOverlayKind = ''; };
 
 // ---- Tap-to-toggle voice conversation (Phase 5) ----
@@ -952,38 +1004,146 @@ $('devCancel').onclick = function () { $('devOverlay').classList.add('hidden'); 
 var conversationOpen = false;
 var vadHangoverMs = parseInt(Q.get('vadHangoverMs'), 10) || 400;   // 0.4s default — snappier out of the box (matches LucidType)
 var vad = window.createClaudeVoiceVAD ? window.createClaudeVoiceVAD({ hangoverMs: vadHangoverMs }) : null;
+// With the wake word on, speech before the phrase is nobody's business: no status change, no face,
+// no ripple until the human is expected to be talking to the persona (listening / follow-up).
+function wakeExpectsSpeech() { return !wakeOn() || wakeState.state === 'listening' || wakeState.state === 'followup'; }
+var vadSpeechStartedAt = 0;   // when the VAD saw the current utterance begin; sent with its audio (the host dates it by this)
+var wakeHold = false;         // speech began inside a window: hold the label (no countdown, no "Waiting") until STT answers
 function onVADSpeechStart() {
+  vadSpeechStartedAt = Date.now();
   if (suppressVAD) return;
+  if (!wakeExpectsSpeech()) return;
+  if (wakeOn()) wakeHold = true;
   setStatus('listening');
+  renderWakeLabel();
 }
 function onVADSpeechEnd(pcm16) {
-  if (suppressVAD) return;
-  setStatus('thinking');
-  fetch(BASE + '/audio', { method: 'POST', cache: 'no-store', body: pcm16.buffer })
+  if (suppressVAD || !conversationOpen) return;
+  // With the wake word on, an utterance is just "something was said": no status change until the
+  // host says it was addressed to the persona. Nothing about it is ever shown on the panel.
+  if (!wakeOn()) setStatus('thinking');
+  var sentGen = wakeGen, epoch = captureEpoch;
+  var startAgo = vadSpeechStartedAt ? Math.max(0, Date.now() - vadSpeechStartedAt) : 0;
+  var q = wakeOn() ? '?gen=' + encodeURIComponent(sentGen) + '&start=' + startAgo : '';
+  var release = function () { if (wakeHold) { wakeHold = false; renderWakeLabel(); } };
+  fetch(BASE + '/audio' + q, { method: 'POST', cache: 'no-store', body: pcm16.buffer })
     .then(function (r) { return r.json(); })
     .then(function (r) {
+      release();
       // Re-check AFTER the async STT round trip: if speech started playing while this was in
       // flight, the utterance may have caught the speaker's first words -- drop it, never
       // ghost-send it as a turn.
-      if (suppressVAD) return;
-      if (r && r.ok && r.text && r.text.trim()) { sendText(r.text.trim()); }
-      else { setStatus(conversationOpen ? 'listening' : 'idle', r && r.error); }
+      if (suppressVAD || !conversationOpen || epoch !== captureEpoch) return;   // mic closed / re-armed meanwhile: stale
+      if (wakeOn() && sentGen !== wakeGen) return;   // persona switched or host re-armed meanwhile: stale
+      if (r && r.ok && r.text && r.text.trim()) {
+        if (r.wake === 'addressed') wakeChime();
+        sendText(r.text.trim());
+      } else {
+        if (r && r.wake === 'listening') wakeChime();   // the name alone: now listening for the request
+        if (!wakeOn()) setStatus(conversationOpen ? 'listening' : 'idle', r && r.error);
+        else if (r && r.error) setStatus(conversationOpen ? 'listening' : 'idle', r.error);
+      }
     })
-    .catch(function () { setStatus('error', 'Transcription request failed.'); });
+    .catch(function () { release(); setStatus('error', 'Transcription request failed.'); });
 }
-window.oqxToggleConversation = function () {
+
+// ---- Wake word (phase 1, transcript gate; the host decides, this page shows the state) ----
+// Query options come from the page's saved options; the host's wake-state events and /state carry
+// the live state (waiting / listening / active / followup / cooldown / not-ready) and the phrase.
+var wakeGen = 0;
+var wakeState = { enabled: Q.get('wakeWord') === 'on', state: 'off', phrase: '', until: 0, ready: true, reason: '' };
+var wakeChimeOn = Q.get('wakeChime') === '1';
+var wakeTick = null;
+function wakeOn() { return !!(wakeState && wakeState.enabled); }
+function wakeArm(on) {
+  captureEpoch++;   // synchronous: anything captured before this boundary is stale, whatever the host says later
+  wakeHold = false;
+  if (!wakeOn() && on) return Promise.resolve();
+  var epoch = captureEpoch;
+  return postJSON('/wake-arm', { on: !!on }).then(function (r) { return r.json(); })
+    .then(function (r) { if (r && r.ok && epoch === captureEpoch) { wakeGen = r.gen || 0; applyWakeState(r.wake); } })
+    .catch(function () {});
+}
+function applyWakeState(w) {
+  if (!w) return;
+  wakeState = w;
+  if (typeof w.gen === 'number') wakeGen = w.gen;
+  renderWakeLabel();
+  clearInterval(wakeTick); wakeTick = null;
+  if (w.until) wakeTick = setInterval(renderWakeLabel, 500);   // the countdown on screen, so the end is visible
+}
+// What the status line (and the creature badge) says while the wake word is in charge.
+function wakeLabelText() {
+  if (!wakeOn() || !conversationOpen) return '';
+  var w = wakeState, phrase = w.phrase ? w.phrase.replace(/^\w/, function (c) { return c.toUpperCase(); }) : '';
+  var left = w.until ? Math.max(0, Math.ceil((w.until - Date.now()) / 1000)) : 0;
+  if (w.state === 'not-ready') return 'Wake word not ready: ' + (w.reason || 'no phrase');
+  if (wakeHold) return w.state === 'followup' ? 'Follow-up…' : 'Listening…';   // a request began inside the window: no countdown while it is transcribed
+  if (w.state === 'waiting') return 'Waiting for "' + phrase + '"';
+  if (w.state === 'listening') return 'Listening (' + left + ' s to start)';
+  if (w.state === 'followup') return 'Follow-up window (' + left + ' s)';
+  if (w.state === 'cooldown') return 'One moment';
+  return '';
+}
+var wakeSrLast = '';
+function renderWakeLabel() {
+  var text = wakeLabelText();
+  var el = $('wakeNote');
+  if (el) { el.textContent = text; el.classList.toggle('show', !!text); el.classList.toggle('error', wakeState.state === 'not-ready'); }
+  var badge = $('faceWakeBadge');
+  if (badge) { badge.textContent = text; badge.classList.toggle('show', !!text && faceMode === 'creature'); }
+  // Screen readers hear state changes, not every second of the countdown.
+  var sr = text.replace(/\s*\(\d+ s[^)]*\)/, ''), srEl = $('wakeSr');
+  if (srEl && sr !== wakeSrLast) { wakeSrLast = sr; srEl.textContent = sr; }
+  if (face && wakeOn() && conversationOpen && wakeState.state === 'waiting' && $('status').textContent === 'LISTENING') face.setState('idle');   // waiting looks idle (the face may doze); the label says why
+}
+// A short two-note chime through the picked speaker when the name is heard. Off by default.
+var chimeCtx = null;
+function wakeChime() {
+  if (!wakeChimeOn || !speakEnabled) return;   // the speaker button mutes the chime too
+  try {
+    if (!chimeCtx) chimeCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var routed = (chimeCtx.setSinkId && spkDeviceId) ? chimeCtx.setSinkId(spkDeviceId).catch(function () {}) : Promise.resolve();
+    routed.then(function () {   // the picked speaker is in place before the first note
+      var t = chimeCtx.currentTime, g = chimeCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      g.connect(chimeCtx.destination);
+      [[880, 0], [1320, 0.12]].forEach(function (n) { var o = chimeCtx.createOscillator(); o.type = 'sine'; o.frequency.value = n[0]; o.connect(g); o.start(t + n[1]); o.stop(t + 0.36); });
+    });
+  } catch (e) {}
+}
+function wakeReplyEnded(completed) {
+  if (!wakeOn()) return;
+  postJSON('/wake-reply-end', { completed: completed !== false }).catch(function () {});
+}
+// Wake word on: the mic opens by itself (the page is already waiting for the name). The mic button is
+// then a mute, and a deliberate mute sticks across page switches and reloads until it is tapped again.
+function wakeMuted() { try { return localStorage.getItem('cvWakeMuted') === '1'; } catch (e) { return false; } }
+function setWakeMuted(on) { try { localStorage.setItem('cvWakeMuted', on ? '1' : '0'); } catch (e) {} }
+function wakeAutoOpen() {
+  if (wakeOn() && !conversationOpen && !wakeMuted() && vad && !document.hidden && wakeState.state !== 'not-ready') window.oqxToggleConversation(true);
+}
+window.oqxToggleConversation = function (auto) {
   if (!vad) { $('textInput').focus(); return; }   // VAD script failed to load -- fall back to at least focusing input
+  if (auto !== true) setWakeMuted(conversationOpen);   // a human tap: closing it is a mute that sticks; opening clears it
   if (conversationOpen) {
     conversationOpen = false;
+    captureEpoch++;   // hard off, at once: in-flight STT results from this capture never send
     vad.stop();
+    wakeArm(false);
     setStatus('idle');
   } else {
     conversationOpen = true;
+    captureEpoch++;
+    var epoch = captureEpoch;
     setStatus('listening');
     ensureDeviceIds().then(function () {
-      if (!conversationOpen) return;   // toggled back off while devices were enumerating
+      if (!conversationOpen || epoch !== captureEpoch) return;   // toggled back off while devices were enumerating
       vad.setInputDevice(micDeviceId);
-      return vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel);
+      return wakeArm(true).then(function () {
+        if (!conversationOpen || epoch + 1 !== captureEpoch) return;   // muted during arming: capture must not reopen
+        return vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel);
+      });
     }).catch(function (e) {
       conversationOpen = false;
       syncMicUI();
@@ -1019,7 +1179,7 @@ $('spkBtn').onclick = function () {
 // sustained voice reads as a steady outward pulse rather than a solid blob.
 var lastRippleAt = 0;
 function onVADLevel(level) {
-  if (!conversationOpen || suppressVAD) return;
+  if (!conversationOpen || suppressVAD || !wakeExpectsSpeech()) return;
   var now = Date.now();
   if (level < 0.012 || now - lastRippleAt < 180) return;
   lastRippleAt = now;
@@ -1341,3 +1501,6 @@ syncMicUI();
 syncSpkUI();
 syncModeUI();
 syncPickButtons();
+
+// Page load with the wake word on: open the mic once the state is known (the /state fetch fills wakeState).
+setTimeout(wakeAutoOpen, 600);

@@ -89,6 +89,43 @@ hands back the exact text.
 > that was still blank. Voice now runs through the Wyoming STT/TTS servers below instead of Open
 > WebUI's own Whisper, and the knob gesture is tap-to-toggle rather than hold-to-talk.
 
+### Wake word — only answer when spoken to
+
+By default the open mic hears everything: every pause sends the utterance to the AI. On a desk in a
+room where people talk, that is the wrong default. Turn **Wake word** on (Settings → Wake word, or the
+editor's AI Voice page options) and the page waits for the persona's name.
+
+- **What is listened for.** `hey` + the persona's **wake name** (Jarvis → "Hey Jarvis", Mimi →
+  "Hey Mimi"; every persona has one, its own name unless you change the *Wake name* field under
+  **Settings → AI Profiles → Personas**). A page can set its own phrase instead (**Wake phrase**),
+  for example `computer please`. Two words at least: a single word wakes the page on everyday speech.
+  With no persona, the page listens for "hey panel". The editor shows the phrase the page will use.
+- **How it works.** Speech still goes to the STT server as before, but **nothing is shown on the
+  panel, logged, or sent to the AI** until an utterance *starts* with the phrase. Say the name and the
+  request together ("Hey Jarvis, what time is it?") and the request is sent as spoken, without the
+  name. Say the name alone and the page shows *Listening*: you have 8 seconds to start the request.
+  The status line (or a badge on a Creature page) says what the page is waiting for.
+- **When it stops listening.** As soon as the reply has finished playing the page goes back to
+  waiting for the name — one wake, one request, so a name said in the morning never keeps the page
+  awake all day. **Follow-up window** (0 by default) adds a short window after each reply, in seconds,
+  during which you can speak again without the name; the countdown is on screen and it closes on its
+  own. Just after a reply ends there is a one-second guard so the speaker's own tail is not heard
+  as a request.
+- **Chime.** Off by default. On, a short two-note chime through the page's speaker confirms the name
+  was heard.
+- **The mic button is still the hard off.** One tap arms the wake word, a second tap closes the mic.
+  Typing works at all times, wake word or not. With the permission mode set to run commands without
+  approval, anything said after the phrase is acted on, so keep the phrase distinctive.
+
+Whisper often writes a spoken "hey" as "a", "hay", "hate", "pain", "ay", "eh", "hi" or "he" ("A norm." for
+"Hey Norm"), so every "Hey <name>" phrase also accepts those in front of the same name. The name itself must
+still match exactly. A quickly said "Hey Norm" is sometimes written as one word ("Enorm."), so those fused forms are accepted too. Saying only the name ("Jarvis.", "terminal.") also wakes the page, as the name alone: it never carries a
+request, so say the request after the listening prompt appears. A phrase said twice in a row ("Hey Mimi. Hey
+Mimi.") counts once. A page phrase that does not start with "hey" gets no such leniency.
+
+Recognition is done on the STT transcript (there is no separate wake-word model), so what counts is
+what Whisper writes: "Hey, Jarvis!" and "hey jarvis" both wake the page; "Hey Travis" does not.
+
 ### Ring feedback
 
 The knob's RGB ring mirrors the on-screen status, so you don't have to be looking at the screen:
@@ -159,7 +196,7 @@ backend, Whisper and Piper the page already uses; nothing extra runs.
   and an error or approval always shows its controls).
 - **Persona** (Settings → Persona): who the face is. Ships with a starter set (Mimi, Jarvis,
   CRT Terminal, Startup Intern, Dust Sprite); the default is *None*, a plain face. Each can have its own
-  Piper voice. A persona's prompt is added to the page's profile, never replacing
+  Piper voice and a spoken name for the *Wake word* (above). A persona's prompt is added to the page's profile, never replacing
   it, and is ignored on structured-output profiles such as Panel Builder. Changing the persona
   restarts that backend's session once the current reply or approval is finished; changing the face
   layout never does.

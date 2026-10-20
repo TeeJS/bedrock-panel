@@ -35,6 +35,17 @@
   /* Mute is never implied: while the mic is off in creature mode a mic-off badge stays on screen. */
   /* A persona switch waiting on the live reply: status-line note (Side/Off) and a quiet bottom-centre
      badge in Creature, above the reveal bar's space so it never covers approval/error controls. */
+  /* Wake word: what the page is waiting for, on the status line (Side/Off) and as a bottom-centre badge
+     in Creature; a countdown while a listening or follow-up window runs, so its end is visible. */
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #wakeNote { display: none; font-size: 13px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+  #wakeNote.show { display: block; }
+  #wakeNote.error { color: var(--danger); }
+  #faceWakeBadge { display: none; position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 29;
+    padding: 6px 14px; border-radius: 12px; border: 1px solid var(--tile-bd); background: var(--surf); color: var(--accent);
+    font-size: 14px; font-weight: 600; user-select: none; pointer-events: none; }
+  #faceWakeBadge.show { display: block; }
+  #faceBar.show ~ #faceWakeBadge { bottom: 140px; }
   #personaPendingNote { display: none; font-size: 13px; font-weight: 600; color: var(--warn); text-transform: uppercase; letter-spacing: .04em; }
   #personaPendingNote.show { display: block; }
   #facePendingBadge { display: none; position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 29;
@@ -403,7 +414,7 @@
     </div>
     <div id="main">
       <div id="card"><div id="empty" class="empty">No conversation yet — type or tap the knob to start.</div><div id="list"></div></div>
-      <div id="statusRow"><div id="status">IDLE</div><div id="personaPendingNote"></div><div id="err"></div></div>
+      <div id="statusRow"><div id="status">IDLE</div><div id="wakeNote" aria-hidden="true"></div><div id="wakeSr" class="sr-only" aria-live="polite"></div><div id="personaPendingNote"></div><div id="err"></div></div>
       <div id="inputrow">
         <textarea id="textInput" placeholder="Type a message…" rows="1"></textarea>
         <button id="sendBtn">➤ Send</button>
@@ -514,6 +525,15 @@
           <button id="facePickBtn" class="pickRow" type="button">
             <span class="pickName">Face</span><span id="facePickVal" class="pickVal"></span><span class="pickChevron">›</span>
           </button>
+          <button id="wakePickBtn" class="pickRow" type="button">
+            <span class="pickName">Wake word</span><span id="wakePickVal" class="pickVal"></span><span class="pickChevron">›</span>
+          </button>
+          <button id="chimePickBtn" class="pickRow" type="button">
+            <span class="pickName">Wake chime</span><span id="chimePickVal" class="pickVal"></span><span class="pickChevron">›</span>
+          </button>
+          <button id="followPickBtn" class="pickRow" type="button">
+            <span class="pickName">Follow-up window</span><span id="followPickVal" class="pickVal"></span><span class="pickChevron">›</span>
+          </button>
           <div class="srow" style="margin:0"><button id="ttsTestBtn" class="vpBtn" type="button" style="width:auto;flex:0 0 auto;padding:8px 20px">🔊 Test speech</button>
             <span class="hint" style="flex:1;min-width:0">Speaks the last reply through the configured voice.</span></div>
         </div>
@@ -563,6 +583,7 @@
     <button id="faceBarClose" class="faceBarBtn" type="button" title="Hide the controls">Hide</button>
   </div>
   <div id="facePendingBadge" aria-live="polite"></div>
+  <div id="faceWakeBadge" aria-hidden="true"></div>
   <script src="claudevoice-vad.js"></script>
   <script src="claudevoice-markdown.js"></script>
   <script src="face/renderer.js"></script>
