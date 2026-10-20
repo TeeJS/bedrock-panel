@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   validatePersona(src) { return ipcRenderer.invoke('validatePersona', src); },
   personaJson(persona) { return ipcRenderer.invoke('personaJson', persona); },
   exportPersonaFile(persona) { return ipcRenderer.invoke('exportPersonaFile', persona); },
+  importPersonaUrl(url) { return ipcRenderer.invoke('importPersonaUrl', url); },   // fetch a pack (64 KB cap) and validate it
+  listTtsVoices() { return ipcRenderer.invoke('listTtsVoices'); },                 // voices the configured Piper offers (Wyoming describe)
   meetingFoldersCheck(fields) { return ipcRenderer.invoke('meetingFoldersCheck', fields); },
   listDropInApps() { return ipcRenderer.invoke('listDropInApps'); },
   openExternal(url) { ipcRenderer.send('openExternal', url); },

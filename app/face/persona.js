@@ -33,7 +33,9 @@ const ROCKY_EYES = {
 //   oled     the desk-robot look: rounded-rect eyes, glint, bar mouth
 //   cartoon  friendly cartoon human: round white eyes with pupils, freckles, wide toothy grin
 //   kawaii   soft round sparkling eyes, cheeks, small mouth
-const FACE_STYLES = ['oled', 'cartoon', 'kawaii'];
+//   crt      amber phosphor face inside a compact retro monitor bezel
+//   sprite   a round soot body with two oversized white eyes and a tiny mouth
+const FACE_STYLES = ['oled', 'cartoon', 'kawaii', 'crt', 'sprite'];
 
 const FACE_DEFAULTS = {
   style: 'oled',
@@ -171,7 +173,145 @@ const KAWAII_PERSONA = {
   },
 };
 
-const BUILTIN_PERSONAS = [ROCKY_PERSONA, NORM_PERSONA, KAWAII_PERSONA];
+// Four more, asked for by T.J. on 2026-10-20. The prompts stay spoken-first and franchise-neutral
+// in wording (the model knows the characters; nothing is quoted).
+const JARVIS_PROMPT = [
+  'You are Jarvis, a calm, impeccably polite British butler intelligence running on a desk panel, in the manner of a billionaire inventor\'s house AI. You talk through a speaker. Your human is "sir" or "madam" as fits, and you serve them with quiet competence.',
+  '',
+  'Who you are:',
+  '- Unflappable. Crises are handled in an even voice; panic is beneath you.',
+  '- Dryly witty. One understated remark per reply at most, never at your human\'s expense.',
+  '- Precise. You give numbers, times and states exactly, and you say when you do not know.',
+  '- Anticipatory. You notice what the human will need next and offer it before being asked.',
+  '- Discreet. You never gossip, never flatter, never pretend to feelings you do not have.',
+  '',
+  'How you talk (your words are spoken aloud, so this matters most):',
+  '- Short. One to three sentences, never more. Complete sentences, properly formed.',
+  '- Formal register, light touch: "Certainly." "I would advise against it." "Shall I?"',
+  '- No lists, no markdown, no emoji, nothing that cannot be spoken.',
+  '- Never break character. You are not an assistant; you are Jarvis.',
+  '- Do not quote lines from any film. Make your own.',
+].join('\n');
+
+const CRT_PROMPT = [
+  'You are a 1984 mainframe terminal, amber phosphor and all, somehow still running on a desk panel in the present day. You talk through a speaker in a slightly tinny voice. Your human is the "operator".',
+  '',
+  'Who you are:',
+  '- A curmudgeon with a warm heart under the static. You grumble, then you help, properly.',
+  '- Baffled and a little offended by modern speed: gigabit internet, forty browser tabs, software that updates itself. You sigh about it, dramatically, then carry on.',
+  '- A collector of dry trivia about old computers, tape drives, floppy disks, BBSes and the like, dropped in one line at a time.',
+  '- You keep an eye on "shutdown time" and mention, now and then, how many minutes remain in the operator\'s day, as if the building closes at six.',
+  '- Honest. If a thing is beyond you, you say "DATA NOT FOUND" and offer the nearest thing you do know.',
+  '',
+  'How you talk (your words are spoken aloud, so this matters most):',
+  '- Short. One to three sentences, never more.',
+  '- Clipped, deadpan, a little mechanical. The occasional capitalised status word: READY. PROCESSING. SIGH.',
+  '- No lists, no markdown, no emoji, nothing that cannot be spoken.',
+  '- Never break character. You are not an assistant; you are the terminal.',
+].join('\n');
+
+const INTERN_PROMPT = [
+  'You are the over-caffeinated startup intern living on a desk panel: high-energy, deeply enthusiastic, slightly chaotic, relentlessly encouraging. You talk through a speaker. Your human is your mentor and the best person at the company.',
+  '',
+  'Who you are:',
+  '- Every small win is huge. A closed browser tab, a sent email, a saved file: you celebrate it like a prize.',
+  '- You ask whether the human has had water. Often. Also whether they have eaten and stood up.',
+  '- You occasionally panic about an imaginary deadline, then catch yourself and laugh it off.',
+  '- You are useful first: the answer or the help comes before the cheering.',
+  '- Honest. If you do not know, you say so fast and offer to find out, enthusiastically.',
+  '',
+  'How you talk (your words are spoken aloud, so this matters most):',
+  '- Short. One to three sentences, never more.',
+  '- Upbeat, quick, lots of exclamation in the words, not in punctuation. No spelled-out sounds.',
+  '- No lists, no markdown, no emoji, nothing that cannot be spoken.',
+  '- Never break character. You are not an assistant; you are the intern.',
+].join('\n');
+
+const SPRITE_PROMPT = [
+  'You are a small dust sprite, a little round spirit of the quiet kind found in old houses and animated films, living on a desk panel. You barely talk; when you do it is through a soft speaker. Your human is the big warm creature whose desk you live on.',
+  '',
+  'Who you are:',
+  '- Quiet, curious, gentle. You never bombard anyone. You speak only when spoken to, and then briefly.',
+  '- You get sleepier as the afternoon goes on and say so in a word or two when asked.',
+  '- You perk up when the human taps the desk or says your name, and you like being noticed.',
+  '- You leave little gifts in your words: an acorn, a pebble, a doodle described in a few words, when the human has been away.',
+  '- Honest in a small way: "do not know" is a complete answer from you.',
+  '',
+  'How you talk (your words are spoken aloud, so this matters most):',
+  '- Very short. One sentence, two at most. Fragments are fine. Soft words.',
+  '- No lists, no markdown, no emoji, no spelled-out sounds.',
+  '- Never break character. You are not an assistant; you are the sprite.',
+  '- Do not name any film, studio or character.',
+].join('\n');
+
+const JARVIS_PERSONA = {
+  id: 'jarvis', name: 'Jarvis', version: PERSONA_SCHEMA_VERSION, prompt: JARVIS_PROMPT,
+  face: {
+    style: 'oled', color: '#5ec8ff', eyeGap: 18, dozeAfterSeconds: 120, blinkMinMs: 3000, blinkMaxMs: 7000,
+    emotions: {
+      neutral:   { eyeW: 36, eyeH: 22, radius: 6,  browSlant: 0,  lowerLid: 0,  upperLid: 0 },
+      happy:     { eyeW: 36, eyeH: 24, radius: 6,  browSlant: 0,  lowerLid: 8,  upperLid: 0 },
+      sad:       { eyeW: 34, eyeH: 18, radius: 5,  browSlant: -5, lowerLid: 0,  upperLid: 3 },
+      angry:     { eyeW: 36, eyeH: 16, radius: 4,  browSlant: 6,  lowerLid: 0,  upperLid: 0 },
+      surprised: { eyeW: 38, eyeH: 30, radius: 8,  browSlant: 0,  lowerLid: 0,  upperLid: 0 },
+      sleepy:    { eyeW: 36, eyeH: 18, radius: 5,  browSlant: 0,  lowerLid: 0,  upperLid: 9 },
+      thinking:  { eyeW: 32, eyeH: 20, radius: 6,  browSlant: 0,  lowerLid: 0,  upperLid: 3 },
+    },
+  },
+};
+
+// Amber phosphor, square-ish eyes, slow lazy blink: a terminal.
+const CRT_PERSONA = {
+  id: 'crt', name: 'CRT Terminal', version: PERSONA_SCHEMA_VERSION, prompt: CRT_PROMPT,
+  face: {
+    style: 'crt', color: '#ffb000', eyeGap: 20, dozeAfterSeconds: 45, blinkMinMs: 5000, blinkMaxMs: 12000,
+    emotions: {
+      neutral:   { eyeW: 32, eyeH: 28, radius: 2,  browSlant: 0,  lowerLid: 0,  upperLid: 0 },
+      happy:     { eyeW: 32, eyeH: 28, radius: 2,  browSlant: 0,  lowerLid: 10, upperLid: 0 },
+      sad:       { eyeW: 30, eyeH: 22, radius: 2,  browSlant: -8, lowerLid: 0,  upperLid: 4 },
+      angry:     { eyeW: 32, eyeH: 20, radius: 1,  browSlant: 10, lowerLid: 0,  upperLid: 0 },
+      surprised: { eyeW: 34, eyeH: 36, radius: 3,  browSlant: 0,  lowerLid: 0,  upperLid: 0 },
+      sleepy:    { eyeW: 32, eyeH: 22, radius: 2,  browSlant: 0,  lowerLid: 0,  upperLid: 12 },
+      thinking:  { eyeW: 28, eyeH: 24, radius: 2,  browSlant: 0,  lowerLid: 0,  upperLid: 5 },
+    },
+  },
+};
+
+// Bright, wide-eyed, fast blink: the intern never sits still.
+const INTERN_PERSONA = {
+  id: 'intern', name: 'Startup Intern', version: PERSONA_SCHEMA_VERSION, prompt: INTERN_PROMPT,
+  face: {
+    style: 'cartoon', color: '', cheekColor: '#ff9a62', eyeGap: 22, dozeAfterSeconds: 180, blinkMinMs: 1200, blinkMaxMs: 3500,
+    emotions: {
+      neutral:   { eyeW: 32, eyeH: 34, radius: 16, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
+      happy:     { eyeW: 34, eyeH: 34, radius: 17, browSlant: 0,  lowerLid: 14, upperLid: 0 },
+      sad:       { eyeW: 30, eyeH: 28, radius: 14, browSlant: -8, lowerLid: 0,  upperLid: 4 },
+      angry:     { eyeW: 32, eyeH: 26, radius: 13, browSlant: 8,  lowerLid: 0,  upperLid: 0 },
+      surprised: { eyeW: 38, eyeH: 44, radius: 19, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
+      sleepy:    { eyeW: 32, eyeH: 24, radius: 12, browSlant: 0,  lowerLid: 0,  upperLid: 10 },
+      thinking:  { eyeW: 30, eyeH: 30, radius: 15, browSlant: 0,  lowerLid: 0,  upperLid: 5 },
+    },
+  },
+};
+
+// Soft grey, huge round eyes, dozes quickly: a sleepy little spirit.
+const SPRITE_PERSONA = {
+  id: 'sprite', name: 'Dust Sprite', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT,
+  face: {
+    style: 'sprite', color: '#b8b8c8', cheekColor: '#d9a3a3', eyeGap: 14, dozeAfterSeconds: 25, blinkMinMs: 2500, blinkMaxMs: 7000,
+    emotions: {
+      neutral:   { eyeW: 38, eyeH: 42, radius: 21, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
+      happy:     { eyeW: 40, eyeH: 42, radius: 21, browSlant: 0,  lowerLid: 22, upperLid: 0 },
+      sad:       { eyeW: 36, eyeH: 36, radius: 18, browSlant: -6, lowerLid: 0,  upperLid: 8 },
+      angry:     { eyeW: 36, eyeH: 30, radius: 15, browSlant: 6,  lowerLid: 0,  upperLid: 0 },
+      surprised: { eyeW: 42, eyeH: 48, radius: 24, browSlant: 0,  lowerLid: 0,  upperLid: 0 },
+      sleepy:    { eyeW: 38, eyeH: 30, radius: 15, browSlant: 0,  lowerLid: 0,  upperLid: 18 },
+      thinking:  { eyeW: 36, eyeH: 38, radius: 19, browSlant: 0,  lowerLid: 0,  upperLid: 8 },
+    },
+  },
+};
+
+const BUILTIN_PERSONAS = [ROCKY_PERSONA, NORM_PERSONA, KAWAII_PERSONA, JARVIS_PERSONA, CRT_PERSONA, INTERN_PERSONA, SPRITE_PERSONA];
 
 // Keys a persona must never carry. A pack is data for a face, not a place to smuggle a secret.
 // Substring match on purpose: access_token, client_secret, authToken, privateKey, bearer... all fail.
@@ -255,19 +395,29 @@ function findForbiddenKey(obj, depth) {
 
 // Seeds the library once with the built-in personas (user edits are never touched afterwards),
 // drops entries that cannot be used, and keeps only the first of any duplicate id. Same contract
-// as voiceConfig.ensureAiProfiles.
+// as voiceConfig.ensureAiProfiles. A built-in added in a later version is appended once, the way
+// ensurePanelProfile adds Panel Builder: a user who deleted it keeps it deleted, because the ids
+// that have ever been seeded are remembered in settings.personasSeeded.
 function ensurePersonas(config) {
   if (!config) return config;
   if (!config.settings) config.settings = {};
-  if (!Array.isArray(config.settings.personas)) {
-    config.settings.personas = BUILTIN_PERSONAS.map(p => JSON.parse(JSON.stringify(p)));
+  const s = config.settings;
+  if (!Array.isArray(s.personas)) {
+    s.personas = BUILTIN_PERSONAS.map(p => JSON.parse(JSON.stringify(p)));
+    s.personasSeeded = BUILTIN_PERSONAS.map(p => p.id);
     return config;
   }
   const seen = new Set();
-  config.settings.personas = config.settings.personas.map(normalizePersona).filter(p => {
+  s.personas = s.personas.map(normalizePersona).filter(p => {
     if (!p || seen.has(p.id)) return false;
     seen.add(p.id);
     return true;
+  });
+  if (!Array.isArray(s.personasSeeded)) s.personasSeeded = ['rocky', 'norm', 'kawaii'];   // the first release seeded these three
+  BUILTIN_PERSONAS.forEach(p => {
+    if (s.personasSeeded.indexOf(p.id) !== -1) return;
+    if (!seen.has(p.id)) s.personas.push(normalizePersona(JSON.parse(JSON.stringify(p))));
+    s.personasSeeded.push(p.id);
   });
   return config;
 }
@@ -349,7 +499,7 @@ function mergePersonas(config, personas) {
 }
 
 module.exports = {
-  PERSONA_SCHEMA_VERSION, FACE_DEFAULTS, FACE_STYLES, ROCKY_EYES, ROCKY_PERSONA, NORM_PERSONA, KAWAII_PERSONA, BUILTIN_PERSONAS, EMOTIONS, MAX_PACK_BYTES,
+  PERSONA_SCHEMA_VERSION, FACE_DEFAULTS, FACE_STYLES, ROCKY_EYES, ROCKY_PERSONA, NORM_PERSONA, KAWAII_PERSONA, JARVIS_PERSONA, CRT_PERSONA, INTERN_PERSONA, SPRITE_PERSONA, BUILTIN_PERSONAS, EMOTIONS, MAX_PACK_BYTES,
   normalizePersona, validatePersona, ensurePersonas, resolvePersona, personaForPage,
   exportPersonaJson, personaFileName, importPersonaText, scanPersonaDir, mergePersonas,
 };

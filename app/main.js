@@ -280,6 +280,7 @@ const { createReservedDisplay } = require('./reservedDisplay'); // Windows helpe
 const { createDisplayArrange } = require('./displayArrange');   // macOS helper that keeps the panel display far right, never mirrored/main
 const { createVoicePanelHost } = require('./voicepanel-host'); // generic voice-panel app host (state/SSE/speech/STT-TTS plumbing)
 const personaLib = require('./face/persona');                   // AI Voice face personas (library seeding)
+const personaFetch = require('./face/persona-fetch');           // persona import-from-URL policy (transport injected)
 const { createClaudeVoiceAdapter } = require('./claudevoice-adapter'); // Claude Code session adapter (CLI spawn, events, approval hook)
 const { createCodexVoiceAdapter, findCodexExe } = require('./codexvoice-session'); // OpenAI Codex session adapter (app-server JSON-RPC over stdio)
 const { createCopilotVoiceAdapter, findCopilotExe } = require('./copilotvoice-session'); // GitHub Copilot CLI session adapter (ACP JSON-RPC over stdio)
@@ -4929,6 +4930,31 @@ app.whenReady().then(async () => {
     if (r.canceled || !r.filePath) return { ok: false, canceled: true };
     try { fs.writeFileSync(r.filePath, json, 'utf8'); return { ok: true, path: r.filePath }; }
     catch (err) { return { ok: false, error: err.message }; }
+  });
+  // Import a persona pack from a URL the user typed (a raw file in a repo, a gist). HTTPS only,
+  // plain GET with no credentials (a URL carrying user:pass is refused), redirects followed, 15 s
+  // limit, 64 KB cap enforced while the body streams, then the same validation as a pasted pack.
+  // The policy (https only, no credentials, no private hosts, 3 redirects re-checked per hop,
+  // 15 s, 64 KB streamed, then validation) lives in app/face/persona-fetch.js; this is only the
+  // electron.net transport it drives. Redirects are handled by the policy, so 'manual' here.
+  ipcMain.handle('importPersonaUrl', (e, url) => {
+    if (!isFrom(e, configWin)) return { ok: false, persona: null, error: 'not allowed' };
+    // makeNetTransport turns electron.net's manual-redirect 'redirect' event into the 3xx the
+    // policy expects (a manual-mode request never fires 'response' for a redirect) and sends no
+    // cookies; resolveHost lets the policy refuse a public name that resolves to a private address.
+    return personaFetch.fetchPersona(url, personaFetch.makeNetTransport(net), {
+      resolveHost: h => require('dns').promises.lookup(h, { all: true }).then(a => a.map(x => x.address)),
+    });
+  });
+  // The Piper voices the global TTS server offers (Settings → TTS/STT), for the persona Voice field.
+  ipcMain.handle('listTtsVoices', async (e) => {
+    if (!isFrom(e, configWin)) return { ok: false, voices: [], error: 'not allowed' };
+    const v = voiceConfig.voiceSettings(config.settings);
+    if (!v.ttsHost || !v.ttsPort) return { ok: false, voices: [], error: 'No TTS server set under Settings → TTS/STT.' };
+    try {
+      const voices = await lucidWyoming.describeVoices({ host: v.ttsHost, port: v.ttsPort, log: () => {} });
+      return { ok: true, voices, host: v.ttsHost + ':' + v.ttsPort };
+    } catch (err) { return { ok: false, voices: [], error: err.message }; }
   });
   // Settings → Meeting: the three stage folders as typed; '' when they are distinct and not nested.
   ipcMain.handle('meetingFoldersCheck', (e, fields) => isFrom(e, configWin) ? meetingFoldersCheck(fields) : '');

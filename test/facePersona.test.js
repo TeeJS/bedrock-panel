@@ -6,20 +6,33 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { ensurePersonas, resolvePersona, normalizePersona, validatePersona, personaForPage, ROCKY_PERSONA, EMOTIONS } = require('../app/face/persona');
 
-test('ensurePersonas seeds the three built-ins once and never touches an existing list', () => {
+const BUILTIN_IDS = ['rocky', 'norm', 'kawaii', 'jarvis', 'crt', 'intern', 'sprite'];
+
+test('ensurePersonas seeds the built-ins once and never touches an existing list', () => {
   const c = {};
   ensurePersonas(c);
-  assert.deepEqual(c.settings.personas.map(p => p.id), ['rocky', 'norm', 'kawaii']);
-  assert.deepEqual(c.settings.personas.map(p => p.face.style), ['oled', 'cartoon', 'kawaii']);
+  assert.deepEqual(c.settings.personas.map(p => p.id), BUILTIN_IDS);
+  assert.deepEqual(c.settings.personas.slice(0, 3).map(p => p.face.style), ['oled', 'cartoon', 'kawaii']);
+  assert.deepEqual(c.settings.personasSeeded, BUILTIN_IDS);
   c.settings.personas[0].name = 'Rocky (mine)';
   c.settings.personas.push({ id: 'dot', name: 'Dot', prompt: '' });
   ensurePersonas(c);
   assert.equal(c.settings.personas[0].name, 'Rocky (mine)');
-  assert.equal(c.settings.personas.length, 4);
+  assert.equal(c.settings.personas.length, BUILTIN_IDS.length + 1);
+});
+
+test('a library from the first release gains the newer built-ins once; a deleted one stays deleted', () => {
+  // Shipped with three; the user deleted Norm. Later built-ins are appended, Norm is not resurrected.
+  const c = { settings: { personas: [{ id: 'rocky', name: 'Rocky' }, { id: 'kawaii', name: 'Mimi' }] } };
+  ensurePersonas(c);
+  assert.deepEqual(c.settings.personas.map(p => p.id), ['rocky', 'kawaii', 'jarvis', 'crt', 'intern', 'sprite']);
+  c.settings.personas = c.settings.personas.filter(p => p.id !== 'crt');
+  ensurePersonas(c);
+  assert.equal(c.settings.personas.some(p => p.id === 'crt'), false);
 });
 
 test('ensurePersonas drops unusable entries and duplicate ids instead of keeping junk', () => {
-  const c = { settings: { personas: [null, { name: 'no id' }, { id: 'ok', name: 'Ok' }, { id: 'OK', name: 'dupe' }] } };
+  const c = { settings: { personas: [null, { name: 'no id' }, { id: 'ok', name: 'Ok' }, { id: 'OK', name: 'dupe' }], personasSeeded: BUILTIN_IDS } };
   ensurePersonas(c);
   assert.deepEqual(c.settings.personas.map(p => p.id), ['ok']);
   assert.equal(c.settings.personas[0].name, 'Ok');
@@ -86,7 +99,7 @@ test('personaForPage carries the face and name, never the prompt', () => {
 
 test('built-in prompts are spoken-first, carry no body abilities and no tagged examples', () => {
   const { BUILTIN_PERSONAS } = require('../app/face/persona');
-  assert.equal(BUILTIN_PERSONAS.length, 3);
+  assert.equal(BUILTIN_PERSONAS.length, BUILTIN_IDS.length);
   BUILTIN_PERSONAS.forEach(p => {
     assert.doesNotMatch(p.prompt, /track_face|`look`|camera/, p.id);
     assert.doesNotMatch(p.prompt, /MUST start with/, p.id);        // the emotion instruction is the host's, added only when the face is on

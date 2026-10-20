@@ -843,7 +843,7 @@
   // ---- Personas rows (Settings -> AI Profiles -> Personas): name / style / colors / prompt per row,
   // add/remove, plus JSON import (validated) and per-row export (clipboard + on-screen JSON). Same
   // live-edit model as the profile rows: mutate config.settings.personas in place, Save persists.
-  const PERSONA_STYLES = [['oled', 'OLED robot (Rocky)'], ['cartoon', 'Cartoon (Norm)'], ['kawaii', 'Kawaii (Mimi)']];
+  const PERSONA_STYLES = [['oled', 'OLED robot (Rocky, Jarvis)'], ['cartoon', 'Cartoon (Norm, Intern)'], ['kawaii', 'Kawaii (Mimi)'], ['crt', 'CRT terminal'], ['sprite', 'Dust sprite']];
   function personaRowsHtml(list) {
     const rows = Array.isArray(list) ? list : [];
     if (!rows.length) return '<p class="hint">No personas yet — add one below, or import one.</p>';
@@ -854,6 +854,7 @@
         <select class="psStyle" style="width:170px;margin-left:8px">${PERSONA_STYLES.map(s => `<option value="${s[0]}" ${(face.style || 'oled') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select>
         <input class="psColor" placeholder="#rrggbb or blank" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color as #rrggbb; blank uses the page accent. A value that is not #rrggbb is not saved.">
         <input class="psCheek" placeholder="cheek #rrggbb" value="${esc(face.cheekColor || '')}" style="width:130px;margin-left:8px" title="Blush/cheek color; blank uses the face color">
+        <input class="psVoice" list="psVoiceList" placeholder="Voice: page default" value="${esc(p.voice || '')}" style="width:200px;margin-left:8px" title="Piper voice name for this persona (e.g. en_US-lessac-medium). Blank = the page's default voice. Use 'Load available voices' to see what the TTS server offers.">
         <button class="psExport" type="button" data-ex="${i}" style="margin-left:8px" title="Copy this persona's JSON to the clipboard">Export</button>
         <button class="psExportFile" type="button" data-ex="${i}" style="margin-left:4px" title="Save this persona as a .persona.json file">Export file…</button>
         <button class="psRemove" type="button" data-rm="${i}" title="Remove" style="margin-left:8px">✕</button>
@@ -874,6 +875,7 @@
       host.querySelectorAll('.psColor').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).color = v; markDirty(); } }; });
       host.querySelectorAll('.psCheek').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).cheekColor = v; markDirty(); } }; });
       host.querySelectorAll('.psPrompt').forEach((ta, i) => { ta.oninput = e => { const l = list(); if (l[i]) { l[i].prompt = e.target.value; markDirty(); } }; });
+      host.querySelectorAll('.psVoice').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].voice = e.target.value.trim().slice(0, 120); markDirty(); } }; });
       host.querySelectorAll('.psRemove').forEach(btn => { btn.onclick = () => { list().splice(parseInt(btn.getAttribute('data-rm'), 10), 1); markDirty(); redraw(); }; });
       // Export writes the NORMALIZED persona (the main process fills defaults), so what a user
       // shares is exactly what an import produces -- the seeded entries are raw until then.
@@ -930,6 +932,33 @@
     };
     const cancelBtn = document.getElementById('sPersonaImportCancel');
     if (cancelBtn) cancelBtn.onclick = () => { if (box) box.style.display = 'none'; if (txt) txt.value = ''; say(''); };
+    // From a URL: the main process fetches (64 KB cap) and validates; the pack lands in the paste
+    // box with its name/id shown, and "Add to library" is the same explicit step as for a paste.
+    const urlIn = document.getElementById('sPersonaImportUrl'), fetchBtn = document.getElementById('sPersonaImportFetch');
+    if (fetchBtn && urlIn) fetchBtn.onclick = async () => {
+      const url = urlIn.value.trim();
+      if (!url) { say('Enter a URL first.', true); return; }
+      fetchBtn.disabled = true; say('Fetching…');
+      let r;
+      try { r = await configApi.importPersonaUrl(url); } catch (e) { r = { ok: false, error: 'Could not fetch: ' + (e && e.message ? e.message : e) }; }
+      fetchBtn.disabled = false;
+      if (!r || !r.ok) { say(r && r.error ? r.error : 'That URL did not give a usable persona.', true); return; }
+      if (txt) txt.value = JSON.stringify(r.persona, null, 2);
+      say('Fetched "' + (r.persona.name || r.persona.id) + '" (id ' + r.persona.id + ') — check it, then Add to library.');
+    };
+    // Voices: one shared lookup fills the datalist every Voice field uses. Never auto-selects.
+    const voicesBtn = document.getElementById('sPersonaVoices'), voicesMsg = document.getElementById('sPersonaVoicesMsg'), voiceList = document.getElementById('psVoiceList');
+    if (voicesBtn && voiceList) voicesBtn.onclick = async () => {
+      voicesBtn.disabled = true;
+      if (voicesMsg) { voicesMsg.textContent = 'Asking the TTS server…'; voicesMsg.style.color = ''; }
+      let r;
+      try { r = await configApi.listTtsVoices(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+      voicesBtn.disabled = false;
+      if (!r || !r.ok) { if (voicesMsg) { voicesMsg.textContent = 'Could not list voices: ' + ((r && r.error) || 'unknown error') + '. You can still type a name.'; voicesMsg.style.color = '#e05050'; } return; }
+      const voices = (r.voices || []).filter(v => v.installed !== false);
+      voiceList.innerHTML = voices.map(v => `<option value="${esc(v.name)}">${esc((v.languages || []).join(', ') + (v.description ? ' — ' + v.description : ''))}</option>`).join('');
+      if (voicesMsg) voicesMsg.textContent = voices.length + ' voice' + (voices.length === 1 ? '' : 's') + ' on ' + (r.host || 'the TTS server') + ' — start typing in a Voice field to pick one. Blank = the page\'s default.';
+    };
     const goBtn = document.getElementById('sPersonaImportGo');
     // Validation runs in the main process (IPC, async): the text stays in the box on any failure so
     // the user can fix it, and the reason is shown next to the button.
@@ -4905,12 +4934,18 @@ ${IS_MAC ? `
       <button id="sAiProfileAdd" type="button" style="margin-top:10px">+ Add profile</button>
       <p class="sectitle" style="margin-top:22px">Personas</p>
       <details class="hint"><summary>A persona is a character for the <b>AI Voice</b> face: a name, how it talks, and how its face is drawn.</summary> Pick one per page (the page's <b>Persona</b> setting, or the panel's Settings). Its words are added to the page's profile, never in place of it. Personas are plain JSON: export one to share it, import one someone else made. A persona never holds a key or password — imports that do are refused. Remember to Save.</details>
+      <div class="row" style="margin-top:8px"><button id="sPersonaVoices" type="button">Load available voices</button>
+        <span id="sPersonaVoicesMsg" class="hint" style="margin:0 0 0 10px">Voices come from the app-wide TTS server (Settings → TTS/STT); a page with its own audio override may offer different ones. Blank Voice = the page's default.</span></div>
+      <datalist id="psVoiceList"></datalist>
       <div id="sPersonaRows">${personaRowsHtml((config.settings || {}).personas)}</div>
       <div class="row" style="margin-top:10px"><button id="sPersonaAdd" type="button">+ Add persona</button>
-        <button id="sPersonaImportBtn" type="button" style="margin-left:8px">Import persona JSON…</button>
+        <button id="sPersonaImportBtn" type="button" style="margin-left:8px">Import persona…</button>
         <input id="sPersonaFile" type="file" accept=".json,application/json" style="display:none"></div>
       <div id="sPersonaImportBox" style="display:none;margin-top:8px">
-        <textarea id="sPersonaImportText" rows="5" placeholder="Paste a persona's JSON here, or choose a .json file" style="width:100%;font-family:Consolas,monospace"></textarea>
+        <div class="row"><label style="width:auto">From a URL</label>
+          <input id="sPersonaImportUrl" placeholder="https://… (a raw .persona.json in a public repo or gist; for a local file use Choose file)" style="flex:1;margin-left:8px">
+          <button id="sPersonaImportFetch" type="button" style="margin-left:8px">Fetch</button></div>
+        <textarea id="sPersonaImportText" rows="5" placeholder="…or paste a persona's JSON here, or choose a .json file" style="width:100%;margin-top:6px;font-family:Consolas,monospace"></textarea>
         <div class="row" style="margin-top:6px"><button id="sPersonaImportFile" type="button">Choose file…</button>
           <button id="sPersonaImportGo" type="button" style="margin-left:8px">Add to library</button>
           <button id="sPersonaImportCancel" type="button" style="margin-left:8px">Cancel</button>

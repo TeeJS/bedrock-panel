@@ -72,7 +72,8 @@ app.whenReady().then(async () => {
     await js("(function () { var b = document.querySelector('.setitem[data-tab=\"aiprofiles\"]'); if (b) b.click(); })()");
     await sleep(400);
     const base = await rows();
-    check('personas tab renders with the 3 seeded personas', base === 3, { rows: base, names: await names() });
+    const seededNames = await names();
+    check('personas tab renders with Rocky, Norm and Mimi first', base >= 3 && seededNames.slice(0, 3).join(',') === 'Rocky,Norm,Mimi', { rows: base, names: seededNames });
     await shot('01-personas-tab');
 
     // 1. valid import
@@ -142,6 +143,84 @@ app.whenReady().then(async () => {
     await js("document.getElementById('saveBtn').click()"); await sleep(400);
     const saved = await js("(window.__lastSaved && window.__lastSaved.settings && window.__lastSaved.settings.personas || []).map(function (p) { return p.id + ':' + p.name; })");
     check('Save persists the edited persona library', saved.length > 0 && saved.some(s => /:Blank One$/.test(s)) && saved.some(s => /^sprocket:/.test(s)) && saved.some(s => /^filed:/.test(s)), saved);
+
+    // ---- phase 2: per-persona Voice field, shared "Load available voices", import from a URL ----
+    const voiceVals = () => js("Array.from(document.querySelectorAll('#sPersonaRows .psVoice')).map(function (i) { return i.value; })");
+    const nRows = await rows();
+    check('every row has a Voice field, blank by default, placeholder says page default',
+      (await js("document.querySelectorAll('#sPersonaRows .psVoice').length")) === nRows
+      && (await voiceVals()).slice(0, 3).every(v => v === '')
+      && /page default/i.test(await js("document.querySelector('#sPersonaRows .psVoice').placeholder")));
+    const rockyIdx = (await names()).indexOf('Rocky');
+    await js("(function () { var i = document.querySelectorAll('#sPersonaRows .psVoice')[" + rockyIdx + "]; i.value = 'en_US-ryan-high'; i.dispatchEvent(new Event('input', { bubbles: true })); })()");
+    await js("document.querySelectorAll('#sPersonaRows .psExport')[" + rockyIdx + '].click()'); await sleep(200);
+    let ex2 = null; try { ex2 = JSON.parse(await js("document.getElementById('sPersonaExport').textContent")); } catch (e) {}
+    check('a typed voice is in the exported JSON', !!ex2 && ex2.voice === 'en_US-ryan-high', ex2 && ex2.voice);
+    await js("document.getElementById('saveBtn').click()"); await sleep(300);
+    const savedVoice = await js("(window.__lastSaved.settings.personas.find(function (p) { return p.id === 'rocky'; }) || {}).voice");
+    check('the voice is saved with the library', savedVoice === 'en_US-ryan-high', savedVoice);
+
+    // Load available voices: fills the datalist, never overwrites or auto-selects
+    const voicesBefore = await voiceVals();
+    await js("document.getElementById('sPersonaVoices').click()"); await sleep(250);
+    const opts = await js("Array.from(document.querySelectorAll('#psVoiceList option')).map(function (o) { return o.value; })");
+    const vmsg = await js("document.getElementById('sPersonaVoicesMsg').textContent");
+    const after = await voiceVals();
+    check('Load available voices fills the suggestions without touching any field',
+      opts.join(',') === 'en_US-lessac-medium,en_US-ryan-high' && JSON.stringify(after) === JSON.stringify(voicesBefore) && after[rockyIdx] === 'en_US-ryan-high',
+      { opts, msg: vmsg.slice(0, 80) });
+    check('the voice message names the server and says blank = page default', /2 voices/.test(vmsg) && /page's default/i.test(vmsg), vmsg.slice(0, 120));
+    await js("window.__voicesMode = 'fail'"); await js("document.getElementById('sPersonaVoices').click()"); await sleep(250);
+    const fmsg = await js("document.getElementById('sPersonaVoicesMsg').textContent");
+    check('a failed lookup shows the reason, keeps typed values and leaves the field editable',
+      /Could not list voices/.test(fmsg) && /still type a name/.test(fmsg)
+      && (await voiceVals())[rockyIdx] === 'en_US-ryan-high'
+      && !(await js("document.querySelector('#sPersonaRows .psVoice').disabled")) && !(await js("document.getElementById('sPersonaVoices').disabled")), fmsg.slice(0, 120));
+    await js("window.__voicesMode = 'ok'");
+
+    // Import from a URL: Fetch fills the box and previews; Add is a separate explicit step
+    const U = 'https://example.com/packs/urlbot.persona.json';
+    await js('window.__urlFixtures = ' + JSON.stringify({
+      [U]: JSON.stringify({ id: 'urlbot', name: 'URL Bot', prompt: 'Hi.', voice: 'en_GB-alba-medium' }),
+      'https://example.com/secret.json': JSON.stringify({ id: 'leak', name: 'Leak', password: 'x' }),
+      'https://example.com/huge.json': JSON.stringify({ id: 'huge', prompt: 'a'.repeat(70 * 1024) }),
+      'https://example.com/clash.json': JSON.stringify({ id: 'norm', name: 'Norm (shared)', prompt: 'Different.' }),
+      'https://example.com/blocked.json': { error: 'local and private addresses cannot be imported from a URL; paste the JSON or choose the file instead' },
+    }));
+    const before = await rows();
+    await openBox();
+    await js("document.getElementById('sPersonaImportUrl').value = " + JSON.stringify(U));
+    await js("document.getElementById('sPersonaImportFetch').click()"); await sleep(250);
+    check('URL fetch previews the persona (name + id) and adds nothing yet',
+      (await rows()) === before && /URL Bot/.test(await msg()) && /urlbot/.test(await msg()) && (await textVal()).indexOf('"urlbot"') !== -1, await msg());
+    await go();
+    check('...Add to library then adds it, voice included', (await rows()) === before + 1 && (await names()).indexOf('URL Bot') !== -1 && (await voiceVals())[(await names()).indexOf('URL Bot')] === 'en_GB-alba-medium');
+
+    // failures keep what was already in the box and say why
+    const mine = JSON.stringify({ id: 'mine', name: 'Mine', prompt: 'Keep me.' });
+    for (const [u, re, label] of [
+      ['https://example.com/missing.json', /HTTP 404/, '404'],
+      ['https://example.com/secret.json', /credential/i, 'credential key in the pack'],
+      ['https://example.com/huge.json', /64 KB/, 'oversize pack'],
+      ['https://example.com/blocked.json', /local and private/, 'a refused address'],
+    ]) {
+      await paste(mine);
+      await js("document.getElementById('sPersonaImportUrl').value = " + JSON.stringify(u));
+      await js("document.getElementById('sPersonaImportFetch').click()"); await sleep(250);
+      check('URL fetch failure (' + label + ') is explained and the pasted text is kept', re.test(await msg()) && (await textVal()) === mine && (await rows()) === before + 1, await msg());
+    }
+    await paste(mine);
+    await js("document.getElementById('sPersonaImportUrl').value = ''");
+    await js("document.getElementById('sPersonaImportFetch').click()"); await sleep(100);
+    check('Fetch with an empty URL asks for one', /Enter a URL/i.test(await msg()) && (await textVal()) === mine);
+
+    // a fetched persona whose id exists asks before replacing
+    await answer(false);
+    await js("document.getElementById('sPersonaImportUrl').value = 'https://example.com/clash.json'");
+    await js("document.getElementById('sPersonaImportFetch').click()"); await sleep(250);
+    await go();
+    check('a fetched persona with an existing id asks before replacing; Cancel keeps Norm', (await js('window.__confirmCalls')) === 1 && (await names()).indexOf('Norm') !== -1 && (await names()).indexOf('Norm (shared)') === -1, await js('window.__confirmMsg'));
+    await js("document.getElementById('sPersonaImportCancel').click()");
 
     // 11. layout at two widths: no horizontal overflow inside the personas area
     for (const w of [1180, 900]) {

@@ -52,7 +52,7 @@ test('active speech prevents idle dozing and leaving speech closes the mouth', (
 });
 
 test('device pixel ratio is capped and all supported persona styles draw', () => {
-  for (const style of ['oled', 'cartoon', 'kawaii']) {
+  for (const style of ['oled', 'cartoon', 'kawaii', 'crt', 'sprite']) {
     const h = harness({ style });
     assert.equal(h.canvas.width, 840); assert.equal(h.canvas.height, 900);
     h.renderer.setReducedMotion(true); h.renderer.start();

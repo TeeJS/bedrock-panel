@@ -111,7 +111,12 @@ function transcribe({ host, port, audio, rate, width, channels, language, timeou
 // exist yet. `onChunk(buffer)` fires per audio-chunk, for piping straight into an HTTP response.
 // `registerCancel(fn)` hands the caller an abort function (kills the socket, rejects) -- the
 // per-turn speech pipeline uses it to cut off a sentence mid-synthesis on barge-in.
-function synthesize({ host, port, text, onFormat, onChunk, timeoutMs, log, registerCancel }) {
+// `voice` (optional) is a Piper voice name as wyoming-piper lists it in its describe reply (e.g.
+// "en_US-lessac-medium"); it rides in the synthesize event's voice.name field. Blank = the
+// server's default voice. An UNKNOWN name is not replaced server-side: wyoming-piper tries to
+// resolve (even download) it and answers with an `error` event, which rejects this promise -- the
+// speech pipeline then retries the sentence with the default voice (see claudevoice-speech.js).
+function synthesize({ host, port, text, voice, onFormat, onChunk, timeoutMs, log, registerCancel }) {
   const say = log || (() => {});
   return new Promise((resolve, reject) => {
     const socket = net.connect({ host, port: Number(port) });
@@ -131,13 +136,70 @@ function synthesize({ host, port, text, onFormat, onChunk, timeoutMs, log, regis
       if (msg.type === 'audio-start') { format = msg.data || {}; if (onFormat) onFormat(format); }
       else if (msg.type === 'audio-chunk' && msg.payload) { if (onChunk) onChunk(msg.payload); }
       else if (msg.type === 'audio-stop') finish(null);
+      else if (msg.type === 'error') finish(new Error('Wyoming TTS error: ' + ((msg.data && (msg.data.text || msg.data.code)) || 'unknown')));
     }, say);
     socket.on('connect', () => {
-      say('TTS connected to ' + host + ':' + port + ', sending synthesize for ' + JSON.stringify(text.slice(0, 60)));
-      writeMessage(socket, 'synthesize', { text });
+      say('TTS connected to ' + host + ':' + port + ', sending synthesize for ' + JSON.stringify(text.slice(0, 60)) + (voice ? ' voice=' + voice : ''));
+      writeMessage(socket, 'synthesize', synthesizeData(text, voice));
     });
   });
 }
+// The synthesize event's data: {text} alone keeps the server's default voice; a name adds
+// voice:{name}. Pure, so the encoding is unit-testable without a socket.
+function synthesizeData(text, voice) {
+  const data = { text: String(text == null ? '' : text) };
+  const name = typeof voice === 'string' ? voice.trim() : '';
+  if (name) data.voice = { name };
+  return data;
+}
+
+// One-shot capability query: describe -> info. Resolves with the TTS voices the server offers,
+// as [{name, description, languages}], so a persona editor can offer real names instead of
+// guesses. A server that answers info without a tts section resolves to [].
+function describe({ host, port, timeoutMs, log }) {
+  const say = log || (() => {});
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host, port: Number(port) });
+    let settled = false;
+    const finish = (err, voices) => {
+      if (settled) return; settled = true;
+      try { socket.destroy(); } catch (e) {}
+      err ? reject(err) : resolve(voices);
+    };
+    socket.on('error', e => { say('describe socket error: ' + e.message); finish(e); });
+    socket.on('close', () => finish(new Error('Wyoming describe: connection closed before info arrived')));
+    socket.setTimeout(timeoutMs || 8000, () => finish(new Error('Wyoming describe request timed out')));
+    createReader(socket, msg => {
+      if (msg.type === 'error') { finish(new Error('Wyoming error: ' + ((msg.data && (msg.data.text || msg.data.code)) || 'unknown'))); return; }
+      if (msg.type !== 'info') return;
+      finish(null, voicesFromInfo(msg.data));
+    }, say);
+    socket.on('connect', () => { writeMessage(socket, 'describe', {}); });
+  });
+}
+// Flattens an info event's tts programs into one voice list. Pure. The reference info.py calls
+// the per-program list `voices`; the README's example calls the same level `models`, so both are
+// read. `installed` is reported as given (undefined when the server does not say).
+function voicesFromInfo(info) {
+  const out = [];
+  const progs = (info && Array.isArray(info.tts)) ? info.tts : [];
+  progs.forEach(p => {
+    const list = p && (Array.isArray(p.voices) ? p.voices : Array.isArray(p.models) ? p.models : []);
+    (list || []).forEach(v => {
+      if (!v || typeof v.name !== 'string' || !v.name) return;
+      if (v.installed === false) return;                       // offering it would send piper off to download or fail
+      if (out.some(x => x.name === v.name)) return;            // same voice under two programs
+      out.push({
+        name: v.name,
+        description: typeof v.description === 'string' ? v.description : '',
+        languages: Array.isArray(v.languages) ? v.languages.filter(l => typeof l === 'string') : [],
+        installed: typeof v.installed === 'boolean' ? v.installed : undefined,
+      });
+    });
+  });
+  return out;
+}
+const describeVoices = describe;   // the name the tests and docs use
 
 // 44-byte canonical WAV/PCM header for streaming playback where the total length isn't known yet
 // (we're piping audio-chunk payloads straight through as they arrive from Wyoming). The RIFF and
@@ -156,4 +218,4 @@ function wavHeader({ rate, width, channels }) {
   return buf;
 }
 
-module.exports = { transcribe, synthesize, wavHeader };
+module.exports = { transcribe, synthesize, synthesizeData, describe, describeVoices, voicesFromInfo, wavHeader };

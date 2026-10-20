@@ -63,8 +63,35 @@
       const scale = Math.min(width / 164, height / 102);
       ctx.translate(width / 2, height / 2); ctx.scale(scale, scale);
       const f = face(), style = f.style || 'oled';
-      const ink = f.color || accent;
+      const ink = style === 'sprite' ? '#fffaf2' : f.color || accent;
+      const cutout = style === 'crt' ? '#111c16' : background;
       ctx.fillStyle = ink; ctx.strokeStyle = ink;
+      if (style === 'crt') {
+        ctx.fillStyle = '#736f60'; round(-75, -45, 150, 91, 9);
+        ctx.fillStyle = '#c8c0a7'; round(-73, -44, 146, 87, 8);
+        ctx.fillStyle = '#4a4b3e'; round(-67, -38, 134, 73, 7);
+        ctx.fillStyle = cutout; round(-64, -35, 128, 66, 6);
+        ctx.fillStyle = '#75715e';
+        for (let x = -50; x < -20; x += 4) round(x, 37, 2, 2, 0.5);
+        ctx.fillStyle = ink; dot(59, 38, 1.3);
+        ctx.fillStyle = '#827e6d'; round(-24, 45, 48, 3, 1);
+        ctx.fillStyle = ink;
+      }
+      if (style === 'sprite') {
+        ctx.fillStyle = f.color || '#272833'; ctx.strokeStyle = '#737684'; ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        for (let i = 0; i < 80; i++) {
+          const angle = i / 80 * Math.PI * 2;
+          const radius = (i % 2 ? 43 : 47) + Math.sin(angle * 7) * 0.8;
+          const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius * 0.92;
+          if (!i) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        for (const side of [-1, 1]) {
+          dot(side * 54, -14, 1.6); dot(side * 57, 7, 1.1); dot(side * 49, 29, 0.8);
+        }
+        ctx.fillStyle = ink; ctx.strokeStyle = ink;
+      }
       if (style === 'cartoon') {
         // Norm's friendly, human-looking face follows the supplied character reference.
         ctx.fillStyle = '#f5c49f'; round(-63, -45, 126, 87, 23);
@@ -89,7 +116,15 @@
       for (const side of [-1, 1]) {
         const cx = side * separation + gazeX;
         ctx.save(); ctx.translate(cx, eyeY);
-        if (style === 'cartoon') {
+        if (style === 'sprite') {
+          const w = Math.min(32, ew * 0.82), h = Math.max(2, eyeHeight * 0.9);
+          ctx.fillStyle = '#fffaf2'; round(-w / 2, -h / 2, w, h, w / 2);
+          if (h > 7) {
+            ctx.fillStyle = '#161a23'; dot(gazeX * 0.3, state === 'thinking' ? -3 : 0, Math.min(5, h / 3));
+            ctx.fillStyle = '#fffaf2'; dot(gazeX * 0.3 - 1, (state === 'thinking' ? -3 : 0) - 1.3, 1);
+          }
+          ctx.fillStyle = ink;
+        } else if (style === 'cartoon') {
           const w = Math.min(29, ew * 0.82), h = Math.max(2, Math.min(29, eyeHeight));
           ctx.fillStyle = '#fffaf1'; round(-w / 2, -h / 2, w, h, w / 2);
           ctx.fillStyle = '#355479';
@@ -107,7 +142,7 @@
             ctx.beginPath(); ctx.roundRect(-ew / 2, -eyeHeight / 2, ew, eyeHeight, ew / 2); ctx.stroke(); ctx.restore();
           }
           if (eyeHeight > 10 && !asleep) {
-            ctx.fillStyle = style === 'kawaii' ? '#fffaf6' : background;
+            ctx.fillStyle = style === 'kawaii' ? '#fffaf6' : cutout;
             if (style === 'kawaii') {
               dot(-ew * 0.15, -eyeHeight * 0.18, ew * 0.13);
               dot(ew * 0.19, eyeHeight * 0.18, ew * 0.065);
@@ -115,7 +150,7 @@
             ctx.fillStyle = ink;
           }
           if (emotion === 'happy' && !asleep && blink < 0.3) {
-            ctx.fillStyle = background;
+            ctx.fillStyle = cutout;
             ctx.beginPath(); ctx.ellipse(0, eyeHeight * 0.7, ew * 0.62, eyeHeight * 0.5, 0, Math.PI, Math.PI * 2); ctx.fill();
             ctx.fillStyle = ink;
           }
@@ -142,7 +177,7 @@
       const mouthY = 22;
       const mouthEmotion = state === 'error' ? 'sad' : state === 'approval' ? 'surprised' : emotion;
       if (speaking && smoothLevel > 0.015) {
-        const h = 3 + Math.min(20, smoothLevel * 27), w = style === 'cartoon' ? 45 : style === 'kawaii' ? 13 : 23;
+        const h = 3 + Math.min(style === 'sprite' ? 12 : 20, smoothLevel * 27), w = style === 'cartoon' ? 45 : style === 'sprite' ? 10 : style === 'kawaii' ? 13 : 23;
         if (style === 'cartoon') ctx.fillStyle = '#613b34';
         round(-w / 2, mouthY - h / 2, w, h, style === 'cartoon' ? 5 : h / 2);
         if (style === 'cartoon' && h > 8) {
@@ -162,6 +197,11 @@
         }
         ctx.fillStyle = ink;
         ctx.strokeStyle = ink;
+      } else if (style === 'sprite') {
+        if (mouthEmotion === 'surprised') dot(0, mouthY, 3);
+        else if (mouthEmotion === 'happy') {
+          ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, mouthY - 1, 4, 0, Math.PI); ctx.stroke();
+        } else round(-3, mouthY, 6, 1.5, 0.75);
       } else if (style === 'kawaii') {
         ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.beginPath();
         if (mouthEmotion === 'sad' || mouthEmotion === 'angry') {
@@ -179,12 +219,12 @@
         ctx.save(); if (style === 'cartoon') ctx.fillStyle = '#79513e';
         for (let i = 0; i < 3; i++) {
           ctx.globalAlpha = reduced ? 0.65 : 0.25 + 0.75 * ((Math.sin(time / 230 - i * 0.9) + 1) / 2);
-          dot(-7 + i * 7, style === 'cartoon' ? 36 : 42, 1.8);
+          dot(-7 + i * 7, style === 'cartoon' ? 36 : style === 'crt' ? 28 : 42, 1.8);
         }
         ctx.restore();
       }
       if (state === 'listening' && !asleep) {
-        ctx.globalAlpha = 0.6; round(-14, 40, 28, 1.5, 0.75); ctx.globalAlpha = 1;
+        ctx.globalAlpha = 0.6; round(-14, style === 'crt' ? 28 : 40, 28, 1.5, 0.75); ctx.globalAlpha = 1;
       }
       if (asleep) {
         ctx.save(); ctx.globalAlpha = 0.65; ctx.font = '600 8px Segoe UI, sans-serif';
@@ -196,6 +236,11 @@
       }
       if (state === 'approval') {
         ctx.save(); ctx.font = '600 16px Segoe UI, sans-serif'; ctx.fillText('?', 51, -17); ctx.restore();
+      }
+      if (style === 'crt') {
+        ctx.save(); ctx.strokeStyle = cutout; ctx.globalAlpha = 0.18; ctx.lineWidth = 0.5;
+        for (let y = -33; y < 31; y += 3) line(-62, y, 62, y, 0.5);
+        ctx.restore();
       }
     }
 

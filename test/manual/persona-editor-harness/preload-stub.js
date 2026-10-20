@@ -40,6 +40,21 @@ const overrides = {
   refocusEditor: () => {},
   openExternal: () => {},
   onConfigChangedExternally: () => {},
+  // Phase 2: the TTS voice list (mode set by the harness) and a URL fetch over fixtures, both async.
+  // The fetch stub applies the same size cap and validation as app/main.js importPersonaUrl.
+  listTtsVoices: () => later(() => window.__voicesMode === 'fail'
+    ? { ok: false, voices: [], error: 'connect ECONNREFUSED 127.0.0.1:10200' }
+    : { ok: true, host: '127.0.0.1:10200', voices: [
+      { name: 'en_US-lessac-medium', languages: ['en_US'], description: 'Lessac', installed: true },
+      { name: 'en_US-ryan-high', languages: ['en_US'], installed: true },
+    ] }),
+  importPersonaUrl: (url) => later(() => {
+    const fx = (window.__urlFixtures || {})[url];
+    if (fx === undefined) return { ok: false, persona: null, error: 'HTTP 404 from that URL' };
+    if (typeof fx === 'object') return { ok: false, persona: null, error: fx.error };
+    if (Buffer.byteLength(fx, 'utf8') > personaLib.MAX_PACK_BYTES) return { ok: false, persona: null, error: 'that file is larger than 64 KB, which is more than a persona can be' };
+    return personaLib.importPersonaText(fx);
+  }),
   // ---- the persona IPC, async, same behaviour as app/main.js ----
   validatePersona: (src) => later(() => personaLib.validatePersona(src)),
   personaJson: (p) => later(() => personaLib.exportPersonaJson(p)),

@@ -94,7 +94,12 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     wavHeader: wyoming.wavHeader,
     getTts: () => {
       const e = deps.voiceEndpoints();
-      return e.ttsHost && e.ttsPort ? { host: e.ttsHost, port: e.ttsPort } : null;
+      if (!(e.ttsHost && e.ttsPort)) return null;
+      // Per-persona Piper voice (persona.voice), read per sentence so a persona switch mid-turn
+      // still finishes the current reply in the voice it started with (the pipeline reads it as
+      // each sentence is cut); blank = the server's default.
+      const persona = currentPersona();
+      return { host: e.ttsHost, port: e.ttsPort, voice: (persona && persona.voice) || '' };
     },
     log: say,
     // A dead/disabled TTS service must never be a SILENT nothing (it fails every sentence and the
@@ -697,16 +702,27 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     text = speechLib.prepWholeSpeech(text);   // speech-only markdown cleanup lives server-side
     if (!host || !port || !text) { res.writeHead(400); res.end(); return; }
     let headerWritten = false;
+    const persona = currentPersona();
+    const run = voice => wyoming.synthesize({
+      host, port, text, voice, log: say,
+      onFormat: fmt => {
+        headerWritten = true;
+        res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' });
+        res.write(wyoming.wavHeader(fmt));
+      },
+      onChunk: buf => { try { res.write(buf); } catch (e) {} },
+    });
+    const voice = (persona && persona.voice) || '';
     try {
-      await wyoming.synthesize({
-        host, port, text, log: say,
-        onFormat: fmt => {
-          headerWritten = true;
-          res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' });
-          res.write(wyoming.wavHeader(fmt));
-        },
-        onChunk: buf => { try { res.write(buf); } catch (e) {} },
-      });
+      try { await run(voice); }
+      catch (e) {
+        // Same rule as the per-turn pipeline: a persona voice the server rejects falls back to the
+        // default voice, only while nothing has been written yet; afterwards it is a plain failure.
+        if (!voice || headerWritten) throw e;
+        say('TTS voice "' + voice + '" rejected (' + e.message + '); test speech uses the default voice');
+        broadcast({ type: 'speech-error', error: 'Speech: voice "' + voice + '" is not available on the TTS server; using its default voice' });
+        await run('');
+      }
     } catch (e) {
       say('TTS error: ' + e.message);
       if (!headerWritten) { try { res.writeHead(502); } catch (er) {} }

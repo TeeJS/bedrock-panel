@@ -1,7 +1,7 @@
 # Personas for the AI Voice face
 
 A persona is who the animated face on an **AI Voice** page is: a name, a prompt, and how the face looks.
-Bedrock Panel ships three (**Rocky**, **Norm**, **Mimi**). Any number more can be added by importing a
+Bedrock Panel ships a starter set (**Rocky**, **Norm**, **Mimi**, **Jarvis**, **CRT Terminal**, **Startup Intern** and **Dust Sprite**). Any number more can be added by importing a
 small JSON file, so you never need a new build of the app to make your own.
 
 A persona is **data only**. It cannot contain code, and it can never carry credentials: API keys stay in
@@ -11,8 +11,16 @@ your Connections.
 
 All of this is in **Settings → AI Profiles → Personas**.
 
-- **Import:** **Import persona JSON…**, then paste the JSON or choose a `*.persona.json` file. The file is checked
+- **Import:** **Import persona…**, then paste the JSON or choose a `*.persona.json` file. The file is checked
   first and its name and id are shown; a file that fails shows the reason and nothing is changed.
+- **Import from a URL:** in the **Import persona…** box, paste a link into **From a URL** and click **Fetch**. It
+  fetches a persona someone hosts online, for example a raw file in a GitHub repo or a gist, and shows its
+  name and id in the box; nothing is added until you click **Add to library**, and the usual replace prompt
+  applies. The link must be `https://`, must not contain a user name or password, and must not point at your own
+  machine or local network (for a file there, paste it or choose the file instead). The whole download has 15
+  seconds, follows at most 3 redirects (each one is checked again), is limited to 64 KB, and is validated exactly
+  like a pasted file. Limit: a public name that secretly points at a private address after the check is not
+  detected, but the downloaded text is only ever read as a persona and never run.
 - **Drop in:** copy `*.persona.json` files into the `personas` folder of the Bedrock Panel data folder
   (`%APPDATA%\bedrock-panel\personas`) and restart. They get the same checks; a file is only added when its
   id is not already in your library, so it never overwrites a persona you have edited. Files that fail
@@ -27,7 +35,7 @@ All of this is in **Settings → AI Profiles → Personas**.
 ## Make your own
 
 1. Copy [`personas/template.persona.json`](personas/template.persona.json) and rename it `<id>.persona.json`.
-2. Edit it (fields below), then import it (or paste it into **Import persona JSON…**).
+2. Edit it (fields below), then import it (or paste it into **Import persona…**).
 
 | Field | Meaning |
 |---|---|
@@ -35,13 +43,30 @@ All of this is in **Settings → AI Profiles → Personas**.
 | `name` | Shown in the pickers (max 80 characters). |
 | `version` | Schema version. Leave at `1`. |
 | `prompt` | The personality. **Appended** to the page's Smart Profile, never replacing it (max 20,000 characters). |
-| `voice` | Reserved for a per-persona Piper voice. Leave empty. |
-| `face.style` | `oled` (rounded-rect eyes, bar mouth), `cartoon` (round eyes with pupils, wide grin) or `kawaii` (soft sparkling eyes, cheeks). |
+| `voice` | The Piper voice this persona speaks with, for example `en_US-ryan-high`. Empty = use the page's default voice. See *Voices* below. |
+| `face.style` | The drawing style: `oled` (rounded-rect eyes, bar mouth), `cartoon` (round eyes with pupils, wide grin), `kawaii` (soft sparkling eyes, cheeks), `crt` (amber phosphor face in a retro monitor bezel) or `sprite` (a round soot body with two big white eyes). An unknown value becomes `oled`. |
 | `face.color` / `face.cheekColor` | `#rrggbb`, or empty to use the page accent. |
 | `face.eyeGap` | 0–60 (virtual pixels between the eyes). |
 | `face.dozeAfterSeconds` | Seconds of inactivity before the face falls asleep; 0 = never. |
 | `face.blinkMinMs` / `face.blinkMaxMs` | 300–60000. If min is larger than max they are swapped. |
 | `face.emotions` | Optional per-emotion tuning for `neutral`, `happy`, `sad`, `angry`, `surprised`, `sleepy`, `thinking`. Each takes `eyeW` 4–60, `eyeH` 2–60, `radius` 0–30, `browSlant` −20–20, `lowerLid` 0–40, `upperLid` 0–40. Anything left out falls back to the built-in preset. |
+
+### Voices
+
+Each persona row has a **Voice** field. Leave it blank and the persona uses whatever voice the page's
+text-to-speech server is set to. To give a persona its own voice, type a Piper voice name, or click
+**Load available voices** (one button above the list) to fill the field's suggestions from the
+text-to-speech server in **Settings → TTS/STT**.
+
+- The names must be voices your Piper server has. The server does **not** substitute its default voice for
+  a name it does not know: depending on its setup it may try to download that voice or refuse the request,
+  and a refused request means that reply is not spoken. Prefer picking from **Load available voices**.
+- A page can override the text-to-speech server in its Advanced settings. The list shows the app-wide
+  server's voices; a page that points elsewhere may offer different ones.
+- Loading voices never chooses one for you and never blocks Save; if the server cannot be reached you can
+  still type the name.
+- Sharing a persona shares its voice *name* only. The receiver needs the same voice installed, or they hear
+  their default voice.
 
 ### Writing the prompt
 
