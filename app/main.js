@@ -3970,11 +3970,34 @@ function trayMenu() {
   }
   items.push(
     { type: 'separator' },
-    { label: 'Quit', click: () => { try { dev.stop(); } catch (e) {} app.quit(); } },
+    { label: 'Quit', click: () => { if (!confirmQuitIfBusy()) return; try { dev.stop(); } catch (e) {} app.quit(); } },
   );
   return Menu.buildFromTemplate(items);
 }
 function refreshTray() { if (tray) tray.setContextMenu(trayMenu()); }
+// Quit guard: a recording or transcription in flight needs an explicit OK before the app closes. Once
+// the user confirms (or a fault shutdown forces the exit) the answer sticks so before-quit does not ask twice.
+let quitApproved = false;
+function confirmQuitIfBusy() {
+  if (quitApproved || faultShuttingDown) return true;
+  const qg = require('./quitGuard');
+  let reasons = [];
+  try {
+    reasons = qg.busyReasons({
+      recording: !!(meetingRecorder && meetingRecorder.getState().recording),
+      transcribing: qg.isTranscribing(meetingTranscriber ? meetingTranscriber.getState() : null),
+    });
+  } catch (e) { reasons = []; }
+  if (!reasons.length) return true;
+  const p = qg.quitPrompt(reasons);
+  const choice = dialog.showMessageBoxSync({
+    type: 'warning', title: 'Bedrock Panel', message: p.message, detail: p.detail,
+    buttons: ['Keep running', 'Close anyway'], defaultId: 0, cancelId: 0, noLink: true,
+  });
+  if (choice !== 1) return false;
+  quitApproved = true;
+  return true;
+}
 let trayImgNormal = null, trayImgRecording = null;
 // Red-tinted copy of the tray icon for the LucidType "dictating" state — derived from the app icon at
 // startup (no separate asset), so it's unmistakably the same app in a recording state. Windows only;
@@ -5345,7 +5368,9 @@ app.whenReady().then(async () => {
 });
 }
 app.on('window-all-closed', () => {});
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  // Any quit path that did not already ask (Cmd+Q, installer, OS) is held here until confirmed.
+  if (!confirmQuitIfBusy()) { event.preventDefault(); return; }
   try { clearInterval(saverTimer); } catch (e) {}             // stop the screensaver idle check
   try { discordService.stop(); } catch (e) {}                 // close Discord IPC and cancel reconnect timers
   try { reservedDisplay.stop(); } catch (e) {}                // release WinEvent hooks and terminate the native helper
