@@ -13,7 +13,7 @@ test('ensurePersonas seeds the built-ins once and never touches an existing list
   const c = {};
   ensurePersonas(c);
   assert.deepEqual(c.settings.personas.map(p => p.id), BUILTIN_IDS);
-  assert.deepEqual(c.settings.personas.map(p => p.face.style), ['kawaii', 'oled', 'crt', 'kawaii', 'sprite']);
+  assert.deepEqual(c.settings.personas.map(p => p.face.style), ['kawaii', 'butler', 'crt', 'intern', 'sprite']);
   assert.deepEqual(c.settings.personasSeeded, BUILTIN_IDS);
   c.settings.personas[0].name = 'Mimi (mine)';
   c.settings.personas.push({ id: 'dot', name: 'Dot', prompt: '' });
