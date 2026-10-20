@@ -1,5 +1,16 @@
 # Wake word for AI Voice pages (charter and plan)
 
+**Signed off by T.J. 2026-10-20: option B (transcript gate first), with three added criteria.**
+
+1. With wake word on, speech still goes to the configured STT, but **nothing is shown on the panel until
+   the wake phrase is identified**: no bubble, no status text echo, nothing in the transcript.
+2. An **optional chime** when the wake phrase is detected: a page option, off by default.
+3. **Ending the conversation must be efficient and user-tunable:** one wake must never leave the page
+   awake for the rest of the day. Default: one wake, one request, back to waiting. A **follow-up window**
+   (seconds after the reply during which the human can speak without the phrase; 0 = off) is a page
+   setting, counted only while waiting for the human (paused during generation, speech and approvals),
+   and the page shows "Listening for a follow-up (n s)" while it runs so the end is visible.
+
 Branch: `wakeword-plan` (worktree, off `main` at v1.0.0-beta.4). Planning only, per T.J.'s rule: no change
 to the main checkout and no app launch while he works in it. Research inputs: Sonnet's brief (engine matrix,
 risk register) and Codex's UX/state contract, both in the agent room `AM-AT37LVS2HVXBHCDM6LHV6UKUDC`.
@@ -138,9 +149,13 @@ label and the Creature badge; on playback end tells the host (it already knows `
 hard off; the mic-off badge stays. The face gets `setState('waiting')` (renderer: dozing look where the style
 allows, otherwise idle).
 
-Data: page option `wakeWord` (off | on) and `wakePhrase` (override, optional); persona fields `wakeName`
-(string) and `aliases` (string[]); both normalized in `persona.js` and carried by packs; the editor shows
-"Wake phrase: Hey Jarvis" next to the persona pick and the warning for Full auto.
+Data: page options `wakeWord` (off | on), `wakePhrase` (override, optional), `wakeChime` (off | on, default
+off; a short built-in tone played by the page on the picked speaker when the phrase is identified), and
+`wakeFollowUpSeconds` (0 = one wake one request, default 0; otherwise the follow-up window); persona fields
+`wakeName` (string) and `aliases` (string[]); all normalized in `persona.js` / the page option validators and
+carried by packs; the editor shows "Wake phrase: Hey Jarvis" next to the persona pick, the chime and
+follow-up settings beside it, and the warning for Full auto. The panel's Settings overlay gets the same
+three controls (wake on/off, chime, follow-up seconds) as pick rows, like Face and Persona.
 
 ## Phase 1 work breakdown (owners proposed; estimates are guesses to be measured)
 
@@ -156,9 +171,8 @@ Data: page option `wakeWord` (off | on) and `wakePhrase` (override, optional); p
 
 ## Decisions needed from T.J. before implementation
 
-1. Engine order. **A (room consensus):** isolated sherpa spike + written decision gate first; transcript gate
-   becomes v1 only if the spotter proves unsuitable. **B (Fable's alternative):** transcript gate ships first,
-   spike after. Fable recommends B for time-to-value; the agents lean A for privacy and latency. Pick one.
+1. Engine order: **B chosen** (transcript gate first; the on-device spotter is a later, separately gated
+   phase behind the same detector interface).
 2. Phrase pattern "hey <name>" with per-persona `wakeName`; default for pages without a persona: "hey panel"?
 3. Phrase-alone listening window: 8 s to start speaking, then back to waiting?
 4. A spoken "go to sleep" command: in or out of v1?
