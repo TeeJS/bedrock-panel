@@ -27,6 +27,7 @@ const { createPanelReview, PANEL_SYSTEM_PROMPT, PANEL_PROFILE } = require('./pan
 const routinesLib = require('./routines');            // pure: saved AI routines (shape + auto-name)
 const personaLib = require('./face/persona');          // pure: face personas (library, per-page pick)
 const emotionTag = require('./face/emotion-tag');      // pure: "[happy]" reply-prefix protocol for the face
+const wakeword = require('./face/wakeword');           // pure: wake-word matcher + per-page wake state machine
 
 // deps: { activeServedAppConfig(appId), activeGrid(), getConfig(), saveConfig(),
 //         setRingState(state), clearRingOverride(), getDocumentsPath() }
@@ -57,6 +58,60 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   // personaPick straight into the page options without going through setPersona, so onTurn compares
   // this against the current pick and restarts the session before sending when they differ.
   let sessionPersonaId = null;
+  // ---- Wake word (transcript gate; app/face/wakeword.js) ----
+  // The page keeps POSTing each VAD utterance to /audio; transcribe() runs STT as always and, when
+  // the page's wakeWord option is on, lets the state machine decide: addressed text comes back as the
+  // turn text, everything else comes back empty (never logged, never shown, never queued). The page
+  // arms the gate by opening its conversation (it sends a generation token with every utterance).
+  const wake = wakeword.createWakeState({ now: () => Date.now() });
+  let wakeTimer = null;        // fires when a timed wake state (listening / follow-up / cooldown) expires
+  let wakeReady = null;        // last resolvePhrase() result for the active page, for /state and the UI
+  function wakeEnabled() {
+    const opts = deps.activeServedAppConfig(appId);
+    return !!(opts && opts.options.wakeWord === 'on');
+  }
+  function wakeFollowUpMs() {
+    const opts = deps.activeServedAppConfig(appId);
+    const s = parseInt(opts && opts.options.wakeFollowUpSeconds, 10);
+    return isFinite(s) && s > 0 ? Math.min(s, 600) * 1000 : 0;
+  }
+  // Re-resolve the phrase from the page's override / persona and (re)build the matcher. Returns the
+  // resolve result; a not-ready phrase keeps the gate closed (nothing passes) and tells the page why.
+  function wakeResolve() {
+    const opts = deps.activeServedAppConfig(appId);
+    wakeReady = wakeword.resolvePhrase({ persona: currentPersona(), pageOverride: opts && opts.options.wakePhrase, pageDefault: 'hey panel' });
+    wake.setFollowUpMs(wakeFollowUpMs());
+    if (wakeReady.ready) wake.setMatcher(wakeword.createWakeMatcher(wakeReady));
+    else wake.setMatcher(null);
+    return wakeReady;
+  }
+  function wakeSnapshot() {
+    if (!wakeEnabled()) return { enabled: false, state: 'off', phrase: '', until: 0, gen: wake.gen, ready: true, reason: '' };
+    if (!wakeReady) wakeResolve();
+    const s = wake.snapshot();
+    const notReady = !wakeReady.ready;
+    return { enabled: true, state: notReady ? 'not-ready' : s.state, phrase: wakeReady.phrase, until: s.until, gen: s.gen, ready: !notReady, reason: wakeReady.reason, followUpMs: s.followUpMs, windowMs: s.windowMs };
+  }
+  function wakeBroadcast() {
+    const snap = wakeSnapshot();
+    broadcast({ type: 'wake-state', wake: snap });
+    clearTimeout(wakeTimer); wakeTimer = null;
+    if (snap.until) wakeTimer = setTimeout(() => { wake.tick(); wakeBroadcast(); }, Math.max(50, snap.until - Date.now() + 20));
+  }
+  // The page opened its conversation (mic on): arm. Closed it: disarm. Returns the generation the
+  // page must send with its utterances.
+  function wakeArm(on) {
+    if (!on || !wakeEnabled()) { const g = wake.disarm(); wakeBroadcast(); return { ok: true, gen: g, wake: wakeSnapshot() }; }
+    const r = wakeResolve();
+    const g = wake.arm(r.ready ? wakeword.createWakeMatcher(r) : null);
+    if (!r.ready) wake.disarm();   // closed gate, state reported as not-ready
+    wakeBroadcast();
+    return { ok: true, gen: g, wake: wakeSnapshot() };
+  }
+  function wakeReplyEnd() { wake.onReplyEnd(); wakeBroadcast(); return true; }
+  // A reply cut short on the host (session error/exit/stop, new session) never reaches the page's
+  // playback end: settle the gate here so an active page never sits deaf until the next mic tap.
+  function wakeSettle() { if (wakeEnabled() && wake.current() === 'active') { wake.onReplyEnd(); wakeBroadcast(); } }
   // Whether the prompt the running session was given asks for emotion tags. Tracked separately from
   // the page's visual mode: the face can be switched Off while the model is still instructed to tag,
   // and those tags must still be stripped until the new prompt is in force.
@@ -69,6 +124,8 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   let transcript = [];   // [{role:'user'|'assistant', text}]
   // CLI-like turn queueing: exactly one turn in flight; later entries wait for its turn-complete.
   let turnActive = false;
+  let turnSpeechOpen = false;      // the current turn has a speech stream (its real end is the page's playback end)
+  function beginSpeech() { turnSpeechOpen = true; return speech.beginTurn(); }
   let turnQueue = [];             // [{text, speak}] in arrival order
   let queuedSpeakPending = false; // a dequeued turn wants speech; its stream opens on first delta
   // Clear the turn queue + in-flight flags (session (re)start/stop, and the error/exit handlers).
@@ -149,7 +206,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // reply's spoken tail gets to finish (CLI semantics: complete the current task, then answer).
     if (queuedSpeakPending) {
       queuedSpeakPending = false;
-      broadcast({ type: 'turn-speech', speech: speech.beginTurn() });
+      broadcast({ type: 'turn-speech', speech: beginSpeech() });
     }
     speech.feed(text);   // no-op unless this turn was started with speak
     broadcast({ type: 'assistant-delta', text });
@@ -225,7 +282,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // now so the whole-text finish below lands in it.
     if (queuedSpeakPending) {
       queuedSpeakPending = false;
-      if (!error && text && !panelOffered) broadcast({ type: 'turn-speech', speech: speech.beginTurn() });
+      if (!error && text && !panelOffered) broadcast({ type: 'turn-speech', speech: beginSpeech() });
     }
     // Speech: flush the pipeline's remainder (or speak the whole result for turns that never
     // streamed deltas, e.g. slash commands); errored turns get their speech cut instead.
@@ -242,6 +299,9 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     }
     panelTurnText = '';
     broadcast({ type: 'turn-complete', text: panelOffered ? null : shownText, error: state.error });
+    // Wake word: a reply with no speech stream ends here; a spoken one ends when the page reports
+    // its real playback end (/wake-reply-end), so the echo cooldown starts after the sound stops.
+    if (wakeEnabled() && (state.error || !turnSpeechOpen)) { wake.onReplyEnd(); wakeBroadcast(); }
     // CLI semantics: the finished turn hands off to the next queued entry, in order.
     turnActive = false;
     applyPendingPrompt();   // a profile/persona switch made mid-turn lands now, between turns
@@ -256,6 +316,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     resetTurns();
     turnTagActive = false;
     speech.abortActive('session error');
+    wakeSettle();
     broadcast({ type: 'error', error: state.error });
     applyPendingPrompt();
   });
@@ -264,6 +325,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     if (!stillRunning) {
       resetTurns();
       speech.abortActive('agent process exited');
+      wakeSettle();
     }
   });
   // Approval flow (normalized from whatever mechanism the adapter uses -- external hook for claude,
@@ -328,6 +390,11 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // Face layout for this page: off = today's page byte-for-byte; side = face pane beside the chat;
     // creature = graphics only. A layout change never restarts the session (the page just redraws).
     face: v => (v === 'off' || v === 'side' || v === 'creature') ? v : null,
+    // Wake word (panel Settings rows): on/off, the chime, the follow-up window and a phrase override.
+    wakeWord: v => (v === 'off' || v === 'on') ? v : null,
+    wakeChime: v => (v === 'true' || v === '1') ? true : (v === 'false' || v === '0') ? false : null,
+    wakeFollowUpSeconds: v => { const n = parseInt(v, 10); return n >= 0 && n <= 600 ? String(n) : null; },
+    wakePhrase: v => typeof v === 'string' && v.length <= wakeword.MAX_PHRASE_LEN ? v : null,
   };
 
   // Ensures a session is running for the panel's currently-active page (starting one on first
@@ -354,6 +421,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     }
     const speechId = dispatchTurn(text, speak, false);
     if (speechId === false) return { ok: false };
+    if (wakeEnabled()) { wake.onTurnStart(); wakeBroadcast(); }   // typed or addressed: the page is active until the reply ends
     // A lazy session start just broadcast session-started, which wipes the page's local transcript
     // -- INCLUDING the user bubble the page drew for this very turn ("my first spoken instruction
     // flashes then disappears"). Send the turn text back so the page can redraw it.
@@ -401,6 +469,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     const sent = adapter.sendTurn(text);
     if (!sent) return false;
     turnActive = true;
+    turnSpeechOpen = false;
     freezeTurnProtocol();   // result-only turns (slash commands) never see assistant-start
     transcript.push({ role: 'user', text });
     if (fromQueue) {
@@ -409,7 +478,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     }
     // Immediate turn: any previous reply is long done; a still-open speech stream is stale.
     let speechId = null;
-    if (speak) speechId = speech.beginTurn();
+    if (speak) speechId = beginSpeech();
     else speech.abortActive('a new turn was sent');
     return speechId;
   }
@@ -518,6 +587,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // applied persona. The face is told either way so it can redraw at once.
     broadcast({ type: 'persona', persona: personaLib.personaForPage(currentPersona()) });
     if (adapter.isRunning()) requestPromptApply('restart');
+    if (wakeEnabled()) { wakeResolve(); wakeBroadcast(); }   // new name, new phrase; back to waiting
     return true;
   }
 
@@ -535,6 +605,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       meta: buildMeta(),
       // A page reloaded mid-review (rotation, relaunch) repaints the pending panel from here.
       panel: panelReview.state(),
+      wake: wakeSnapshot(),
     });
   }
   // Agent-specific page strings + pick lists; the shared page applies these over its claude-shaped
@@ -602,6 +673,11 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // Face on/off changes whether the model is asked for emotion tags: re-issue the prompt (kept
     // conversation), deferred past a live turn like any prompt change.
     if (key === 'face' && changed) { requestPromptApply('prompt'); broadcast({ type: 'face', mode: v }); }
+    // Wake settings apply at once: re-resolve the phrase (override, follow-up) and tell the page.
+    if (changed && (key === 'wakeWord' || key === 'wakePhrase' || key === 'wakeFollowUpSeconds' || key === 'wakeChime')) {
+      if (key === 'wakeWord' && v === 'off') wake.disarm(); else if (wakeEnabled()) wakeResolve();
+      wakeBroadcast();
+    }
     return true;
   }
 
@@ -682,6 +758,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     broadcast({ type: 'persona', persona: personaLib.personaForPage(persona) });   // the switch is applied: page clears "switching…" and redraws
     transcript = [];   // new session, fresh conversation
     speech.abortActive('new session started');   // a folder switch mid-reply silences the old folder's voice
+    wakeSettle();
     // permissionMode rides along so the page's Mode button is corrected the moment a lazy first-turn
     // start lands (the page-load /state snapshot predates the session and can go stale).
     broadcast({ type: 'session-started', projectDir, permissionMode: adapter.mode() });
@@ -692,6 +769,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     adapter.stop();
     resetTurns();
     speech.abortActive('session stopped');
+    wakeSettle();
     state = { running: false, status: 'idle', lastUserText: '', lastAssistantText: '', error: null, emotion: null, pendingApproval: null, personaPending: null };
     turnTagActive = false;
     pendingApply = null;
@@ -714,22 +792,35 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
 
   // Transcribes one VAD-trimmed utterance (raw 16kHz/16-bit/mono PCM, matching the page's mic
   // pipeline -- see claudevoice-vad.js) via the configured wyoming-faster-whisper host/port.
-  async function transcribe(pcmBuffer) {
+  async function transcribe(pcmBuffer, gen) {
+    // When the human started talking: the audio is 16 kHz 16-bit mono (32 bytes per ms), and it
+    // arrives the moment the utterance ends, so its length dates its start. A request begun inside
+    // a listening or follow-up window is honoured even when STT returns after the window closed.
+    const startedAt = Date.now() - Math.floor((pcmBuffer && pcmBuffer.length || 0) / 32);
     const { sttHost: host, sttPort: port } = deps.voiceEndpoints();
     if (!host || !port) return { ok: false, error: 'STT host/port not configured (Settings → TTS/STT)' };
+    let text;
     try {
-      const text = await wyoming.transcribe({ host, port, audio: pcmBuffer, rate: 16000, width: 2, channels: 1, log: say });
+      text = await wyoming.transcribe({ host, port, audio: pcmBuffer, rate: 16000, width: 2, channels: 1, log: say });
       // Whisper's near-silence hallucinations (see voiceConfig.js) return ok+empty text, which the
       // page treats as "heard nothing".
       if (isVoiceChatNoise(text)) {
         say('STT dropped a known noise-hallucination phrase: ' + JSON.stringify(text));
         return { ok: true, text: '' };
       }
-      return { ok: true, text };
     } catch (e) {
       say('STT error: ' + e.message);
       return { ok: false, error: e.message };
     }
+    if (!wakeEnabled()) return { ok: true, text };
+    // Wake word on: the gate decides. Unaddressed text is answered as nothing and is not logged.
+    const d = wake.onUtterance(text, gen, startedAt);
+    // 'pass' means the gate is not armed (the page has not opened its conversation since the wake
+    // word went on). Fail closed: with the wake word on, nothing reaches the page until it arms.
+    if (d.action === 'pass') { say('wake: utterance before the page armed, dropped'); return { ok: true, text: '', wake: 'off' }; }
+    if (d.action === 'turn') { wakeBroadcast(); return { ok: true, text: d.commandText, wake: 'addressed' }; }
+    if (d.action === 'listen') { wakeBroadcast(); return { ok: true, text: '', wake: 'listening' }; }
+    return { ok: true, text: '', wake: wake.current() };
   }
 
   // Streams synthesized speech for `text` straight into `res` as a WAV, via the configured
@@ -787,6 +878,8 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       setPermissionMode,
       setProfile,
       setPersona,
+      wakeArm,
+      wakeReplyEnd,
       panelAccept,
       panelCancel,
       saveRoutine,

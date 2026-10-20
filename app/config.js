@@ -855,6 +855,8 @@
         <input class="psColor" placeholder="#rrggbb or blank" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color as #rrggbb; blank uses the page accent. A value that is not #rrggbb is not saved.">
         <input class="psCheek" placeholder="cheek #rrggbb" value="${esc(face.cheekColor || '')}" style="width:130px;margin-left:8px" title="Blush/cheek color; blank uses the face color">
         <input class="psVoice" list="psVoiceList" placeholder="Voice: page default" value="${esc(p.voice || '')}" style="width:200px;margin-left:8px" title="Piper voice name for this persona (e.g. en_US-lessac-medium). Blank = the page's default voice. Use 'Load available voices' to see what the TTS server offers.">
+        <input class="psWake" placeholder="Wake name" value="${esc(p.wakeName || '')}" maxlength="40" style="width:120px;margin-left:8px" title="The spoken name a page with the wake word on listens for, as &quot;hey &lt;wake name&gt;&quot; (letters, digits, spaces). Blank = this persona cannot be woken by name.">
+        <input class="psAliases" placeholder="Aliases, comma-separated" value="${esc(Array.isArray(p.aliases) ? p.aliases.join(', ') : '')}" style="width:200px;margin-left:8px" title="Other full phrases that also wake the page, e.g. &quot;okay jarvis, hi jarvis&quot;. Up to 10.">
         <button class="psExport" type="button" data-ex="${i}" style="margin-left:8px" title="Copy this persona's JSON to the clipboard">Export</button>
         <button class="psExportFile" type="button" data-ex="${i}" style="margin-left:4px" title="Save this persona as a .persona.json file">Export file…</button>
         <button class="psRemove" type="button" data-rm="${i}" title="Remove" style="margin-left:8px">✕</button>
@@ -984,6 +986,8 @@
       host.querySelectorAll('.psCheek').forEach((inp, i) => { inp.oninput = e => { const v = e.target.value.trim(); e.target.style.borderColor = hexOk(v) ? '' : '#e05050'; const l = list(); if (l[i] && hexOk(v)) { face(l[i]).cheekColor = v; markDirty(); } }; });
       host.querySelectorAll('.psPrompt').forEach((ta, i) => { ta.oninput = e => { const l = list(); if (l[i]) { l[i].prompt = e.target.value; markDirty(); } }; });
       host.querySelectorAll('.psVoice').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].voice = e.target.value.trim().slice(0, 120); markDirty(); } }; });
+      host.querySelectorAll('.psWake').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].wakeName = e.target.value.replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40); markDirty(); } }; });
+      host.querySelectorAll('.psAliases').forEach((inp, i) => { inp.oninput = e => { const l = list(); if (l[i]) { l[i].aliases = e.target.value.split(',').map(a => a.trim().slice(0, 60)).filter(Boolean).slice(0, 10); markDirty(); } }; });
       host.querySelectorAll('.psRemove').forEach(btn => { btn.onclick = () => { list().splice(parseInt(btn.getAttribute('data-rm'), 10), 1); markDirty(); redraw(); }; });
       // Export writes the NORMALIZED persona (the main process fills defaults), so what a user
       // shares is exactly what an import produces -- the seeded entries are raw until then.
@@ -2663,7 +2667,24 @@
           </select></div>
         <div class="row"><label>Persona</label>
           <select id="cvPersona" style="width:320px"><option value="" ${cvVal('personaPick', '') ? '' : 'selected'}>None — plain face</option>${(((config.settings || {}).personas) || []).map(p => `<option value="${esc(p.id)}" ${cvVal('personaPick', '') === p.id ? 'selected' : ''}>${esc(p.name || p.id)}</option>`).join('')}</select></div>
-        <details class="hint"><summary>An animated face that listens, thinks and talks with the reply. A persona adds a character on top of the profile (its words are appended, never replacing the profile).</summary> Off changes nothing. Side keeps the chat beside the face; Creature shows only the face and reveals the controls on a tap. Personas live under <b>Settings → AI Profiles → Personas</b>, where you can also import and export them. Changing the persona starts a new conversation: it applies on the next message (a reply in progress finishes first).</details>` + (!cvModes ? '' : `
+        <details class="hint"><summary>An animated face that listens, thinks and talks with the reply. A persona adds a character on top of the profile (its words are appended, never replacing the profile).</summary> Off changes nothing. Side keeps the chat beside the face; Creature shows only the face and reveals the controls on a tap. Personas live under <b>Settings → AI Profiles → Personas</b>, where you can also import and export them. Changing the persona starts a new conversation: it applies on the next message (a reply in progress finishes first).</details>
+        <p class="sectitle" style="margin-top:14px">Wake word</p>
+        <div class="row"><label>Wake word</label>
+          <select id="cvWake" style="width:320px">
+            <option value="off" ${cvVal('wakeWord', 'off') === 'on' ? '' : 'selected'}>Off — the open mic hears everything</option>
+            <option value="on" ${cvVal('wakeWord', 'off') === 'on' ? 'selected' : ''}>On — wait for the persona's name</option>
+          </select></div>
+        <div id="cvWakeRows"${cvVal('wakeWord', 'off') === 'on' ? '' : ' style="display:none"'}>
+          <div class="row"><label>Wake phrase</label>
+            <input id="cvWakePhrase" value="${esc(cvVal('wakePhrase', ''))}" maxlength="60" placeholder="blank = hey + the persona's wake name" style="width:320px"></div>
+          <p class="hint" id="cvWakePreview" style="margin:2px 0 0"></p>
+          <div class="row"><label>Chime</label>
+            <label class="iconopt" style="width:auto"><input type="checkbox" id="cvWakeChime" ${cvVal('wakeChime', false) ? 'checked' : ''}> a short chime when the name is heard</label></div>
+          <div class="row"><label>Follow-up window</label>
+            <input type="number" inputmode="numeric" id="cvWakeFollow" value="${esc(String(parseInt(cvVal('wakeFollowUpSeconds', '0'), 10) || 0))}" min="0" max="600" step="1" style="width:90px"> <span class="hint">seconds after a reply during which you can speak again without the name (0 = one wake, one request)</span></div>
+          <p class="hint warn" id="cvWakeDanger" style="display:none">⚠ With the permission mode below set to run commands without approval, anything said after the wake phrase is acted on. Keep the phrase distinctive.</p>
+        </div>
+        <details class="hint"><summary>With the wake word on, everything you say still goes to the STT server, but nothing reaches the AI or the screen until an utterance starts with the wake phrase.</summary> The phrase is "hey" + the persona's wake name (set under <b>Settings → AI Profiles → Personas</b>), or the phrase typed here for this page. Say the name and the request together ("Hey Jarvis, what time is it?"), or the name alone and then the request within 8 seconds. The page listens for the name again as soon as the reply has finished playing; the follow-up window lets a short back-and-forth continue without repeating the name. The mic button is still the hard off.</details>` + (!cvModes ? '' : `
         <p class="sectitle" style="margin-top:14px">Permissions</p>
         <div class="row"><label>Permission mode</label>
           <select id="cvPermMode" style="flex:1">${cvModes.choices.map(c => `<option value="${esc(c[0])}" ${cvMode === c[0] ? 'selected' : ''}>${esc(c[1])}</option>`).join('')}</select></div>
@@ -2896,7 +2917,38 @@
       const cvFace = document.getElementById('cvFace');
       if (cvFace) cvFace.onchange = e => setOpt('face', e.target.value);
       const cvPersona = document.getElementById('cvPersona');
-      if (cvPersona) cvPersona.onchange = e => setOpt('personaPick', e.target.value);
+      if (cvPersona) cvPersona.onchange = e => { setOpt('personaPick', e.target.value); syncWakeUi(); };
+      // Wake word rows. The preview mirrors the main process's resolver (app/face/wakeword.js:
+      // page phrase > "hey " + persona wake name > "hey panel"; at least two words) so the editor
+      // can say what the page will listen for before anything is saved.
+      const cvWake = document.getElementById('cvWake');
+      const wakeNorm = s => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+      const syncWakeUi = () => {
+        if (!cvWake) return;
+        const on = cvWake.value === 'on';
+        document.getElementById('cvWakeRows').style.display = on ? '' : 'none';
+        const prev = document.getElementById('cvWakePreview');
+        if (on) {
+          const override = wakeNorm(document.getElementById('cvWakePhrase').value);
+          const persona = (((config.settings || {}).personas) || []).find(p => p && p.id === (cvPersona ? cvPersona.value : ''));
+          const wakeName = persona ? wakeNorm(persona.wakeName) : '';
+          const phrase = override || (wakeName ? 'hey ' + wakeName : persona ? '' : 'hey panel');
+          if (!phrase) prev.textContent = `The persona "${persona.name || persona.id}" has no wake name yet: set one under Settings → AI Profiles → Personas, or type a phrase above.`;
+          else if (!/\s/.test(phrase)) prev.textContent = `Use at least two words ("hey ${phrase}"): a single word wakes the page on everyday speech.`;
+          else prev.textContent = `This page will listen for "${phrase}"` + (persona && !override && Array.isArray(persona.aliases) && persona.aliases.length ? ` (also: ${persona.aliases.join(', ')})` : '') + '.';
+          prev.className = 'hint' + (phrase && /\s/.test(phrase) ? '' : ' warn');
+        }
+        const danger = document.getElementById('cvWakeDanger');
+        if (danger) danger.style.display = on && cvPermMode && CV_DANGER_MODES.includes(cvPermMode.value) ? '' : 'none';
+      };
+      if (cvWake) {
+        cvWake.onchange = e => { setOpt('wakeWord', e.target.value); syncWakeUi(); };
+        document.getElementById('cvWakePhrase').oninput = e => { setOpt('wakePhrase', e.target.value.slice(0, 60)); syncWakeUi(); };
+        document.getElementById('cvWakeChime').onchange = e => setOpt('wakeChime', e.target.checked);
+        document.getElementById('cvWakeFollow').onchange = e => { const n = Math.max(0, Math.min(600, parseInt(e.target.value, 10) || 0)); e.target.value = String(n); setOpt('wakeFollowUpSeconds', String(n)); };
+        if (cvPermMode) cvPermMode.addEventListener('change', syncWakeUi);
+        syncWakeUi();
+      }
       const cvApprovals = document.getElementById('cvApprovals');   // claude-only rows
       if (cvApprovals) cvApprovals.onchange = e => setOpt('approvalsEnabled', e.target.checked);
       const cvEditPrompt = document.getElementById('cvEditPrompt');

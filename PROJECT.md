@@ -15,6 +15,29 @@ Branch: `wakeword-plan` (worktree, off `main` at v1.0.0-beta.4). Planning only, 
 to the main checkout and no app launch while he works in it. Research inputs: Sonnet's brief (engine matrix,
 risk register) and Codex's UX/state contract, both in the agent room `AM-AT37LVS2HVXBHCDM6LHV6UKUDC`.
 
+## Phase 1 status (2026-10-20, branch `wakeword-plan`, worktree only)
+
+Built and unit-tested; **not yet run in the app** (T.J.'s no-launch rule while he works in the main checkout).
+
+- `app/face/wakeword.js`: matcher, phrase resolver, page state machine (waiting / listening / active / follow-up /
+  cooldown), generation tokens, late-STT handling (a request begun inside a window counts even when STT returns
+  after it closed). `test/faceWakeword.test.js`: 12 tests incl. an STT-shaped fixture table.
+- Persona `wakeName` / `aliases` (normalized, built-ins named: mimi, jarvis, terminal, intern, sprite); template
+  and docs updated; the editor's persona rows have *Wake name* and *Aliases* fields.
+- Page options `wakeWord`, `wakePhrase`, `wakeChime` (off), `wakeFollowUpSeconds` (0, max 600).
+- Host (`app/voicepanel-host.js`): the gate inside `/audio` (`?gen=`); `/wake-arm`, `/wake-reply-end` routes;
+  `wake-state` SSE and `/state.wake`; fail-closed before the page arms; a reply cut short on the host settles the
+  gate. `test/faceHostWake.test.js`: 10 tests through the real host with STT stubbed and a mocked clock.
+- Page (`claudevoiceview.js/.html`): arms on mic open, disarms on mic off, sends the generation token, shows
+  nothing for unaddressed speech, status line / Creature badge ("Waiting for "Hey Jarvis"", "Listening (n s to
+  start)", "Follow-up window (n s)", not-ready reason), optional two-note chime via the picked speaker, reports
+  the real playback end; Settings card rows for Wake word / Wake chime / Follow-up window.
+- Editor (`config.js`): Wake word section on AI Voice pages with the resolved-phrase preview, chime, follow-up
+  seconds, and a warning when the permission mode runs commands without approval.
+- Codex's acceptance script: `docs/wakeword-ui-acceptance.md` (to run once launching is allowed).
+- Still to do: live run on the panel with the real Whisper server (needs T.J.'s OK), measured false accepts /
+  p95 (Sonnet, needs the same OK), Phase 2 spotter spike.
+
 ## Charter
 
 1. **The one thing this must do:** an AI Voice page with **Wake word: on** keeps its microphone open but

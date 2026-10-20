@@ -635,6 +635,8 @@ const VOICE_POST_SUFFIXES = new Set([
   '/option',
   '/append-line',
   '/wake',
+  '/wake-arm',
+  '/wake-reply-end',
 ]);
 
 // TTS handoff: reply text can be many KB -- far beyond what fits in a GET query string (Node
@@ -852,8 +854,25 @@ async function handler(req, res) {
     if (voicePath === '/audio' && req.method === 'POST') {
       let pcm; try { pcm = await readRawBody(req); } catch (e) { return done(res, false); }
       if (!pcm.length || !h.transcribe) return json(res, { ok: false, text: '' });
-      let result; try { result = await h.transcribe(pcm); } catch (e) { result = { ok: false, error: e.message }; }
+      // `gen` is the page's wake-word generation token: an utterance that was in flight when the mic
+      // was toggled, the persona switched or the page changed is answered as nothing (see wakeword.js).
+      const gen = parseInt(queryValue(full, 'gen') || '', 10);
+      let result; try { result = await h.transcribe(pcm, isFinite(gen) ? gen : undefined); } catch (e) { result = { ok: false, error: e.message }; }
       return json(res, result);
+    }
+    // Wake word: the page arms the gate when its conversation opens (mic on) and disarms when it
+    // closes; the reply carries the generation token the page sends with every utterance.
+    if (voicePath === '/wake-arm' && req.method === 'POST') {
+      let body; try { body = await readJsonBody(req); } catch (e) { return done(res, false); }
+      if (!h.wakeArm) return done(res, false);
+      let out = null; try { out = h.wakeArm(!!(body && body.on)); } catch (e) {}
+      return json(res, out && out.ok ? out : { ok: false });
+    }
+    // Wake word: the page reports the real end of a spoken reply so the gate can re-arm (echo cooldown).
+    if (voicePath === '/wake-reply-end' && req.method === 'POST') {
+      if (!h.wakeReplyEnd) return done(res, false);
+      let ok = false; try { ok = !!h.wakeReplyEnd(); } catch (e) {}
+      return done(res, ok);
     }
     if (voicePath === '/option' && req.method === 'POST') {
       let body; try { body = await readJsonBody(req); } catch (e) { return done(res, false); }

@@ -130,6 +130,7 @@ function setStatus(status, errorText) {
   $('err').textContent = errorText || speechErrText || '';
   console.log('OQX_RING::' + (RING_SIGNAL_STATES[status] ? status : 'idle'));
   faceOnStatus(status || 'idle', errorText || speechErrText || '');
+  if (typeof renderWakeLabel === 'function') renderWakeLabel();
 }
 
 // ---- Face (app/face/renderer.js) ----
@@ -261,7 +262,7 @@ $('faceSettings').onclick = function () { $('vpSettings').onclick(); };
 // mode) the reveal bar. Focus returns to what opened the layer.
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
-  if (!$('devOverlay').classList.contains('hidden')) { $('devCancel').onclick(); var back = { audioinput: 'micPickBtn', audiooutput: 'spkPickBtn', model: 'modelPickBtn', persona: 'personaPickBtn', face: 'facePickBtn' }[devOverlayKindLast] || 'settingsClose'; var el = $(back); if (el) el.focus(); return; }
+  if (!$('devOverlay').classList.contains('hidden')) { $('devCancel').onclick(); var back = { audioinput: 'micPickBtn', audiooutput: 'spkPickBtn', model: 'modelPickBtn', persona: 'personaPickBtn', face: 'facePickBtn', wake: 'wakePickBtn', chime: 'chimePickBtn', followup: 'followPickBtn' }[devOverlayKindLast] || 'settingsClose'; var el = $(back); if (el) el.focus(); return; }
   if (!$('settingsOverlay').classList.contains('hidden')) { $('settingsOverlay').classList.add('hidden'); (faceMode === 'creature' ? $('faceCtl') : $('vpSettings')).focus(); return; }
   if (faceMode !== 'creature') return;
   if ($('faceBar').classList.contains('show') && faceStatusName !== 'error' && faceStatusName !== 'approval') { hideFaceBar(); $('faceCtl').focus(); }
@@ -431,6 +432,11 @@ function connectEvents() {
     } else if (msg.type === 'face') {
       applyFaceMode(msg.mode);
       syncPickButtons();
+    } else if (msg.type === 'wake-state') {
+      applyWakeState(msg.wake);
+      syncPickButtons();
+      // Turned on from the editor while the mic is open: the gate is shut until this page arms it.
+      if (msg.wake && msg.wake.enabled && msg.wake.state === 'off' && conversationOpen) wakeArm(true);
     } else if (msg.type === 'permission-mode') {
       currentMode = msg.mode || currentMode;
       syncModeUI();
@@ -586,6 +592,7 @@ fetch(BASE + '/state', { cache: 'no-store' }).then(function (r) { return r.json(
     if (s.panel && s.panel.active) showPanelReview(s.panel);   // rotating away mid-review must not lose the proposal
     if (s.emotion && face) face.setEmotion(s.emotion);
     setPersonaPending(s.personaPending || null);
+    if (s.wake) applyWakeState(s.wake);
     // A reload mid-approval (page switch, creature toggle) restores the actionable overlay; the
     // decision route checks the requestId, so a stale one is refused server-side, never misapplied.
     if (s.pendingApproval && s.pendingApproval.requestId && !pendingApprovalRequestId) {
@@ -726,6 +733,7 @@ function stopTurnAudio() {
   try { a.pause(); } catch (e) {}
   try { a.removeAttribute('src'); a.load(); } catch (e) {}   // closes the HTTP stream -> server aborts synthesis
   endSpeechUI();
+  wakeReplyEnded();   // stopped early is still the end of the sound
 }
 function startTurnAudio(turnId) {
   stopTurnAudio();
@@ -735,6 +743,7 @@ function startTurnAudio(turnId) {
     turnAudio = null;
     faceDetachAnalyser(a);
     endSpeechUI();
+    wakeReplyEnded();   // the real end of the sound: the wake gate starts its echo cooldown now
   };
   faceAttachAnalyser(a);   // before play(): the element must be routed before its first sample
   a.addEventListener('playing', function () {
@@ -805,6 +814,10 @@ function modelPrettyName(id) {   // 'claude-sonnet-5' -> 'Sonnet' (best-effort; 
 // Settings shows only the CURRENT pick per row (big row, tap to change); the actual list lives
 // in its own full-size overlay -- never an always-visible scrolling list inside a dialog.
 var FACE_PICKS = [['off', 'Off — plain chat page'], ['side', 'Side — face beside the chat'], ['creature', 'Creature — face only']];
+var WAKE_PICKS = [['off', 'Off — the open mic hears everything'], ['on', 'On — wait for the persona\'s name']];
+var CHIME_PICKS = [['0', 'Off'], ['1', 'On — a short two-note chime']];
+var FOLLOWUP_PICKS = [['0', 'Off — one wake, one request'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds'], ['30', '30 seconds'], ['60', '1 minute'], ['120', '2 minutes']];
+var wakeFollowUpSeconds = Q.get('wakeFollowUpSeconds') || '0';
 function syncPickButtons() {
   $('micPickVal').textContent = savedMicLabel || ('Default — ' + (globalMicLabel || 'System default'));
   $('spkPickVal').textContent = savedSpkLabel || ('Default — ' + (globalSpkLabel || 'System default'));
@@ -814,6 +827,12 @@ function syncPickButtons() {
   $('modelPickVal').textContent = label;
   var fp = FACE_PICKS.find(function (p) { return p[0] === faceMode; });
   $('facePickVal').textContent = fp ? fp[1] : faceMode;
+  var wp = WAKE_PICKS.find(function (p) { return p[0] === (wakeOn() ? 'on' : 'off'); });
+  $('wakePickVal').textContent = (wp ? wp[1] : 'Off') + (wakeOn() && wakeState.phrase ? ' ("' + wakeState.phrase + '")' : '');
+  var cp = CHIME_PICKS.find(function (p) { return p[0] === (wakeChimeOn ? '1' : '0'); });
+  $('chimePickVal').textContent = cp ? cp[1] : 'Off';
+  var fu = FOLLOWUP_PICKS.find(function (p) { return p[0] === String(wakeFollowUpSeconds); });
+  $('followPickVal').textContent = fu ? fu[1] : (wakeFollowUpSeconds + ' seconds');
   syncPersonaUI();
 }
 function syncPersonaUI() {
@@ -847,6 +866,9 @@ function renderDevOverlay() {
     FACE_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === faceMode); });
     return;
   }
+  if (kind === 'wake') { WAKE_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === (wakeOn() ? 'on' : 'off')); }); return; }
+  if (kind === 'chime') { CHIME_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === (wakeChimeOn ? '1' : '0')); }); return; }
+  if (kind === 'followup') { FOLLOWUP_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === String(wakeFollowUpSeconds)); }); return; }
   var savedLabel = kind === 'audioinput' ? savedMicLabel : savedSpkLabel;
   var globalLabel = kind === 'audioinput' ? globalMicLabel : globalSpkLabel;
   var devs = allDevices.filter(function (d) { return d.kind === kind && d.label; });
@@ -859,7 +881,7 @@ function renderDevOverlay() {
 function openDevOverlay(kind) {
   devOverlayKind = kind;
   devOverlayKindLast = kind;
-  $('devTitle').textContent = kind === 'audioinput' ? 'Microphone' : kind === 'audiooutput' ? 'Speaker' : kind === 'persona' ? 'Persona' : kind === 'face' ? 'Face' : 'Model';
+  $('devTitle').textContent = { audioinput: 'Microphone', audiooutput: 'Speaker', persona: 'Persona', face: 'Face', wake: 'Wake word', chime: 'Chime when the name is heard', followup: 'Follow-up window after a reply' }[kind] || 'Model';
   renderDevOverlay();                                  // cached entries paint instantly...
   if (kind === 'audioinput' || kind === 'audiooutput') {   // (the other lists are static -- no mic grab)
     ensureDeviceIds(true).then(function () {           // ...then a fresh enumeration replaces them
@@ -906,6 +928,15 @@ function pickDevice(kind, label) {
     syncPickButtons();
     return;
   }
+  if (kind === 'wake') {
+    postOption('wakeWord', label);   // the host re-resolves and broadcasts wake-state
+    wakeState.enabled = label === 'on';
+    if (conversationOpen) wakeArm(label === 'on'); else renderWakeLabel();
+    syncPickButtons();
+    return;
+  }
+  if (kind === 'chime') { wakeChimeOn = label === '1'; postOption('wakeChime', wakeChimeOn ? 'true' : 'false'); syncPickButtons(); return; }
+  if (kind === 'followup') { wakeFollowUpSeconds = label; postOption('wakeFollowUpSeconds', label); syncPickButtons(); return; }
   if (kind === 'model') {
     savedModelPick = label;
     postOption('modelPick', label);   // persists; also what a fresh session start reads
@@ -943,6 +974,9 @@ $('spkPickBtn').onclick = function () { openDevOverlay('audiooutput'); };
 $('modelPickBtn').onclick = function () { openDevOverlay('model'); };
 $('personaPickBtn').onclick = function () { openDevOverlay('persona'); };
 $('facePickBtn').onclick = function () { openDevOverlay('face'); };
+$('wakePickBtn').onclick = function () { openDevOverlay('wake'); };
+$('chimePickBtn').onclick = function () { openDevOverlay('chime'); };
+$('followPickBtn').onclick = function () { openDevOverlay('followup'); };
 $('devCancel').onclick = function () { $('devOverlay').classList.add('hidden'); devOverlayKind = ''; };
 
 // ---- Tap-to-toggle voice conversation (Phase 5) ----
@@ -955,27 +989,99 @@ var vad = window.createClaudeVoiceVAD ? window.createClaudeVoiceVAD({ hangoverMs
 function onVADSpeechStart() {
   if (suppressVAD) return;
   setStatus('listening');
+  renderWakeLabel();
 }
 function onVADSpeechEnd(pcm16) {
   if (suppressVAD) return;
-  setStatus('thinking');
-  fetch(BASE + '/audio', { method: 'POST', cache: 'no-store', body: pcm16.buffer })
+  // With the wake word on, an utterance is just "something was said": no status change until the
+  // host says it was addressed to the persona. Nothing about it is ever shown on the panel.
+  if (!wakeOn()) setStatus('thinking');
+  var sentGen = wakeGen;
+  fetch(BASE + '/audio' + (wakeOn() ? '?gen=' + encodeURIComponent(sentGen) : ''), { method: 'POST', cache: 'no-store', body: pcm16.buffer })
     .then(function (r) { return r.json(); })
     .then(function (r) {
       // Re-check AFTER the async STT round trip: if speech started playing while this was in
       // flight, the utterance may have caught the speaker's first words -- drop it, never
       // ghost-send it as a turn.
       if (suppressVAD) return;
-      if (r && r.ok && r.text && r.text.trim()) { sendText(r.text.trim()); }
-      else { setStatus(conversationOpen ? 'listening' : 'idle', r && r.error); }
+      if (wakeOn() && sentGen !== wakeGen) return;   // mic toggled or persona switched meanwhile: stale
+      if (r && r.ok && r.text && r.text.trim()) {
+        if (r.wake === 'addressed') wakeChime();
+        sendText(r.text.trim());
+      } else {
+        if (r && r.wake === 'listening') wakeChime();   // the name alone: now listening for the request
+        if (!wakeOn()) setStatus(conversationOpen ? 'listening' : 'idle', r && r.error);
+        else if (r && r.error) setStatus(conversationOpen ? 'listening' : 'idle', r.error);
+      }
     })
     .catch(function () { setStatus('error', 'Transcription request failed.'); });
+}
+
+// ---- Wake word (phase 1, transcript gate; the host decides, this page shows the state) ----
+// Query options come from the page's saved options; the host's wake-state events and /state carry
+// the live state (waiting / listening / active / followup / cooldown / not-ready) and the phrase.
+var wakeGen = 0;
+var wakeState = { enabled: Q.get('wakeWord') === 'on', state: 'off', phrase: '', until: 0, ready: true, reason: '' };
+var wakeChimeOn = Q.get('wakeChime') === '1';
+var wakeTick = null;
+function wakeOn() { return !!(wakeState && wakeState.enabled); }
+function wakeArm(on) {
+  if (!wakeOn() && on) return Promise.resolve();
+  return postJSON('/wake-arm', { on: !!on }).then(function (r) { return r.json(); })
+    .then(function (r) { if (r && r.ok) { wakeGen = r.gen || 0; applyWakeState(r.wake); } })
+    .catch(function () {});
+}
+function applyWakeState(w) {
+  if (!w) return;
+  wakeState = w;
+  if (typeof w.gen === 'number') wakeGen = w.gen;
+  renderWakeLabel();
+  clearInterval(wakeTick); wakeTick = null;
+  if (w.until) wakeTick = setInterval(renderWakeLabel, 500);   // the countdown on screen, so the end is visible
+}
+// What the status line (and the creature badge) says while the wake word is in charge.
+function wakeLabelText() {
+  if (!wakeOn() || !conversationOpen) return '';
+  var w = wakeState, phrase = w.phrase ? w.phrase.replace(/^\w/, function (c) { return c.toUpperCase(); }) : '';
+  var left = w.until ? Math.max(0, Math.ceil((w.until - Date.now()) / 1000)) : 0;
+  if (w.state === 'not-ready') return 'Wake word not ready: ' + (w.reason || 'no phrase');
+  if (w.state === 'waiting') return 'Waiting for "' + phrase + '"';
+  if (w.state === 'listening') return 'Listening (' + left + ' s to start)';
+  if (w.state === 'followup') return 'Follow-up window (' + left + ' s)';
+  if (w.state === 'cooldown') return 'One moment';
+  return '';
+}
+function renderWakeLabel() {
+  var text = wakeLabelText();
+  var el = $('wakeNote');
+  if (el) { el.textContent = text; el.classList.toggle('show', !!text); el.classList.toggle('error', wakeState.state === 'not-ready'); }
+  var badge = $('faceWakeBadge');
+  if (badge) { badge.textContent = text; badge.classList.toggle('show', !!text && faceMode === 'creature'); }
+  if (face && wakeOn() && conversationOpen && wakeState.state === 'waiting' && $('status').textContent === 'LISTENING') face.setState('idle');   // waiting looks idle (the face may doze); the label says why
+}
+// A short two-note chime through the picked speaker when the name is heard. Off by default.
+var chimeCtx = null;
+function wakeChime() {
+  if (!wakeChimeOn) return;
+  try {
+    if (!chimeCtx) chimeCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (chimeCtx.setSinkId && spkDeviceId) chimeCtx.setSinkId(spkDeviceId).catch(function () {});
+    var t = chimeCtx.currentTime, g = chimeCtx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    g.connect(chimeCtx.destination);
+    [[880, 0], [1320, 0.12]].forEach(function (n) { var o = chimeCtx.createOscillator(); o.type = 'sine'; o.frequency.value = n[0]; o.connect(g); o.start(t + n[1]); o.stop(t + 0.36); });
+  } catch (e) {}
+}
+function wakeReplyEnded() {
+  if (!wakeOn()) return;
+  postJSON('/wake-reply-end', {}).catch(function () {});
 }
 window.oqxToggleConversation = function () {
   if (!vad) { $('textInput').focus(); return; }   // VAD script failed to load -- fall back to at least focusing input
   if (conversationOpen) {
     conversationOpen = false;
     vad.stop();
+    wakeArm(false);
     setStatus('idle');
   } else {
     conversationOpen = true;
@@ -983,7 +1089,7 @@ window.oqxToggleConversation = function () {
     ensureDeviceIds().then(function () {
       if (!conversationOpen) return;   // toggled back off while devices were enumerating
       vad.setInputDevice(micDeviceId);
-      return vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel);
+      return wakeArm(true).then(function () { return vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel); });
     }).catch(function (e) {
       conversationOpen = false;
       syncMicUI();
