@@ -17,8 +17,11 @@ risk register) and Codex's UX/state contract, both in the agent room `AM-AT37LVS
    - the persona's own speech, or its echo, waking it;
    - a wake phrase treated as permission: approvals and permission modes exactly as today.
 3. **Off-limits as a workaround:**
-   - a trained-model engine whose models are non-commercial (openWakeWord's shipped models) or need an
-     account key per name (Porcupine) for the base feature;
+   - as the BASE engine, anything that needs a step per phrase: a model trained per name (openWakeWord) or
+     a console-made keyword plus an account key (Porcupine). The feature is "any persona name, no setup".
+     Both remain welcome as optional engines behind the shared detector interface (for example a self-trained
+     openWakeWord model for one favourite name on a Wyoming server). Licensing is not the reason: it is a
+     purpose test on use, not a bar to using Bedrock Panel at work;
    - a second microphone stream, a new process, a listening socket, or audio sent anywhere but the STT
      destination the page is already configured to use;
    - auto-deriving a spoken name from a display name without showing it ("CRT Terminal" is not a phrase);
@@ -60,7 +63,8 @@ risk register) and Codex's UX/state contract, both in the agent room `AM-AT37LVS
   - Room consensus (#272/#275): run the spike and a written decision gate first, with the transcript gate as
     the explicitly labelled v1 if the spotter proves unsuitable. Fable's alternative: ship the transcript
     gate first (smallest, no spike risk on the critical path) and spike afterwards. Both are below.
-  - openWakeWord (shipped models non-commercial) and Porcupine (account key per name) are out.
+  - openWakeWord (a trained model per phrase, no browser port) and Porcupine (console keyword + account key
+    per phrase) do not fit the base feature; both can be optional engine adapters later.
 - **Phrase = "hey " + persona `wakeName`.** `wakeName` is an explicit spoken alias on the persona, with
   `aliases` for what STT tends to hear ("hey ricky"). Auto-fill only for a one-word pronounceable name;
   the editor always shows the exact resolved phrase; the page can override it. A page with no persona
