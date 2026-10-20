@@ -280,6 +280,7 @@ document.addEventListener('visibilitychange', function () {
       p.then(function () { if (conversationOpen && !document.hidden && epoch === captureEpoch) vad.start(onVADSpeechStart, onVADSpeechEnd, onVADLevel); }).catch(function () {});
     }
   }
+  if (!document.hidden && !wakeHiddenPaused) wakeAutoOpen();
   if (!face) return;
   if (document.hidden) { face.stop(); faceStopLevel(); }
   else { face.start(); face.resize(); faceResumeLevel(); }
@@ -448,6 +449,7 @@ function connectEvents() {
       syncPickButtons();
       // Turned on from the editor while the mic is open: the gate is shut until this page arms it.
       if (msg.wake && msg.wake.enabled && msg.wake.state === 'off' && conversationOpen) wakeArm(true);
+      else if (msg.wake && msg.wake.enabled && !conversationOpen) wakeAutoOpen();   // wake word just turned on: open the mic
     } else if (msg.type === 'permission-mode') {
       currentMode = msg.mode || currentMode;
       syncModeUI();
@@ -1114,8 +1116,16 @@ function wakeReplyEnded(completed) {
   if (!wakeOn()) return;
   postJSON('/wake-reply-end', { completed: completed !== false }).catch(function () {});
 }
-window.oqxToggleConversation = function () {
+// Wake word on: the mic opens by itself (the page is already waiting for the name). The mic button is
+// then a mute, and a deliberate mute sticks across page switches and reloads until it is tapped again.
+function wakeMuted() { try { return localStorage.getItem('cvWakeMuted') === '1'; } catch (e) { return false; } }
+function setWakeMuted(on) { try { localStorage.setItem('cvWakeMuted', on ? '1' : '0'); } catch (e) {} }
+function wakeAutoOpen() {
+  if (wakeOn() && !conversationOpen && !wakeMuted() && vad && !document.hidden && wakeState.state !== 'not-ready') window.oqxToggleConversation(true);
+}
+window.oqxToggleConversation = function (auto) {
   if (!vad) { $('textInput').focus(); return; }   // VAD script failed to load -- fall back to at least focusing input
+  if (auto !== true) setWakeMuted(conversationOpen);   // a human tap: closing it is a mute that sticks; opening clears it
   if (conversationOpen) {
     conversationOpen = false;
     captureEpoch++;   // hard off, at once: in-flight STT results from this capture never send
@@ -1491,3 +1501,6 @@ syncMicUI();
 syncSpkUI();
 syncModeUI();
 syncPickButtons();
+
+// Page load with the wake word on: open the mic once the state is known (the /state fetch fills wakeState).
+setTimeout(wakeAutoOpen, 600);
