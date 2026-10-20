@@ -1,6 +1,6 @@
 # Charter: quit warning, merge recordings, meeting-name rename (2026-10-20)
 
-Scope: 3 requested changes. Item 2 (meeting-name rule for a 2nd recording) is **TABLED** until T.J. sees what the 07:22 file is named after the current meeting ends. Nothing for item 2 is built now.
+Scope: 3 requested changes. Item 2 (meeting-name rule) was dropped: existing naming works.
 
 ## 1. Quit warning while recording / transcribing
 - **Must do:** if a recording OR a transcription is running when the user quits Bedrock Panel on the desktop (tray Quit, and any other app-quit path), show a confirmation ("Recording in progress, really close?"). Cancel keeps the app running. Confirm quits (recording is finalized normally, header patched).
@@ -17,5 +17,5 @@ Scope: 3 requested changes. Item 2 (meeting-name rule for a 2nd recording) is **
 - **Deploy / backup:** same branch; originals are the backup (`.backups`).
 - **Verify:** unit tests (order, header sizes, mismatched format refused, in-progress file refused, originals moved); live merge of 2 real recordings: duration = sum, plays, originals in `.backups`, Unprocessed list and Batch ignore `.backups`.
 
-## 2. Meeting-name rule (TABLED)
-Existing feature: "Append meeting name" renames a recording from the calendar match. Open: why 07:22 was not named (it was a restart after an accidental close, so the earlier recording was a separate file). Revisit after the meeting ends.
+## 2. Meeting-name rule (DROPPED 2026-10-20)
+Verified live: the existing "Append meeting name" feature already named the recording correctly. No change needed.

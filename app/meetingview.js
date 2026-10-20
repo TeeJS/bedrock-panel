@@ -546,6 +546,7 @@ function selSync(sel) {
   });
   sel.allBtn.textContent = (sel.names.length && selCount(sel) === sel.names.length) ? 'Clear all' : 'Select all';
   if (!sel.actBtn.classList.contains('confirm')) sel.actBtn.disabled = !selCount(sel);
+  if (sel.onSync) sel.onSync();
 }
 // Reset for a fresh render: keep selections for names still present, drop the rest.
 function selReset(sel, names) {
@@ -598,6 +599,7 @@ libAudio.onended = function () { libPlaying = ''; libAudio.removeAttribute('src'
 function stopPlayback() { try { libAudio.pause(); } catch (e) {} libPlaying = ''; libAudio.removeAttribute('src'); }
 function libMsg(msg, isError) { var n = $('libNote'); n.textContent = msg || ''; n.classList.toggle('err', !!isError); }
 var libSel = selMake('libSelAll', 'libGoSel');
+libSel.onSync = function () { $('libMergeSel').style.display = selCount(libSel) >= 2 ? '' : 'none'; };   // Merge needs 2+ ticked
 var libTimer = null, txState = null, txLastFinished = 0;
 var libTxRows = {};         // name -> { btn, sub } for transcription-state repaints
 function libPoll() {
@@ -729,6 +731,20 @@ function wireEnqueue(btnId, sel, urlBase, poll) {
   };
 }
 wireEnqueue('libGoSel', libSel, '/meeting-transcribe/start?name=', libPoll);
+$('libMergeSel').onclick = function () {
+  var btn = $('libMergeSel');
+  var names = selNames(libSel);
+  if (names.length < 2) return;
+  if (names.indexOf(libPlaying) >= 0) stopPlayback();
+  btn.disabled = true; libMsg('Merging ' + names.length + ' recordings…');
+  fetchJson('/meeting-merge?names=' + encodeURIComponent(JSON.stringify(names)))
+    .then(function (r) {
+      btn.disabled = false;
+      if (r && r.ok) { libSel.set = {}; renderLibrary(); libMsg('Merged into ' + r.name + ' (originals kept in .backups)'); }
+      else libMsg((r && r.error) || 'Merge failed', true);
+    })
+    .catch(function () { btn.disabled = false; libMsg('Merge failed', true); });
+};
 var libDelT = null;
 $('libDelSel').onclick = function () {
   var btn = $('libDelSel');

@@ -680,6 +680,7 @@ function subscribeObs(req, res) { subscribeSse(req, res, obsSubscribers, obsApp 
 const MEETING_LIBRARY_OPS = {
   '/meeting-files': 'files',
   '/meeting-file-delete': 'delete',
+  '/meeting-merge': 'merge',
   '/meeting-transcribe/start': 'transcribeStart',
   '/meeting-transcribe/state': 'transcribeState',
   '/meeting-analyze/start': 'analyzeStart',
@@ -1110,7 +1111,7 @@ async function handler(req, res) {
   // Analysis overlays. All GET (matching /meeting-record above); filename validation happens in
   // main.js/meetingLibrary — a rejected name comes back as {ok:false} or, for audio, a plain 404.
   if (MEETING_LIBRARY_OPS[url]) {
-    return runRemote(res, onMeetingLibrary, 'library request failed', MEETING_LIBRARY_OPS[url], { kind: queryValue(full, 'kind'), name: queryValue(full, 'name'), dir: queryValue(full, 'dir'), proposed: queryValue(full, 'proposed') });
+    return runRemote(res, onMeetingLibrary, 'library request failed', MEETING_LIBRARY_OPS[url], { kind: queryValue(full, 'kind'), name: queryValue(full, 'name'), dir: queryValue(full, 'dir'), proposed: queryValue(full, 'proposed'), names: queryValue(full, 'names') });
   }
   // WAV playback for the panel's <audio>. Chromium seeks with single-range requests, so honor
   // bytes=a-b with a 206; anything else gets the whole file.
