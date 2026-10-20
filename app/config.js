@@ -6538,7 +6538,7 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
           else { if (rows) rows.style.display = 'none'; stopAllMicTests(); saveMe({ micDevice: '' }); if (meMicSel) meMicSel.value = ''; }
         };
       }
-    } else {
+    } else if (document.getElementById('sAppear')) {   // only the Theme tab has these controls; other tabs used to throw here
       // Theme — global appearance + accent (applied on Save, via the main process)
       const DEFAULT_ACCENT = '#7CFFB2';
       const saveTheme = patch => { if (!config.settings) config.settings = {}; config.settings.theme = Object.assign(currentTheme(), patch); markDirty(); };
