@@ -69,7 +69,7 @@ function createWakeMatcher({ phrase, aliases }) {
   const res = forms.map(f => new RegExp('^\\s*' + f.split(' ').map(escapeRe).join('[\\s\\p{P}]+') + '(?![\\p{L}\\p{N}\'])', 'iu'));
   // The utterance is only the name (Whisper drops a quick "hey": "Jarvis.", "terminal."), said once or
   // repeated. It opens the listening window like the full phrase alone; it can never carry a command.
-  const aloneRes = names.map(n => new RegExp('^[\s\p{P}]*(?:' + n.split(' ').map(escapeRe).join('[\s\p{P}]+') + '[\s\p{P}]*)+$', 'iu'));
+  const aloneRes = names.map(n => new RegExp('^[\\s\\p{P}]*(?:' + n.split(' ').map(escapeRe).join('[\\s\\p{P}]+') + '[\\s\\p{P}]*)+$', 'iu'));
   function match(text) {
     const raw = String(text == null ? '' : text);
     for (let i = 0; i < res.length; i++) {
