@@ -732,3 +732,49 @@ test('slimTranscript stamps turns only when asked', () => {
   // stamped form keeps the FIRST segment's start for a merged run
   assert.equal(slimTranscript(json, true), '[1:05] T.J. Schmitz: first still me\n[2:11] Speaker A: their turn');
 });
+
+test('analysisTimeoutMs: 10 min floor, scales with input size, 60 min ceiling', () => {
+  const { analysisTimeoutMs } = require('../app/meetingAnalyze');
+  assert.equal(analysisTimeoutMs(0), 10 * 60000);
+  assert.equal(analysisTimeoutMs(undefined), 10 * 60000);
+  assert.equal(analysisTimeoutMs(35000), 10 * 60000);           // short meeting: the floor
+  // the 162 KB / 89-min diarizer JSON that timed out at a flat 10 min gets ~28 min
+  assert.equal(analysisTimeoutMs(170000), 1700000);
+  assert.equal(analysisTimeoutMs(2000000), 60 * 60000);         // MAX_INPUT_CHARS: the ceiling
+});
+
+test('owui route receives the size-scaled time limit', async () => {
+  const small = owuiSetup({ url: 'http://box:3000/', apiKey: 'k', model: 'm' }, owuiOk('# notes'));
+  assert.equal(small.an.start('m-diarizer-response.json').ok, true);
+  await drained(small.an);
+  assert.equal(small.calls[0].timeoutMs, 10 * 60000);
+
+  const big = owuiSetup({ url: 'http://box:3000/', apiKey: 'k', model: 'm' }, owuiOk('# notes'));
+  const pad = 'word '.repeat(50000);   // 250,000 chars of speech
+  fs.writeFileSync(path.join(big.processed, 'm-diarizer-response.json'),
+    JSON.stringify({ segments: [{ speaker: 'Speaker A', start: 0, end: 1, text: pad }] }));
+  assert.equal(big.an.start('m-diarizer-response.json').ok, true);
+  await drained(big.an);
+  const limit = big.calls[0].timeoutMs;
+  assert.ok(limit >= 2500000 && limit < 60 * 60000, 'scaled past the floor, under the ceiling: ' + limit);
+});
+
+test('a CLI that never answers is killed at the limit with what it printed', async () => {
+  const spawns = [];
+  let killed = 0;
+  const hang = (cmd, args, opts) => {
+    const proc = new EventEmitter();
+    proc.stdout = new PassThrough();
+    proc.stderr = new PassThrough();
+    proc.stdin = new PassThrough();
+    proc.kill = () => { killed++; };
+    spawns.push({ cmd, args, opts });
+    return proc;
+  };
+  const s = setup(null, 'claude', null, { spawn: hang, timeoutMs: 40 });
+  assert.equal(s.an.start('m.json').ok, true);
+  await drained(s.an);
+  assert.equal(killed, 1);
+  assert.match(s.an.getState().error.error, /^timed out after 0 min — the CLI printed nothing$/);
+  assert.ok(!fs.existsSync(path.join(s.processed, 'm.md')), 'no meeting file from a timed-out run');
+});

@@ -24,7 +24,18 @@ const joplinNotesMod = require('./joplinNotes');
 const { parseStructuredTail, buildFrontmatter, validateFrontmatter, serializeFrontmatter, readFrontmatter } = require('./meetingFrontmatter');
 const { newId, sha256, formatTime, applyTurnTimes, aiHeadingsOf, baselineHash, mergeOwnership, assignItemIds, assembleFile } = require('./meetingFile');
 
-const ANALYZE_TIMEOUT_MS = 10 * 60 * 1000;   // generous; a transcript is small but CLIs cold-start
+// The analysis rewrites the whole transcript, so its run time grows with the meeting: observed
+// 2026-10-22 with claude -p, a 124 KB / 78-min diarizer JSON took 9m39s and a 162 KB / 89-min one
+// never finished inside a flat 10 min. The limit therefore scales with the input at roughly twice
+// the observed rate, between a floor (short meetings, CLI cold start) and a ceiling (a hung CLI
+// must still fail eventually).
+const ANALYZE_TIMEOUT_MS = 10 * 60 * 1000;
+const ANALYZE_TIMEOUT_MAX_MS = 60 * 60 * 1000;
+const ANALYZE_MS_PER_INPUT_CHAR = 10;
+function analysisTimeoutMs(inputChars) {
+  const scaled = (Number(inputChars) || 0) * ANALYZE_MS_PER_INPUT_CHAR;
+  return Math.min(ANALYZE_TIMEOUT_MAX_MS, Math.max(ANALYZE_TIMEOUT_MS, scaled));
+}
 // Unattended analysis must never let transcript text reach a tool. These flag sets are what the
 // comment above actually means, verified against the installed CLIs on 2026-10-15:
 //   claude 2.1.292:  `--tools ""` disables every built-in tool, `--strict-mcp-config` with no
@@ -231,7 +242,8 @@ function createMeetingAnalyzer(deps) {
   const resolvePromptPath = () => (typeof promptPath === 'function' ? promptPath() : promptPath);
   const log = deps.log || (() => {});
   const now = deps.now || Date.now;
-  const timeoutMs = deps.timeoutMs || ANALYZE_TIMEOUT_MS;
+  // A fixed deps.timeoutMs (tests) overrides the per-job limit from analysisTimeoutMs().
+  const jobTimeoutMs = inputChars => deps.timeoutMs || analysisTimeoutMs(inputChars);
   // () => { separateRecurring, separateTranscript, useDetailsFolder } — the Advanced filing options.
   const filingOptions = deps.filingOptions || (() => ({}));
   // () => { enabled, folder } — post-analysis batch task lists ('' folder = <processed>/task-list).
@@ -428,16 +440,19 @@ function createMeetingAnalyzer(deps) {
     // plus the metadata and VTT when present; OWUI gets the prompt as the system message and a
     // slimmed Speaker: text transcript (+ the small metadata) as the user message — local models
     // can't afford the raw JSON's 3-4x token overhead, and a whole VTT even less.
+    // Every backend gets the same size-scaled limit, measured on the full (unslimmed) inputs.
+    const limitMs = jobTimeoutMs(prompt.length + transcript.length + (metaText || '').length + (vttText || '').length + (hlText || '').length);
+    log('analysis time limit: ' + Math.round(limitMs / 60000) + ' min');
     let markdown;
     if (ai === 'owui') {
-      markdown = await runOwui({ prompt, transcriptJson: transcript, metaText, hlText });
+      markdown = await runOwui({ prompt, transcriptJson: transcript, metaText, hlText }, limitMs);
     } else {
       const input = prompt
         + (metaText ? '\n\nMeeting metadata JSON follows (calendar info — subject, organizer, attendees):\n\n' + metaText : '')
         + (vttText ? '\n\nTeams live-caption VTT transcript follows (speaker-identity aid only — never a replacement for the diarizer text):\n\n' + vttText : '')
         + (hlText || '')
         + '\n\nDiarizer JSON follows:\n\n' + transcript;
-      markdown = ai === 'codex' ? await runCodex(input) : ai === 'copilot' ? await runCopilot(input) : await runClaude(input);
+      markdown = ai === 'codex' ? await runCodex(input, limitMs) : ai === 'copilot' ? await runCopilot(input, limitMs) : await runClaude(input, limitMs);
     }
     if (!markdown.trim()) throw new Error('AI returned no output');
 
@@ -1171,15 +1186,15 @@ function createMeetingAnalyzer(deps) {
     } catch (e) { log('task-list write failed: ' + e.message); }
   }
 
-  function runClaude(input) {
+  function runClaude(input, timeoutMs) {
     const exe = findClaudeExe();
     if (!exe) return Promise.reject(new Error('Claude CLI not found on PATH'));
     // `claude -p` with no positional prompt reads the whole prompt from stdin; response on stdout.
     // CLAUDE_ISOLATION_ARGS is what makes "tools denied" true (see the constant for the smoke test).
-    return runProc(exe, ['-p'].concat(CLAUDE_ISOLATION_ARGS), input, false).then(r => r.stdout);
+    return runProc(exe, ['-p'].concat(CLAUDE_ISOLATION_ARGS), input, false, timeoutMs).then(r => r.stdout);
   }
 
-  async function runCodex(input) {
+  async function runCodex(input, timeoutMs) {
     if (!findCodexExe()) throw new Error('Codex CLI not found on PATH');
     // codex exec: `-` = read instructions from stdin; --output-last-message captures just the final
     // reply (stdout carries progress noise); --skip-git-repo-check because the processed folder is
@@ -1192,7 +1207,7 @@ function createMeetingAnalyzer(deps) {
     try {
       await fsp.mkdir(workDir, { recursive: true });
       await runProc('"' + findCodexExe() + '"',
-        ['exec', '-', '--skip-git-repo-check'].concat(CODEX_ISOLATION_ARGS, ['-C', workDir, '--output-last-message', outFile]), input, true);
+        ['exec', '-', '--skip-git-repo-check'].concat(CODEX_ISOLATION_ARGS, ['-C', workDir, '--output-last-message', outFile]), input, true, timeoutMs);
       return await fsp.readFile(outFile, 'utf8');
     } finally {
       try { await fsp.unlink(outFile); } catch (e) {}
@@ -1200,7 +1215,7 @@ function createMeetingAnalyzer(deps) {
     }
   }
 
-  function runCopilot(input) {
+  function runCopilot(input, timeoutMs) {
     const exe = findCopilotExe();
     if (!exe) return Promise.reject(new Error('Copilot CLI not found on PATH'));
     // Copilot has no plain -p-to-stdout mode -- it's an ACP JSON-RPC session (see
@@ -1211,7 +1226,7 @@ function createMeetingAnalyzer(deps) {
   // Open WebUI analysis: one non-streaming chat completion against the shared Auth-tab
   // connection (settings.owui). The analysis prompt rides as the system message, the slimmed
   // transcript as the user message. Every failure maps to a wording that names the fix.
-  async function runOwui({ prompt, transcriptJson, metaText, hlText }) {
+  async function runOwui({ prompt, transcriptJson, metaText, hlText }, timeoutMs) {
     const cfg = resolveOwui() || {};
     const ep = owuiClient.normalizeOwuiUrl(cfg.url);
     if (!ep) throw new Error("Open WebUI is not configured — set the URL on the editor's Auth tab");
@@ -1251,7 +1266,7 @@ function createMeetingAnalyzer(deps) {
     return content;
   }
 
-  function runProc(cmd, args, stdinText, shell) {
+  function runProc(cmd, args, stdinText, shell, timeoutMs) {
     return new Promise((resolve, reject) => {
       let proc;
       try {
@@ -1334,4 +1349,4 @@ function createMeetingAnalyzer(deps) {
   return { start, getState, result, clearQueue, applyProposed, isBusy };
 }
 
-module.exports = { createMeetingAnalyzer, slimTranscript, highlightsBlock, CLAUDE_ISOLATION_ARGS, CODEX_ISOLATION_ARGS };
+module.exports = { createMeetingAnalyzer, slimTranscript, highlightsBlock, analysisTimeoutMs, CLAUDE_ISOLATION_ARGS, CODEX_ISOLATION_ARGS };
