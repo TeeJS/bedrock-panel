@@ -258,3 +258,34 @@ test('sprite aliases: what Whisper wrote for "Hey Sprite" in the live test all w
   const m = ww.createWakeMatcher(r);
   for (const t of ['Hastebrite.', 'Haste bright.', 'taste bright.', 'Peace, Bright.', 'Hey Sprite.']) assert.equal(m.match(t).wake, true, t);
 });
+
+test('replyInvitesAnswer: a question or an offer opens the follow-up, a plain statement does not', () => {
+  for (const t of ['Want the lights on too?', 'It is 3:15. Anything else?', 'Done. Let me know if you want it shorter.', 'I can do either. Which one would you like', 'Should I continue?"', 'Do you want me to run the tests?)']) assert.equal(ww.replyInvitesAnswer(t), true, t);
+  for (const t of ['It is 3:15.', 'Done.', 'I opened the file and fixed the typo.', 'Why would that be? Because the cache was stale.', '', null]) assert.equal(ww.replyInvitesAnswer(t), false, String(t));
+});
+
+test('isClosePhrase: the whole utterance must be a closer; a request that merely starts with one is not', () => {
+  for (const t of ['Thanks.', 'thank you!', 'That’s all.', "That's it", 'Never mind.', 'OK, thanks', 'go to sleep', 'Thanks Jarvis']) assert.equal(ww.isClosePhrase(t, ['jarvis']), true, t);
+  for (const t of ['Thanks for the update on the build', 'Never mind the typo, fix the rest', 'what time is it', 'nothing works', '']) assert.equal(ww.isClosePhrase(t, ['jarvis']), false, t);
+});
+
+test('state: a close phrase ends a follow-up window, sends nothing, and the page waits for the name', () => {
+  let t = 1000; const st = ww.createWakeState({ now: () => t, windowMs: 8000, cooldownMs: 1200, followUpMs: 10000, matcher: jarvis, closeNames: ['jarvis'] });
+  st.arm(); st.onUtterance('hey jarvis go', st.gen, 900, 1000); st.onTurnStart(); st.onReplyEnd(true);
+  t = 3000; assert.equal(st.tick(), 'followup');
+  assert.deepEqual(st.onUtterance('Thanks, Jarvis.', st.gen, 3000, 3100), { action: 'drop', reason: 'closed' });
+  assert.equal(st.current(), 'waiting');
+  assert.equal(st.onUtterance('one more thing', st.gen, 3200, 3300).action, 'drop');                    // the window is gone
+  assert.deepEqual(st.onUtterance('Hey Jarvis, never mind', st.gen, 3400, 3500), { action: 'drop', reason: 'closed' });   // no turn for a goodbye
+  st.onUtterance('hey jarvis', st.gen, 3600, 3700);                                                      // listening window open
+  assert.equal(st.onUtterance('that is all', st.gen, 3800, 3900).reason, 'closed');
+  assert.equal(st.current(), 'waiting');
+});
+
+test('state: a reply that does not invite an answer opens no follow-up window', () => {
+  let t = 1000; const st = ww.createWakeState({ now: () => t, windowMs: 8000, cooldownMs: 1200, followUpMs: 10000, matcher: jarvis });
+  st.arm(); st.onUtterance('hey jarvis go', st.gen, 900, 1000); st.onTurnStart(); st.onReplyEnd(true && ww.replyInvitesAnswer('It is 3:15.'));
+  t = 3000; assert.equal(st.tick(), 'waiting');
+  st.onUtterance('hey jarvis again', st.gen, 3100, 3200); st.onTurnStart(); st.onReplyEnd(ww.replyInvitesAnswer('Want the lights on too?'));
+  t = 5000; assert.equal(st.tick(), 'followup');
+});

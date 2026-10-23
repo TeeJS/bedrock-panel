@@ -262,7 +262,7 @@ $('faceSettings').onclick = function () { $('vpSettings').onclick(); };
 // mode) the reveal bar. Focus returns to what opened the layer.
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
-  if (!$('devOverlay').classList.contains('hidden')) { $('devCancel').onclick(); var back = { audioinput: 'micPickBtn', audiooutput: 'spkPickBtn', model: 'modelPickBtn', persona: 'personaPickBtn', face: 'facePickBtn', wake: 'wakePickBtn', chime: 'chimePickBtn', followup: 'followPickBtn' }[devOverlayKindLast] || 'settingsClose'; var el = $(back); if (el) el.focus(); return; }
+  if (!$('devOverlay').classList.contains('hidden')) { $('devCancel').onclick(); var back = { audioinput: 'micPickBtn', audiooutput: 'spkPickBtn', model: 'modelPickBtn', persona: 'personaPickBtn', face: 'facePickBtn', wake: 'wakePickBtn', chime: 'chimePickBtn', followup: 'followPickBtn', followwhen: 'followWhenPickBtn' }[devOverlayKindLast] || 'settingsClose'; var el = $(back); if (el) el.focus(); return; }
   if (!$('settingsOverlay').classList.contains('hidden')) { $('settingsOverlay').classList.add('hidden'); (faceMode === 'creature' ? $('faceCtl') : $('vpSettings')).focus(); return; }
   if (faceMode !== 'creature') return;
   if ($('faceBar').classList.contains('show') && faceStatusName !== 'error' && faceStatusName !== 'approval') { hideFaceBar(); $('faceCtl').focus(); }
@@ -836,6 +836,8 @@ var WAKE_PICKS = [['off', 'Off — the open mic hears everything'], ['on', 'On �
 var CHIME_PICKS = [['0', 'Off'], ['1', 'On — a short two-note chime']];
 var FOLLOWUP_PICKS = [['0', 'Off — one wake, one request'], ['5', '5 seconds'], ['10', '10 seconds'], ['20', '20 seconds'], ['30', '30 seconds'], ['60', '1 minute'], ['120', '2 minutes']];
 var wakeFollowUpSeconds = Q.get('wakeFollowUpSeconds') || '0';
+var FOLLOWWHEN_PICKS = [['question', 'Only after a question or an offer'], ['always', 'After every reply']];
+var wakeFollowUpWhen = Q.get('wakeFollowUpWhen') === 'always' ? 'always' : 'question';
 function syncPickButtons() {
   $('micPickVal').textContent = savedMicLabel || ('Default — ' + (globalMicLabel || 'System default'));
   $('spkPickVal').textContent = savedSpkLabel || ('Default — ' + (globalSpkLabel || 'System default'));
@@ -851,6 +853,8 @@ function syncPickButtons() {
   $('chimePickVal').textContent = cp ? cp[1] : 'Off';
   var fu = FOLLOWUP_PICKS.find(function (p) { return p[0] === String(wakeFollowUpSeconds); });
   $('followPickVal').textContent = fu ? fu[1] : (wakeFollowUpSeconds + ' seconds');
+  var fw = FOLLOWWHEN_PICKS.find(function (p) { return p[0] === wakeFollowUpWhen; });
+  $('followWhenPickVal').textContent = fw ? fw[1] : wakeFollowUpWhen;
   syncPersonaUI();
 }
 function syncPersonaUI() {
@@ -886,6 +890,7 @@ function renderDevOverlay() {
   }
   if (kind === 'wake') { WAKE_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === (wakeOn() ? 'on' : 'off')); }); return; }
   if (kind === 'chime') { CHIME_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === (wakeChimeOn ? '1' : '0')); }); return; }
+  if (kind === 'followwhen') { FOLLOWWHEN_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === wakeFollowUpWhen); }); return; }
   if (kind === 'followup') { FOLLOWUP_PICKS.forEach(function (p) { addRow(p[1], p[0], p[0] === String(wakeFollowUpSeconds)); }); return; }
   var savedLabel = kind === 'audioinput' ? savedMicLabel : savedSpkLabel;
   var globalLabel = kind === 'audioinput' ? globalMicLabel : globalSpkLabel;
@@ -899,7 +904,7 @@ function renderDevOverlay() {
 function openDevOverlay(kind) {
   devOverlayKind = kind;
   devOverlayKindLast = kind;
-  $('devTitle').textContent = { audioinput: 'Microphone', audiooutput: 'Speaker', persona: 'Persona', face: 'Face', wake: 'Wake word', chime: 'Chime when the name is heard', followup: 'Follow-up window after a reply' }[kind] || 'Model';
+  $('devTitle').textContent = { audioinput: 'Microphone', audiooutput: 'Speaker', persona: 'Persona', face: 'Face', wake: 'Wake word', chime: 'Chime when the name is heard', followup: 'Follow-up window after a reply', followwhen: 'Follow-up window opens' }[kind] || 'Model';
   renderDevOverlay();                                  // cached entries paint instantly...
   if (kind === 'audioinput' || kind === 'audiooutput') {   // (the other lists are static -- no mic grab)
     ensureDeviceIds(true).then(function () {           // ...then a fresh enumeration replaces them
@@ -954,6 +959,7 @@ function pickDevice(kind, label) {
     return;
   }
   if (kind === 'chime') { wakeChimeOn = label === '1'; postOption('wakeChime', wakeChimeOn ? 'true' : 'false'); syncPickButtons(); return; }
+  if (kind === 'followwhen') { wakeFollowUpWhen = label; postOption('wakeFollowUpWhen', label); syncPickButtons(); return; }
   if (kind === 'followup') { wakeFollowUpSeconds = label; postOption('wakeFollowUpSeconds', label); syncPickButtons(); return; }
   if (kind === 'model') {
     savedModelPick = label;
@@ -995,6 +1001,7 @@ $('facePickBtn').onclick = function () { openDevOverlay('face'); };
 $('wakePickBtn').onclick = function () { openDevOverlay('wake'); };
 $('chimePickBtn').onclick = function () { openDevOverlay('chime'); };
 $('followPickBtn').onclick = function () { openDevOverlay('followup'); };
+$('followWhenPickBtn').onclick = function () { openDevOverlay('followwhen'); };
 $('devCancel').onclick = function () { $('devOverlay').classList.add('hidden'); devOverlayKind = ''; };
 
 // ---- Tap-to-toggle voice conversation (Phase 5) ----

@@ -33,10 +33,13 @@ the technical text says.
    at the seven-second mark and the whole request still counts, even if the transcription comes back late.
 4. **After the reply.** Once the reply has finished playing, the page goes straight back to waiting for
    the name. Saying "Hey Jarvis" once in the morning never leaves the page listening all day.
-5. **Follow-up window (off by default).** Set it to, say, 10 seconds and after each reply you have ten
-   seconds to speak again without the name. The countdown is on screen; when it reaches zero the page is
-   back to waiting for the name. A reply you stop early, or one that fails, does not open the window.
-   *(You said a bare timer feels lazy: a reply-shape rule and close phrases are proposed, see below.)*
+5. **Follow-up window (off by default).** Set it to, say, 10 seconds. It opens only when the reply asked
+   you something ("Want the lights on too?"); a plain "It's 3:15." closes at once, because nothing is
+   waiting for an answer. (A setting, *Follow-up opens*, can switch this to "after every reply".) While it
+   is open you can speak again without the name, and the countdown is on screen. Saying "thanks", "that's
+   all", "never mind" or "go to sleep" closes it immediately and sends nothing to the AI. When the
+   countdown reaches zero the page is back to waiting for the name. A reply you stop early, or one that
+   fails, never opens it.
 6. **Chime (off by default).** Turn it on and a short two-note chime confirms the name was heard, through
    the page's speaker. Muting the speaker mutes the chime.
 7. **The mic button.** ~~Decided originally: the page still starts muted and you have to tap the mic
