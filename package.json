@@ -1,6 +1,6 @@
 {
   "name": "bedrock-panel",
-  "version": "1.0.0-beta.7",
+  "version": "1.0.0-beta.8",
   "private": true,
   "description": "A multi-use launcher and control platform for Windows, macOS, and Linux — your apps, media, dashboards, and smart home on your computer or a touchscreen.",
   "main": "app/main.js",
