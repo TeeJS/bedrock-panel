@@ -186,6 +186,9 @@ function createMeetingTranscriber(deps) {
     if ((current && current.name === n) || queue.includes(n)) return { ok: false, error: 'already queued' };
     const src = path.join(resolveFolders().unprocessed, n);
     if (!fsMod.existsSync(src)) return { ok: false, error: 'not found' };
+    // Exactly the recorder's 44-byte header with nothing after it (no audio was captured): the
+    // diarizer rejects it with an opaque tensor error, so say what is actually wrong.
+    try { if (fsMod.statSync(src).size === 44) return { ok: false, error: 'recording has no audio' }; } catch (e) {}
     queue.push(n);
     log('transcribe queued: ' + n);
     pump();

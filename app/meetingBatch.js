@@ -59,8 +59,10 @@ function createMeetingBatch(deps) {
   async function run() {
     try {
       const busy = new Set(getBusyFiles());
+      // A 44-byte WAV is the recorder's header alone (a capture that never got audio); it can
+      // only fail upload, so the batch leaves it out rather than count it as a failure.
       const wavs = list('unprocessed').files
-        .filter(file => /\.wav$/i.test(file.name) && !busy.has(file.name)).map(file => file.name);
+        .filter(file => /\.wav$/i.test(file.name) && !busy.has(file.name) && file.size !== 44).map(file => file.name);
       await stage(transcriber, wavs, name => transcriber.enqueue(name),
         s => !!(s.current || s.phase || s.queue.length), 'transcribed', 'transcribeErrors');
       state.phase = 'analyzing';

@@ -59,7 +59,10 @@ can send them to a diarizing transcription server, then to an AI for meeting not
 - A meeting passes through three folders (Settings → Meeting), and each folder means exactly one
   thing:
   - **Unprocessed Recordings** (default `Documents\Bedrock Panel Meetings\unprocessed`) —
-    recordings waiting to be transcribed: the WAV with its calendar and capture sidecars.
+    recordings waiting to be transcribed: the WAV with its calendar and capture sidecars. A
+    recording that stops before any audio arrives (a call that flickers on and off as it
+    connects) is deleted with its sidecars instead of being left here; an empty slide-capture
+    folder goes with it, one holding slides is kept.
   - **Transcribed Recordings** (default `…\transcribed`) — transcribed, not yet analyzed: the
     WAV, its `<name>-diarizer-response.json` transcript, sidecars, captions and screenshots, in
     one flat folder (no date subfolders, no stub `.md`). The transcript is the row the Analysis
@@ -74,7 +77,8 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   buttons in the header.
 - **Batch** — one tap does the whole pipeline: every unprocessed recording is queued for
   transcription (a recording still in progress or being finalized is left alone and picked
-  up by the next batch), and once that queue has fully drained (including the server
+  up by the next batch; an older header-only WAV with no audio is skipped, not counted as a
+  failure), and once that queue has fully drained (including the server
   start/stop hooks) every row the Analysis screen lists — every transcript waiting in the
   Transcribed folder — is queued for analysis. The space left of the
   button reads **Batching…** while it runs and **Batch completed** (or **Batch completed

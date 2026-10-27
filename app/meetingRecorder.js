@@ -75,6 +75,8 @@ function wavHeader(dataBytes) {
  *   resolveSettings()        -> { meetingFolder, micDevice, echoGate, silenceStopMin }
  *   defaultFolder()          -> fallback folder when meetingFolder is empty
  *   onState(state)           -> optional; called whenever recording state changes
+ *   onRecordingComplete(name) -> optional; the WAV is closed and header-patched
+ *   onRecordingDiscarded(name) -> optional; the recording captured no audio and its WAV was deleted
  *   log(msg)                 -> optional logger
  */
 function createMeetingRecorder(deps) {
@@ -238,6 +240,17 @@ function createMeetingRecorder(deps) {
       finalizingFiles.add(done);
       stream = null;
       closing.end(() => {
+        if (bytes === 0) {
+          // Nothing was captured (typically a call that flapped active -> ended within a second).
+          // A header-only WAV can only fail transcription, so drop it and its capture sidecar
+          // instead of leaving a stub in Unprocessed. Main cleans up the sidecars it owns.
+          try { fs.unlinkSync(done); } catch (e) { log('empty recording delete error: ' + e.message); }
+          try { fs.unlinkSync(done.replace(/\.wav$/i, '') + '.capture.json'); } catch (e) {}
+          log('recording discarded (' + (reason || 'manual') + '), no audio captured -> ' + done);
+          try { if (deps.onRecordingDiscarded) deps.onRecordingDiscarded(path.basename(done)); } catch (e) {}
+          finally { finalizingFiles.delete(done); }
+          return;
+        }
         // Patch RIFF ChunkSize (offset 4) and data Subchunk2Size (offset 40) now the total is known.
         try {
           const fd = fs.openSync(done, 'r+');
