@@ -21,6 +21,7 @@ const { safeRelPath, wavDurationMs } = require('./meetingLibrary');
 const { runCopilotBatchPrompt } = require('./copilotvoice-session');
 const owuiClientMod = require('./owuiClient');
 const joplinNotesMod = require('./joplinNotes');
+const obsidianExportMod = require('./obsidianExport');
 const { parseStructuredTail, buildFrontmatter, validateFrontmatter, serializeFrontmatter, readFrontmatter } = require('./meetingFrontmatter');
 const { newId, sha256, formatTime, applyTurnTimes, aiHeadingsOf, baselineHash, mergeOwnership, assignItemIds, assembleFile } = require('./meetingFile');
 
@@ -251,6 +252,9 @@ function createMeetingAnalyzer(deps) {
   // () => { enabled, url, token, notebook } — post-analysis Joplin notes (settings.meeting).
   const resolveJoplin = deps.resolveJoplin || (() => ({}));
   const joplinNotes = deps.joplinNotes || joplinNotesMod;
+  // () => { enabled, vault } — post-analysis copy of the meeting file into an Obsidian vault (settings.meeting).
+  const resolveObsidian = deps.resolveObsidian || (() => ({}));
+  const obsidianExport = deps.obsidianExport || obsidianExportMod;
   const batchDone = [];   // successful analyses in the current batch, flushed to a task list on drain
 
   // Every job names its root: kind 'transcribed' (a flat transcript waiting in the transcribed
@@ -263,6 +267,7 @@ function createMeetingAnalyzer(deps) {
   const published = new Map();   // transcribed name -> absolute .md it was published as (for the panel's View)
   let completed = 0, failed = 0;   // lifetime outcomes, never lost when lastError is cleared
   let lastJoplin = null; // { name, ok, error?, applied?, skipped?, finishedAt } for the panel
+  let lastObsidian = null; // { name, ok, state?, path?, conflict?, error?, finishedAt } for the panel
   let lastProposed = null; // { name, path, finishedAt } — a re-analysis saved for review instead of replacing edited notes
   const resolveMyName = deps.resolveMyName || null;   // () => the operator's enrolled name (Settings → Meeting → My name)
   const foldersError = deps.foldersError || (() => '');   // () => '' or why the three roots overlap; re-checked as each job starts
@@ -280,6 +285,7 @@ function createMeetingAnalyzer(deps) {
       completed,
       failed,
       joplin: lastJoplin,
+      obsidian: lastObsidian,
       proposed: lastProposed,
     };
   }
@@ -607,6 +613,7 @@ function createMeetingAnalyzer(deps) {
       const tl0 = fm.bedrock.exports && fm.bedrock.exports.task_list;
       if (!(tl0 && tl0.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: target.meta ? path.join(target.fileDir, base + '.json') : null, meta: target.meta });
       await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports);
+      await exportToObsidian(base, mdPath, fm.bedrock.exports);
       const out = { md: relToProcessed(mdPath) };
       if (left.length) { out.warning = 'committed, with leftovers in transcribed: ' + left.join(', '); log('analysis committed; cleanup left files in transcribed: ' + left.join(', ')); }
       return out;
@@ -625,6 +632,7 @@ function createMeetingAnalyzer(deps) {
     const tl = fm.bedrock.exports && fm.bedrock.exports.task_list;
     if (!(tl && tl.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: filed ? filed.sidecar : null, meta: filed ? filed.meta : target.meta });
     await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports);
+    await exportToObsidian(base, mdPath, fm.bedrock.exports);
     return { md: relToProcessed(mdPath) };
   }
 
@@ -830,20 +838,37 @@ function createMeetingAnalyzer(deps) {
   }
 
   // A Joplin export left `pending` by a crash or timeout: the note was created with OUR id, so
-  // asking Joplin for that id settles it without a second note.
+  // asking Joplin for that id settles it without a second note. An Obsidian export left `pending`
+  // is settled by re-hashing the vault copy: the bytes the record names are there, or they are not.
   async function reconcilePendingExports(mdFile) {
+    let exports = null;
     try {
       const parsed = readFrontmatter(await fsp.readFile(mdFile, 'utf8'));
-      const pending = parsed.ok && parsed.data.bedrock && parsed.data.bedrock.exports && parsed.data.bedrock.exports.joplin;
-      if (!pending || pending.state !== 'pending' || !pending.id) return;
-      const cfg = resolveJoplin() || {};
-      if (!cfg.enabled || !joplinNotes.getNote) return;
-      const note = await joplinNotes.getNote({ url: cfg.url, token: cfg.token, id: pending.id });
-      if (note) {
-        await patchFrontmatter(mdFile, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { joplin: { id: pending.id, state: 'succeeded' } }); });
-        log('joplin export reconciled as succeeded: ' + path.basename(mdFile));
+      exports = (parsed.ok && parsed.data.bedrock && parsed.data.bedrock.exports) || null;
+    } catch (e) { log('export reconcile skipped: ' + e.message); return; }
+    try {
+      const pending = exports && exports.joplin;
+      if (pending && pending.state === 'pending' && pending.id) {
+        const cfg = resolveJoplin() || {};
+        if (cfg.enabled && joplinNotes.getNote) {
+          const note = await joplinNotes.getNote({ url: cfg.url, token: cfg.token, id: pending.id });
+          if (note) {
+            await patchFrontmatter(mdFile, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { joplin: { id: pending.id, state: 'succeeded' } }); });
+            log('joplin export reconciled as succeeded: ' + path.basename(mdFile));
+          }
+        }
       }
     } catch (e) { log('joplin export reconcile skipped: ' + e.message); }
+    try {
+      const pending = exports && exports.obsidian;
+      if (pending && pending.state === 'pending') {
+        const cfg = resolveObsidian() || {};
+        if (cfg.enabled && await obsidianExport.verifyExport({ fs: fsMod, vaultRoot: cfg.vault, record: pending })) {
+          await patchFrontmatter(mdFile, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { obsidian: { state: 'succeeded', path: pending.path, hash: pending.hash } }); });
+          log('obsidian export reconciled as succeeded: ' + path.basename(mdFile));
+        }
+      }
+    } catch (e) { log('obsidian export reconcile skipped: ' + e.message); }
   }
 
   // Apply a reviewed proposal (details/<base>.proposed.md) over the current meeting file: the
@@ -900,6 +925,7 @@ function createMeetingAnalyzer(deps) {
       await fsp.unlink(proposedPath);
       // Final destination (recurring rule) and source filing happen now, as they would after an
       // ordinary publish: the applied file moves to its home and the sources follow into details/.
+      let mdFinal = mdFile;
       try {
         const jsonRel = transcriptForMd(path.posix.join(path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n), base + '.md'));
         if (jsonRel) {
@@ -913,8 +939,11 @@ function createMeetingAnalyzer(deps) {
             await fsp.rename(mdFile, target.mdPath);
           }
           await fileSet(jsonAbs, null, null, base, opts, target);
+          mdFinal = target.mdPath;
         }
       } catch (e) { log('applied proposal is saved, but filing it to its final folder failed: ' + e.message); return { ok: true, name: n, warning: 'applied; filing failed: ' + e.message }; }
+      // The applied version is the meeting file now: the vault copy follows it (same edit guard).
+      await exportToObsidian(base, mdFinal, carry.exports);
       if (lastProposed && lastProposed.name === base) lastProposed = null;
       log('proposed analysis applied: ' + n);
       return { ok: true, name: n };
@@ -965,6 +994,39 @@ function createMeetingAnalyzer(deps) {
     } catch (e) {
       lastJoplin = { name: base, ok: false, error: (e && e.message) || 'failed', finishedAt: now() };
       log('joplin note failed: ' + base + ' — ' + lastJoplin.error + ' (export left pending; reconciled on the next analysis of this meeting)');
+    }
+  }
+
+  // Post-analysis Obsidian export: the published meeting file, byte for byte, copied into the
+  // vault at its Completed-relative path (see obsidianExport.js). Unlike Joplin this runs on EVERY
+  // publish — a re-analysis is new content — and never overwrites a vault copy that was edited
+  // there: that one gets <base>.conflict.md beside it. The meeting file records the export as
+  // `pending` (with the hash of the bytes being written) before the copy and `succeeded` /
+  // `conflict` after; the vault is checked first so a missing vault records nothing. A failure
+  // never fails the analysis (the .md is already saved); it is logged and shown on the panel.
+  async function exportToObsidian(base, mdFile, exports) {
+    const cfg = resolveObsidian() || {};
+    if (!cfg.enabled) return;
+    const prior = (exports && exports.obsidian) || null;
+    const relPath = relToProcessed(mdFile);
+    try {
+      obsidianExport.resolveVault(fsMod, cfg.vault);
+      const bytes = await fsp.readFile(mdFile);   // as published (any Joplin record included), before this export's own bookkeeping
+      const pending = { state: 'pending', path: relPath, hash: sha256(bytes) };
+      if (prior && prior.hash) pending.prior_hash = prior.hash;
+      await patchFrontmatter(mdFile, d => { d.bedrock = d.bedrock || {}; d.bedrock.exports = Object.assign({}, d.bedrock.exports, { obsidian: pending }); });
+      const r = await obsidianExport.exportMeetingFile({ fs: fsMod, vaultRoot: cfg.vault, relPath, bytes, prior, log });
+      await patchFrontmatter(mdFile, d => { d.bedrock.exports = Object.assign({}, d.bedrock.exports, { obsidian: r }); });
+      if (r.state === 'conflict') {
+        lastObsidian = { name: base, ok: false, state: r.state, path: r.path, conflict: r.conflict, error: 'the vault copy was edited there — new analysis saved beside it as ' + path.posix.basename(r.conflict), finishedAt: now() };
+        log('obsidian export conflict: ' + base + ' — vault copy edited, new analysis written to ' + r.conflict);
+      } else {
+        lastObsidian = { name: base, ok: true, state: r.state, path: r.path, finishedAt: now() };
+        log('obsidian export written: ' + r.path + (r.left ? ' (earlier copy left in place: ' + r.left + ')' : ''));
+      }
+    } catch (e) {
+      lastObsidian = { name: base, ok: false, error: (e && e.message) || 'failed', finishedAt: now() };
+      log('obsidian export failed: ' + base + ' — ' + lastObsidian.error);
     }
   }
 
