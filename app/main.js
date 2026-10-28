@@ -357,6 +357,7 @@ let meetingHighlights = null; // mid-meeting highlight spans (created alongside 
 let lucidDictation = null;    // hidden-window LucidType dictation controller (created alongside the recorder)
 let lucidApplyFocusProc = '';  // foreground process captured at dictation start, so Apply can restore focus in software mode
 const completedRecordings = new Set();   // basenames whose finalize (header patch) has finished — the only safe time to rename
+const discardedRecordings = new Set();   // basenames deleted at finalize for capturing no audio — late sidecar writes must skip them
 let meetingLibrary = null;    // recordings list/delete/resolve for the panel's library screens
 let meetingTranscriber = null; // FIFO diarizer-upload queue (meetingTranscribe.js)
 let meetingAnalyzer = null;   // transcript → markdown analysis via claude/codex CLI (meetingAnalyze.js)
@@ -2867,6 +2868,9 @@ function writeOutlookMeetingInfo(wavName) {   // wavName = basename (recorder st
   const saveInfo = info => {
     try {
       if (!info) { console.log('[meeting] calendar: no meeting scheduled now — no info file'); return; }
+      // The recording ended with no audio and was deleted before this lookup landed; writing now
+      // would leave an orphan sidecar in Unprocessed.
+      if (discardedRecordings.has(wavName)) { console.log('[meeting] calendar info skipped: ' + wavName + ' was discarded (no audio)'); return; }
       info = fixNames(info);
       const dest = path.join(resolveMeetingFolders().unprocessed, wavName.replace(/\.wav$/i, '') + '.json');
       // The calendar lookup is async and can land after highlights were already flushed to this
@@ -4245,6 +4249,17 @@ app.whenReady().then(async () => {
             completedRecordings.add(name);   // header is patched — renames are safe from here on
             if (completedRecordings.size > 50) completedRecordings.delete(completedRecordings.values().next().value);
             appendMeetingNameToRecording(name);
+          } catch (e) {}
+        },
+        onRecordingDiscarded: name => {
+          try {
+            discardedRecordings.add(name);
+            if (discardedRecordings.size > 50) discardedRecordings.delete(discardedRecordings.values().next().value);
+            // The recorder removed the WAV and capture sidecar; the calendar/highlights sidecar and
+            // an empty slide-capture folder belong to main. A folder holding slides is kept.
+            const base = path.join(resolveMeetingFolders().unprocessed, name.replace(/\.wav$/i, ''));
+            try { fs.unlinkSync(base + '.json'); } catch (e) {}
+            try { fs.rmdirSync(base + '-screenshots'); } catch (e) {}
           } catch (e) {}
         },
         log: msg => console.log('[meeting] ' + msg),

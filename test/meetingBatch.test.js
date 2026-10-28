@@ -177,6 +177,17 @@ test('active and finalizing recordings stay for the next batch without counting 
   assert.deepEqual([st.transcribed, st.transcribeErrors], [3, 0]);
 });
 
+test('a header-only (44-byte) recording is left out of the batch, not counted as a failure', async () => {
+  const s = setup({
+    list: kind => kind === 'unprocessed'
+      ? listing([{ name: 'empty.wav', size: 44 }, { name: 'real.wav', size: 82083884 }]) : listing(),
+  });
+  s.batch.start();
+  const st = await finish(s.batch);
+  assert.deepEqual(s.calls.filter(c => c[0] === 'transcribe').map(c => c[1]), ['real.wav']);
+  assert.deepEqual([st.transcribed, st.transcribeErrors], [1, 0]);
+});
+
 test('listing failure ends with coordinator error and permits retry', async () => {
   let fail = true;
   const s = setup({ list: () => {

@@ -169,6 +169,8 @@ test('enqueue validates names, requires the file, and dedupes against queue + cu
   assert.equal(s.tx.enqueue('..\\a.wav').ok, false);
   assert.equal(s.tx.enqueue('a.txt').ok, false);
   assert.equal(s.tx.enqueue('missing.wav').ok, false);
+  fs.writeFileSync(path.join(s.unprocessed, 'empty.wav'), Buffer.alloc(44));   // recorder header, no audio
+  assert.equal(s.tx.enqueue('empty.wav').error, 'recording has no audio');
   assert.equal(s.tx.enqueue('a.wav').ok, true);
   await settle();
   assert.equal(s.tx.enqueue('a.wav').ok, false);   // already running
