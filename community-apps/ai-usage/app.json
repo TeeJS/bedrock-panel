@@ -1,7 +1,7 @@
 {
   "id": "ai-usage",
   "name": "AI Usage",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "At-a-glance usage monitor for Claude (Claude Code & Cowork), ChatGPT/Codex, and GitHub Copilot. Reads local Claude/Codex session logs and the GitHub billing API.",
   "entry": "index.html",
   "served": true,
@@ -21,15 +21,15 @@
       "type": "secret",
       "default": "",
       "serverOnly": true,
-      "help": "A fine-grained personal access token with 'Plan' (read-only) permission on your account. Used only server-side to read your Copilot premium-request usage; never sent to the page. Create one at github.com/settings/personal-access-tokens."
+      "help": "A fine-grained personal access token with 'Plan' (read-only) permission on your account. Used only server-side to read personally billed Copilot AI-credit usage; never sent to the page. Create one at github.com/settings/personal-access-tokens."
     },
     {
-      "key": "copilotIncluded",
-      "label": "Copilot monthly quota",
+      "key": "copilotCreditsIncluded",
+      "label": "Copilot monthly AI credits",
       "type": "select",
-      "default": "300",
-      "choices": [["300", "Pro / Business — 300"], ["1500", "Pro+ — 1500"], ["1000", "Enterprise — 1000"], ["0", "Unknown / hide gauge"]],
-      "help": "Included premium requests per month for your Copilot plan — sets the gauge denominator."
+      "default": "0",
+      "choices": [["0", "Unknown / hide gauge"], ["1500", "Pro - 1,500"], ["7000", "Pro+ - 7,000"], ["20000", "Max - 20,000"]],
+      "help": "Included GitHub AI Credits per month for a personally billed plan. Organization-managed plans are not available through the personal endpoint."
     },
     {
       "key": "claudeLimits",

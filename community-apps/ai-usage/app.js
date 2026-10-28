@@ -1,6 +1,6 @@
 'use strict';
 
-const RUNNING_VERSION = '1.0.8';
+const RUNNING_VERSION = '1.0.9';
 const params = new URLSearchParams(location.search);
 const refreshSeconds = Math.max(15, Math.min(300, parseInt(params.get('refreshSeconds'), 10) || 30));
 const PERIODS = ['today', '7d', '30d', 'all'];
@@ -8,6 +8,7 @@ const PERIOD_LABEL = { today: 'today', '7d': '7 days', '30d': '30 days', all: 'a
 const ACCENT = { claude: '#e08a5c', codex: '#19c39a', copilot: '#a179f2' };
 
 let period = PERIODS.includes(params.get('period')) ? params.get('period') : '7d';
+let refreshRequestId = 0;
 
 const $ = s => document.querySelector(s);
 const grid = $('#grid');
@@ -24,6 +25,7 @@ function num(n) {
   return String(Math.round(n));
 }
 function intc(n) { return (Number(n) || 0).toLocaleString(); }
+function quantity(n) { return (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 }); }
 function resetIn(sec) {
   if (!sec) return '';
   let ms = sec * 1000 - Date.now();
@@ -112,25 +114,38 @@ function codexCard(d) {
 }
 
 function copilotCard(d) {
-  if (!d.ok) return card(ACCENT.copilot, head('Copilot', 'GitHub', 'error', 'err') + errState(d.error || 'failed'));
+  if (!d.ok) {
+    const title = d.kind === 'unsupported-scope' ? 'Personal billing unavailable' : (d.kind === 'empty' ? 'No usage reported' : 'Error');
+    return card(ACCENT.copilot, head('Copilot', 'GitHub', title, d.kind === 'empty' ? 'warn' : 'err')
+      + '<div class="state ' + (d.kind === 'empty' ? '' : 'err') + '"><h3>' + title + '</h3><p>' + esc(d.error || 'GitHub billing failed.') + '</p></div>');
+  }
   const included = Number(d.included) || 0;
   const used = Number(d.used) || 0;
   const remaining = Math.max(0, included - used);
-  const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).getTime() / 1000;
+  const periodParts = String(d.period || '').split('-').map(Number);
+  const monthEnd = periodParts.length === 2 && periodParts.every(Number.isFinite)
+    ? Date.UTC(periodParts[0], periodParts[1], 1) / 1000
+    : new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).getTime() / 1000;
+  const isCredits = d.unit === 'ai-credits';
+  const unitLabel = isCredits ? 'AI credits' : (d.unit === 'requests' ? 'premium requests' : 'usage units');
+  const periodLabel = d.period ? new Date(d.period + '-01T00:00:00Z').toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'this month';
   let body;
-  if (included > 0) {
+  if (isCredits && included > 0) {
     const pct = used / included * 100;
-    body = '<div class="gauges one"><div class="gauge"><div class="glabel">This month</div>'
+    body = '<div class="gauges one"><div class="gauge"><div class="glabel">' + esc(periodLabel) + '</div>'
       + '<div class="ring big" style="--pct:' + Math.min(100, pct).toFixed(1) + ';--ring:' + levelColor(pct) + '">'
-      + '<div class="hole"><span class="val">' + Math.round(pct) + '<span class="u">%</span></span><span class="sub">of quota</span></div></div>'
+      + '<div class="hole"><span class="val">' + Math.round(pct) + '<span class="u">%</span></span><span class="sub">of AI credits</span></div></div>'
       + '<div class="reset">resets in <b>' + resetIn(monthEnd) + '</b></div></div>'
-      + '<div class="sideblock"><div class="row"><b>' + intc(used) + '</b> used</div>'
-      + '<div class="row"><b>' + intc(remaining) + '</b> left of ' + intc(included) + '</div>'
+      + '<div class="sideblock"><div class="row"><b>' + quantity(used) + '</b> credits used</div>'
+      + '<div class="row"><b>' + quantity(remaining) + '</b> left of ' + intc(included) + '</div>'
       + (d.net > 0 ? '<div class="row">overage <b>$' + d.net.toFixed(2) + '</b></div>' : '') + '</div></div>';
   } else {
-    body = '<div class="hero"><div class="hnum">' + intc(used) + '</div><div class="hlbl">premium requests &middot; this month</div></div>';
+    body = '<div class="hero"><div class="hnum">' + quantity(used) + '</div><div class="hlbl">' + esc(unitLabel) + ' &middot; ' + esc(periodLabel) + '</div></div>';
   }
-  return card(ACCENT.copilot, head('Copilot', 'GitHub', '@' + esc(d.user), 'good') + body);
+  const source = d.source === 'ai_credit' ? 'GitHub AI-credit billing' : 'legacy GitHub billing';
+  const fetched = d.freshness && d.freshness.fetchedAt ? ' &middot; fetched ' + esc(new Date(d.freshness.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : '';
+  return card(ACCENT.copilot, head('Copilot', 'GitHub &middot; ' + esc(periodLabel), '@' + esc(d.user), 'good') + body
+    + '<div class="foot">' + source + fetched + '</div>');
 }
 
 function statRow(msgs, tokens, sessions) {
@@ -153,12 +168,14 @@ function stampUpdated() {
   $('#updated').innerHTML = 'updated ' + t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '<span class="dot"></span>';
 }
 async function refreshAll() {
+  const requestId = ++refreshRequestId;
   const dot = $('#updated').querySelector('.dot'); if (dot) dot.className = 'dot busy';
   const [c, x, p] = await Promise.all([
     apiCall('claude', { period }).catch(e => ({ ok: false, error: String(e.message || e) })),
     apiCall('codex', { period }).catch(e => ({ ok: false, error: String(e.message || e) })),
     apiCall('copilot').catch(e => ({ ok: false, error: String(e.message || e) })),
   ]);
+  if (requestId !== refreshRequestId) return;
   const cards = [];
   // Show a service only when it has real data (or errored) — never an empty/placeholder panel.
   if (c.ok ? (c.files > 0 || c.limit) : true) cards.push(claudeCard(c));

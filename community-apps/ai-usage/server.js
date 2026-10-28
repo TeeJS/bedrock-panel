@@ -2,7 +2,7 @@
 
 // AI Usage — host-side data engine.
 // Reads local Claude Code (~/.claude) and Codex CLI (~/.codex) session logs and
-// aggregates token usage; queries the GitHub billing API for Copilot premium-request
+// aggregates token usage; queries the GitHub billing API for Copilot AI-credit
 // usage. Everything runs in the host process (full fs/network) and returns only
 // pre-aggregated numbers to the page — no raw log contents, no secrets, leave here.
 
@@ -13,6 +13,7 @@ const os = require('os');
 const DAY_MS = 86400000;
 const SPARK_DAYS = 14;
 const GITHUB_TIMEOUT_MS = 10000;
+const GITHUB_API_VERSION = '2026-03-10';
 
 // ── Claude pricing (per 1M tokens, USD, first-party API rates) ─────────────────
 // Cache write = 1.25x input (5-min ephemeral, the default), cache read = 0.1x input.
@@ -271,52 +272,162 @@ function codexSummary(days, period) {
 }
 
 // ── GitHub Copilot usage ───────────────────────────────────────────────────────
-async function githubGet(url, token) {
-  const res = await fetch(url, {
-    headers: {
-      Authorization: 'Bearer ' + token,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'bedrock-panel-ai-usage',
-    },
-    signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
-  });
-  const text = await res.text();
-  let json = null; try { json = text ? JSON.parse(text) : null; } catch (e) {}
+async function githubGet(url, token, fetchImpl) {
+  const request = fetchImpl || fetch;
+  let res;
+  try {
+    res = await request(url, {
+      headers: {
+        Authorization: 'Bearer ' + token,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+        'User-Agent': 'bedrock-panel-ai-usage',
+      },
+      signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const timedOut = error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+    return { networkError: timedOut ? 'timeout' : 'network' };
+  }
+  let text;
+  try { text = await res.text(); }
+  catch (error) { return { status: res.status, malformed: true }; }
+  let json = null;
+  if (text) {
+    try { json = JSON.parse(text); }
+    catch (error) { return { status: res.status, malformed: true }; }
+  }
   return { status: res.status, json };
 }
 
-async function copilotUsage(options) {
+function githubError(result) {
+  if (result.networkError === 'timeout') return 'GitHub billing request timed out. Try refreshing again.';
+  if (result.networkError) return 'Could not reach GitHub billing. Check the network and try again.';
+  if (result.status === 401) return 'GitHub rejected the token (401) - check that it has not expired.';
+  if (result.status === 403) return 'Token lacks permission (403) - it needs "Plan" read-only access.';
+  if (result.status === 404) return 'No personal billing usage is available for this account. Organization- or enterprise-managed Copilot plans must be viewed in the organization billing account.';
+  if (result.status < 200 || result.status >= 300) return 'GitHub billing returned HTTP ' + (result.status || 'unknown') + '.';
+  if (result.malformed || (result.status >= 200 && result.status < 300 && !result.json)) return 'GitHub billing returned a malformed response.';
+  return 'GitHub billing request failed.';
+}
+
+function githubErrorKind(result) {
+  if (result.networkError === 'timeout') return 'timeout';
+  if (result.networkError) return 'network';
+  if (result.status === 401) return 'authentication';
+  if (result.status === 403) return 'permission';
+  if (result.status === 404) return 'unsupported-scope';
+  if (result.status < 200 || result.status >= 300) return 'github';
+  if (result.malformed || (result.status >= 200 && result.status < 300 && !result.json)) return 'malformed';
+  return 'github';
+}
+
+function usagePeriod(now) {
+  return now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0');
+}
+
+function isCurrentMonth(item, period) {
+  if (!item || !item.date) return true;
+  return String(item.date).slice(0, 7) === period;
+}
+
+function isCopilotItem(item, source) {
+  const product = String(item && item.product || '');
+  const sku = String(item && item.sku || '');
+  if (source === 'ai_credit') return /copilot/i.test(product) || /copilot/i.test(sku);
+  return /copilot/i.test(product) || /premium.?request|copilot/i.test(sku);
+}
+
+function normalizeCopilotUsage(json, source, period) {
+  if (!json || !Array.isArray(json.usageItems)) return { malformed: true };
+  const items = json.usageItems.filter(item => isCurrentMonth(item, period) && isCopilotItem(item, source));
+  if (!items.length) return { empty: true };
+
+  let used = 0, net = 0, gross = 0;
+  for (const item of items) {
+    const quantity = source === 'usage' ? item.quantity : item.grossQuantity;
+    const value = Number(quantity);
+    if (Number.isFinite(value)) used += value;
+    const netAmount = Number(item.netAmount);
+    const grossAmount = Number(item.grossAmount);
+    if (Number.isFinite(netAmount)) net += netAmount;
+    if (Number.isFinite(grossAmount)) gross += grossAmount;
+  }
+  return {
+    used,
+    net,
+    gross,
+    unit: source === 'ai_credit' ? 'ai-credits' : (source === 'premium_request' ? 'requests' : String(items[0].unitType || 'usage')),
+  };
+}
+
+async function copilotUsage(options, deps) {
+  deps = deps || {};
   const user = String(options.githubUser || '').trim();
   const token = String(options.githubToken || '').trim();
   if (!user || !token) return { ok: true, configured: false };
 
-  const now = new Date();
+  const now = deps.now ? new Date(deps.now) : new Date();
+  const period = usagePeriod(now);
+  const query = '?year=' + now.getUTCFullYear() + '&month=' + (now.getUTCMonth() + 1);
   const base = 'https://api.github.com/users/' + encodeURIComponent(user) + '/settings/billing';
-  // premium_request/usage is the individual-account endpoint; fall back to the
-  // general usage report if the account isn't on the premium-request surface.
-  let r = await githubGet(base + '/premium_request/usage?year=' + now.getFullYear() + '&month=' + (now.getMonth() + 1), token);
-  let source = 'premium_request';
-  if (r.status === 404) { r = await githubGet(base + '/usage', token); source = 'usage'; }
+  const endpoints = [
+    { source: 'ai_credit', path: '/ai_credit/usage' + query },
+    { source: 'premium_request', path: '/premium_request/usage' + query },
+    { source: 'usage', path: '/usage' + query },
+  ];
 
-  if (r.status === 401) return { ok: false, configured: true, error: 'GitHub rejected the token (401) — check it has not expired.' };
-  if (r.status === 403) return { ok: false, configured: true, error: 'Token lacks permission (403) — needs "Plan" read-only access.' };
-  if (r.status === 404) return { ok: false, configured: true, error: 'No billing usage for this account (404) — the billing API needs the enhanced billing platform.' };
-  if (r.status < 200 || r.status >= 300 || !r.json) return { ok: false, configured: true, error: 'GitHub returned HTTP ' + r.status + '.' };
-
-  const items = (r.json.usageItems || []).filter(it =>
-    /copilot/i.test(it.product || '') || /premium|copilot/i.test(it.sku || ''));
-  let used = 0, net = 0, gross = 0;
-  for (const it of items) {
-    used += Number(it.grossQuantity || it.quantity || 0);
-    net += Number(it.netAmount || 0);
-    gross += Number(it.grossAmount || 0);
+  let result;
+  let source;
+  for (const endpoint of endpoints) {
+    source = endpoint.source;
+    result = await githubGet(base + endpoint.path, token, deps.fetch);
+    if (result.status !== 404) break;
   }
-  const included = parseInt(options.copilotIncluded, 10) || 0;
+
+  const metadata = {
+    source,
+    unit: source === 'ai_credit' ? 'ai-credits' : (source === 'premium_request' ? 'requests' : 'usage'),
+    period,
+    freshness: { fetchedAt: now.toISOString(), live: false },
+  };
+
+  if (result.networkError || result.malformed || result.status < 200 || result.status >= 300 || !result.json) {
+    return { ok: false, configured: true, ...metadata, kind: githubErrorKind(result), error: githubError(result) };
+  }
+
+  const normalized = normalizeCopilotUsage(result.json, source, period);
+  if (normalized.malformed) {
+    return { ok: false, configured: true, ...metadata, kind: 'malformed', error: 'GitHub billing returned a malformed response.' };
+  }
+  if (normalized.empty) {
+    return {
+      ok: false,
+      configured: true,
+      kind: 'empty',
+      source,
+      unit: source === 'ai_credit' ? 'ai-credits' : (source === 'premium_request' ? 'requests' : 'usage'),
+      period,
+      freshness: { fetchedAt: now.toISOString(), live: true },
+      error: source === 'ai_credit'
+        ? 'GitHub returned no Copilot AI-credit usage for this month yet. Reporting can be delayed; if an organization or enterprise manages the plan, view its billing usage instead.'
+        : 'GitHub returned no Copilot usage for this month. If an organization or enterprise manages the plan, view its billing usage instead.',
+    };
+  }
+
+  const included = source === 'ai_credit' ? (parseInt(options.copilotCreditsIncluded, 10) || 0) : 0;
   return {
-    ok: true, configured: true, source, user,
-    used: Math.round(used), included, net, gross,
-    period: now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'),
+    ok: true,
+    configured: true,
+    source,
+    unit: normalized.unit,
+    user,
+    used: normalized.used,
+    included,
+    net: normalized.net,
+    gross: normalized.gross,
+    period,
+    freshness: { fetchedAt: now.toISOString(), live: true },
   };
 }
 
@@ -490,4 +601,7 @@ async function handle(action, context) {
   }
 }
 
-module.exports = { handle };
+module.exports = {
+  handle,
+  _test: { copilotUsage, githubGet, normalizeCopilotUsage, GITHUB_API_VERSION },
+};
