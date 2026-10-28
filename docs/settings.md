@@ -284,6 +284,23 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   per analyzed meeting, pointing at its meeting `.md` (and meeting metadata when the
   calendar integration provided it) — the hand-off for pulling action items onto a
   kanban board. Only successful analyses are listed.
+- **Advanced → Copy meeting files into an Obsidian vault** — after each analysis (and
+  after **Apply this version** on a reviewed re-analysis), copies the finished meeting
+  `.md` into the **Vault folder** at the same relative path it has under Completed
+  Meetings (`YYYY\<Meeting-Name>\` for recurring meetings, `YYYY\MM\` with Organize by
+  date, the root otherwise), so the vault mirrors Completed one-to-one. Bedrock only
+  writes the file — it never runs git; the vault's own sync (the Obsidian Git plugin, a
+  phone git client) commits and pushes. The meeting file records the export under
+  `bedrock.exports.obsidian` (`state`: `pending` → `succeeded` or `conflict`, the
+  vault-relative `path`, and the `hash` of the bytes written), so an agent reading
+  Completed can tell whether a meeting is in the vault. Edits made in the vault are never
+  overwritten: a re-analysis replaces the vault copy only while it still hashes to what
+  Bedrock last wrote; otherwise the edited copy stays and the new analysis is written
+  beside it as `<name>.conflict.md` (state `conflict`, reported on the panel) for a manual
+  merge. When a meeting moves to its recurring folder on re-analysis, an unedited earlier
+  copy is removed from the vault and an edited one is left in place. A vault folder that
+  is not set or not there (an unmounted drive) is reported on the panel and nothing is
+  written or recorded; a failed export never fails the analysis.
 - **Advanced → Create Joplin notes for analyses** — after each analysis, creates a note
   in Joplin through the **Joplin API URL** (the Web Clipper service of Joplin Desktop,
   Tools › Options › Web Clipper — default port 41184) using the **API token** shown
