@@ -1010,7 +1010,8 @@ $('devCancel').onclick = function () { $('devOverlay').classList.add('hidden'); 
 // constraint #4 -- push-to-talk was explicitly rejected.
 var conversationOpen = false;
 var vadHangoverMs = parseInt(Q.get('vadHangoverMs'), 10) || 400;   // 0.4s default — snappier out of the box (matches LucidType)
-var vad = window.createClaudeVoiceVAD ? window.createClaudeVoiceVAD({ hangoverMs: vadHangoverMs }) : null;
+// 0.5 s of lead-in: without it the soft start of "Hey" was cut off and Whisper heard "A norm."
+var vad = window.createClaudeVoiceVAD ? window.createClaudeVoiceVAD({ hangoverMs: vadHangoverMs, preRollMs: 500 }) : null;
 // With the wake word on, speech before the phrase is nobody's business: no status change, no face,
 // no ripple until the human is expected to be talking to the persona (listening / follow-up).
 function wakeExpectsSpeech() { return !wakeOn() || wakeState.state === 'listening' || wakeState.state === 'followup'; }

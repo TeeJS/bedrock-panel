@@ -155,7 +155,7 @@ const FIXTURES = [
   ['hey jarvis', 'Hey Travis, what time is it?', null],
   ['hey jarvis', 'Say hey jarvis for me', null],              // not at the start
   ['hey jarvis', "hey jarvis's desk", null],                  // possessive: a different word
-  ['hey jarvis', 'hey jarvisss what', null],                  // not a word boundary
+  ['hey jarvis', 'hey jarvises what', null],                  // not a word boundary (and two letters off: no near spelling)
   ['hey norm', 'Hey, normal people say hi', null],
   // Measured on the live panel (Whisper): the "hey" is what gets misheard, the name is right.
   ['hey norm', 'A norm.', ''],
@@ -183,7 +183,27 @@ const FIXTURES = [
   ['computer please', 'a computer please', null],             // only "hey ..." phrases get the variants
   ['hey jarvis', '', null],
   ['hey jarvis', '   ', null],
+  // Near spellings of the name: one letter off (doubled letters collapsed), same first letter, only
+  // after a clear "hey"/"hay", never for the name alone or after the weak variants.
+  ['hey norm', 'Hey Nord.', ''],
+  ['hey norm', 'Hey, Norma, what time is it?', 'what time is it?'],
+  ['hey norm', 'Hey Noam.', ''],
+  ['hey kimi', 'Hey Kimmy, lights on', 'lights on'],
+  ['hey kimi', 'Hey Kimmie.', ''],
+  ['hey jarvis', 'Hay Jervis, what time is it', 'what time is it'],
+  ['hey norm', 'Hey, form the line', null],                   // different first letter: a different word
+  ['hey kimi', 'Hey Mimi.', null],                            // ...or another persona
+  ['hey norm', 'Hey Norman.', null],                          // two letters off
+  ['hey norm', 'Hey now', null],
+  ['hey norm', 'A nord.', null],                              // weak "hey" variant: exact name only
+  ['hey norm', 'Nord.', null],                                // the name alone: exact only
+  ['hey tom', 'Hey Tim.', null],                              // names under 4 letters: exact only
 ];
+test('matcher: a near spelling of the name says so', () => {
+  assert.deepEqual(norm.match('Hey Nord, lights'), { wake: true, phrase: 'hey norm', near: true, commandText: 'lights' });
+  assert.equal(norm.match('Hey Norm, lights').near, undefined);   // exact matches carry no flag
+});
+
 test('fixtures: STT-shaped texts wake (or not) exactly as expected', () => {
   for (const [phrase, text, expect] of FIXTURES) {
     const m = ww.createWakeMatcher({ phrase, aliases: [] }).match(text);

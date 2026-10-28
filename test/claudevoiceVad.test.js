@@ -36,17 +36,25 @@ async function loadVad(opts, ctxState, neverResume, gumGate) {
   };
   vm.runInNewContext(SRC, sandbox, { filename: 'claudevoice-vad.js' });
   const vad = sandbox.window.createClaudeVoiceVAD(opts);
-  const shipped = [];
-  const started = vad.start(() => {}, pcm => shipped.push(pcm.length), () => {});
+  const shipped = [], pcms = [];
+  const started = vad.start(() => {}, pcm => { shipped.push(pcm.length); pcms.push(pcm); }, () => {});
   if (!gumGate) await started;
   return {
-    vad, shipped, started, resumed: () => resumed, tracksStopped, hasProcessor: () => !!processor,
+    vad, shipped, pcms, started, resumed: () => resumed, tracksStopped, hasProcessor: () => !!processor,
     match: sandbox.window.matchMicLabel,
     // One 256ms buffer whose first `loudMs` are a 0.3-amplitude tone and the rest silence.
     feed(loudMs) {
       const data = new Float32Array(BUF);
       const loud = Math.min(BUF, Math.round(loudMs * RATE / 1000));
       for (let i = 0; i < loud; i++) data[i] = 0.3 * Math.sin(i / 3);
+      processor.onaudioprocess({ inputBuffer: { getChannelData: () => data } });
+    },
+    // One 256ms buffer that is silent until its LAST `ms`, a soft tone of amplitude `amp`: the quiet
+    // start of a word, too little to lift the whole buffer's average over the threshold.
+    feedTail(ms, amp) {
+      const data = new Float32Array(BUF);
+      const n = Math.min(BUF, Math.round(ms * RATE / 1000));
+      for (let i = BUF - n; i < BUF; i++) data[i] = amp * Math.sin(i / 3);
       processor.onaudioprocess({ inputBuffer: { getChannelData: () => data } });
     },
   };
@@ -249,5 +257,62 @@ test('reset() drops the utterance in progress and keeps capturing the next one',
   t.mock.timers.tick(400);
   assert.equal(d.shipped.length, 1);
   assert.equal(d.shipped[0], 2 * BUF);   // only the human's word and its trailing buffer: nothing from before the reset
+  d.vad.stop();
+});
+
+// Lead-in (preRollMs): the trigger is the first buffer whose AVERAGE level crosses the threshold, so
+// the soft start of a word ("h" of "hey") sits in the buffer before it. AI Voice ships 0.5 s of it.
+const PRE = 8000;   // 500 ms at 16 kHz
+
+test('with a lead-in, the soft start before the trigger buffer ships at the front of the utterance', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const d = await loadVad({ hangoverMs: 400, preRollMs: 500 });
+  d.feed(0); d.feed(0);
+  d.feedTail(30, 0.05);   // "h-": below the threshold on its own
+  d.feed(200);            // "-ey Norm": triggers
+  d.feed(0);
+  t.mock.timers.tick(400);
+  assert.deepEqual(d.shipped, [PRE + 2 * BUF]);
+  const pcm = d.pcms[0];
+  let onset = 0;
+  for (let i = PRE - 480; i < PRE; i++) onset = Math.max(onset, Math.abs(pcm[i]));
+  assert.ok(onset > 0, 'the soft start is in the shipped audio, just ahead of the trigger buffer');
+  d.vad.stop();
+});
+
+test('the lead-in is capped at its length and starts at the first utterance after silence', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const d = await loadVad({ hangoverMs: 400, preRollMs: 500 });
+  d.feed(200);            // the first buffer heard: nothing before it to lead in with
+  d.feed(0);
+  t.mock.timers.tick(400);
+  for (let i = 0; i < 6; i++) d.feed(0);   // 1.5 s of silence: only the last 500 ms is kept
+  d.feed(200);
+  d.feed(0);
+  t.mock.timers.tick(400);
+  assert.deepEqual(d.shipped, [2 * BUF, PRE + 2 * BUF]);
+  d.vad.stop();
+});
+
+test('lead-in audio is not voiced time: a click after quiet murmurs is still dropped', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const d = await loadVad({ hangoverMs: 400, preRollMs: 500 });
+  d.feedTail(60, 0.05); d.feedTail(60, 0.05);   // 120 ms of murmur frames, each buffer under the threshold
+  d.feed(20);                                   // a 20 ms click triggers
+  d.feed(0);
+  t.mock.timers.tick(400);
+  assert.deepEqual(d.shipped, []);
+  d.vad.stop();
+});
+
+test('reset() drops the lead-in too, so the speaker\'s tail never ships ahead of the next utterance', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const d = await loadVad({ hangoverMs: 400, preRollMs: 500 });
+  d.feedTail(60, 0.05); d.feedTail(60, 0.05);   // the reply's quiet last words, under the threshold
+  d.vad.reset();                                // playback ended
+  d.feed(200);
+  d.feed(0);
+  t.mock.timers.tick(400);
+  assert.deepEqual(d.shipped, [2 * BUF]);
   d.vad.stop();
 });

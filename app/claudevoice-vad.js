@@ -28,12 +28,18 @@ function createVAD(opts) {
   // force-cut at this duration — the utterance ships and capture continues seamlessly — so live
   // translation can't stall waiting for a pause that never comes.
   const maxUtteranceMs = opts.maxUtteranceMs || 0;
+  // 0 = off. When set, this much audio from BEFORE the trigger buffer is shipped at the front of the
+  // utterance. The trigger is the first 256ms buffer whose AVERAGE level crosses the threshold, so a
+  // soft onset (the "h" of "hey") sits in the buffer before it and was cut off: Whisper then wrote
+  // "Hey Norm" as "A norm." / "Enorm.". Lead-in audio is not counted as voiced time.
+  const preRollSamples = Math.max(0, Math.round((opts.preRollMs || 0) * SAMPLE_RATE / 1000));
   const bufferSize = 4096;
   const FRAME = SAMPLE_RATE / 50;   // 20ms -- the unit voiced time is counted in (a buffer is 256ms)
 
   let stream = null, audioCtx = null, source = null, processor = null, silentGain = null;
   let speaking = false, speechStartedAt = 0, hangoverTimer = null;
   let chunks = [];   // Float32Array pieces captured since the current utterance began
+  let preRoll = [];  // the most recent buffers heard while NOT speaking, newest last (only when preRollSamples)
   let voicedSamples = 0;   // samples in above-threshold frames since the current utterance began
   let continued = false;   // this utterance is the tail of a force-cut one -- held to TAIL_MIN_MS only
   let gen = 0;             // bumped by every start() and stop(): a start() that a stop() overtook stands down
@@ -59,6 +65,14 @@ function createVAD(opts) {
   function capture(data) {
     chunks.push(new Float32Array(data));   // copy -- `data` is a reused buffer, would be clobbered next callback
     voicedSamples += countVoiced(data);
+  }
+  // Keep the last preRollSamples of audio heard between utterances (copies, oldest trimmed).
+  function remember(data) {
+    if (!preRollSamples) return;
+    preRoll.push(new Float32Array(data));
+    let total = 0; for (const c of preRoll) total += c.length;
+    while (preRoll.length && total - preRoll[0].length >= preRollSamples) total -= preRoll.shift().length;
+    if (total > preRollSamples) preRoll[0] = preRoll[0].subarray(total - preRollSamples);
   }
   function toPCM16(float32Chunks) {
     let total = 0; for (const c of float32Chunks) total += c.length;
@@ -111,7 +125,7 @@ function createVAD(opts) {
         if (!speaking) {
           speaking = true;
           speechStartedAt = Date.now();
-          chunks = [];
+          chunks = preRoll; preRoll = [];   // the lead-in (empty when off) goes first
           voicedSamples = 0;
           continued = false;
           if (onSpeechStart) onSpeechStart();
@@ -137,6 +151,8 @@ function createVAD(opts) {
         }, hangoverMs);
       } else if (speaking) {
         capture(data);
+      } else {
+        remember(data);
       }
     };
   }
@@ -146,13 +162,13 @@ function createVAD(opts) {
   // voiced frame starts a fresh utterance.
   function reset() {
     clearTimeout(hangoverTimer); hangoverTimer = null;
-    speaking = false; chunks = []; voicedSamples = 0; continued = false;
+    speaking = false; chunks = []; preRoll = []; voicedSamples = 0; continued = false;   // the lead-in held the speaker's tail too
   }
 
   function stop() {
     gen++;
     clearTimeout(hangoverTimer); hangoverTimer = null;
-    speaking = false; chunks = [];
+    speaking = false; chunks = []; preRoll = [];
     try { if (processor) processor.disconnect(); } catch (e) {}
     try { if (silentGain) silentGain.disconnect(); } catch (e) {}
     try { if (source) source.disconnect(); } catch (e) {}

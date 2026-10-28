@@ -50,7 +50,8 @@ function resolvePhrase({ persona, pageOverride, pageDefault }) {
 // the first words of the utterance and end on a word boundary ("hey norm" never matches "hey normal").
 // What Whisper tends to write for a spoken "hey" in front of a name (measured on the live panel:
 // "Hey Norm" came back as "A norm." and "pain norm." as often as "Hey Norm."). Every "hey <name>"
-// phrase also accepts these in front of the same name; the name itself is still matched exactly.
+// phrase also accepts these in front of the same name; the name itself is matched exactly here (near
+// spellings of it are accepted only after a clear "hey", below).
 const HEY_FUSED = ['e', 'he', 'hey', 'ey', 'ay', 'a'];   // glued straight onto the name, no space
 const HEY_VARIANTS = ['a', 'hay', 'hate', 'pain', 'ay', 'eh', 'hi', 'he', 'say'];
 function createWakeMatcher({ phrase, aliases }) {
@@ -70,6 +71,11 @@ function createWakeMatcher({ phrase, aliases }) {
   // The utterance is only the name (Whisper drops a quick "hey": "Jarvis.", "terminal."), said once or
   // repeated. It opens the listening window like the full phrase alone; it can never carry a command.
   const aloneRes = names.map(n => new RegExp('^[\\s\\p{P}]*(?:' + n.split(' ').map(escapeRe).join('[\\s\\p{P}]+') + '[\\s\\p{P}]*)+$', 'iu'));
+  // Near spellings of the name ("Hey Nord", "Hey Norma", "Hey Kimmy"): one letter off after doubled
+  // letters are collapsed, same first letter. Only for one-word names of 4+ letters and only after a
+  // clear "hey"/"hay", never after the weak variants ("a nord" stays unaddressed) and never for the
+  // name alone.
+  const nearNames = Array.from(new Set(names.filter(n => /^\p{L}{4,}$/u.test(n))));
   function match(text) {
     const raw = String(text == null ? '' : text);
     for (let i = 0; i < res.length; i++) {
@@ -85,9 +91,31 @@ function createWakeMatcher({ phrase, aliases }) {
       return { wake: true, phrase: forms[i], commandText: rest };
     }
     for (let i = 0; i < aloneRes.length; i++) if (aloneRes[i].test(raw)) return { wake: true, phrase: 'hey ' + names[i], commandText: '' };
+    if (nearNames.length) {
+      const nm = NEAR_RE.exec(raw);
+      const heard = nm ? squeeze(nm[1].toLowerCase()) : '';
+      // Same first letter: a different first letter is usually a different real word or name ("Hey
+      // Travis" is someone else, "Hey Mimi" is another persona, "hey form" is not Norm).
+      const name = heard && nearNames.find(n => n[0] === heard[0] && editDistance(squeeze(n), heard) <= 1);
+      if (name) return { wake: true, phrase: 'hey ' + name, near: true, commandText: raw.slice(nm[0].length).replace(/^[\s\p{P}]+/u, '') };
+    }
     return { wake: false };
   }
   return { match, forms };
+}
+const NEAR_RE = /^[\s\p{P}]*h(?:ey|ay)[\s\p{P}]+([\p{L}']+)(?![\p{L}\p{N}'])/iu;   // "hey <word>" / "hay <word>"
+function squeeze(s) { return s.replace(/(\p{L})\1+/gu, '$1'); }   // "kimmy" -> "kimy": doubled letters are spelling, not sound
+// Levenshtein distance, stopping early once it passes 1 (all the caller needs).
+function editDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 1) return 2;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (Math.min(...cur) > 1) return 2;
+    prev = cur;
+  }
+  return prev[b.length];
 }
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 

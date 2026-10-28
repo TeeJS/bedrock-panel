@@ -11,7 +11,7 @@ const { createVoicePanelHost } = require('../app/voicepanel-host');
 const { ensurePersonas } = require('../app/face/persona');
 const wyoming = require('../app/claudevoice-wyoming');
 
-function make(options) {
+function make(options, log) {
   const grid = { id: 'wake-test', kind: 'app', app: 'ai-voice', options: { face: 'side', profilePick: 'chat', personaPick: 'jarvis', wakeWord: 'on', projectDir: __dirname } };
   Object.assign(grid.options, options || {});
   const config = { grids: [grid], settings: { aiProfiles: [{ id: 'chat', name: 'Chat', prompt: '' }] } };
@@ -24,7 +24,7 @@ function make(options) {
     sessionId: () => 'wake-session', mode: () => 'default', currentModel: () => 'test', projectDir: () => __dirname,
     validModel: () => true, listModes: () => [], listModels: () => [],
   });
-  const host = createVoicePanelHost({ appId: 'ai-voice', storageKey: 'wakeTest', adapter, branding: {}, deps: {
+  const host = createVoicePanelHost({ appId: 'ai-voice', storageKey: 'wakeTest', adapter, branding: {}, log, deps: {
     activeServedAppConfig: () => ({ options: grid.options }), activeGrid: () => grid,
     getConfig: () => config, saveConfig: () => {}, setRingState: () => {}, clearRingOverride: () => {},
     getDocumentsPath: () => __dirname, voiceEndpoints: () => ({ sttHost: 'stt.test', sttPort: 10300 }),
@@ -243,4 +243,23 @@ test('a close phrase in a follow-up window sends nothing, closes it and updates 
   assert.equal(x.h.getState().wake.state, 'waiting');
   assert.equal(x.events.at(-1).type, 'wake-state'); assert.equal(x.events.at(-1).wake.state, 'waiting');
   assert.equal(x.sent.length, 1);                                           // only the first request ever reached the model
+});
+
+test('wake test log: off by default (unaddressed speech is never logged); on, every utterance and decision is', async t => {
+  const lines = [];
+  const off = make({}, l => lines.push(l)); t.after(off.cleanup);
+  const g0 = off.h.wakeArm(true).gen;
+  await hear(off, 'so anyway I told him no', g0);
+  assert.deepEqual(lines.filter(l => /wake test|told him/.test(l)), []);
+
+  const on = make({ wakeLog: true, personaPick: '', wakePhrase: 'hey norm' }, l => lines.push(l)); t.after(on.cleanup);
+  const g = on.h.wakeArm(true).gen;
+  await hear(on, 'so anyway I told him no', g);
+  await hear(on, 'A norm.', g);
+  await hear(on, 'Hey Nord, what time is it?', g, 0);   // began now, inside the listening window
+  const logged = lines.filter(l => l.startsWith('wake test: '));
+  assert.equal(logged.length, 3);
+  assert.match(logged[0], /^wake test: 0\.01 s while waiting, heard "so anyway I told him no" -> drop \(unaddressed\)$/);
+  assert.match(logged[1], /heard "A norm\." -> listen \(phrase-alone\) \(matched "a norm"\)$/);
+  assert.match(logged[2], /while listening, heard "Hey Nord, what time is it\?" -> turn \(listening\) \(matched "hey norm", near spelling of the name\)$/);
 });

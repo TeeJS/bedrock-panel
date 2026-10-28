@@ -121,13 +121,25 @@ editor's AI Voice page options) and the page waits for the persona's name.
   approval, anything said after the phrase is acted on, so keep the phrase distinctive.
 
 Whisper often writes a spoken "hey" as "a", "hay", "hate", "pain", "ay", "eh", "hi" or "he" ("A norm." for
-"Hey Norm"), so every "Hey <name>" phrase also accepts those in front of the same name. The name itself must
-still match exactly. A quickly said "Hey Norm" is sometimes written as one word ("Enorm."), so those fused forms are accepted too. Saying only the name ("Jarvis.", "terminal.") also wakes the page, as the name alone: it never carries a
+"Hey Norm"), so every "Hey <name>" phrase also accepts those in front of the same name. After a clear "hey" or
+"hay", a near spelling of a one-word name of four or more letters wakes the page too: one letter off once doubled
+letters are ignored, with the same first letter ("Hey Nord", "Hey Norma", "Hey Kimmy" for Kimi). A different first
+letter is a different word or person ("Hey Travis", "Hey Mimi" for Kimi), and after the other "hey" spellings the name
+must match exactly. A quickly said "Hey Norm" is sometimes written as one word ("Enorm."), so those fused forms are accepted too. Saying only the name ("Jarvis.", "terminal.") also wakes the page, as the name alone: it never carries a
 request, so say the request after the listening prompt appears. A phrase said twice in a row ("Hey Mimi. Hey
 Mimi.") counts once. A page phrase that does not start with "hey" gets no such leniency.
 
 Recognition is done on the STT transcript (there is no separate wake-word model), so what counts is
-what Whisper writes: "Hey, Jarvis!" and "hey jarvis" both wake the page; "Hey Travis" does not.
+what Whisper writes: "Hey, Jarvis!" and "hey jarvis" both wake the page; "Hey Travis" does not. The
+page sends half a second of audio from before each utterance's loud start, so the soft "h" of "hey" is
+not cut off.
+
+**Wake test log** (editor: AI Voice page → Wake word → *Test log*, off by default) writes one line per
+utterance to `main.log`: its length, the wake state, what STT heard and what the page did with it, for
+example `wake test: 1.28 s while waiting, heard "A norm." -> listen (phrase-alone) (matched "a norm")`.
+Say the phrase twenty times and count the lines that woke the page; an attempt with no line at all never
+got loud enough to be sent. The log includes speech that was not meant for the AI, so turn it off after
+testing.
 
 ### Ring feedback
 
