@@ -77,6 +77,20 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     const opts = deps.activeServedAppConfig(appId);
     return !!(opts && opts.options.wakeWord === 'on');
   }
+  // Wake test log (page option, off by default): what STT heard for each utterance and what the gate
+  // did with it, in main.log. Off, unaddressed speech is never logged (the privacy promise); on, it is
+  // the only way to measure the hit rate of "hey <name>" without watching the screen.
+  function wakeLogOn() {
+    const opts = deps.activeServedAppConfig(appId);
+    const v = opts && opts.options.wakeLog;
+    return v === true || v === 'true' || v === '1';
+  }
+  function wakeTestLog(text, pcmBuffer, before, d) {
+    const secs = ((pcmBuffer && pcmBuffer.length || 0) / 32000).toFixed(2);
+    const m = wakeReady && wakeReady.ready ? wakeword.createWakeMatcher(wakeReady).match(String(text == null ? '' : text)) : { wake: false };
+    const how = m.wake ? ' (matched "' + m.phrase + '"' + (m.near ? ', near spelling of the name' : '') + ')' : '';
+    say('wake test: ' + secs + ' s while ' + before + ', heard ' + JSON.stringify(String(text == null ? '' : text)) + ' -> ' + d.action + (d.reason ? ' (' + d.reason + ')' : '') + how);
+  }
   function wakeFollowUpMs() {
     const opts = deps.activeServedAppConfig(appId);
     const s = parseInt(opts && opts.options.wakeFollowUpSeconds, 10);
@@ -822,6 +836,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       // page treats as "heard nothing".
       if (isVoiceChatNoise(text)) {
         say('STT dropped a known noise-hallucination phrase: ' + JSON.stringify(text));
+        if (wakeEnabled() && wakeLogOn()) say('wake test: ' + ((pcmBuffer && pcmBuffer.length || 0) / 32000).toFixed(2) + ' s, dropped as noise before the wake check');
         return { ok: true, text: '' };
       }
     } catch (e) {
@@ -829,8 +844,11 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       return { ok: false, error: e.message };
     }
     if (!wakeEnabled()) return { ok: true, text };
-    // Wake word on: the gate decides. Unaddressed text is answered as nothing and is not logged.
+    // Wake word on: the gate decides. Unaddressed text is answered as nothing and is not logged
+    // (unless the page's wake test log is on).
+    const before = wakeLogOn() ? wake.current() : null;
     const d = wake.onUtterance(text, gen, startedAt, receivedAt, !startedDated);
+    if (before !== null) wakeTestLog(text, pcmBuffer, before, d);
     // 'pass' means the gate is not armed (the page has not opened its conversation since the wake
     // word went on). Fail closed: with the wake word on, nothing reaches the page until it arms.
     if (d.action === 'pass') { say('wake: utterance before the page armed, dropped'); return { ok: true, text: '', wake: 'off' }; }

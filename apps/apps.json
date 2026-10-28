@@ -6313,6 +6313,12 @@
         "default": "0"
       },
       {
+        "key": "wakeLog",
+        "label": "Wake test log: write what STT heard and the wake decision to main.log (includes speech not meant for the AI)",
+        "type": "bool",
+        "default": false
+      },
+      {
         "key": "approvalsEnabled",
         "label": "Touch approval when in Manual mode (Claude Code)",
         "type": "bool",

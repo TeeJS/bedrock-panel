@@ -2687,6 +2687,9 @@
             </select></div>
           <div class="row"><label>Follow-up window</label>
             <input type="number" inputmode="numeric" id="cvWakeFollow" value="${esc(String(parseInt(cvVal('wakeFollowUpSeconds', '0'), 10) || 0))}" min="0" max="600" step="1" style="width:90px"> <span class="hint">seconds after a reply during which you can speak again without the name (0 = one wake, one request). Saying "thanks", "that's all" or "never mind" closes it at once.</span></div>
+          <div class="row"><label>Test log</label>
+            <label class="iconopt" style="width:auto"><input type="checkbox" id="cvWakeLog" ${cvVal('wakeLog', false) ? 'checked' : ''}> write what STT heard and the wake decision to main.log</label></div>
+          <p class="hint" style="margin:2px 0 0">For measuring how often the name is caught. It also logs speech that was not meant for the AI, so turn it off after testing.</p>
           <p class="hint warn" id="cvWakeDanger" style="display:none">⚠ With the permission mode below set to run commands without approval, anything said after the wake phrase is acted on. Keep the phrase distinctive.</p>
         </div>
         <details class="hint"><summary>With the wake word on, everything you say still goes to the STT server, but nothing reaches the AI or the screen until an utterance starts with the wake phrase.</summary> The phrase is "hey" + the persona's wake name (set under <b>Settings → AI Profiles → Personas</b>), or the phrase typed here for this page. Say the name and the request together ("Hey Jarvis, what time is it?"), or the name alone and then the request within 8 seconds. The page listens for the name again as soon as the reply has finished playing; the follow-up window lets a short back-and-forth continue without repeating the name. The mic button is still the hard off.</details>` + (!cvModes ? '' : `
@@ -2950,6 +2953,7 @@
         cvWake.onchange = e => { setOpt('wakeWord', e.target.value); syncWakeUi(); };
         document.getElementById('cvWakePhrase').oninput = e => { setOpt('wakePhrase', e.target.value.slice(0, 60)); syncWakeUi(); };
         document.getElementById('cvWakeChime').onchange = e => setOpt('wakeChime', e.target.checked);
+        document.getElementById('cvWakeLog').onchange = e => setOpt('wakeLog', e.target.checked);
         document.getElementById('cvWakeFollowWhen').onchange = e => setOpt('wakeFollowUpWhen', e.target.value);
         document.getElementById('cvWakeFollow').onchange = e => { const n = Math.max(0, Math.min(600, parseInt(e.target.value, 10) || 0)); e.target.value = String(n); setOpt('wakeFollowUpSeconds', String(n)); };
         if (cvPermMode) cvPermMode.addEventListener('change', syncWakeUi);
