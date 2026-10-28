@@ -766,6 +766,7 @@ function loadConfig() {
 function migrateConfig(c) {
   if (!c.settings) c.settings = {};
   if (!Array.isArray(c.panes)) c.panes = [];   // software-mode page stacks (see panes.js)
+  require('./appOptionMigrations').migrateAppOptions(c);
   c.settings.discord = normalizeDiscordSettings(c.settings.discord);
   c.settings.github = normalizeGitHubSettings(c.settings.github);
   (c.grids || []).forEach(g => {
