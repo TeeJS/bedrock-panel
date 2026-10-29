@@ -87,9 +87,10 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   read **Transcribed / Analyzed / Transcribe failed / Analyze failed** with the full error
   text under the name. **Back to meetings** returns to the console and **Batch** reopens
   the page while it runs; the space left of the button reads **Transcribing 4 of 12…**
-  meanwhile. **Cancel batch** (two taps: `Cancel batch` → `Really cancel?`) drops every
-  file not yet started, lets the one in progress finish its step, and then shows the
-  summary. When the batch ends the page is the summary — **Transcribed 3 of 4 · Analyzed
+  meanwhile. **Cancel batch** (two taps: `Cancel batch` → `Finish this file, then stop?`) drops
+  every file not yet started and lets the one in progress finish its step; the status line
+  says so while it finishes (*Finishing transcription of X, then stopping*) and afterwards
+  (*Stopped after finishing X · … · finished recordings are on the Analysis screen*). When the batch ends the page is the summary — **Transcribed 3 of 4 · Analyzed
   2 of 3 · 2 failed · 1 not started** — and stays until the next batch starts; tapping
   **Batch** again is the retry (failed files are still where the screens list them).
   The batch runs in the main process, so leaving the page or reloading the panel doesn't

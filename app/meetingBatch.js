@@ -27,9 +27,10 @@ function createMeetingBatch(deps) {
   const pending = stage => items.filter(it => it.stage === stage && it.status === 'queued').map(it => it.name);
 
   function tally(stage) {
-    const t = { total: 0, done: 0, failed: 0, notStarted: 0 };
+    const t = { total: 0, done: 0, failed: 0, notStarted: 0, skipped: 0 };
     for (const it of items) {
       if (it.stage !== stage) continue;
+      if (it.status === 'skipped') { t.skipped++; continue; }   // listed, not part of the batch's work
       t.total++;
       if (it.status === 'done') t.done++;
       else if (it.status === 'failed') t.failed++;
@@ -159,10 +160,18 @@ function createMeetingBatch(deps) {
 
   function wavs() {
     const busy = new Set(getBusyFiles());
-    // A 44-byte WAV is the recorder's header alone (a capture that never got audio); it can
-    // only fail upload, so the batch leaves it out rather than count it as a failure.
-    return list('unprocessed').files
-      .filter(file => /\.wav$/i.test(file.name) && !busy.has(file.name) && file.size !== 44).map(file => file.name);
+    const names = [], skipped = [];
+    for (const file of list('unprocessed').files) {
+      if (!/\.wav$/i.test(file.name)) continue;
+      // A recording still being written stays for the next batch; a 44-byte WAV is the recorder's
+      // header alone (a capture that never got audio) and could only fail upload. Both are listed
+      // as skipped, with the reason, so the page says why a file the Unprocessed screen shows is
+      // not in the batch.
+      if (busy.has(file.name)) skipped.push({ name: file.name, note: 'recording still being written' });
+      else if (file.size === 44) skipped.push({ name: file.name, note: 'empty recording, no audio' });
+      else names.push(file.name);
+    }
+    return { names, skipped };
   }
 
   function markRunning(stage, name, startedAt) {
@@ -210,7 +219,8 @@ function createMeetingBatch(deps) {
   async function run(work) {
     try {
       listen();
-      await stage('transcribe', work.wavs, name => transcriber.enqueue(name), transcribeBusy);
+      for (const file of work.wavs.skipped) items.push({ name: file.name, stage: 'transcribe', status: 'skipped', error: null, note: file.note, startedAt: null, finishedAt: now() });
+      await stage('transcribe', work.wavs.names, name => transcriber.enqueue(name), transcribeBusy);
       if (state.cancelRequested) {
         // What the analysis stage would have picked up: listed so the summary is complete.
         for (const name of transcripts()) items.push({ name, stage: 'analyze', status: 'notStarted', error: null, note: null, startedAt: null, finishedAt: now() });
@@ -243,7 +253,7 @@ function createMeetingBatch(deps) {
     }
     // Nothing to do: keep the previous summary on the page instead of replacing it with an
     // empty one. A first-ever Batch still records an empty run so the page has something to say.
-    if (!work.wavs.length && !work.transcripts.length && (state.phase === 'done' || state.phase === 'cancelled')) {
+    if (!work.wavs.names.length && !work.wavs.skipped.length && !work.transcripts.length && (state.phase === 'done' || state.phase === 'cancelled')) {
       return Object.assign(getState(), { empty: true });
     }
     state = Object.assign(fresh(), { running: true, phase: 'transcribing', startedAt: now() });
