@@ -50,8 +50,10 @@ const classicName = base => base + '-analysis.md';
 const minutesName = base => base + '.md';
 function mdNameFor(style, base) { return normalizeNoteStyle(style) === 'minutes' ? minutesName(base) : classicName(base); }
 function recordName(base) { return base + '.bedrock.json'; }
-// The meeting name behind a note file: <base>.md, <base>-analysis.md (and the old archive's variants).
-function baseOfNote(file) { return path.basename(String(file)).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/\.md$/i, ''); }
+// The meeting name behind a note file: <base>.md, <base>-analysis.md and the old archive's
+// variants — the same rule the Completed list uses (meetingLibrary meetingBase), so a subject that
+// merely ends in "Analysis" ("Q3 Cost Analysis.md") keeps its whole name.
+function baseOfNote(file) { return path.basename(String(file)).replace(/(?:-analysis|_analysis|-meeting-analysis| - meeting analysis)?\.md$/i, ''); }
 function isClassicName(file) { return /-analysis\.md$/i.test(String(file)); }
 
 // Where a meeting's side files may be: details\ first, then the note's own folder. Lookups never
@@ -89,22 +91,30 @@ function readClassicRecord(fsMod, mdPath) {
 
 // The record of a note in either style: { ok, style, data, body, bytes, recordPath? } or
 // { ok: false, style, reason, body?, bytes? }. `body` is the note's markdown (the header removed
-// for Minutes; the whole file for Classic). Style comes from the file itself, never the setting:
-// a <base>-analysis.md is Classic whatever its first line looks like (an AI reply may open with
-// "---"), any other .md is Minutes when it has a header and an untracked note when it has none.
+// for Minutes; the whole file for Classic). Style comes from the file itself, never the setting.
+// A -analysis.md name alone cannot decide it (a Minutes meeting can be called "project-analysis"),
+// so for those names a matching Classic record wins (even over a body that opens with "---"), then
+// a valid Minutes header, and otherwise it is an untracked Classic note. Any other .md is Minutes
+// when it has a header, and Classic (tracked or not) when it has none.
 function readRecord(fsMod, mdPath) {
   let bytes;
   try { bytes = fsMod.readFileSync(mdPath); } catch (e) { return { ok: false, style: null, reason: 'unreadable' }; }
   const text = bytes.toString('utf8');
-  if (!isClassicName(mdPath)) {
+  const body = text.replace(/^﻿/, '');
+  const classic = rec => ({ ok: true, style: 'classic', data: rec.data, body, bytes, recordPath: rec.path, recordHash: rec.hash });
+  if (isClassicName(mdPath)) {
+    const rec = readClassicRecord(fsMod, mdPath);
+    if (rec.ok) return classic(rec);
     const fm = readFrontmatter(text);
     if (fm.ok) return { ok: true, style: 'minutes', data: fm.data, body: fm.body, bytes };
-    if (fm.reason !== 'no-frontmatter') return { ok: false, style: 'minutes', reason: fm.reason, bytes };
+    return { ok: false, style: 'classic', reason: rec.reason, body, bytes };
   }
-  const body = text.replace(/^﻿/, '');
+  const fm = readFrontmatter(text);
+  if (fm.ok) return { ok: true, style: 'minutes', data: fm.data, body: fm.body, bytes };
+  if (fm.reason !== 'no-frontmatter') return { ok: false, style: 'minutes', reason: fm.reason, bytes };
   const rec = readClassicRecord(fsMod, mdPath);
   if (!rec.ok) return { ok: false, style: 'classic', reason: rec.reason, body, bytes };
-  return { ok: true, style: 'classic', data: rec.data, body, bytes, recordPath: rec.path, recordHash: rec.hash };
+  return classic(rec);
 }
 
 function writeAtomic(fsMod, p, data) {

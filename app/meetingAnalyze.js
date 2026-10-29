@@ -322,18 +322,27 @@ function createMeetingAnalyzer(deps) {
     const processed = resolveFolders().processed;
     const dir = path.posix.dirname(mdRel);
     // Legacy analysis names from the pre-format archive: -analysis, _analysis, -meeting-analysis,
-    // " - meeting analysis"; the migration's name map covers the rest.
-    const base = path.posix.basename(mdRel).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/\.md$/i, '');
-    const dirs = dir === '.' ? ['', 'details'] : [dir, dir + '/details'];
-    // The named diarizer transcript wins in either location; a plain <base>.json is only the
-    // legacy transcript name and is usually the calendar sidecar, so it is the last resort.
-    for (const f of [base + '-diarizer-response.json', base + '.json']) {
-      for (const d of dirs) {
-        const rel = d ? d + '/' + f : f;
-        if (fsMod.existsSync(path.join(processed, rel))) return rel;
+    // " - meeting analysis"; the migration's name map covers the rest. A name that only ends in
+    // "analysis" can also be the whole meeting name (a Minutes note for "Q3 Cost Analysis" or
+    // "project-analysis"), so each reading is tried, the Classic one first.
+    for (const base of noteBases(path.posix.basename(mdRel))) {
+      const dirs = dir === '.' ? ['', 'details'] : [dir, dir + '/details'];
+      // The named diarizer transcript wins in either location; a plain <base>.json is only the
+      // legacy transcript name and is usually the calendar sidecar, so it is the last resort.
+      for (const f of [base + '-diarizer-response.json', base + '.json']) {
+        for (const d of dirs) {
+          const rel = d ? d + '/' + f : f;
+          if (fsMod.existsSync(path.join(processed, rel))) return rel;
+        }
       }
     }
     return null;
+  }
+  // The meeting names a note file could stand for, most likely first: the Classic / archive rule,
+  // the older broad "analysis" rule, then the whole name.
+  function noteBases(file) {
+    const whole = String(file).replace(/\.md$/i, '');
+    return [...new Set([meetingRecord.baseOfNote(file), String(file).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/\.md$/i, ''), whole])];
   }
 
   function normKind(kind) { return kind === 'transcribed' ? 'transcribed' : 'processed'; }
@@ -650,8 +659,10 @@ function createMeetingAnalyzer(deps) {
         await fsp.mkdir(path.dirname(mdPath), { recursive: true });   // a recurring or date folder may not exist yet
         const tmp = mdPath + '.tmp';
         await fsp.writeFile(tmp, fileText);
-        if (ownNoteAppeared()) { await fsp.rm(tmp, { force: true }); throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)'); }
-        await fsp.rename(tmp, mdPath);
+        // Replacing the note the analysis read: rename. A new name (first analysis, or the other style's
+        // note was the previous): place without ever overwriting a note that appeared meanwhile.
+        if (previousPath && path.resolve(previousPath) === path.resolve(mdPath)) await fsp.rename(tmp, mdPath);
+        else if (!(await placeNew(tmp, mdPath))) throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)');
       } catch (e) {
         if (staged) await staged.rollback();   // nothing committed: the copies go, transcribed stays whole
         throw new Error('could not write the meeting file: ' + e.message);
@@ -724,6 +735,19 @@ function createMeetingAnalyzer(deps) {
       const fm = readFrontmatter(fsMod.readFileSync(beside, 'utf8'));
       return fm.ok && fm.data.bedrock && fm.data.bedrock.note_style === 'classic' ? beside : null;
     } catch (e) { return null; }
+  }
+  // Put a finished temp file at a name that must still be free: a hard link fails if anything is
+  // there, atomically (NTFS, APFS, ext4); where links are not supported (some network or FAT drives)
+  // it falls back to check-then-rename. Returns false, with the temp file removed, when the name is taken.
+  async function placeNew(tmp, dest) {
+    try { await fsp.link(tmp, dest); }
+    catch (e) {
+      if ((e && e.code === 'EEXIST') || fsMod.existsSync(dest)) { await fsp.rm(tmp, { force: true }); return false; }
+      await fsp.rename(tmp, dest);
+      return true;
+    }
+    await fsp.rm(tmp, { force: true });
+    return true;
   }
   // Note style from the filing options; absent = Minutes Compatible (see runJob).
   function styleOf(opts) { return opts && opts.noteStyle === 'classic' ? 'classic' : 'minutes'; }
@@ -1022,9 +1046,10 @@ function createMeetingAnalyzer(deps) {
     const n = safeRelPath(name);
     if (!n || !/\.md$/i.test(n)) return { ok: false, error: 'bad name' };
     const processed = resolveFolders().processed;
-    const base = meetingRecord.baseOfNote(n);
     const home = path.dirname(path.join(processed, n));
-    const proposedPath = findProposal(home, base);
+    // The meeting the row stands for: the first reading of its name that has a proposal waiting.
+    let base = null, proposedPath = null;
+    for (const b of noteBases(path.basename(n))) { const p = findProposal(home, b); if (p) { base = b; proposedPath = p; break; } }
     if (!proposedPath) return { ok: false, error: 'no proposal to apply' };
     if (running && running.kind === 'processed' && running.name && transcriptForMd(n) === running.name) return { ok: false, error: 'this meeting is being analyzed right now' };
     try {
@@ -1077,8 +1102,9 @@ function createMeetingAnalyzer(deps) {
       }
       const tmp = mdFile + '.tmp';
       await fsp.writeFile(tmp, text);
-      if (otherNoteInTheWay()) { await fsp.rm(tmp, { force: true }); return inTheWay(); }   // re-checked right before the replace
-      await fsp.rename(tmp, mdFile);
+      // In place: replace. Onto the other style's name: place without ever overwriting (atomic where the disk allows).
+      if (path.resolve(basePath) === path.resolve(mdFile)) await fsp.rename(tmp, mdFile);
+      else if (!(await placeNew(tmp, mdFile))) return inTheWay();
       // The other style's file (backed up above) is retired. A Classic note replaced in place is
       // never removed: basePath IS mdFile.
       if (baseBytes && path.resolve(basePath) !== path.resolve(mdFile)) {
@@ -1565,9 +1591,10 @@ function createMeetingAnalyzer(deps) {
       try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8'), md: relToProcessed(p) }; } catch (e) { return { ok: false, error: 'not analyzed' }; }
     }
     if (proposed) {   // the reviewable new analysis kept beside the sources
-      const base = path.posix.basename(n).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/(-diarizer-response)?\.(?:md|json)$/i, '');
+      const leaf = path.posix.basename(n);
       const home = path.join(resolveFolders().processed, path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n));
-      const p = findProposal(home, base);
+      const bases = /\.json$/i.test(leaf) ? [leaf.replace(/(-diarizer-response)?\.json$/i, '')] : noteBases(leaf);
+      const p = bases.map(b => findProposal(home, b)).find(Boolean);
       try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8'), proposed: true }; } catch (e) { return { ok: false, error: 'no proposal to review' }; }
     }
     const jsonAbs = path.join(resolveFolders().processed, n).replace(/\.md$/i, '.json');

@@ -485,6 +485,33 @@ test('a stray .proposed.md beside a Classic note is not offered for review unles
   assert.equal((await s.an.applyProposed(path.basename(s.classicMd))).error, 'no proposal to apply');
 });
 
+test('a Minutes meeting whose own name ends in "-analysis" keeps its header, re-analyzes in place, and applies', async () => {
+  const processed = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-name-'));
+  const base = '2026-10-14-15-57-16-project-analysis';
+  fs.writeFileSync(path.join(processed, base + '-diarizer-response.json'), JSON.stringify({ segments: SEGMENTS }));
+  let i = 0;
+  const outs = [reply('First pass.'), reply('Second pass.'), reply('Third pass.')];
+  const an = createMeetingAnalyzer({
+    resolveFolders: () => ({ unprocessed: processed, processed }),
+    resolveAi: () => 'claude', findClaudeExe: () => 'claude.exe', findCodexExe: () => null,
+    spawn: fakeSpawn([], () => ({ stdout: outs[Math.min(i++, outs.length - 1)], code: 0 })),
+    filingOptions: () => ({ noteStyle: 'minutes', useDetailsFolder: true }),
+  });
+  const md = path.join(processed, base + '.md');
+  const run = async name => { assert.equal(an.start(name).ok, true); await drained(an); assert.equal(an.getState().error, null); };
+  await run(base + '-diarizer-response.json');
+  const r = readRecord(fs, md);
+  assert.deepEqual([r.ok, r.style], [true, 'minutes']);
+  await run(path.basename(md));                                                       // re-analyze from the row name
+  assert.equal(readFrontmatter(fs.readFileSync(md, 'utf8')).data.bedrock.revision, 2);
+  assert.equal(an.getState().proposed, null);
+  fs.writeFileSync(md, fs.readFileSync(md, 'utf8').replace('Second pass.', 'Edited.'));
+  await run(path.basename(md));
+  const applied = await an.applyProposed(path.basename(md));
+  assert.equal(applied.ok, true, JSON.stringify(applied));
+  assert.match(fs.readFileSync(md, 'utf8'), /Third pass\./);
+});
+
 // ---- the Completed list ----
 
 test('Completed shows a tracked Classic note like a Minutes note; an untracked one as pre-format', async () => {
