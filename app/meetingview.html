@@ -319,6 +319,8 @@
   .bItem .st.ok { color:var(--accept); } .bItem .st.err { color:var(--danger); } .bItem .st.now { color:var(--accent); }
   .bItem .fsub { white-space:normal; }   /* the full error text, never clipped */
   .bItem { padding-top:12px; padding-bottom:12px; }
+  /* spoken only: the phase change (cancelling, then the final summary) is announced once here */
+  .srOnly { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -487,6 +489,7 @@
       <div class="ovNote" id="batchNote"></div>
       <button class="ovBtn danger press foc" id="batchCancel" type="button" style="display:none">Cancel batch</button>
       <button class="ovClose press foc" id="batchBack" type="button">Back to meetings</button></div>
+    <div id="batchLive" class="srOnly" role="status" aria-live="polite"></div>
     <div class="ovBody">
       <div id="batchTriple" role="status" aria-live="polite" hidden>
         <div class="bRow" id="bLast"><div class="lab">Done</div><div class="f"></div><div class="s"></div></div>

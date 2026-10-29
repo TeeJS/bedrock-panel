@@ -790,6 +790,7 @@ var batchLiveText = '';      // what the live region last said — rewritten onl
 var batchListSig = '';       // ledger signature — the list is rebuilt only when a row changes
 var batchArm = null;         // Cancel's two-tap confirm: armed until this timer or any other tap
 var batchWasRunning = false;
+var batchLastPhase = '';     // phase changes are spoken once through #batchLive
 function batchCounts(st) {
   var t = st.counts.transcribe, a = st.counts.analyze;
   var warnings = (st.items || []).filter(function (it) { return it.status === 'done' && it.note; }).length;
@@ -899,6 +900,15 @@ function renderBatchPage(st) {
       }
       row.appendChild(st_); row.appendChild(meta); list.appendChild(row);
     });
+  }
+  // Phase changes are announced once, through the hidden status line: cancelling names the file
+  // being finished; a batch that ends is read as one sentence (the Done/Now/Next region is hidden then).
+  if (st.phase !== batchLastPhase) {
+    var said = '';
+    if (st.phase === 'cancelling') said = 'Cancelling: finishing ' + (st.now && st.now.name ? batchName(st.now.stage, st.now.name) : 'the current file');
+    else if (!running && batchLastPhase && batchLastPhase !== 'idle') said = $('batchTitle').textContent + ': ' + note.textContent;
+    if (said) $('batchLive').textContent = said;
+    batchLastPhase = st.phase;
   }
   // A batch that just ended while the page is open: the summary is the new context — focus its heading.
   if (batchWasRunning && !running && $('batchOverlay').classList.contains('show')) $('batchTitle').focus();
