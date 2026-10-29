@@ -81,3 +81,20 @@ test('worklet batches render quanta and retains only complete blocks', () => {
   p.process([[frame, frame]]);
   assert.equal(messages, 1);
 });
+
+
+test('named microphone label lookup also requests raw audio and stops the temporary stream', async () => {
+  let requested, stopped = false, selected;
+  const api = { onCommand: cb => { api.command = cb; }, ready() {}, sendState() {}, sendPcm() {}, sendError() {}, sendEnded() {} };
+  class Capture { constructor(opts) { selected = opts.micConstraints; } start() { return Promise.resolve(); } stop() {} }
+  const context = { window: { recorderAPI: api, SystemAudioCapture: Capture }, document: { getElementById: () => null }, navigator: { mediaDevices: {
+    getUserMedia: async constraints => { requested = constraints; return { getTracks: () => [{ stop() { stopped = true; } }] }; },
+    enumerateDevices: async () => [{ kind: 'audioinput', label: 'Mic', deviceId: 'selected' }],
+  } } };
+  vm.runInNewContext(source('recorderview.js'), context);
+  api.command({ type: 'start', session: 1, mic: 'Mic' });
+  await new Promise(resolve => setImmediate(resolve));
+  for (const key of ['echoCancellation', 'noiseSuppression', 'autoGainControl']) assert.equal(requested.audio[key], false);
+  assert.equal(stopped, true);
+  assert.equal(selected.deviceId.exact, 'selected');
+});

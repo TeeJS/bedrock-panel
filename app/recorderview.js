@@ -25,7 +25,7 @@ var curSampleRate = 16000;
 // ---- label -> deviceId resolution (momentary grant then enumerate) ----
 function resolveMicDeviceId(label) {
   if (!label) return Promise.resolve('');
-  return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (tmp) {
+  return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(function (tmp) {
     return navigator.mediaDevices.enumerateDevices().then(function (devs) {
       tmp.getTracks().forEach(function (t) { t.stop(); });
       var d = (devs || []).find(function (x) { return x.kind === 'audioinput' && x.label === label; });
