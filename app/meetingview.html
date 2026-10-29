@@ -321,7 +321,10 @@
   /* light theme: the page's green (2.9:1) and red (4.3:1) on white are too faint for words that must be read;
      Batch-scoped shades clear 4.5:1 on the row (5.4:1 / 6.5:1) */
   body.light .bItem .st.ok { color:#167a3c; }
-  body.light .bItem .st.err, body.light .bItem .fsub.err, body.light #batchStrip .err { color:#b91c1c; }
+  body.light .bItem .st.err, body.light .bItem .fsub.err, body.light #batchStrip .err, body.light #batchStrip.err #batchStripText { color:#b91c1c; }
+  /* the working row's word is plain foreground in both themes: the runtime accent is for its ring, and
+     a light accent on white (1.3:1) would be unreadable */
+  .bItem .st.now { color:var(--fg); }
 </style>
 </head>
 <body>
