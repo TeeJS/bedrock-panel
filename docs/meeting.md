@@ -55,6 +55,8 @@ does this automatically, so it works even when Teams isn't the visible foregroun
 
 The panel records meetings (one stereo WAV: your mic = left, everyone else = right) and
 can send them to a diarizing transcription server, then to an AI for meeting notes.
+The recorder captures the microphone without Chromium echo cancellation, noise suppression, or
+automatic gain control. Your meeting app continues to use its own microphone settings.
 
 - A meeting passes through three folders (Settings → Meeting), and each folder means exactly one
   thing:

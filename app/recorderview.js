@@ -25,7 +25,7 @@ var curSampleRate = 16000;
 // ---- label -> deviceId resolution (momentary grant then enumerate) ----
 function resolveMicDeviceId(label) {
   if (!label) return Promise.resolve('');
-  return navigator.mediaDevices.getUserMedia({ audio: true }).then(function (tmp) {
+  return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(function (tmp) {
     return navigator.mediaDevices.enumerateDevices().then(function (devs) {
       tmp.getTracks().forEach(function (t) { t.stop(); });
       var d = (devs || []).find(function (x) { return x.kind === 'audioinput' && x.label === label; });
@@ -52,9 +52,9 @@ function startCapture() {
   resolveMicDeviceId(curMicLabel).then(function (deviceId) {
     if (gen !== captureGen) return null;   // stopped or superseded while resolving
     var micConstraints = {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
     };
     // `exact`: with `ideal`, Chromium opens the Windows default mic instead of this one. An
     // unplugged mic still falls back to the system default — SystemAudioCapture retries without

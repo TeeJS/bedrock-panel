@@ -15,7 +15,7 @@
 //
 // options:
 //   sampleRate            output rate of the merged PCM. Default 16000.
-//   bufferSize            ScriptProcessor block size (frames). Default 4096.
+//   bufferSize            PCM processing block size (frames). Default 4096.
 //   echoGate              mute mic while speakers are loud AND on speakers
 //                         (not headphones). Default true. The recorder sets
 //                         this false for faithful capture.
@@ -44,10 +44,6 @@ async function usingHeadphones() {
     return false;
   }
 }
-
-// Reused zero-buffer for gated frames; grown to match the processor's block size
-// on first gate. Module-scoped so we don't allocate a fresh array per frame.
-let SILENT_FRAME = new Float32Array(0);
 
 class SystemAudioCapture {
   constructor(options) {
@@ -157,65 +153,37 @@ class SystemAudioCapture {
     this.endedHandler = () => { if (this.opts.onSourceEnded) this.opts.onSourceEnded(); };
     sysTrack.addEventListener('ended', this.endedHandler);
 
-    // --- merge graph: mic -> ch0, system -> ch1, interleave to int16 ---
-    const audioCtx = new AudioContext({ sampleRate: this.opts.sampleRate });
-    this.audioCtx = audioCtx;
-
-    const micSource = audioCtx.createMediaStreamSource(this.micStream);
-    const systemSource = audioCtx.createMediaStreamSource(this.systemStream);
-    const merger = audioCtx.createChannelMerger(2);
-    micSource.connect(merger, 0, 0);
-    systemSource.connect(merger, 0, 1);
-
-    // ScriptProcessorNode is deprecated but universally supported and has zero
-    // bundling ceremony (an AudioWorklet needs a separately-loaded module URL).
-    const processor = audioCtx.createScriptProcessor(this.opts.bufferSize, 2, 2);
-    this.processor = processor;
-
-    const echoGate = this.opts.echoGate;
-    const systemGateThreshold = this.opts.systemGateThreshold;
-    const onPcm = this.opts.onPcm;
-    const self = this;
-
-    processor.onaudioprocess = (e) => {
-      const micRaw = e.inputBuffer.getChannelData(0);
-      const sysRaw = e.inputBuffer.getChannelData(1);
-
-      // Per-channel RMS, computed once and reused.
-      let micSum = 0;
-      for (let i = 0; i < micRaw.length; i++) micSum += micRaw[i] * micRaw[i];
-      const micRms = Math.sqrt(micSum / micRaw.length);
-      let sysSum = 0;
-      for (let i = 0; i < sysRaw.length; i++) sysSum += sysRaw[i] * sysRaw[i];
-      const sysRms = Math.sqrt(sysSum / sysRaw.length);
-
-      // Echo gate: mute mic while speakers are loud (unless on headphones).
-      let micOut = micRaw;
-      let micGated = false;
-      if (echoGate && !headphones && sysRms > systemGateThreshold) {
-        if (SILENT_FRAME.length !== micRaw.length) SILENT_FRAME = new Float32Array(micRaw.length);
-        micOut = SILENT_FRAME;
-        micGated = true;
-      }
-
-      // Interleave mic (ch0) + system (ch1) into stereo int16.
-      const int16 = new Int16Array(micRaw.length * 2);
-      for (let i = 0; i < micRaw.length; i++) {
-        const s0 = Math.max(-1, Math.min(1, micOut[i]));
-        const s1 = Math.max(-1, Math.min(1, sysRaw[i]));
-        int16[i * 2] = s0 < 0 ? s0 * 0x8000 : s0 * 0x7fff;
-        int16[i * 2 + 1] = s1 < 0 ? s1 * 0x8000 : s1 * 0x7fff;
-      }
-
-      try {
-        onPcm(int16, { micRms: micRms, systemRms: sysRms, micGated: micGated });
-      } catch (err) {
-        if (self.opts.onError) self.opts.onError(err);
-      }
-    };
-
-    merger.connect(processor);
-    processor.connect(audioCtx.destination);
+    // A silent sink keeps the rendering clock running without opening the speakers.
+    // No destination connection is needed: the worklet receives the two live inputs.
+    try {
+      const audioCtx = new AudioContext({ sampleRate: this.opts.sampleRate, sinkId: { type: 'none' } });
+      this.audioCtx = audioCtx;
+      if (!audioCtx.sinkId || audioCtx.sinkId.type !== 'none') throw new Error('silent audio sink unavailable');
+      await audioCtx.audioWorklet.addModule('/recorder-audio-worklet.js');
+      if (gen !== this.gen) return; // stop() already closed the context and tracks
+      const micSource = audioCtx.createMediaStreamSource(this.micStream);
+      const systemSource = audioCtx.createMediaStreamSource(this.systemStream);
+      const merger = audioCtx.createChannelMerger(2);
+      micSource.connect(merger, 0, 0);
+      systemSource.connect(merger, 0, 1);
+      const processor = new AudioWorkletNode(audioCtx, 'recorder-pcm', {
+        numberOfInputs: 1, numberOfOutputs: 0, channelCount: 2,
+        channelCountMode: 'explicit', channelInterpretation: 'discrete',
+        processorOptions: { echoGate: this.opts.echoGate && !headphones, threshold: this.opts.systemGateThreshold, bufferSize: this.opts.bufferSize },
+      });
+      this.processor = processor;
+      processor.port.onmessage = e => {
+        if (gen !== this.gen) return;
+        try { this.opts.onPcm(new Int16Array(e.data.pcm), e.data.meta); }
+        catch (err) { if (this.opts.onError) this.opts.onError(err); }
+      };
+      processor.onprocessorerror = () => { if (this.opts.onError) this.opts.onError(new Error('recorder audio processor failed')); };
+      merger.connect(processor);
+    } catch (err) {
+      if (gen !== this.gen) return; // a stopped or superseded start owns nothing now
+      this.stop();
+      throw err;
+    }
 
     this.state = 'running';
   }
@@ -227,7 +195,9 @@ class SystemAudioCapture {
     this.state = 'stopping';
 
     if (this.processor) {
-      this.processor.onaudioprocess = null;
+      this.processor.port.onmessage = null;
+      this.processor.onprocessorerror = null;
+      this.processor.port.close();
       this.processor.disconnect();
       this.processor = null;
     }
