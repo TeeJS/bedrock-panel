@@ -795,7 +795,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     promptInstructedTags = false;   // a fresh session starts clean; assembledPrompt() below sets it if the face is on
     const persona = currentPersona();
     sessionPersonaId = persona ? persona.id : '';
-    sessionModelPick = opts.options.modelPick || '';
+    sessionModelPick = adapter.validModel(opts.options.modelPick || '') ? (opts.options.modelPick || '') : '';   // an unknown pick starts as the default
     adapter.start({
       projectDir,
       // '' (the consolidated manifest's neutral default) must read as "adapter's own default",

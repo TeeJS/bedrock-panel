@@ -49,10 +49,10 @@ test('a model saved in the editor reaches the running session before the next me
   const x = make({ modelPick: 'sonnet' }); t.after(x.cleanup);
   x.h.onTurn('first', false); done(x);
   assert.deepEqual(x.calls.slice(0, 2), [['start', 'sonnet'], ['send', 'first']]);
-  x.grid.options.modelPick = 'haiku';            // the editor's Save
+  x.grid.options.modelPick = 'opus';             // the editor's Save
   x.calls.length = 0;
   x.h.onTurn('second', false); done(x);
-  assert.deepEqual(x.calls, [['setModel', 'haiku'], ['send', 'second']]);
+  assert.deepEqual(x.calls, [['setModel', 'opus'], ['send', 'second']]);
   x.calls.length = 0;
   x.h.onTurn('third', false);
   assert.deepEqual(x.calls, [['send', 'third']]);
