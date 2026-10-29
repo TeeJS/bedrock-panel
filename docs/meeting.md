@@ -142,7 +142,27 @@ can send them to a diarizing transcription server, then to an AI for meeting not
 
 ### The meeting file
 
-Every analyzed meeting is one markdown file whose first block is YAML frontmatter in the
+**Settings → Meeting → Advanced settings → Note style** picks one of two shapes. Installs that had
+settings before the option existed use **Classic**; new installs use **Minutes Compatible**.
+Changing it rewrites no existing file: the next analysis of a meeting writes the new style,
+carries the meeting's identity, action-item status and export state across, and keeps the
+old-style file as a revision.
+
+**Classic** writes `<recording>-analysis.md` exactly as 0.9.9 did: the analysis prompt's
+sections as the AI wrote them, transcript turns labelled `**Name:**`, no header. With
+**Separate Clean Transcript** on, everything from `## Transcript` on goes to
+`<recording>-clean_transcript.txt` instead. The sources move into `details\` only with **Use
+Details Folder** on; off, they stay beside the `.md`. One file is new:
+`<recording>.bedrock.json`, beside the sources, holds the same record the Minutes header holds
+(meeting id, revision, extracted action items and decisions, the hand-edit baseline, export
+state), so a re-analysis still never overwrites notes you edited, a completed action item stays
+completed, and Joplin, the Obsidian vault and the task list are never written twice. A Classic
+note without a usable tracking file (a 0.9.9 analysis, or a damaged or ambiguous one) is never
+overwritten: its re-analysis is saved for **Review new**, in `details\` or beside the note. The
+Obsidian vault copy keeps the local name, `<recording>-analysis.md`; the tracking file never goes
+to the vault.
+
+**Minutes Compatible** is described below. Every analyzed meeting is one markdown file whose first block is YAML frontmatter in the
 [Minutes](https://github.com/silverstein/minutes/blob/6a5a8cbf9c4236f55814cccafb50a840fbf15c86/docs/architecture/frontmatter-schema.md)
 schema, so Obsidian, grep, Minutes-aware tools and future agents can read the facts without
 parsing prose: `title`, `type`, `date` (capture start with its UTC offset), `duration`,

@@ -149,8 +149,8 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
 - **Transcribed Recordings** — transcribed but not yet analyzed: the WAV, its transcript,
   sidecars, captions and screenshots wait here in one flat folder until you analyze them.
   Blank = `Documents\Bedrock Panel Meetings\transcribed`.
-- **Completed Meetings** — finished meeting files only (`<recording>.md` with the sources in
-  `details\`); the folder to open as an Obsidian vault. Blank =
+- **Completed Meetings** — finished meeting files only (`<recording>-analysis.md` or
+  `<recording>.md`, by **Note style**, with their sources); the folder to open as an Obsidian vault. Blank =
   `Documents\Bedrock Panel Meetings\processed`. The three folders must be separate — none may be
   equal to or inside another; the panel refuses to analyze or delete while they overlap.
 - **Organize by date** — files each completed meeting into `YYYY\MM\` subfolders under the
@@ -267,12 +267,24 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   `<timestamp>-<Meeting Name>.wav` (sidecar too) when the calendar matched a meeting; all
   later files inherit the name. Requires calendar meeting info; the rename happens when
   the recording stops (an open file can't be renamed).
-- **Filing layout (fixed)** — at analysis, everything except the meeting `.md` (WAV,
-  transcript JSON, meeting info, capture info, captions, screenshots) moves into a
-  `details\` subfolder of the meeting's folder — date folders and recurring-meeting
-  folders alike. The meeting `.md` always contains the full transcript. (The former
-  *Separate Clean Transcript* and *Use Details Folder* options were retired with the
-  one-file meeting format; old settings are ignored.)
+- **Advanced → Note style** — how each analyzed meeting is written (details in
+  [meeting.md](meeting.md#the-meeting-file)):
+  - **Classic** — `<recording>-analysis.md`, exactly as 0.9.9 wrote it, plus a small
+    `<recording>.bedrock.json` beside the sources that keeps track of hand edits, action-item
+    status and exports. Installs that had settings before this option existed start here.
+  - **Minutes Compatible** — one `<recording>.md` whose YAML header carries the meeting's facts
+    for Minutes, Obsidian and other tools; the sources always move into `details\` and the `.md`
+    always contains the full transcript. New installs start here.
+  Changing the style rewrites no existing file; the next analysis of a meeting writes the new
+  style and keeps the old file as a revision.
+- **Advanced → Separate Clean Transcript** (Classic only) — the analysis `.md` keeps the notes
+  only; the cleaned transcript saves as `<name>-clean_transcript.txt`. (The split keys off
+  the prompt's `## Transcript` heading — a custom prompt without it falls back to the
+  combined file.)
+- **Advanced → Use Details Folder** (Classic only) — at analysis, everything except the notes
+  `.md` (WAV, transcript JSON, meeting info, clean transcript) moves into a `details\`
+  subfolder of the meeting's folder — date folders and recurring-meeting folders alike. Off,
+  they stay beside the `.md`.
 - **Advanced → Speaker threshold** — optional speaker-identification cosine cutoff
   (e.g. `0.70`) sent with each transcription; blank = the server's default. When a
   recording has calendar meeting info, its attendee list (organizer + required +

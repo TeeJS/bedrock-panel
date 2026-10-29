@@ -10,6 +10,7 @@
 
 const path = require('path');
 const { readFrontmatter, validateFrontmatter } = require('./meetingFrontmatter');
+const { readRecord, isClassicName } = require('./meetingRecord');
 
 // Deny-list validation, not allow-list: real meeting subjects carry #, &, [ ], ', commas, etc.
 // (an allow-list silently hid renamed recordings from every panel screen). Rejected outright:
@@ -100,13 +101,22 @@ function createMeetingLibrary(deps) {
   function noteState(file) {
     try {
       if (fsMod.statSync(file).size > 32 * 1024 * 1024) return { analyzed: true, legacy: false, readOnly: true, status: 'unreadable-frontmatter', warning: 'Meeting file exceeds reader limit' };
-      const parsed = readFrontmatter(fsMod.readFileSync(file, 'utf8'));
-      if (!parsed.ok) return { analyzed: true, legacy: parsed.reason === 'no-frontmatter', readOnly: parsed.reason !== 'no-frontmatter',
-        status: parsed.reason === 'no-frontmatter' ? 'complete' : 'unreadable-frontmatter', warning: parsed.reason === 'no-frontmatter' ? '' : parsed.reason };
-      if (!validateFrontmatter(parsed.data).ok) return { analyzed: true, legacy: false, readOnly: true, status: 'invalid-frontmatter', warning: 'Invalid meeting metadata; file kept read-only' };
-      return { analyzed: parsed.data.status === 'complete', legacy: false, readOnly: false, status: parsed.data.status || 'unknown',
-        warning: parsed.data.bedrock?.extraction === 'malformed' ? 'Structured extraction malformed' : '' };
+      // A Classic note's record (<base>.bedrock.json beside the sources) gives it the same status a
+      // Minutes header would; a header-less note without one is an untracked, pre-format note.
+      const r = readRecord(fsMod, file);
+      if (r.reason === 'unreadable') throw new Error('unreadable');
+      if (!r.ok && r.style === 'classic') return { analyzed: true, legacy: true, readOnly: false, status: 'complete', warning: r.reason === 'record-conflict' ? 'Two tracking files for this meeting; the next analysis is saved for review' : '' };
+      if (!r.ok) return { analyzed: true, legacy: false, readOnly: true, status: 'unreadable-frontmatter', warning: r.reason };
+      const data = r.data;
+      if (!validateFrontmatter(data).ok) return { analyzed: true, legacy: false, readOnly: true, status: 'invalid-frontmatter', warning: 'Invalid meeting metadata; file kept read-only' };
+      return { analyzed: data.status === 'complete', legacy: false, readOnly: false, status: data.status || 'unknown',
+        warning: data.bedrock?.extraction === 'malformed' ? 'Structured extraction malformed' : '' };
     } catch (e) { return { analyzed: false, legacy: false, readOnly: true, status: 'unreadable', warning: 'Meeting file unreadable' }; }
+  }
+
+  function classicProposal(file) {
+    try { const fm = readFrontmatter(fsMod.readFileSync(file, 'utf8')); return !!(fm.ok && fm.data.bedrock && fm.data.bedrock.note_style === 'classic'); }
+    catch (e) { return false; }
   }
 
   const meetingBase = name => String(name).replace(/(?:-analysis|_analysis|-meeting-analysis| - meeting analysis)?\.md$/i, '').replace(/-diarizer-response\.json$/i, '');
@@ -131,8 +141,12 @@ function createMeetingLibrary(deps) {
       const filename = path.basename(file.name), meeting = meetingBase(filename), key = meeting.toLowerCase();
       const canonical = filename.toLowerCase() === (meeting + '.md').toLowerCase();
       if (records.has(key) && (!canonical || records.get(key).canonical)) continue;
-      const proposal = path.join(dir, 'details', meeting + '.proposed.md');
-      const proposed = contained(proposal, base) && fsMod.statSync(proposal).isFile();
+      // A proposal waits in details\, or beside a Classic note (Use Details Folder off) when its own
+      // header says it is a Classic proposal — the same rule the analyzer's Apply uses.
+      const isFile = p => { try { return contained(p, base) && fsMod.statSync(p).isFile(); } catch (e) { return false; } };
+      const beside = path.join(dir, meeting + '.proposed.md');
+      const proposed = isFile(path.join(dir, 'details', meeting + '.proposed.md'))
+        || (isClassicName(filename) && isFile(beside) && classicProposal(beside));
       records.set(key, Object.assign({}, file, noteState(path.join(base, file.name)), { base: meeting, jsonName: resolveJson(meeting), canonical, proposed }));
     }
     return [...records.values()].map(({ canonical, ...record }) => record).sort((a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name));
