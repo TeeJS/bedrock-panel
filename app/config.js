@@ -854,7 +854,7 @@
         <select class="psStyle" style="width:170px;margin-left:8px">${PERSONA_STYLES.map(s => `<option value="${s[0]}" ${(face.style || 'oled') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select>
         <input class="psColor" placeholder="#rrggbb or blank" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color as #rrggbb; blank uses the page accent. A value that is not #rrggbb is not saved.">
         <input class="psCheek" placeholder="cheek #rrggbb" value="${esc(face.cheekColor || '')}" style="width:130px;margin-left:8px" title="Blush/cheek color; blank uses the face color">
-        <input class="psVoice" list="psVoiceList" placeholder="Voice: page default" value="${esc(p.voice || '')}" style="width:200px;margin-left:8px" title="Piper voice name for this persona (e.g. en_US-lessac-medium). Blank = the page's default voice. Use 'Load available voices' to see what the TTS server offers.">
+        <input class="psVoice" list="psVoiceList" placeholder="Voice: page default" value="${esc(p.voice || '')}" style="width:200px;margin-left:8px" title="Piper voice name for this persona (e.g. en_US-lessac-medium). A voice with several speakers takes the speaker after a #: en_GB-semaine-medium#poppy. Blank = the page's default voice. Use 'Load available voices' to see what the TTS server offers.">
         <input class="psWake" placeholder="Wake name" value="${esc(p.wakeName || p.name || '')}" maxlength="40" style="width:120px;margin-left:8px" title="The spoken name a page with the wake word on listens for, as &quot;hey &lt;wake name&gt;&quot; (letters, digits, spaces). Filled in with the persona's name; change it if that is awkward to say.">
         <input class="psAliases" placeholder="Aliases, comma-separated" value="${esc(Array.isArray(p.aliases) ? p.aliases.join(', ') : '')}" style="width:200px;margin-left:8px" title="Other full phrases that also wake the page, e.g. &quot;okay jarvis, hi jarvis&quot;. Up to 10.">
         <button class="psExport" type="button" data-ex="${i}" style="margin-left:8px" title="Copy this persona's JSON to the clipboard">Export</button>
@@ -1068,8 +1068,14 @@
       voicesBtn.disabled = false;
       if (!r || !r.ok) { if (voicesMsg) { voicesMsg.textContent = 'Could not list voices: ' + ((r && r.error) || 'unknown error') + '. You can still type a name.'; voicesMsg.style.color = '#e05050'; } return; }
       const voices = (r.voices || []).filter(v => v.installed !== false);
-      voiceList.innerHTML = voices.map(v => `<option value="${esc(v.name)}">${esc((v.languages || []).join(', ') + (v.description ? ' — ' + v.description : ''))}</option>`).join('');
-      if (voicesMsg) voicesMsg.textContent = voices.length + ' voice' + (voices.length === 1 ? '' : 's') + ' on ' + (r.host || 'the TTS server') + ' — start typing in a Voice field to pick one. Blank = the page\'s default.';
+      // A multi-speaker voice is listed once per speaker as "name#speaker" (the plain name plays its
+      // first speaker), so a speaker heard on the Piper samples page can be picked, not typed.
+      const label = v => (v.languages || []).join(', ') + (v.description ? ' — ' + v.description : '');
+      voiceList.innerHTML = voices.map(v => `<option value="${esc(v.name)}">${esc(label(v))}</option>` +
+        (v.speakers || []).map(s => `<option value="${esc(v.name + '#' + s)}">${esc(label(v) + ' — speaker ' + s)}</option>`).join('')).join('');
+      const multi = voices.filter(v => (v.speakers || []).length > 1).length;
+      if (voicesMsg) voicesMsg.textContent = voices.length + ' voice' + (voices.length === 1 ? '' : 's') + ' on ' + (r.host || 'the TTS server') +
+        (multi ? ' (' + multi + ' with several speakers: pick "name#speaker")' : '') + ' — start typing in a Voice field to pick one. Blank = the page\'s default.';
     };
     const goBtn = document.getElementById('sPersonaImportGo');
     // Validation runs in the main process (IPC, async): the text stays in the box on any failure so

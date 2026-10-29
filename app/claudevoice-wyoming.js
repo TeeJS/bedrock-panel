@@ -145,17 +145,26 @@ function synthesize({ host, port, text, voice, onFormat, onChunk, timeoutMs, log
   });
 }
 // The synthesize event's data: {text} alone keeps the server's default voice; a name adds
-// voice:{name}. Pure, so the encoding is unit-testable without a socket.
+// voice:{name}. A multi-speaker voice picks its speaker after a '#' ("en_GB-semaine-medium#poppy"
+// or "#3"): voice:{name, speaker}, which wyoming-piper resolves by the model's speaker names, then
+// as a number. An unknown speaker is not an error there: piper logs it and uses its first speaker.
+// Pure, so the encoding is unit-testable without a socket.
 function synthesizeData(text, voice) {
   const data = { text: String(text == null ? '' : text) };
-  const name = typeof voice === 'string' ? voice.trim() : '';
-  if (name) data.voice = { name };
+  const { name, speaker } = splitVoice(voice);
+  if (name) data.voice = speaker ? { name, speaker } : { name };
   return data;
+}
+function splitVoice(voice) {
+  const s = typeof voice === 'string' ? voice.trim() : '';
+  const at = s.indexOf('#');
+  if (at < 0) return { name: s, speaker: '' };
+  return { name: s.slice(0, at).trim(), speaker: s.slice(at + 1).trim() };
 }
 
 // One-shot capability query: describe -> info. Resolves with the TTS voices the server offers,
-// as [{name, description, languages}], so a persona editor can offer real names instead of
-// guesses. A server that answers info without a tts section resolves to [].
+// as [{name, description, languages, speakers}], so a persona editor can offer real names instead
+// of guesses. A server that answers info without a tts section resolves to [].
 function describe({ host, port, timeoutMs, log }) {
   const say = log || (() => {});
   return new Promise((resolve, reject) => {
@@ -194,6 +203,9 @@ function voicesFromInfo(info) {
         description: typeof v.description === 'string' ? v.description : '',
         languages: Array.isArray(v.languages) ? v.languages.filter(l => typeof l === 'string') : [],
         installed: typeof v.installed === 'boolean' ? v.installed : undefined,
+        // Multi-speaker voices list their speakers' names (wyoming-piper fills this from the model's
+        // speaker_id_map); [] for a single-speaker voice or a server that does not say.
+        speakers: Array.isArray(v.speakers) ? v.speakers.map(s => s && typeof s.name === 'string' ? s.name : '').filter(Boolean) : [],
       });
     });
   });
@@ -218,4 +230,4 @@ function wavHeader({ rate, width, channels }) {
   return buf;
 }
 
-module.exports = { transcribe, synthesize, synthesizeData, describe, describeVoices, voicesFromInfo, wavHeader };
+module.exports = { transcribe, synthesize, synthesizeData, splitVoice, describe, describeVoices, voicesFromInfo, wavHeader };

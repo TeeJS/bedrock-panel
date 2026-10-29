@@ -61,6 +61,12 @@ text-to-speech server is set to. To give a persona its own voice, type a Piper v
 text-to-speech server in **Settings → TTS/STT**.
 
 - The built-in personas name stock Piper voices (for example Jarvis uses `en_GB-alan-medium`).
+- Some Piper voices hold several speakers (`en_GB-semaine-medium` has prudence, spike, obadiah and poppy;
+  `en_US-libritts_r-medium` has hundreds, listed on the [Piper samples page](https://rhasspy.github.io/piper-samples/)).
+  Add the speaker after a `#`: `en_GB-semaine-medium#poppy`, or its number, `en_GB-semaine-medium#3`. The plain
+  name plays the first speaker. **Load available voices** lists every speaker as its own `name#speaker`
+  entry. A misspelled speaker is not an error on the server: Piper quietly uses the first speaker, so pick
+  from the list where you can.
 - The names must be voices your Piper server has. The server itself does **not** substitute its default voice
   for a name it does not know: it may try to download it or refuse the request. So when the server rejects a
   persona's voice before any audio has played, Bedrock Panel asks once more with the page's default voice and
