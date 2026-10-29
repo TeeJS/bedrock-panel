@@ -736,17 +736,13 @@ function createMeetingAnalyzer(deps) {
       return fm.ok && fm.data.bedrock && fm.data.bedrock.note_style === 'classic' ? beside : null;
     } catch (e) { return null; }
   }
-  // Put a finished temp file at a name that must still be free: a hard link fails if anything is
-  // there, atomically (NTFS, APFS, ext4); where links are not supported (some network or FAT drives)
-  // it falls back to check-then-rename. Returns false, with the temp file removed, when the name is taken.
+  // Put a finished temp file at a name that must still be free: checked, then renamed. (A hard
+  // link would make this atomic, but on Windows a linked note under an antivirus scan refuses the
+  // next rename onto it with EPERM; one writer per meeting makes the gap acceptable.) Returns false,
+  // with the temp file removed, when the name is taken.
   async function placeNew(tmp, dest) {
-    try { await fsp.link(tmp, dest); }
-    catch (e) {
-      if ((e && e.code === 'EEXIST') || fsMod.existsSync(dest)) { await fsp.rm(tmp, { force: true }); return false; }
-      await fsp.rename(tmp, dest);
-      return true;
-    }
-    await fsp.rm(tmp, { force: true });
+    if (fsMod.existsSync(dest)) { await fsp.rm(tmp, { force: true }); return false; }
+    await fsp.rename(tmp, dest);
     return true;
   }
   // Note style from the filing options; absent = Minutes Compatible (see runJob).
