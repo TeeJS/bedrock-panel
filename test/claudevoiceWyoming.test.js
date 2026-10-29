@@ -101,6 +101,15 @@ test('synthesize trims the voice name and never sends credentials-shaped extras'
   assert.deepEqual(Object.keys(r.event.data).sort(), ['text', 'voice']);
 });
 
+test('synthesize sends the speaker after a "#" as voice.speaker (a name or a number)', async () => {
+  const named = await speak({ voice: ' en_GB-semaine-medium#poppy ' });
+  assert.deepEqual(named.event.data.voice, { name: 'en_GB-semaine-medium', speaker: 'poppy' });
+  const numbered = await speak({ voice: 'en_US-libritts_r-medium#123' });
+  assert.deepEqual(numbered.event.data.voice, { name: 'en_US-libritts_r-medium', speaker: '123' });
+  const bare = await speak({ voice: 'en_GB-semaine-medium#' });   // a trailing "#" is just the voice
+  assert.deepEqual(bare.event.data.voice, { name: 'en_GB-semaine-medium' });
+});
+
 function describeServer(info) {
   return fakeServer((socket, ev) => { if (ev.type === 'describe') send(socket, 'info', info); });
 }
@@ -136,6 +145,14 @@ test('describeVoices flattens several programs, skips uninstalled and nameless v
     { name: 'b', voices: [{ name: 'two' }] },
   ] });
   assert.deepEqual(v.map(x => x.name), ['one', 'two']);
+});
+
+test('describeVoices reports a multi-speaker voice\'s speaker names (wyoming-piper\'s speakers[].name)', async () => {
+  const v = await voicesFrom({ tts: [{ name: 'piper', voices: [
+    { name: 'en_GB-semaine-medium', installed: true, languages: ['en_GB'], speakers: [{ name: 'prudence' }, { name: 'spike' }, { name: 'obadiah' }, { name: 'poppy' }] },
+    { name: 'en_US-amy-medium', installed: true, languages: ['en_US'] },
+  ] }] });
+  assert.deepEqual(v.map(x => [x.name, x.speakers]), [['en_GB-semaine-medium', ['prudence', 'spike', 'obadiah', 'poppy']], ['en_US-amy-medium', []]]);
 });
 
 test('describeVoices returns [] when the server lists no tts voices', async () => {
