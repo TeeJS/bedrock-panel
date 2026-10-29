@@ -826,7 +826,9 @@ function batchProgressHtml(st) {   // the running strip: stage, processed count,
   var c = analyzing ? st.counts.analyze : st.counts.transcribe;
   var verb = analyzing ? 'Analyzing' : 'Transcribing';
   var n = st.now, head = '';
-  if (n && !n.name && n.step) head = n.step === 'starting server' ? 'Starting the transcription server' : n.step === 'waiting for server' ? 'Waiting for the transcription server' : 'Stopping the transcription server';
+  // A job started by hand from a screen holds the queue: say so, with its clock, without counting it.
+  if (n && n.name && !n.mine) head = 'Waiting for ' + escHtml(batchName(n.stage, n.name)) + ', started by hand';
+  else if (n && !n.name && n.step) head = n.step === 'starting server' ? 'Starting the transcription server' : n.step === 'waiting for server' ? 'Waiting for the transcription server' : 'Stopping the transcription server';
   var parts = [];
   if (head) parts.push(head);
   else if (!c.total) parts.push(analyzing ? 'Nothing to analyze' : 'Nothing to transcribe');
@@ -873,9 +875,10 @@ function renderBatchPage(st) {
   else html = 'No batch has run yet';
   if (html !== batchStripText) { batchStripText = html; $('batchStripText').innerHTML = html; }
   $('batchStrip').classList.toggle('err', stripErr);
-  var step = running && n && !n.name && n.step ? n.step : '';
+  var foreign = running && n && n.name && !n.mine;
+  var step = running && n && !n.name && n.step ? n.step : (foreign ? 'foreign:' + n.name : '');
   if (step !== batchStep) { batchStep = step; batchStepSince = Date.now(); }
-  $('batchStripT').textContent = step ? fmtDur(Date.now() - batchStepSince) : '';
+  $('batchStripT').textContent = !step ? '' : fmtDur(Date.now() - (foreign && n.startedAt ? n.startedAt : batchStepSince));
 
   // The list: every file in scheduled order with its outcome as text; errors in full. Rebuilt
   // only when a row changes; the ringed row's clock ticks in place.
@@ -886,6 +889,7 @@ function renderBatchPage(st) {
   var list = $('batchList');
   if (sig !== batchListSig) {
     batchListSig = sig;
+    var keepTop = list.scrollTop;
     list.innerHTML = ''; batchNowT = null;
     var nowRow = null, nowName = '';
     if (!items.length) {
@@ -913,7 +917,8 @@ function renderBatchPage(st) {
     });
     // Keep the ringed row in view when it changes — never on a tick, so a scroll to read an error holds.
     if (nowRow && nowName !== batchNowName) nowRow.scrollIntoView({ block: 'center' });
-    else if (!nowRow) list.scrollTop = 0;   // no ringed row (server step, summary): read from the top
+    else if (nowRow) list.scrollTop = keepTop;   // same file still working: a scroll to read an error holds
+    else list.scrollTop = 0;                     // no ringed row (server step, summary): read from the top
     batchNowName = nowName;
     // ▲/▼ only when there is something to scroll
     $('batchRail').style.display = list.scrollHeight > list.clientHeight + 1 ? '' : 'none';
