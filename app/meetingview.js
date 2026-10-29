@@ -919,7 +919,8 @@ function renderBatchPage(st) {
       meta.appendChild(nm);
       // Where a finished file went, so nobody looks for it in Unprocessed: the destination is the
       // next screen in the flow.
-      var subText = it.error || it.note || (it.status === 'done' ? (it.stage === 'analyze' ? 'saved in Completed' : 'saved in Transcribed, on the Analysis screen') : '');
+      var where = it.status === 'done' ? (it.stage === 'analyze' ? 'saved in Completed' : 'saved in Transcribed, on the Analysis screen') : '';
+      var subText = it.error || (it.note && where ? where + ' · ' + it.note : (it.note || where));
       if (subText) {
         var sub = document.createElement('div'); sub.className = 'fsub' + (it.error ? ' err' : ''); sub.textContent = subText;
         meta.appendChild(sub);
@@ -988,7 +989,7 @@ $('batchCancel').onclick = function () {
   if (!batchArm) {   // first tap arms; the name changes so the second tap is not colour alone
     // says what Cancel does: a file in progress completes, the rest is dropped
     var running = batchState && batchState.now && batchState.now.name;
-    b.textContent = running ? 'Finish this file, then stop?' : 'Stop before the first file?'; b.classList.add('confirm');
+    b.textContent = running ? 'Finish this file, then stop?' : 'Stop remaining work?';   // no file running: server starting, waiting, or stopping b.classList.add('confirm');
     batchArm = setTimeout(batchDisarm, 6000);
     return;
   }
