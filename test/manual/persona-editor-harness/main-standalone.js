@@ -73,7 +73,7 @@ app.whenReady().then(async () => {
     await sleep(400);
     const base = await rows();
     const seededNames = await names();
-    check('personas tab renders the 5 built-ins (Mimi, Jarvis, CRT Terminal, Startup Intern, Dust Sprite)', base >= 5 && seededNames.slice(0, 5).join(',') === 'Mimi,Jarvis,CRT Terminal,Startup Intern,Dust Sprite', { rows: base, names: seededNames });
+    check('personas tab renders the 5 built-ins (Mimi, Jarvis, CRT Terminal, Startup Intern, Pixie)', base >= 5 && seededNames.slice(0, 5).join(',') === 'Mimi,Jarvis,CRT Terminal,Startup Intern,Pixie', { rows: base, names: seededNames });
     await shot('01-personas-tab');
 
     // 1. valid import

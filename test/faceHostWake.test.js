@@ -164,7 +164,7 @@ test('stale generation is dropped; mic off disarms; a persona switch re-resolves
 test('not ready: a persona without a wake name closes the gate and says why; a page phrase fixes it', async t => {
   const x = make({ personaPick: 'crt' }); t.after(x.cleanup);
   const wake = x.h.getState().wake;
-  assert.equal(wake.ready, true); assert.equal(wake.phrase, 'hey terminal');   // the built-in CRT persona has a wake name
+  assert.equal(wake.ready, true); assert.equal(wake.phrase, 'hey crt');   // the built-in CRT persona has a wake name
   assert.equal(wake.state, 'off');                                              // enabled, not armed: the page has not opened its mic
   const x2 = make({ personaPick: 'nobody' }); t.after(x2.cleanup);
   x2.grid.options.personaPick = ''; x2.h.setPersona('');
