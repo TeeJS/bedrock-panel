@@ -4958,9 +4958,9 @@ ${IS_MAC ? `
       <div class="row"><label>API token</label>${secretInput(me.joplinToken || '', 'id="meJoplinToken" placeholder="Joplin › Tools › Options › Web Clipper"', 'flex:1')}</div>
       <div class="row"><label>Notebook</label>
         <input id="meJoplinNb" value="${esc(me.joplinNotebook)}" style="width:230px"></div>
-      <div class="row" style="margin-top:12px"><label>Note style</label>
+      <div class="row" style="margin-top:12px"><label for="meNoteStyle">Note style</label>
         <select id="meNoteStyle" style="flex:1"><option value="classic" ${me.noteStyle === 'minutes' ? '' : 'selected'}>Classic</option><option value="minutes" ${me.noteStyle === 'minutes' ? 'selected' : ''}>Minutes Compatible</option></select></div>
-      <details class="hint"><summary>How each analyzed meeting is written. <b>Classic</b>: <b>&lt;name&gt;-analysis.md</b>, the way 0.9.9 wrote it. <b>Minutes Compatible</b>: one <b>&lt;name&gt;.md</b> with the meeting's facts in a header that Minutes and Obsidian can read.</summary> Classic keeps a small <b>&lt;name&gt;.bedrock.json</b> beside the meeting's sources, so a re-analysis still never overwrites notes you edited and exports are never duplicated. Changing this rewrites no existing file; the next analysis of a meeting uses the new style.</details>
+      <details class="hint"><summary>How each analyzed meeting is written. <b>Classic</b>: <b>&lt;name&gt;-analysis.md</b>, the way 0.9.9 wrote it. <b>Minutes Compatible</b>: one <b>&lt;name&gt;.md</b> with the meeting's facts in a header that Minutes and Obsidian can read.</summary> Classic keeps a small <b>&lt;name&gt;.bedrock.json</b> beside the meeting files, so a re-analysis still never overwrites notes you edited and exports are never duplicated. Changing this rewrites no existing file; the next analysis of a meeting uses the new style.</details>
       <div id="meClassicOpts">
       <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meSepTx" ${me.separateTranscript ? 'checked' : ''}> Separate Clean Transcript</label></div>
       <p class="hint">Leaves the full transcript out of the analysis .md and saves it as <b>&lt;name&gt;-clean_transcript.txt</b> instead.</p>
