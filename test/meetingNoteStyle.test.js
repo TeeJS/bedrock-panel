@@ -512,6 +512,33 @@ test('a Minutes meeting whose own name ends in "-analysis" keeps its header, re-
   assert.match(fs.readFileSync(md, 'utf8'), /Third pass\./);
 });
 
+test('meetings "foo" and "foo-analysis" side by side: each row acts only on its own meeting', async () => {
+  const processed = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-twins-'));
+  const foo = '2026-10-14-15-57-16-foo', fooA = foo + '-analysis';
+  for (const b of [foo, fooA]) fs.writeFileSync(path.join(processed, b + '-diarizer-response.json'), JSON.stringify({ segments: SEGMENTS }));
+  let i = 0;
+  const outs = [reply('foo first.'), reply('foo-analysis first.'), reply('foo second.')];
+  const an = createMeetingAnalyzer({
+    resolveFolders: () => ({ unprocessed: processed, processed }),
+    resolveAi: () => 'claude', findClaudeExe: () => 'claude.exe', findCodexExe: () => null,
+    spawn: fakeSpawn([], () => ({ stdout: outs[Math.min(i++, outs.length - 1)], code: 0 })),
+    filingOptions: () => ({ noteStyle: 'minutes', useDetailsFolder: true }),
+  });
+  const run = async name => { assert.equal(an.start(name).ok, true); await drained(an); assert.equal(an.getState().error, null); };
+  await run(foo + '-diarizer-response.json');
+  await run(fooA + '-diarizer-response.json');
+  const fooMd = path.join(processed, foo + '.md'), fooAMd = path.join(processed, fooA + '.md');
+  fs.writeFileSync(fooMd, fs.readFileSync(fooMd, 'utf8').replace('foo first.', 'foo edited.'));
+  await run(path.basename(fooMd));                                                    // foo gets a pending proposal
+  assert.equal(fs.existsSync(path.join(processed, 'details', foo + '.proposed.md')), true);
+  const fooABefore = fs.readFileSync(fooAMd, 'utf8');
+  assert.equal((await an.applyProposed(path.basename(fooAMd))).error, 'no proposal to apply');   // not foo's
+  assert.equal(an.result(path.basename(fooAMd), true).ok, false);
+  assert.equal(fs.readFileSync(fooAMd, 'utf8'), fooABefore);
+  assert.match(fs.readFileSync(fooMd, 'utf8'), /foo edited\./);
+  assert.equal((await an.applyProposed(path.basename(fooMd))).ok, true);
+});
+
 // ---- the Completed list ----
 
 test('Completed shows a tracked Classic note like a Minutes note; an untracked one as pre-format', async () => {

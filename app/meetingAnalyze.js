@@ -325,7 +325,7 @@ function createMeetingAnalyzer(deps) {
     // " - meeting analysis"; the migration's name map covers the rest. A name that only ends in
     // "analysis" can also be the whole meeting name (a Minutes note for "Q3 Cost Analysis" or
     // "project-analysis"), so each reading is tried, the Classic one first.
-    for (const base of noteBases(path.posix.basename(mdRel))) {
+    for (const base of noteBases(path.posix.basename(mdRel), path.join(processed, mdRel))) {
       const dirs = dir === '.' ? ['', 'details'] : [dir, dir + '/details'];
       // The named diarizer transcript wins in either location; a plain <base>.json is only the
       // legacy transcript name and is usually the calendar sidecar, so it is the last resort.
@@ -338,10 +338,17 @@ function createMeetingAnalyzer(deps) {
     }
     return null;
   }
-  // The meeting names a note file could stand for, most likely first: the Classic / archive rule,
-  // the older broad "analysis" rule, then the whole name.
-  function noteBases(file) {
+  // The meeting a note file stands for. When the note itself says which style it is, that settles
+  // it and only that reading counts — a Minutes header means the whole name ("foo-analysis.md" is
+  // the meeting "foo-analysis", never a different meeting "foo"); a Classic record means the
+  // stripped name. Only an untracked note (no header, no record) tries each reading: the Classic /
+  // archive rule, the older broad "analysis" rule, then the whole name.
+  function noteBases(file, absPath) {
     const whole = String(file).replace(/\.md$/i, '');
+    if (absPath && fsMod.existsSync(absPath)) {
+      const r = meetingRecord.readRecord(fsMod, absPath);
+      if (r.ok) return [r.style === 'minutes' ? whole : meetingRecord.baseOfNote(file)];
+    }
     return [...new Set([meetingRecord.baseOfNote(file), String(file).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/\.md$/i, ''), whole])];
   }
 
@@ -1045,7 +1052,7 @@ function createMeetingAnalyzer(deps) {
     const home = path.dirname(path.join(processed, n));
     // The meeting the row stands for: the first reading of its name that has a proposal waiting.
     let base = null, proposedPath = null;
-    for (const b of noteBases(path.basename(n))) { const p = findProposal(home, b); if (p) { base = b; proposedPath = p; break; } }
+    for (const b of noteBases(path.basename(n), path.join(processed, n))) { const p = findProposal(home, b); if (p) { base = b; proposedPath = p; break; } }
     if (!proposedPath) return { ok: false, error: 'no proposal to apply' };
     if (running && running.kind === 'processed' && running.name && transcriptForMd(n) === running.name) return { ok: false, error: 'this meeting is being analyzed right now' };
     try {
@@ -1589,7 +1596,7 @@ function createMeetingAnalyzer(deps) {
     if (proposed) {   // the reviewable new analysis kept beside the sources
       const leaf = path.posix.basename(n);
       const home = path.join(resolveFolders().processed, path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n));
-      const bases = /\.json$/i.test(leaf) ? [leaf.replace(/(-diarizer-response)?\.json$/i, '')] : noteBases(leaf);
+      const bases = /\.json$/i.test(leaf) ? [leaf.replace(/(-diarizer-response)?\.json$/i, '')] : noteBases(leaf, path.join(home, leaf));
       const p = bases.map(b => findProposal(home, b)).find(Boolean);
       try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8'), proposed: true }; } catch (e) { return { ok: false, error: 'no proposal to review' }; }
     }
