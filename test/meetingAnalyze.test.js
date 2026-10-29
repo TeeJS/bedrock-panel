@@ -413,6 +413,15 @@ test('post-analysis task list: one dated checklist per batch, pointing at the me
   fs.writeFileSync(path.join(dir, 'a.json'), JSON.stringify({ subject: 'Weekly Sync', is_recurring: true, organizer: 'David Mastalski' }));
   fs.writeFileSync(path.join(dir, 'b-diarizer-response.json'), '{"segments":[]}');
   const taskDir = path.join(processed, 'lists');
+  // The queue releases running before its asynchronous task-list hand-off publishes.
+  // Wait for that observable result, rather than guessing a filesystem delay.
+  async function waitForList(leaf) {
+    const file = path.join(taskDir, leaf);
+    const deadline = Date.now() + 5000;
+    while (!fs.existsSync(file) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(fs.existsSync(file), true, 'task list was not published: ' + leaf);
+    return file;
+  }
   const an = createMeetingAnalyzer({
     resolveFolders: () => ({ unprocessed: processed, processed }),
     resolveAi: () => 'claude',
@@ -424,8 +433,7 @@ test('post-analysis task list: one dated checklist per batch, pointing at the me
   an.start('2026/08/a-diarizer-response.json');
   an.start('2026/08/b-diarizer-response.json');
   await drained(an);
-  await settle();
-  const listPath = path.join(taskDir, '2026-08-17_10-42-13.md');
+  const listPath = await waitForList('2026-08-17_10-42-13.md');
   const body = fs.readFileSync(listPath, 'utf8');
   assert.match(body, /^# Analysis batch — 2026-08-17 10:42:13/);
   assert.match(body, /2 meeting\(s\) analyzed\./);
@@ -437,8 +445,7 @@ test('post-analysis task list: one dated checklist per batch, pointing at the me
   fs.writeFileSync(path.join(dir, 'c-diarizer-response.json'), '{"segments":[]}');
   an.start('2026/08/c-diarizer-response.json');
   await drained(an);
-  await settle();
-  assert.equal(fs.existsSync(path.join(taskDir, '2026-08-17_10-42-13_1.md')), true);
+  await waitForList('2026-08-17_10-42-13_1.md');
 });
 
 test('task list disabled: nothing written', async () => {
