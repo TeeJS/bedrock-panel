@@ -100,7 +100,7 @@ test('transcribes every WAV, then analyzes every Not-analyzed row; the ledger ke
   assert.deepEqual(names(st, 'transcribe'), ['a.wav:done', 'b.wav:failed']);
   assert.deepEqual(names(st, 'analyze'), ['a-diarizer-response.json:done', 'b-diarizer-response.json:done']);
   assert.equal(st.items[1].error, 'upload failed: 502');
-  assert.deepEqual(st.counts, { transcribe: { total: 2, done: 1, failed: 1, notStarted: 0 }, analyze: { total: 2, done: 2, failed: 0, notStarted: 0 } });
+  assert.deepEqual(st.counts, { transcribe: { total: 2, done: 1, failed: 1, notStarted: 0, skipped: 0 }, analyze: { total: 2, done: 2, failed: 0, notStarted: 0, skipped: 0 } });
   assert.equal(st.transcribed, 1); assert.equal(st.transcribeErrors, 1); assert.equal(st.analyzed, 2); assert.equal(st.analyzeErrors, 0);
   assert.equal(st.last.name, 'b-diarizer-response.json');
   assert.equal(st.now, null); assert.equal(st.next, null);
@@ -169,7 +169,7 @@ test('cancel during transcription drops the pending jobs, lets the running one s
   assert.deepEqual(names(st, 'analyze'), ['a-diarizer-response.json:notStarted']);
   assert.deepEqual(calls.filter(c => c[0] === 'clearTranscribe'), [['clearTranscribe', ['c.wav']]]);
   assert.equal(calls.filter(c => c[0] === 'analyze').length, 0, 'the analysis stage never starts after a cancel');
-  assert.deepEqual(st.counts.transcribe, { total: 3, done: 1, failed: 1, notStarted: 1 });
+  assert.deepEqual(st.counts.transcribe, { total: 3, done: 1, failed: 1, notStarted: 1, skipped: 0 });
 });
 
 test('cancel between polls keeps the job that just started: it is not dropped and the summary waits for it', async () => {
@@ -279,7 +279,7 @@ test('a second tap while running returns the live state instead of starting over
   assert.deepEqual(names(st, 'transcribe'), ['a.wav:done']);
 });
 
-test('enqueue rejections become failed rows and do not stop the rest; recorder-busy and header-only files are left out', async () => {
+test('enqueue rejections become failed rows and do not stop the rest; recorder-busy and header-only files are listed as skipped', async () => {
   const { batch } = setup({
     list: kind => kind === 'unprocessed' ? listing([wav('a.wav'), wav('live.wav'), wav('empty.wav', 44), wav('b.wav')]) : listing(),
     getBusyFiles: () => ['live.wav'],
@@ -287,9 +287,32 @@ test('enqueue rejections become failed rows and do not stop the rest; recorder-b
   });
   batch.start();
   const st = await finish(batch);
-  assert.deepEqual(names(st, 'transcribe'), ['a.wav:failed', 'b.wav:done']);
-  assert.equal(st.items[0].error, 'not found');
+  assert.deepEqual(names(st, 'transcribe'), ['live.wav:skipped', 'empty.wav:skipped', 'a.wav:failed', 'b.wav:done']);
+  assert.equal(st.items[0].note, 'recording still being written');
+  assert.equal(st.items[1].note, 'empty recording, no audio');
+  assert.equal(st.items[2].error, 'not found');
+  assert.deepEqual(st.counts.transcribe, { total: 2, done: 1, failed: 1, notStarted: 0, skipped: 2 });
   assert.equal(st.phase, 'done');
+});
+
+test('an all-skipped batch still runs, lists the reasons, and a cancel never touches a skipped row', async () => {
+  let files = [wav('empty.wav', 44), wav('live.wav')];
+  const { batch, calls } = setup({ list: kind => kind === 'unprocessed' ? listing(files) : listing(), getBusyFiles: () => ['live.wav'] });
+  batch.start();
+  batch.cancel();   // lands before anything was queued
+  const st = await finish(batch);
+  assert.equal(st.phase, 'cancelled');
+  assert.deepEqual(names(st, 'transcribe'), ['empty.wav:skipped', 'live.wav:skipped']);
+  assert.equal(calls.filter(c => c[0] === 'transcribe').length, 0, 'skipped files are never queued');
+  assert.equal(st.next, null);
+  assert.deepEqual(st.counts.transcribe, { total: 0, done: 0, failed: 0, notStarted: 0, skipped: 2 });
+  // A second tap with only skipped files is not "nothing to do": the page must show them again.
+  const again = batch.start();
+  assert.equal(again.running, true);
+  const st2 = await finish(batch);
+  assert.equal(st2.phase, 'done');
+  assert.deepEqual(names(st2, 'transcribe'), ['empty.wav:skipped', 'live.wav:skipped']);
+  assert.equal(st2.items[0].note, 'empty recording, no audio');
 });
 
 test('hook phases hold the stage and show as the current step', async () => {

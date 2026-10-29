@@ -804,12 +804,13 @@ function batchWord(it, isNext) {   // the outcome as text, naming the operation
   if (it.status === 'failed') return { w: a ? 'Analyze failed' : 'Transcribe failed', c: 'err' };
   if (it.status === 'running') return { w: a ? 'Analyzing' : 'Transcribing', c: 'now' };
   if (it.status === 'notStarted') return { w: 'Not started', c: '' };
+  if (it.status === 'skipped') return { w: 'Skipped', c: '' };
   return isNext ? { w: 'Next', c: 'next' } : { w: 'Queued', c: '' };
 }
 function batchCounts(st) {
   var t = st.counts.transcribe, a = st.counts.analyze;
   var warnings = (st.items || []).filter(function (it) { return it.status === 'done' && it.note; }).length;
-  return { done: t.done + a.done, failed: t.failed + a.failed, notStarted: t.notStarted + a.notStarted, warnings: warnings };
+  return { done: t.done + a.done, failed: t.failed + a.failed, notStarted: t.notStarted + a.notStarted, skipped: (t.skipped || 0) + (a.skipped || 0), warnings: warnings };
 }
 function batchSummary(st) {   // the final strip, per stage: "Transcribed 3 of 4 · Analyzed 2 of 3 · 2 failed · …"
   var t = st.counts.transcribe, a = st.counts.analyze, c = batchCounts(st), parts = [];
@@ -819,6 +820,7 @@ function batchSummary(st) {   // the final strip, per stage: "Transcribed 3 of 4
   if (c.failed) parts.push('<span class="err">' + c.failed + ' failed</span>');
   if (c.notStarted || st.phase === 'cancelled') parts.push(c.notStarted + ' not started');
   if (c.warnings) parts.push('<span class="err">' + c.warnings + ' with warnings</span>');
+  if (c.skipped) parts.push(c.skipped + ' skipped');
   return parts.join(' &nbsp;·&nbsp; ');
 }
 function batchProgressHtml(st) {   // the running strip: stage, processed count, failures, what follows
@@ -835,6 +837,7 @@ function batchProgressHtml(st) {   // the running strip: stage, processed count,
   else parts.push(verb + ' &nbsp;<b>' + (c.done + c.failed) + ' of ' + c.total + '</b>&nbsp; processed');
   if (head && c.total) parts.push('<b>' + (c.done + c.failed) + ' of ' + c.total + '</b>&nbsp; processed');
   if (c.failed) parts.push('<span class="err">' + c.failed + ' failed</span>');
+  if (c.skipped) parts.push(c.skipped + ' skipped');
   if (!analyzing) parts.push('then analyzing');
   return parts.join(' &nbsp;·&nbsp; ');
 }
@@ -868,10 +871,19 @@ function renderBatchPage(st) {
   // The strip is the live region: its words change at item and phase boundaries only; the
   // server-step clock sits in an aria-hidden span and never re-announces.
   var html, stripErr = false, n = st.now;
-  if (st.phase === 'cancelling') html = 'Cancelling &nbsp;·&nbsp; finishing ' + (n && n.name ? escHtml(batchName(n.stage, n.name)) : 'the current file');
+  // Cancel never kills the file in progress: say so on screen, before and after it settles.
+  if (st.phase === 'cancelling') html = n && n.name
+    ? 'Finishing ' + (n.stage === 'analyze' ? 'analysis' : 'transcription') + ' of <b>' + escHtml(batchName(n.stage, n.name)) + '</b>, then stopping &nbsp;·&nbsp; files after it are cancelled'
+    : 'Stopping &nbsp;·&nbsp; remaining files cancelled';
   else if (running) html = batchProgressHtml(st);
   else if (st.phase === 'error') { html = escHtml(st.error || 'unknown error'); stripErr = true; }
-  else if (st.phase === 'done' || st.phase === 'cancelled') { html = batchSummary(st); stripErr = !!(batchCounts(st).failed || batchCounts(st).warnings); }
+  else if (st.phase === 'cancelled') {
+    var l = st.last;
+    html = 'Stopped' + (l && l.status === 'done' ? ' after finishing <b>' + escHtml(batchName(l.stage, l.name)) + '</b>' : '') + ' &nbsp;·&nbsp; ' + batchSummary(st)
+      + (st.counts.transcribe.done ? ' &nbsp;·&nbsp; finished recordings are on the Analysis screen' : '');
+    stripErr = !!(batchCounts(st).failed || batchCounts(st).warnings);
+  }
+  else if (st.phase === 'done') { html = batchSummary(st); stripErr = !!(batchCounts(st).failed || batchCounts(st).warnings); }
   else html = 'No batch has run yet';
   if (html !== batchStripText) { batchStripText = html; $('batchStripText').innerHTML = html; }
   $('batchStrip').classList.toggle('err', stripErr);
@@ -904,8 +916,11 @@ function renderBatchPage(st) {
       var meta = document.createElement('div'); meta.className = 'meta';
       var nm = document.createElement('div'); nm.className = 'fname'; nm.textContent = batchName(it.stage, it.name);
       meta.appendChild(nm);
-      if (it.error || it.note) {
-        var sub = document.createElement('div'); sub.className = 'fsub' + (it.error ? ' err' : ''); sub.textContent = it.error || it.note;
+      // Where a finished file went, so nobody looks for it in Unprocessed: the destination is the
+      // next screen in the flow.
+      var subText = it.error || it.note || (it.status === 'done' ? (it.stage === 'analyze' ? 'saved in Completed' : 'saved in Transcribed, on the Analysis screen') : '');
+      if (subText) {
+        var sub = document.createElement('div'); sub.className = 'fsub' + (it.error ? ' err' : ''); sub.textContent = subText;
         meta.appendChild(sub);
       }
       row.appendChild(st_); row.appendChild(meta);
@@ -970,7 +985,7 @@ $('batchBack').onclick = function () {
 $('batchCancel').onclick = function () {
   var b = $('batchCancel');
   if (!batchArm) {   // first tap arms; the name changes so the second tap is not colour alone
-    b.textContent = 'Really cancel?'; b.classList.add('confirm');
+    b.textContent = 'Finish this file, then stop?'; b.classList.add('confirm');   // says what Cancel does: the file in progress completes, the rest is dropped
     batchArm = setTimeout(batchDisarm, 6000);
     return;
   }
