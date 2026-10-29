@@ -989,7 +989,8 @@ $('batchCancel').onclick = function () {
   if (!batchArm) {   // first tap arms; the name changes so the second tap is not colour alone
     // says what Cancel does: a file in progress completes, the rest is dropped
     var running = batchState && batchState.now && batchState.now.name;
-    b.textContent = running ? 'Finish this file, then stop?' : 'Stop remaining work?';   // no file running: server starting, waiting, or stopping b.classList.add('confirm');
+    b.textContent = running ? 'Finish this file, then stop?' : 'Stop remaining work?';   // no file running: server starting, waiting, or stopping
+    b.classList.add('confirm');
     batchArm = setTimeout(batchDisarm, 6000);
     return;
   }
