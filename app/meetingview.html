@@ -303,24 +303,21 @@
   #anView::-webkit-scrollbar { display:none; }
   #anView b { font-weight:800; }
   #anView pre { background:var(--surf2); border-radius:10px; padding:14px 18px; font-size:18px; overflow-x:auto; white-space:pre-wrap; }
-  /* Batch page: Done / Now / Next (one polite live region) beside the per-file ledger; the
-     summary hides the three rows and gives the ledger the full width */
+  /* Batch page: one status strip (same shape as #txStatus) over one full-width list of every file
+     in order; the file being worked is ringed, the row after it reads Next */
   h2.ovTitle { margin:0; }
-  #batchTriple { flex:0 0 760px; display:flex; flex-direction:column; gap:12px; }
-  #batchTriple[hidden] { display:none; }
-  .bRow { flex:1; min-height:0; display:flex; align-items:center; gap:18px; padding:0 22px; border-radius:12px; background:var(--surf); }
-  .bRow.now { box-shadow:inset 0 0 0 2px var(--accent); }
-  .bRow .lab { flex:0 0 90px; font-size:16px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:700; }
-  .bRow .f { flex:1; min-width:0; font-size:24px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .bRow .s { font-size:18px; color:var(--dim); font-weight:600; white-space:nowrap; }
-  .bRow .s.ok { color:var(--accept); } .bRow .s.err { color:var(--danger); } .bRow .s.now { color:var(--accent); }
-  .bRow .t { font-size:18px; font-weight:700; color:var(--fg); font-variant-numeric:tabular-nums; }
-  .bItem .st { flex:0 0 150px; font-size:16px; font-weight:700; color:var(--dim); }
-  .bItem .st.ok { color:var(--accept); } .bItem .st.err { color:var(--danger); } .bItem .st.now { color:var(--accent); }
-  .bItem .fsub { white-space:normal; }   /* the full error text, never clipped */
+  #batchStrip { flex:0 0 auto; min-height:56px; display:flex; align-items:center; gap:14px; padding:0 22px; margin-bottom:12px;
+    border-radius:12px; background:var(--surf); font-size:20px; font-weight:600; color:var(--muted); }
+  #batchStrip b { color:var(--fg); font-weight:800; font-size:22px; }
+  #batchStrip .err { color:var(--danger); } #batchStrip.err #batchStripText { color:var(--danger); }
+  #batchStrip .t { font-size:20px; font-weight:700; color:var(--fg); font-variant-numeric:tabular-nums; }
+  #batchStrip .t:empty { display:none; }
   .bItem { padding-top:12px; padding-bottom:12px; }
-  /* spoken only: the phase change (cancelling, then the final summary) is announced once here */
-  .srOnly { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .bItem.now { box-shadow:inset 0 0 0 2px var(--accent); }
+  .bItem .st { flex:0 0 190px; font-size:18px; font-weight:700; color:var(--dim); }
+  .bItem .st.ok { color:var(--accept); } .bItem .st.err { color:var(--danger); } .bItem .st.now { color:var(--accent); } .bItem .st.next { color:var(--fg); }
+  .bItem .fsub { font-size:16px; white-space:normal; }   /* the full error text, never clipped */
+  .bItem .t { font-size:20px; font-weight:700; color:var(--fg); font-variant-numeric:tabular-nums; flex:0 0 auto; }
 </style>
 </head>
 <body>
@@ -486,18 +483,15 @@
   <!-- Batch: live progress of transcribe-everything-then-analyze-everything, then its summary -->
   <div class="fsOverlay" id="batchOverlay">
     <div class="ovHead"><h2 class="ovTitle" id="batchTitle" tabindex="-1">Batch</h2>
-      <div class="ovNote" id="batchNote"></div>
+      <div class="ovNote"></div>
       <button class="ovBtn danger press foc" id="batchCancel" type="button" style="display:none">Cancel batch</button>
       <button class="ovClose press foc" id="batchBack" type="button">Back to meetings</button></div>
-    <div id="batchLive" class="srOnly" role="status" aria-live="polite"></div>
+    <!-- the batch's own state: stage and counts, server wait, cancelling, the final summary. This is
+         what a screen reader hears: rewritten only when the words change; the clock is not spoken. -->
+    <div id="batchStrip" role="status" aria-live="polite"><span id="batchStripText"></span><span class="t" id="batchStripT" aria-hidden="true"></span></div>
     <div class="ovBody">
-      <div id="batchTriple" role="status" aria-live="polite" hidden>
-        <div class="bRow" id="bLast"><div class="lab">Done</div><div class="f"></div><div class="s"></div></div>
-        <div class="bRow now" id="bNow"><div class="lab">Now</div><div class="f"></div><div class="s"></div><div class="t" id="bNowT" aria-hidden="true"></div></div>
-        <div class="bRow" id="bNext"><div class="lab">Next</div><div class="f"></div><div class="s"></div></div>
-      </div>
       <div class="ovList" id="batchList"></div>
-      <div class="ovScroll"><button class="ovScrollBtn press foc" id="batchUp" type="button">&#9650;</button>
+      <div class="ovScroll" id="batchRail"><button class="ovScrollBtn press foc" id="batchUp" type="button">&#9650;</button>
         <button class="ovScrollBtn press foc" id="batchDown" type="button">&#9660;</button></div>
     </div>
   </div>
