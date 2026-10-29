@@ -32,3 +32,13 @@ test('app option migration leaves other app pages unchanged', () => {
   migrateAppOptions(config);
   assert.deepEqual(config.grids[0].options, { copilotIncluded: '300' });
 });
+
+test('a Claude AI Voice page saved with Haiku goes back to the account default; other picks and backends stay', () => {
+  const config = { grids: [
+    { id: 'a', kind: 'app', app: 'ai-voice', options: { modelPick: 'haiku' } },                     // backend defaults to claude
+    { id: 'b', kind: 'app', app: 'ai-voice', options: { backend: 'claude', modelPick: 'sonnet' } },
+    { id: 'c', kind: 'app', app: 'ai-voice', options: { backend: 'copilot', modelPick: 'haiku' } },  // not the Claude CLI's alias there
+  ] };
+  migrateAppOptions(config);
+  assert.deepEqual(config.grids.map(g => g.options.modelPick), ['', 'sonnet', 'haiku']);
+});

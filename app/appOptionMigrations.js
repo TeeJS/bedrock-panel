@@ -2,6 +2,15 @@
 
 function migrateAppOptions(config) {
   (config.grids || []).forEach(grid => {
+    // Haiku is no longer offered for Claude AI Voice pages: the CLI's `haiku` alias runs Haiku 4.5,
+    // which answered without ever calling a tool (no calendar, no clock). A page saved with it goes
+    // back to the account default, which the session already fell back to.
+    if (grid && grid.kind === 'app' && grid.app === 'ai-voice' && grid.options
+        && (grid.options.backend || 'claude') === 'claude' && grid.options.modelPick === 'haiku') {
+      grid.options.modelPick = '';
+    }
+  });
+  (config.grids || []).forEach(grid => {
     if (!grid || grid.kind !== 'app' || grid.app !== 'ai-usage' || !grid.options) return;
     const options = grid.options;
     if (!Object.prototype.hasOwnProperty.call(options, 'copilotCreditsIncluded')

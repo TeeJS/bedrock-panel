@@ -2554,7 +2554,7 @@
     // Claude model picks for the page (modelPick): the same aliases the panel's Settings → Model offers
     // (CLAUDE_VOICE_MODEL_PICKS in app/claudevoice-adapter.js; test/aiVoiceModelPick.test.js keeps the
     // two lists equal). '' = no --model flag, the Claude account's default.
-    const CV_CLAUDE_MODELS = [['', 'Default (Claude account setting)'], ['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']];
+    const CV_CLAUDE_MODELS = [['', 'Default (Claude account setting)'], ['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet']];
     // Permission-mode choice sets differ per CLI backend (they map to each CLI's own flags), so they
     // live here rather than in the single ai-voice apps.json entry.
     // [value, short label, supporting text] — the label is what the closed <select> shows, so it stays

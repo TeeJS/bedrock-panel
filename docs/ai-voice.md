@@ -232,10 +232,12 @@ Copilot's discovered lists, Open WebUI's `/api/models`, or your API endpoint's `
 that backend's default.
 
 A Claude Code page also has a **Model** setting in the editor (the page's **Agent** section): Default
-(your Claude account's model), Fable, Opus, Sonnet or Haiku. It is the same setting as the panel's
+(your Claude account's model), Fable, Opus or Sonnet. It is the same setting as the panel's
 **Settings → Model**, so either place changes it for that page; a change made in the editor reaches
-a running conversation before your next message. A faster model answers sooner: the account default
-is often the largest model.
+a running conversation before your next message. Sonnet answers sooner than the account default,
+which is often the largest model, and still uses your tools (calendar, files, MCP servers). Haiku is
+not offered: the CLI's `haiku` runs Haiku 4.5, which on the panel answered without calling any tool,
+and a page saved with it goes back to the default.
 
 With the wake word on, the page starts its Claude session as soon as it is listening for the name,
 so the first answer does not wait for Claude to start. If the persona (or the model) has changed

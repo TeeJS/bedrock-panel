@@ -26,11 +26,12 @@ const CLAUDE_VOICE_MODE_DESCS = {
   plan: "Describe, don't act, until approved",
   bypassPermissions: 'No prompts at all — use with care',
 };
-const CLAUDE_VOICE_MODEL_LABELS = { '': 'Default (account setting)', fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
+const CLAUDE_VOICE_MODEL_LABELS = { '': 'Default (account setting)', fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet' };
 // Model aliases the panel may pick ('' = account default, no --model flag). Aliases only, never
-// full model ids: aliases track "latest of the family" and can't go stale. All four verified
-// accepted by the installed CLI (2.1.228) -- an invalid --model would crash-loop the child.
-const CLAUDE_VOICE_MODEL_PICKS = ['', 'fable', 'opus', 'sonnet', 'haiku'];
+// full model ids: aliases track "latest of the family" and can't go stale. All verified accepted
+// by the installed CLI (2.1.228) -- an invalid --model would crash-loop the child. No `haiku`: the
+// CLI resolves it to Haiku 4.5, which on the panel answered without calling any tool (2026-10-28).
+const CLAUDE_VOICE_MODEL_PICKS = ['', 'fable', 'opus', 'sonnet'];
 
 // User-customizable panel prompt (task #25): a real file in the app's data folder, appended to the
 // bundled voice prompt on every session spawn. APPEND, not replace -- the bundled prompt carries

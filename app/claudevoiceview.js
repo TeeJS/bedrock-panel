@@ -829,7 +829,7 @@ function applySinkId(audio) {
 }
 // Model picker state: the pick is an alias ('' = account default) persisted like the device
 // labels; `liveModel` is the model ACTUALLY running, reported by the session's init event.
-var MODEL_PICKS = [['', 'Default (account setting)'], ['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']];
+var MODEL_PICKS = [['', 'Default (account setting)'], ['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet']];
 var savedModelPick = Q.get('modelPick') || '';
 var liveModel = '';
 function modelPrettyName(id) {   // 'claude-sonnet-5' -> 'Sonnet' (best-effort; falls back to the raw id)
