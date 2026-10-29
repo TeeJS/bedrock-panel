@@ -127,6 +127,14 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     const g = wake.arm(r.ready ? wakeword.createWakeMatcher(r) : null);
     if (!r.ready) wake.disarm();   // closed gate, state reported as not-ready
     wakeBroadcast();
+    // Pre-warm: a page that arms the wake word has said "stay ready", so start the agent session now
+    // rather than on the first addressed utterance -- a cold CLI spawn (tens of seconds for the first
+    // "hey <name>" answer) otherwise lands right after the wake word. Only here, only while the gate
+    // is really open: a tap-to-talk page keeps the lazy first-turn start, and a session already
+    // running (page reload, hidden -> visible re-arm) is left alone.
+    if (r.ready && !adapter.isRunning()) {
+      try { startSession(); } catch (e) { say('wake pre-warm: session start failed: ' + e.message); }
+    }
     return { ok: true, gen: g, wake: wakeSnapshot() };
   }
   function wakeReplyEnd(completed) { wake.onReplyEnd(completed !== false && followWorthy()); wakeBroadcast(); return true; }
