@@ -35,8 +35,9 @@
   .seg.active { background:var(--accent); color:var(--accent-fg,#04121f); }
   #status { font-size:16px; color:var(--dim); font-weight:600; }
   #spacer { flex:1; }
-  /* Batch progress/outcome sits in the empty topbar space left of the Batch button; same voice as #status */
-  #batchStatus { font-size:16px; color:var(--dim); font-weight:600; white-space:nowrap; max-width:360px; overflow:hidden; text-overflow:ellipsis; }
+  /* Batch progress/outcome sits in the empty topbar space left of the Batch button. Read at arm's
+     length on the 1920x480 panel, so it is bigger and brighter than #status (user, 2026-10-20). */
+  #batchStatus { font-size:20px; color:var(--fg); font-weight:700; white-space:nowrap; max-width:420px; overflow:hidden; text-overflow:ellipsis; }
   #batchStatus:empty { display:none; }
   #batchStatus.err { color:var(--danger); }
   #recHost { display:flex; }
@@ -302,6 +303,24 @@
   #anView::-webkit-scrollbar { display:none; }
   #anView b { font-weight:800; }
   #anView pre { background:var(--surf2); border-radius:10px; padding:14px 18px; font-size:18px; overflow-x:auto; white-space:pre-wrap; }
+  /* Batch page: Done / Now / Next (one polite live region) beside the per-file ledger; the
+     summary hides the three rows and gives the ledger the full width */
+  h2.ovTitle { margin:0; }
+  #batchTriple { flex:0 0 760px; display:flex; flex-direction:column; gap:12px; }
+  #batchTriple[hidden] { display:none; }
+  .bRow { flex:1; min-height:0; display:flex; align-items:center; gap:18px; padding:0 22px; border-radius:12px; background:var(--surf); }
+  .bRow.now { box-shadow:inset 0 0 0 2px var(--accent); }
+  .bRow .lab { flex:0 0 90px; font-size:16px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:700; }
+  .bRow .f { flex:1; min-width:0; font-size:24px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bRow .s { font-size:18px; color:var(--dim); font-weight:600; white-space:nowrap; }
+  .bRow .s.ok { color:var(--accept); } .bRow .s.err { color:var(--danger); } .bRow .s.now { color:var(--accent); }
+  .bRow .t { font-size:18px; font-weight:700; color:var(--fg); font-variant-numeric:tabular-nums; }
+  .bItem .st { flex:0 0 150px; font-size:16px; font-weight:700; color:var(--dim); }
+  .bItem .st.ok { color:var(--accept); } .bItem .st.err { color:var(--danger); } .bItem .st.now { color:var(--accent); }
+  .bItem .fsub { white-space:normal; }   /* the full error text, never clipped */
+  .bItem { padding-top:12px; padding-bottom:12px; }
+  /* spoken only: the phase change (cancelling, then the final summary) is announced once here */
+  .srOnly { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -461,6 +480,25 @@
       <div id="anView"></div>
       <div class="ovScroll"><button class="ovScrollBtn press foc" id="anViewUp" type="button">&#9650;</button>
         <button class="ovScrollBtn press foc" id="anViewDown" type="button">&#9660;</button></div>
+    </div>
+  </div>
+
+  <!-- Batch: live progress of transcribe-everything-then-analyze-everything, then its summary -->
+  <div class="fsOverlay" id="batchOverlay">
+    <div class="ovHead"><h2 class="ovTitle" id="batchTitle" tabindex="-1">Batch</h2>
+      <div class="ovNote" id="batchNote"></div>
+      <button class="ovBtn danger press foc" id="batchCancel" type="button" style="display:none">Cancel batch</button>
+      <button class="ovClose press foc" id="batchBack" type="button">Back to meetings</button></div>
+    <div id="batchLive" class="srOnly" role="status" aria-live="polite"></div>
+    <div class="ovBody">
+      <div id="batchTriple" role="status" aria-live="polite" hidden>
+        <div class="bRow" id="bLast"><div class="lab">Done</div><div class="f"></div><div class="s"></div></div>
+        <div class="bRow now" id="bNow"><div class="lab">Now</div><div class="f"></div><div class="s"></div><div class="t" id="bNowT" aria-hidden="true"></div></div>
+        <div class="bRow" id="bNext"><div class="lab">Next</div><div class="f"></div><div class="s"></div></div>
+      </div>
+      <div class="ovList" id="batchList"></div>
+      <div class="ovScroll"><button class="ovScrollBtn press foc" id="batchUp" type="button">&#9650;</button>
+        <button class="ovScrollBtn press foc" id="batchDown" type="button">&#9660;</button></div>
     </div>
   </div>
 

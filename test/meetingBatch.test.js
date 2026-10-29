@@ -4,260 +4,317 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createMeetingBatch } = require('../app/meetingBatch');
 
+// Fake services: one poll tick (the coordinator's sleep) starts the queue head, the next tick
+// settles it through onOutcome — so rows pass through queued → running → done/failed as they do
+// in the real services, and a Cancel can land between any two ticks.
+function fakeService(kindOf) {
+  const svc = { queue: [], current: null, phase: null, listeners: [], calls: [], outcomes: {} };
+  svc.onOutcome = listener => { svc.listeners.push(listener); return () => { svc.listeners = svc.listeners.filter(l => l !== listener); }; };
+  svc.emit = ev => { for (const l of svc.listeners.slice()) l(Object.assign({}, ev)); };
+  svc.step = (at) => {
+    if (svc.phase) return;
+    if (svc.current) {
+      const o = svc.outcomes[svc.current.name] || { status: 'done' };
+      const ev = Object.assign({ name: svc.current.name, finishedAt: at, error: null }, kindOf(svc.current), o);
+      svc.current = null;
+      svc.emit(ev);
+    } else if (svc.queue.length) {
+      svc.current = Object.assign({ startedAt: at }, svc.queue.shift());
+    }
+  };
+  return svc;
+}
+
 function setup(options = {}) {
   const calls = [];
-  const tx = { completed: 10, failed: 2, queue: [], current: null, phase: null };
-  const an = { completed: 7, failed: 3, queue: [], running: false };
-  let ticks = 0;
+  let t = 1000;
+  const now = () => t;
+  const tx = fakeService(() => ({}));
+  const an = fakeService(cur => ({ kind: cur.kind }));
   const library = {
     listFiles(kind, dir) {
       calls.push(['list', kind, dir || '']);
-      return options.list ? options.list(kind, dir || '') : { ok: true, dirs: [], files: [] };
+      return options.list ? options.list(kind, dir || '') : { ok: true, dirs: [], files: [], meetings: [] };
     },
   };
   const transcriber = {
-    getState: () => Object.assign({}, tx),
+    onOutcome: tx.onOutcome,
+    getState: () => ({ phase: tx.phase, current: tx.current ? { name: tx.current.name, startedAt: tx.current.startedAt } : null, queue: tx.queue.map(q => q.name) }),
     enqueue(name) {
       calls.push(['transcribe', name]);
-      if (tx.queue.includes(name) || tx.current?.name === name) return { ok: false, error: 'already queued' };
+      if (options.enqueueHook && options.enqueueHook(name, tx) === false) return { ok: false, error: 'not found' };
+      if (tx.queue.some(q => q.name === name) || (tx.current && tx.current.name === name)) return { ok: false, error: 'already queued' };
       if (options.rejectTx) return { ok: false, error: 'not found' };
-      tx.queue.push(name);
+      tx.queue.push({ name });
       return { ok: true };
     },
+    clearQueue(names) { calls.push(['clearTranscribe', names.slice()]); const before = tx.queue.length; tx.queue = tx.queue.filter(q => !names.includes(q.name)); return before - tx.queue.length; },
   };
   const analyzer = {
-    getState: () => Object.assign({}, an),
-    clearQueue() { calls.push(['clearAnalysisQueue']); return an.queue.splice(0).length; },
+    onOutcome: an.onOutcome,
+    getState: () => ({ running: !!an.current, name: an.current ? an.current.name : null, kind: an.current ? an.current.kind : null,
+      startedAt: an.current ? an.current.startedAt : null, queue: an.queue.map(q => ({ name: q.name, kind: q.kind })) }),
     start(name, kind) {
       calls.push(['analyze', name, kind]);
       if (options.rejectAn) return { ok: false, error: 'not found' };
-      an.queue.push(name);
+      an.queue.push({ name, kind });
       return { ok: true };
     },
+    clearQueue(names, kind) { calls.push(['clearAnalyze', names.slice(), kind]); const before = an.queue.length; an.queue = an.queue.filter(q => !(q.kind === kind && names.includes(q.name))); return before - an.queue.length; },
   };
-  const batch = createMeetingBatch({ library, transcriber, analyzer, now: options.now || (() => 123),
-    getBusyFiles: options.getBusyFiles,
-    pollMs: 1,
+  let ticks = 0;
+  const batch = createMeetingBatch({ library, transcriber, analyzer, now, getBusyFiles: options.getBusyFiles, pollMs: 1,
     sleep: async () => {
-      ticks++;
-      if (ticks > 20) throw new Error('test queue did not drain');
-      if (options.tick) options.tick({ tx, an, ticks, calls });
-      else {
-        tx.completed += tx.queue.splice(0).length;
-        an.completed += an.queue.splice(0).length;
-      }
+      ticks++; t += 10;
+      if (ticks > 60) throw new Error('test queue did not drain');
+      if (options.tick) options.tick({ tx, an, ticks, calls, batch, t });
+      tx.step(t); an.step(t);
     },
   });
-  return { batch, calls, tx, an };
+  return { batch, calls, tx, an, clock: () => t };
 }
 
 async function finish(batch) {
-  for (let i = 0; i < 100 && batch.getState().running; i++) await new Promise(resolve => setImmediate(resolve));
+  for (let i = 0; i < 400 && batch.getState().running; i++) await new Promise(resolve => setImmediate(resolve));
   assert.equal(batch.getState().running, false);
   return batch.getState();
 }
 
-const listing = (files = [], dirs = []) => ({ ok: true, files, dirs, meetings: files });
-const transcript = name => ({ name, jsonName: name, analyzed: false });
+const wav = (name, size = 1000) => ({ name, size });
+const row = name => ({ name, analyzed: false, readOnly: false, jsonName: name });
+const listing = (files = [], meetings = []) => ({ ok: true, files, dirs: [], meetings });
+const names = (st, stage) => st.items.filter(it => it.stage === stage).map(it => it.name + ':' + it.status);
 
-test('waits for transcription and post hook, then analyzes every flat transcribed row', async () => {
-  let created = false;
-  const s = setup({
-    list: (kind, dir) => {
-      assert.equal(dir, '');
-      if (kind === 'unprocessed') return listing([{ name: 'new.WAV' }, { name: 'new.json' }]);
-      assert.equal(kind, 'transcribed', 'never scans completed or date/archive folders');
-      assert.equal(created, true, 'scan waits for transcription and its post hook');
-      return Object.assign(listing([transcript('new-diarizer-response.json'), transcript('old-diarizer-response.json')], ['2026']), { byDate: true });
-    },
-    tick: ({ tx, an, ticks }) => {
-      if (ticks === 1) { tx.completed++; tx.queue = []; tx.phase = 'post'; }
-      else if (ticks === 2) { tx.phase = null; created = true; }
-      else an.completed += an.queue.splice(0).length;
-    },
+test('transcribes every WAV, then analyzes every Not-analyzed row; the ledger keeps every outcome in order', async () => {
+  const { batch, calls, tx } = setup({
+    list: kind => kind === 'unprocessed' ? listing([wav('a.wav'), wav('b.wav'), wav('notes.txt')])
+      : listing([], [row('a-diarizer-response.json'), row('b-diarizer-response.json'), { name: 'old-diarizer-response.json', analyzed: true, jsonName: 'x' }]),
   });
-  assert.equal(s.batch.start().phase, 'transcribing');
-  const st = await finish(s.batch);
-  assert.deepEqual([st.phase, st.transcribed, st.analyzed], ['done', 1, 2]);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze'), [
-    ['analyze', 'new-diarizer-response.json', 'transcribed'], ['analyze', 'old-diarizer-response.json', 'transcribed'],
-  ]);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'list'), [['list', 'unprocessed', ''], ['list', 'transcribed', '']]);
-});
-
-test('logical transcribed rows drive Batch; raw files and completed notes are never analyzed', async () => {
-  const s = setup({ list: kind => kind === 'unprocessed' ? listing() : Object.assign(listing([
-    transcript('raw-diarizer-response.json'),
-  ]), { meetings: [
-    transcript('todo-diarizer-response.json'),
-    { name: 'done-diarizer-response.json', jsonName: 'done-diarizer-response.json', analyzed: true },
-    { name: 'readonly-diarizer-response.json', jsonName: 'readonly-diarizer-response.json', analyzed: false, readOnly: true },
-    { name: 'notes.md', jsonName: null, analyzed: false },
-  ] }) });
-  s.batch.start();
-  assert.equal((await finish(s.batch)).analyzed, 1);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'analyze'), [['analyze', 'todo-diarizer-response.json', 'transcribed']]);
-});
-
-test('no WAVs still analyzes stragglers; a second click shares the active batch', async () => {
-  const s = setup({ list: kind => kind === 'unprocessed' ? listing() : listing([transcript('old-diarizer-response.json')]) });
-  assert.deepEqual(s.batch.start(), s.batch.start());
-  assert.equal((await finish(s.batch)).analyzed, 1);
-  assert.equal(s.calls.filter(c => c[0] === 'analyze').length, 1);
-  const copy = s.batch.getState();
-  copy.phase = 'broken';
-  assert.equal(s.batch.getState().phase, 'done');
-});
-
-test('empty batch completes and can be started again', async () => {
-  const s = setup();
-  s.batch.start();
-  let st = await finish(s.batch);
-  assert.deepEqual([st.phase, st.transcribed, st.analyzed, st.startedAt, st.finishedAt], ['done', 0, 0, 123, 123]);
-  s.batch.start();
-  st = await finish(s.batch);
+  tx.outcomes['b.wav'] = { status: 'error', error: 'upload failed: 502' };
+  const first = batch.start();
+  assert.equal(first.running, true);
+  assert.equal(first.phase, 'transcribing');
+  assert.deepEqual(first.items, []);          // the scan happens after start() returns
+  const st = await finish(batch);
   assert.equal(st.phase, 'done');
-  assert.equal(s.calls.filter(c => c[0] === 'list').length, 4);
+  assert.deepEqual(names(st, 'transcribe'), ['a.wav:done', 'b.wav:failed']);
+  assert.deepEqual(names(st, 'analyze'), ['a-diarizer-response.json:done', 'b-diarizer-response.json:done']);
+  assert.equal(st.items[1].error, 'upload failed: 502');
+  assert.deepEqual(st.counts, { transcribe: { total: 2, done: 1, failed: 1, notStarted: 0 }, analyze: { total: 2, done: 2, failed: 0, notStarted: 0 } });
+  assert.equal(st.transcribed, 1); assert.equal(st.transcribeErrors, 1); assert.equal(st.analyzed, 2); assert.equal(st.analyzeErrors, 0);
+  assert.equal(st.last.name, 'b-diarizer-response.json');
+  assert.equal(st.now, null); assert.equal(st.next, null);
+  assert.deepEqual(calls.filter(c => c[0] === 'analyze'), [['analyze', 'a-diarizer-response.json', 'transcribed'], ['analyze', 'b-diarizer-response.json', 'transcribed']]);
 });
 
-test('counts all failures between polls and continues analysis after failed transcription', async () => {
-  const s = setup({
-    list: kind => kind === 'unprocessed' ? listing([{ name: 'a.wav' }]) : listing([transcript('old-diarizer-response.json')]),
-    tick: ({ tx, an }) => {
-      if (tx.queue.length) { tx.queue = []; tx.failed += 35; tx.completed += 40; }
-      if (an.queue.length) { an.queue = []; an.failed += 4; an.completed += 3; }
-    },
+test('last / now / next follow the queue while it runs, and the elapsed clock comes from the service', async () => {
+  const seen = [];
+  const { batch } = setup({
+    list: kind => kind === 'unprocessed' ? listing([wav('a.wav'), wav('b.wav'), wav('c.wav')]) : listing(),
+    tick: ({ batch }) => { const s = batch.getState(); seen.push([s.last && s.last.name, s.now && s.now.name, s.now && s.now.startedAt, s.next && (s.next.name || s.next.stage)]); },
   });
-  s.batch.start();
-  const st = await finish(s.batch);
-  assert.deepEqual([st.phase, st.transcribed, st.transcribeErrors, st.analyzed, st.analyzeErrors, st.error],
-    ['done', 40, 35, 3, 4, null]);
+  batch.start();
+  await finish(batch);
+  // The fake settles a job on one tick and starts the next on the following one, so every file
+  // shows an idle gap: nothing running, the next file still queued. Once the last WAV runs, the
+  // analysis stage is what comes next (the stage ends on c's outcome without another poll).
+  assert.deepEqual(seen.slice(0, 6), [
+    [null, null, null, 'a.wav'],
+    [null, 'a.wav', 1010, 'b.wav'],
+    ['a.wav', null, null, 'b.wav'],
+    ['a.wav', 'b.wav', 1030, 'c.wav'],
+    ['b.wav', null, null, 'c.wav'],
+    ['b.wav', 'c.wav', 1050, 'analyze'],
+  ]);
 });
 
-test('waits for existing current jobs, pre/waiting hooks and analysis jobs, without duplicate failure', async () => {
-  const s = setup({
-    list: kind => kind === 'unprocessed' ? listing([{ name: 'active.wav' }]) : listing(),
-    tick: ({ tx, an, ticks }) => {
-      if (ticks === 1) tx.phase = 'waiting';
-      if (ticks === 2) { tx.phase = null; tx.current = { name: 'active.wav' }; }
-      if (ticks === 3) { tx.current = null; tx.completed++; }
-      if (ticks === 4) { an.running = false; an.completed++; }
-    },
+test('a job already queued by hand is adopted; a stranger in the queue is shown but never waited on', async () => {
+  let mid = null;
+  const { batch, tx, calls } = setup({
+    list: kind => kind === 'unprocessed' ? listing([wav('mine.wav')]) : listing(),
+    tick: ({ ticks, batch }) => { if (ticks === 2) mid = batch.getState(); },   // theirs.wav is running
   });
-  s.tx.current = { name: 'active.wav' };
-  s.tx.phase = 'pre';
-  s.an.running = true;
-  s.batch.start();
-  const st = await finish(s.batch);
-  assert.deepEqual([st.transcribed, st.transcribeErrors, st.analyzed], [1, 0, 1]);
+  tx.queue.push({ name: 'theirs.wav' }, { name: 'mine.wav' });   // started from the Unprocessed screen
+  batch.start();
+  const st = await finish(batch);
+  assert.equal(mid.now.name, 'theirs.wav'); assert.equal(mid.now.mine, false);
+  assert.deepEqual(names(mid, 'transcribe'), ['mine.wav:queued']);
+  assert.deepEqual(names(st, 'transcribe'), ['mine.wav:done']);
+  assert.equal(calls.filter(c => c[0] === 'transcribe').length, 1);
 });
 
-test('enqueue rejections are counted and do not abort remaining stages', async () => {
-  const s = setup({ rejectTx: true, rejectAn: true,
-    list: kind => kind === 'unprocessed' ? listing([{ name: 'gone.wav' }]) : listing([transcript('gone-diarizer-response.json')]),
+test('an outcome delivered synchronously inside enqueue finds its row and is not overwritten', async () => {
+  const { batch, tx } = setup({
+    list: kind => kind === 'unprocessed' ? listing([wav('a.wav'), wav('b.wav')]) : listing(),
+    enqueueHook: (name, svc) => { if (name === 'a.wav') { svc.emit({ name, status: 'error', error: 'meeting folders misconfigured', finishedAt: 999 }); return false; } },
   });
-  s.batch.start();
-  const st = await finish(s.batch);
-  assert.deepEqual([st.phase, st.transcribeErrors, st.analyzeErrors], ['done', 1, 1]);
+  tx.outcomes['b.wav'] = { status: 'done' };
+  batch.start();
+  const st = await finish(batch);
+  assert.deepEqual(names(st, 'transcribe'), ['a.wav:failed', 'b.wav:done']);
+  assert.equal(st.items[0].error, 'meeting folders misconfigured');
 });
 
-test('active and finalizing recordings stay for the next batch without counting as errors', async () => {
-  let busy = ['active.wav', 'finalizing.wav'];
-  const s = setup({ getBusyFiles: () => busy,
-    list: kind => kind === 'unprocessed'
-      ? listing([{ name: 'active.wav' }, { name: 'finalizing.wav' }, { name: 'ready.wav' }]) : listing(),
+test('cancel during transcription drops the pending jobs, lets the running one settle, lists what analysis would have done', async () => {
+  const { batch, calls, tx } = setup({
+    list: kind => kind === 'unprocessed' ? listing([wav('a.wav'), wav('b.wav'), wav('c.wav')]) : listing([], [row('a-diarizer-response.json')]),
+    // tick 1 starts a, tick 2 settles a, tick 3 starts b; the cancel lands with b running
+    tick: ({ ticks, tx, batch }) => { if (ticks === 4) { assert.equal(tx.current.name, 'b.wav'); const s = batch.cancel(); assert.equal(s.phase, 'cancelling'); assert.equal(s.cancelRequested, true); } },
   });
-  s.batch.start();
-  let st = await finish(s.batch);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'transcribe').map(c => c[1]), ['ready.wav']);
-  assert.deepEqual([st.transcribed, st.transcribeErrors], [1, 0]);
-  busy = [];
-  s.batch.start();
-  st = await finish(s.batch);
-  assert.deepEqual([st.transcribed, st.transcribeErrors], [3, 0]);
+  tx.outcomes['b.wav'] = { status: 'error', error: 'timed out after 60 min' };
+  batch.start();
+  const st = await finish(batch);
+  assert.equal(st.phase, 'cancelled');
+  assert.deepEqual(names(st, 'transcribe'), ['a.wav:done', 'b.wav:failed', 'c.wav:notStarted']);
+  assert.deepEqual(names(st, 'analyze'), ['a-diarizer-response.json:notStarted']);
+  assert.deepEqual(calls.filter(c => c[0] === 'clearTranscribe'), [['clearTranscribe', ['c.wav']]]);
+  assert.equal(calls.filter(c => c[0] === 'analyze').length, 0, 'the analysis stage never starts after a cancel');
+  assert.deepEqual(st.counts.transcribe, { total: 3, done: 1, failed: 1, notStarted: 1 });
 });
 
-test('a header-only (44-byte) recording is left out of the batch, not counted as a failure', async () => {
-  const s = setup({
-    list: kind => kind === 'unprocessed'
-      ? listing([{ name: 'empty.wav', size: 44 }, { name: 'real.wav', size: 82083884 }]) : listing(),
-  });
-  s.batch.start();
-  const st = await finish(s.batch);
-  assert.deepEqual(s.calls.filter(c => c[0] === 'transcribe').map(c => c[1]), ['real.wav']);
-  assert.deepEqual([st.transcribed, st.transcribeErrors], [1, 0]);
-});
-
-test('listing failure ends with coordinator error and permits retry', async () => {
-  let fail = true;
-  const s = setup({ list: () => {
-    if (fail) throw new Error('library unavailable');
-    return listing();
-  } });
-  s.batch.start();
-  assert.equal((await finish(s.batch)).error, 'library unavailable');
-  assert.equal(s.batch.getState().phase, 'error');
-  fail = false;
-  s.batch.start();
-  assert.equal((await finish(s.batch)).phase, 'done');
-  assert.equal(s.batch.getState().error, null);
-});
-
-test('new authentication failure halts batch and clears pending analysis, without cancelling active job', async () => {
-  let failAuth = true;
-  const s = setup({
-    list: kind => kind === 'unprocessed' ? listing() : listing([
-      transcript('a-diarizer-response.json'), transcript('b-diarizer-response.json'), transcript('c-diarizer-response.json'),
-    ]),
-    tick: ({ an }) => {
-      if (failAuth) {
-        an.failed++;
-        an.queue.shift();
-        an.running = true;   // queue pump may already have started another job by the next poll
-        an.error = { authRequired: true, finishedAt: 123,
-          error: 'Claude needs sign-in. On this PC run: claude auth login — then try again.' };
-      } else {
-        an.completed += an.queue.splice(0).length;
-        an.running = false;
-        an.error = null;
+test('cancel between polls keeps the job that just started: it is not dropped and the summary waits for it', async () => {
+  const { batch, calls, tx } = setup({
+    list: kind => kind === 'unprocessed' ? listing([wav('a.wav'), wav('b.wav'), wav('c.wav')]) : listing(),
+    tick: ({ ticks, tx, batch }) => {
+      if (ticks === 3) {
+        tx.step(2000); tx.step(2001);   // a settles and b starts before the coordinator polls again
+        batch.cancel();
+        assert.equal(tx.current.name, 'b.wav', 'the running job is untouched');
       }
     },
   });
-  s.batch.start();
-  let st = await finish(s.batch);
-  assert.deepEqual([st.phase, st.halted, st.analyzed, st.analyzeErrors], ['error', true, 0, 1]);
-  assert.equal(st.error, 'Claude needs sign-in. On this PC run: claude auth login');
-  assert.deepEqual(s.an.queue, []);
-  assert.equal(s.an.running, true, 'queue clearing does not claim to cancel the active job');
-  assert.equal(s.calls.filter(c => c[0] === 'clearAnalysisQueue').length, 1);
-  failAuth = false;
-  s.an.running = false;
-  s.batch.start();
-  st = await finish(s.batch);
-  assert.deepEqual([st.phase, st.halted, st.error, st.analyzed, st.analyzeErrors], ['done', false, null, 3, 0]);
+  batch.start();
+  const st = await finish(batch);
+  assert.deepEqual(names(st, 'transcribe'), ['a.wav:done', 'b.wav:done', 'c.wav:notStarted']);
+  assert.deepEqual(calls.filter(c => c[0] === 'clearTranscribe'), [['clearTranscribe', ['c.wav']]]);
+  assert.equal(tx.queue.length, 0);
 });
 
-test('a stale auth marker, even with the same timestamp, does not halt a fresh analysis stage', async () => {
-  const s = setup({ list: kind => kind === 'unprocessed' ? listing() : listing([transcript('a-diarizer-response.json')]) });
-  s.an.error = { authRequired: true, finishedAt: 123 };
-  s.batch.start();
-  const st = await finish(s.batch);
-  assert.deepEqual([st.phase, st.halted, st.analyzed], ['done', false, 1]);
-  assert.equal(s.calls.some(c => c[0] === 'clearAnalysisQueue'), false);
-});
-
-test('halting another provider preserves its sign-in guidance', async () => {
-  const message = 'Codex needs sign-in. Sign in to it on this PC, then try again.';
-  const s = setup({
-    list: kind => kind === 'unprocessed' ? listing() : listing([transcript('a-diarizer-response.json')]),
-    tick: ({ an }) => {
-      an.failed++;
-      an.queue.shift();
-      an.error = { authRequired: true, finishedAt: 123, error: message };
+test('the same between-polls start during analysis keeps the transcribed job that just began', async () => {
+  const { batch, calls, an } = setup({
+    list: kind => kind === 'unprocessed' ? listing() : listing([], [row('a-diarizer-response.json'), row('b-diarizer-response.json'), row('c-diarizer-response.json')]),
+    tick: ({ ticks, an, batch }) => {
+      if (ticks === 3) {
+        an.step(2000); an.step(2001);   // a settles and b starts before the coordinator polls again
+        batch.cancel();
+        assert.equal(an.current.name, 'b-diarizer-response.json');
+      }
     },
   });
-  s.batch.start();
-  const st = await finish(s.batch);
-  assert.equal(st.halted, true);
-  assert.equal(st.error, message);
+  batch.start();
+  const st = await finish(batch);
+  assert.deepEqual(names(st, 'analyze'), ['a-diarizer-response.json:done', 'b-diarizer-response.json:done', 'c-diarizer-response.json:notStarted']);
+  assert.deepEqual(calls.filter(c => c[0] === 'clearAnalyze'), [['clearAnalyze', ['c-diarizer-response.json'], 'transcribed']]);
+});
+
+test('cancel right after start, before anything was queued, lists every file as not started', async () => {
+  const { batch, calls } = setup({ list: kind => kind === 'unprocessed' ? listing([wav('a.wav')]) : listing([], [row('t-diarizer-response.json')]) });
+  batch.start();
+  batch.cancel();
+  const st = await finish(batch);
+  assert.equal(st.phase, 'cancelled');
+  assert.deepEqual(names(st, 'transcribe'), ['a.wav:notStarted']);
+  assert.deepEqual(names(st, 'analyze'), ['t-diarizer-response.json:notStarted']);
+  assert.equal(calls.filter(c => c[0] === 'transcribe' || c[0] === 'analyze').length, 0);
+});
+
+test('cancel during analysis drops only this batch\'s transcribed jobs and settles the running one', async () => {
+  const { batch, calls, an } = setup({
+    list: kind => kind === 'unprocessed' ? listing() : listing([], [row('a-diarizer-response.json'), row('b-diarizer-response.json'), row('c-diarizer-response.json')]),
+    tick: ({ ticks, an, batch }) => {
+      if (ticks === 1) an.queue.push({ name: 'manual.md', kind: 'processed' });   // a re-analysis started from Completed
+      if (ticks === 4) { assert.equal(an.current.name, 'b-diarizer-response.json'); batch.cancel(); }
+    },
+  });
+  an.outcomes['b-diarizer-response.json'] = { status: 'done', warning: 'committed, with leftovers' };
+  batch.start();
+  const st = await finish(batch);
+  assert.equal(st.phase, 'cancelled');
+  assert.deepEqual(names(st, 'analyze'), ['a-diarizer-response.json:done', 'b-diarizer-response.json:done', 'c-diarizer-response.json:notStarted']);
+  assert.equal(st.items[1].note, 'committed, with leftovers');
+  assert.deepEqual(calls.filter(c => c[0] === 'clearAnalyze'), [['clearAnalyze', ['c-diarizer-response.json'], 'transcribed']]);
+  assert.equal(an.queue.some(q => q.name === 'manual.md'), true, 'the manual job stays queued');
+});
+
+test('a sign-in failure halts the batch: pending analyses are dropped, the ledger stays, the error names the fix', async () => {
+  const { batch, calls, an } = setup({
+    list: kind => kind === 'unprocessed' ? listing() : listing([], [row('a-diarizer-response.json'), row('b-diarizer-response.json'), row('c-diarizer-response.json')]),
+  });
+  an.outcomes['a-diarizer-response.json'] = { status: 'error', error: 'Claude needs sign-in. On this PC run: claude auth login — then try again.', authRequired: true };
+  batch.start();
+  const st = await finish(batch);
+  assert.equal(st.phase, 'error'); assert.equal(st.halted, true);
+  assert.equal(st.error, 'Claude needs sign-in. On this PC run: claude auth login');
+  assert.deepEqual(names(st, 'analyze'), ['a-diarizer-response.json:failed', 'b-diarizer-response.json:notStarted', 'c-diarizer-response.json:notStarted']);
+  assert.deepEqual(calls.filter(c => c[0] === 'clearAnalyze'), [['clearAnalyze', ['b-diarizer-response.json', 'c-diarizer-response.json'], 'transcribed']]);
+  assert.equal(an.queue.length, 0);
+  // A later batch is a fresh run: the stale halt does not carry over.
+  const again = batch.start();
+  assert.equal(again.halted, false);
+  await finish(batch);
+});
+
+test('an empty first batch completes; an empty batch after a summary keeps that summary', async () => {
+  let files = [wav('a.wav')];
+  const { batch } = setup({ list: kind => kind === 'unprocessed' ? listing(files) : listing() });
+  const empty = setup({ list: () => listing() });
+  empty.batch.start();
+  const e = await finish(empty.batch);
+  assert.equal(e.phase, 'done'); assert.deepEqual(e.items, []);
+
+  batch.start();
+  const first = await finish(batch);
+  assert.deepEqual(names(first, 'transcribe'), ['a.wav:done']);
+  files = [];
+  const again = batch.start();
+  assert.equal(again.empty, true);
+  assert.equal(again.running, false);
+  assert.deepEqual(names(again, 'transcribe'), ['a.wav:done'], 'the previous summary is still there');
+});
+
+test('a second tap while running returns the live state instead of starting over', async () => {
+  const { batch } = setup({ list: kind => kind === 'unprocessed' ? listing([wav('a.wav')]) : listing(), tick: ({ batch }) => { const s = batch.start(); assert.equal(s.running, true); } });
+  batch.start();
+  const st = await finish(batch);
+  assert.deepEqual(names(st, 'transcribe'), ['a.wav:done']);
+});
+
+test('enqueue rejections become failed rows and do not stop the rest; recorder-busy and header-only files are left out', async () => {
+  const { batch } = setup({
+    list: kind => kind === 'unprocessed' ? listing([wav('a.wav'), wav('live.wav'), wav('empty.wav', 44), wav('b.wav')]) : listing(),
+    getBusyFiles: () => ['live.wav'],
+    enqueueHook: name => name === 'a.wav' ? false : undefined,
+  });
+  batch.start();
+  const st = await finish(batch);
+  assert.deepEqual(names(st, 'transcribe'), ['a.wav:failed', 'b.wav:done']);
+  assert.equal(st.items[0].error, 'not found');
+  assert.equal(st.phase, 'done');
+});
+
+test('hook phases hold the stage and show as the current step', async () => {
+  const seen = [];
+  const { batch } = setup({
+    list: kind => kind === 'unprocessed' ? listing([wav('a.wav')]) : listing(),
+    tick: ({ ticks, tx, batch }) => {
+      if (ticks === 1) tx.phase = 'pre';
+      if (ticks === 2) tx.phase = 'waiting';
+      if (ticks === 3) tx.phase = null;
+      const n = batch.getState().now; seen.push(n ? n.step : null);
+    },
+  });
+  batch.start();
+  await finish(batch);
+  // the hook runs before each step: pre, waiting, then idle (nothing started yet), then a.wav transcribing
+  assert.deepEqual(seen.slice(0, 4), ['starting server', 'waiting for server', null, 'transcribing']);
+});
+
+test('a listing failure ends with an error and permits a retry', async () => {
+  let fail = true;
+  const { batch } = setup({ list: kind => fail ? { ok: false, error: 'disk gone' } : listing() });
+  const st = batch.start();
+  assert.equal(st.running, false); assert.equal(st.phase, 'error'); assert.equal(st.error, 'disk gone');
+  fail = false;
+  batch.start();
+  assert.equal((await finish(batch)).phase, 'done');
 });

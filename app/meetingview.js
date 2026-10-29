@@ -781,22 +781,152 @@ $('libClose').onclick = function () {
 // ---- Batch: transcribe everything unprocessed, then analyze every unanalyzed transcript ----
 // The coordinator lives in the main process (meetingBatch.js), so a reload, a page switch, or a
 // batch started from another panel just shows up here: batchPoll rides the global 1 s poll loop.
+// The Batch page is the coordinator's ledger on screen: Done / Now / Next while it runs, then the
+// summary (every file by outcome) until the next batch starts.
 var batchStarting = false;   // a start is in flight — a stale state fetch must not re-enable the button
 var batchRev = 0;            // bumped per poll and per tap: a poll answered after a later tap is discarded
-function batchText(st) {
-  if (st.running) return 'Batching…';
+var batchState = null;
+var batchLiveText = '';      // what the live region last said — rewritten only when its words change
+var batchListSig = '';       // ledger signature — the list is rebuilt only when a row changes
+var batchArm = null;         // Cancel's two-tap confirm: armed until this timer or any other tap
+var batchWasRunning = false;
+var batchLastPhase = '';     // phase changes are spoken once through #batchLive
+function batchCounts(st) {
+  var t = st.counts.transcribe, a = st.counts.analyze;
+  var warnings = (st.items || []).filter(function (it) { return it.status === 'done' && it.note; }).length;
+  return { done: t.done + a.done, failed: t.failed + a.failed, notStarted: t.notStarted + a.notStarted, warnings: warnings };
+}
+function batchProgress(st) {   // "Transcribing 4 of 12" for the stage under way
+  var analyzing = st.phase === 'analyzing' || (st.phase === 'cancelling' && !!(st.now && st.now.stage === 'analyze'));
+  var c = analyzing ? st.counts.analyze : st.counts.transcribe;
+  var verb = analyzing ? 'Analyzing' : 'Transcribing';
+  return c.total ? verb + ' ' + (c.done + c.failed) + ' of ' + c.total : verb;
+}
+function batchText(st) {   // topbar, left of the Batch button
+  if (!st.counts) return '';
+  if (st.phase === 'cancelling') return 'Cancelling…';
+  if (st.running) return batchProgress(st) + '…';
   if (st.phase === 'error') return (st.halted ? 'Batch stopped: ' : 'Batch failed: ') + (st.error || 'unknown error');
-  if (st.phase === 'done') {
-    var failed = (st.transcribeErrors || 0) + (st.analyzeErrors || 0);
-    return failed ? 'Batch completed (' + failed + ' failed)' : 'Batch completed';
+  if (st.phase === 'done' || st.phase === 'cancelled') {
+    var c = batchCounts(st), s = st.phase === 'done' ? 'Batch completed' : 'Batch cancelled';
+    return c.failed ? s + ' (' + c.failed + ' failed)' : s;
   }
   return '';
 }
+function batchName(stage, name) {   // transcript rows are <base>-diarizer-response.json; the base is what the screens show
+  return stage === 'analyze' ? 'Analyze · ' + String(name).replace(/-diarizer-response\.json$/i, '') : name;
+}
+function batchWord(it) {   // the outcome as text — same words on the Done line and every row
+  if (it.status === 'done') return { w: it.stage === 'analyze' ? 'Analyzed' : 'Transcribed', c: 'ok' };
+  if (it.status === 'failed') return { w: 'Failed', c: 'err' };
+  if (it.status === 'running') return { w: it.stage === 'analyze' ? 'Analyzing' : 'Transcribing', c: 'now' };
+  if (it.status === 'notStarted') return { w: 'Not started', c: '' };
+  return { w: 'Queued', c: '' };
+}
+function batchCap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+function batchRowSet(id, file, status, cls) {
+  var row = $(id);
+  row.querySelector('.f').textContent = file;
+  var s = row.querySelector('.s'); s.textContent = status; s.className = 's' + (cls ? ' ' + cls : '');
+}
+function batchDisarm() {
+  clearTimeout(batchArm); batchArm = null;
+  var b = $('batchCancel'); b.textContent = 'Cancel batch'; b.classList.remove('confirm');
+}
+function renderBatchPage(st) {
+  var running = !!st.running;
+  $('batchTitle').textContent = st.phase === 'cancelling' ? 'Cancelling batch' : st.phase === 'done' ? 'Batch completed'
+    : st.phase === 'cancelled' ? 'Batch cancelled' : st.phase === 'error' ? (st.halted ? 'Batch stopped' : 'Batch failed') : 'Batch';
+  var note = $('batchNote'), noteErr = false;
+  if (st.phase === 'cancelling') note.textContent = 'Finishing the current file, then stopping';
+  else if (running) note.textContent = batchProgress(st) + (st.phase === 'transcribing' ? ' · then analyzing' : '');
+  else if (st.phase === 'error') { note.textContent = st.error || 'unknown error'; noteErr = true; }
+  else if (st.phase === 'done' || st.phase === 'cancelled') {
+    var c = batchCounts(st);
+    // A file that finished but could not export (Joplin, Obsidian) is done with a warning: counted here, text on its row.
+    note.textContent = c.done + ' done · ' + c.failed + ' failed · ' + c.notStarted + ' not started' + (c.warnings ? ' · ' + c.warnings + ' with warnings' : '');
+    noteErr = !!(c.failed || c.warnings);
+  } else note.textContent = 'No batch has run yet';
+  note.classList.toggle('err', noteErr);
+  var cancelBtn = $('batchCancel');
+  var cancellable = st.phase === 'transcribing' || st.phase === 'analyzing';
+  cancelBtn.style.display = cancellable ? '' : 'none';
+  if (!cancellable) batchDisarm();
+
+  // Done / Now / Next: one polite live region, rewritten only when its words change. The elapsed
+  // timer is outside the accessible text (aria-hidden) so it never re-announces.
+  var triple = $('batchTriple');
+  triple.hidden = !running;
+  if (running) {
+    var l = st.last, n = st.now, x = st.next;
+    var lastFile = l ? batchName(l.stage, l.name) : 'Nothing finished yet';
+    var lastWord = l ? batchWord(l) : { w: '', c: '' };
+    var lastStatus = l ? lastWord.w + (l.error ? ' · ' + l.error : l.note ? ' · ' + l.note : '') : '';
+    var nowFile = !n ? 'Waiting for the queue' : n.name ? (n.mine ? '' : 'Not this batch · ') + batchName(n.stage, n.name) : batchCap(n.step);
+    var nowStatus = n && n.name ? batchCap(n.step) : '';
+    var nextFile = !x ? 'Nothing more' : x.name ? batchName(x.stage, x.name) : 'Analyze the new transcripts';
+    var nextStatus = x && x.name ? (x.stage === 'analyze' ? 'Analyze' : 'Transcribe') : '';
+    var live = [lastFile, lastStatus, nowFile, nowStatus, nextFile, nextStatus].join('\n');
+    if (live !== batchLiveText) {
+      batchLiveText = live;
+      batchRowSet('bLast', lastFile, lastStatus, lastWord.c);
+      batchRowSet('bNow', nowFile, nowStatus, 'now');
+      batchRowSet('bNext', nextFile, nextStatus, '');
+    }
+    $('bNowT').textContent = n && n.startedAt ? fmtDur(Date.now() - n.startedAt) : '';
+  } else batchLiveText = '';
+
+  // The ledger: every file in scheduled order with its outcome as text; errors in full.
+  var items = st.items || [];
+  var sig = st.phase + '|' + items.map(function (it) { return it.name + ':' + it.stage + ':' + it.status + ':' + (it.error || '') + ':' + (it.note || ''); }).join('|');
+  if (sig !== batchListSig) {
+    batchListSig = sig;
+    var list = $('batchList'); list.innerHTML = '';
+    if (!items.length) {
+      var empty = document.createElement('div'); empty.className = 'ovEmpty';
+      empty.textContent = running ? 'Nothing to do' : (st.phase === 'idle' ? 'Tap Batch on the meetings page to start one' : 'Nothing was processed');
+      list.appendChild(empty);
+    }
+    items.forEach(function (it) {
+      var w = batchWord(it);
+      var row = document.createElement('div'); row.className = 'fileRow bItem';
+      var st_ = document.createElement('div'); st_.className = 'st' + (w.c ? ' ' + w.c : ''); st_.textContent = w.w;
+      var meta = document.createElement('div'); meta.className = 'meta';
+      var nm = document.createElement('div'); nm.className = 'fname'; nm.textContent = batchName(it.stage, it.name);
+      meta.appendChild(nm);
+      if (it.error || it.note) {
+        var sub = document.createElement('div'); sub.className = 'fsub' + (it.error ? ' err' : ''); sub.textContent = it.error || it.note;
+        meta.appendChild(sub);
+      }
+      row.appendChild(st_); row.appendChild(meta); list.appendChild(row);
+    });
+  }
+  // Phase changes are announced once, through the hidden status line: cancelling names the file
+  // being finished; a batch that ends is read as one sentence (the Done/Now/Next region is hidden then).
+  if (st.phase !== batchLastPhase) {
+    var said = '';
+    if (st.phase === 'cancelling') said = 'Cancelling: finishing ' + (st.now && st.now.name ? batchName(st.now.stage, st.now.name) : 'the current file');
+    else if (!running && batchLastPhase && batchLastPhase !== 'idle') said = $('batchTitle').textContent + ': ' + note.textContent;
+    if (said) $('batchLive').textContent = said;
+    batchLastPhase = st.phase;
+  }
+  // A batch that just ended while the page is open: the summary is the new context — focus its heading.
+  if (batchWasRunning && !running && $('batchOverlay').classList.contains('show')) $('batchTitle').focus();
+  batchWasRunning = running;
+}
 function renderBatch(st) {
+  batchState = st;
   var el = $('batchStatus');
   el.textContent = batchText(st);
   el.classList.toggle('err', st.phase === 'error' || !!(st.transcribeErrors || st.analyzeErrors));
-  $('btnBatch').disabled = batchStarting || !!st.running;
+  $('btnBatch').disabled = batchStarting;
+  if ($('batchOverlay').classList.contains('show')) renderBatchPage(st);
+}
+function openBatchPage() {
+  if (batchState) renderBatchPage(batchState);
+  $('batchOverlay').classList.add('show');
+  $('wrap').inert = true;   // the console under the opaque page is out of reach for keyboard and knob
+  $('batchTitle').focus();
 }
 function batchPoll() {
   if (batchStarting) return;   // a poll straddling the start request would read the pre-start state
@@ -805,15 +935,40 @@ function batchPoll() {
 }
 $('btnBatch').onclick = function () {
   if (batchStarting) return;
+  if (batchState && batchState.running) { openBatchPage(); return; }   // a running batch: just show it
   batchStarting = true; batchRev++; $('btnBatch').disabled = true;
   fetchJson('/meeting-batch/start')
     .then(function (st) {
       batchStarting = false;
       if (!st || st.ok === false) { statusShow((st && st.error) || 'Could not start batch', true); $('btnBatch').disabled = false; return; }
       renderBatch(st);
+      openBatchPage();
+      if (st.empty) statusShow('Nothing to batch: no recordings or transcripts are waiting');
     })
     .catch(function () { batchStarting = false; statusShow('Could not start batch', true); $('btnBatch').disabled = false; });
 };
+$('batchBack').onclick = function () {
+  batchDisarm();
+  $('batchOverlay').classList.remove('show');
+  $('wrap').inert = false;
+  $('btnBatch').focus();
+};
+$('batchCancel').onclick = function () {
+  var b = $('batchCancel');
+  if (!batchArm) {   // first tap arms; the name changes so the second tap is not colour alone
+    b.textContent = 'Really cancel?'; b.classList.add('confirm');
+    batchArm = setTimeout(batchDisarm, 6000);
+    return;
+  }
+  batchDisarm();
+  b.disabled = true;
+  batchStarting = true; batchRev++;   // same guard as start: a poll answered before the cancel must not overwrite its result
+  fetchJson('/meeting-batch/cancel')
+    .then(function (st) { batchStarting = false; b.disabled = false; if (st && st.ok) renderBatch(st); else statusShow((st && st.error) || 'Could not cancel', true); })
+    .catch(function () { batchStarting = false; b.disabled = false; statusShow('Could not cancel', true); });
+};
+['batchUp', 'batchDown'].forEach(function (id) { $(id).addEventListener('pointerdown', batchDisarm); });
+wireScrollButtons('batchList', 'batchUp', 'batchDown');
 batchPoll();   // a batch started before this page loaded keeps showing its state
 
 // ---- Analysis: run the AI over a transcript, read the result ----

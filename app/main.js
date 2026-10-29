@@ -3008,6 +3008,7 @@ function onMeetingLibraryRequest(op, params) {
       return meetingBatch ? meetingBatch.start() : { ok: false, error: 'batch unavailable' };
     }
     if (op === 'batchState') return meetingBatch ? meetingBatch.getState() : { ok: false, error: 'batch unavailable' };
+    if (op === 'batchCancel') return meetingBatch ? meetingBatch.cancel() : { ok: false, error: 'batch unavailable' };
     if (op === 'analysisResult') return meetingAnalyzer ? meetingAnalyzer.result(p.name, p.proposed === '1', p.kind === 'transcribed' ? 'transcribed' : 'processed') : { ok: false, error: 'analyzer unavailable' };
     return { ok: false, error: 'unknown library op: ' + op };
   } catch (e) { return { ok: false, error: e.message }; }

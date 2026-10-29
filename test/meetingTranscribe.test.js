@@ -503,3 +503,129 @@ test('a settings change during transcription refuses filing and the next queued 
   assert.deepEqual(fs.readdirSync(s.unprocessed).sort(), ['a.wav', 'b.wav']);
   assert.equal(fs.existsSync(s.transcribed), false);
 });
+
+test('outcome listeners retain every result beyond recent history, isolate observers, and unsubscribe', async () => {
+  const s = setup(null, async () => ({ status: 503, text: '{"detail":"service unavailable"}' }));
+  s.tx.onOutcome(entry => { entry.name = 'changed'; throw new Error('observer failed'); });
+  const outcomes = [];
+  const unsubscribe = s.tx.onOutcome(entry => outcomes.push(entry));
+  for (let i = 0; i < 25; i++) {
+    const name = 'meeting-' + i + '.wav';
+    addWav(s.unprocessed, name);
+    s.tx.enqueue(name);
+  }
+  await drained(s.tx);
+  assert.equal(outcomes.length, 25);
+  assert.deepEqual(outcomes.map(entry => entry.name), Array.from({ length: 25 }, (_, i) => 'meeting-' + i + '.wav'));
+  assert.equal(outcomes.every(entry => entry.status === 'error' && entry.error === 'service unavailable' && Number.isFinite(entry.finishedAt)), true);
+  assert.equal(s.tx.getState().recent.length, 20);
+  assert.equal(s.tx.getState().failed, 25);
+  assert.equal(s.tx.getState().recent[0].name, 'meeting-24.wav');
+  unsubscribe(); unsubscribe();
+  addWav(s.unprocessed, 'after.wav');
+  s.tx.enqueue('after.wav'); await drained(s.tx);
+  assert.equal(outcomes.length, 25);
+  assert.equal(s.tx.getState().failed, 26);
+});
+
+test('selective queue removal preserves the running file and other jobs without failure outcomes', async () => {
+  let release, entered;
+  const uploading = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const uploads = [], outcomes = [];
+  const s = setup(null, async (url, name) => {
+    uploads.push(name);
+    if (name === 'a.wav') { entered(); await gate; }
+    return { status: 200, text: JSON.stringify(GOOD_RESPONSE) };
+  });
+  s.tx.onOutcome(entry => outcomes.push(entry));
+  for (const name of ['a.wav', 'b.wav', 'manual.wav', 'd.wav']) { addWav(s.unprocessed, name); s.tx.enqueue(name); }
+  await uploading;
+  assert.equal(s.tx.clearQueue([]), 0);
+  assert.equal(s.tx.clearQueue(['a.wav', 'b.wav', 'd.wav']), 2);
+  assert.deepEqual(s.tx.getState().queue, ['manual.wav']);
+  assert.equal(s.tx.getState().current.name, 'a.wav');
+  release(); await drained(s.tx);
+  assert.deepEqual(uploads, ['a.wav', 'manual.wav']);
+  assert.deepEqual(outcomes.map(entry => [entry.name, entry.status]), [['a.wav', 'done'], ['manual.wav', 'done']]);
+  assert.equal(s.tx.getState().failed, 0);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'b.wav')), true);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'd.wav')), true);
+});
+
+test('an outcome listener can remove pending work before the next upload starts', async () => {
+  const uploads = [];
+  const s = setup(null, async (url, name) => {
+    uploads.push(name);
+    return { status: 503, text: '{"detail":"down"}' };
+  });
+  for (const name of ['a.wav', 'b.wav']) addWav(s.unprocessed, name);
+  s.tx.onOutcome(() => s.tx.clearQueue(['b.wav']));
+  s.tx.enqueue('a.wav'); s.tx.enqueue('b.wav');
+  await drained(s.tx);
+  assert.deepEqual(uploads, ['a.wav']);
+  assert.equal(s.tx.getState().failed, 1);
+});
+
+test('clearing during pre or health-wait runs the post hook once, with no file processed', async () => {
+  for (const phase of ['pre', 'waiting']) {
+    let release, entered;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    const hooks = [], outcomes = [];
+    const s = setup(async () => {
+      if (phase === 'waiting') { entered(); await gate; }
+      return jsonResponse(true, {});
+    }, async () => { throw new Error('must not upload cancelled jobs'); }, {
+      resolveHooks: () => ({ enabled: true, pre: 'START', post: 'STOP' }),
+      execHook: async cmd => {
+        hooks.push(cmd);
+        if (cmd === 'START' && phase === 'pre') { entered(); await gate; }
+      },
+      healthTtlMs: Number.MAX_SAFE_INTEGER,
+    });
+    s.tx.onOutcome(entry => outcomes.push(entry));
+    addWav(s.unprocessed, 'a.wav'); s.tx.enqueue('a.wav');
+    await waiting;
+    assert.equal(s.tx.getState().phase, phase);
+    assert.equal(s.tx.clearQueue(), 1);
+    assert.equal(s.tx.getState().phase, phase, 'the active hook is allowed to settle');
+    release();
+    for (let i = 0; i < 100 && s.tx.getState().phase; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(s.tx.getState().phase, null);
+    assert.deepEqual(hooks, ['START', 'STOP']);
+    assert.deepEqual(outcomes, []);
+    assert.equal(s.tx.getState().failed, 0);
+    assert.equal(fs.existsSync(path.join(s.unprocessed, 'a.wav')), true);
+  }
+});
+
+test('cancelled startup still runs STOP when the server health wait fails', async () => {
+  let release, entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const hooks = [], outcomes = [];
+  let clock = 0;
+  const s = setup(async () => {
+    entered(); await gate;
+    clock = 100;
+    return jsonResponse(false, {}, 503);
+  }, async () => { throw new Error('must not upload cancelled jobs'); }, {
+    now: () => clock,
+    serverWaitMs: 10,
+    healthTtlMs: Number.MAX_SAFE_INTEGER,
+    resolveHooks: () => ({ enabled: true, pre: 'START', post: 'STOP' }),
+    execHook: async cmd => { hooks.push(cmd); },
+  });
+  s.tx.onOutcome(entry => outcomes.push(entry));
+  addWav(s.unprocessed, 'a.wav'); s.tx.enqueue('a.wav');
+  await waiting;
+  assert.equal(s.tx.clearQueue(), 1);
+  release();
+  for (let i = 0; i < 100 && s.tx.getState().phase; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(s.tx.getState().phase, null);
+  assert.deepEqual(hooks, ['START', 'STOP']);
+  assert.deepEqual(outcomes, []);
+  assert.equal(s.tx.getState().failed, 0);
+  assert.equal(fs.existsSync(path.join(s.unprocessed, 'a.wav')), true);
+});

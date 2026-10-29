@@ -110,6 +110,76 @@ test('Claude auth failure asks for sign-in and clearQueue removes only pending a
   assert.equal(s.spawns.length, 1);
   assert.equal(logs.some(line => line.includes('OAuth session expired')), true);
 });
+
+test('analysis outcomes preserve earlier errors, isolate subscribers, and unsubscribe', async () => {
+  let call = 0;
+  const s = setup(() => (++call === 1 ? { code: 1, stderr: 'model unavailable' } : { stdout: '# Notes' }), 'claude');
+  fs.writeFileSync(path.join(s.processed, 'next.json'), JSON.stringify({ segments: [] }));
+  const outcomes = [];
+  s.an.onOutcome(entry => { entry.name = 'changed'; throw new Error('observer failed'); });
+  const unsubscribe = s.an.onOutcome(entry => outcomes.push(entry));
+  s.an.start('m.json'); s.an.start('next.json');
+  for (let i = 0; i < 100 && (s.an.getState().running || s.an.getState().queue.length); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(s.an.getState().running, false);
+  assert.deepEqual(outcomes.map(entry => [entry.name, entry.kind, entry.status]), [
+    ['m.json', 'processed', 'error'], ['next.json', 'processed', 'done'],
+  ]);
+  assert.equal(outcomes[0].error, 'exited 1: model unavailable');
+  assert.equal(outcomes[1].error, null);
+  assert.equal(outcomes.every(entry => Number.isFinite(entry.finishedAt)), true);
+  assert.equal(s.an.getState().error, null);
+  assert.equal(s.an.getState().lastDone.name, 'next.json');
+  assert.deepEqual([s.an.getState().completed, s.an.getState().failed], [1, 1]);
+  unsubscribe(); unsubscribe();
+  fs.writeFileSync(path.join(s.processed, 'after.json'), JSON.stringify({ segments: [] }));
+  s.an.start('after.json');
+  for (let i = 0; i < 100 && s.an.getState().running; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(s.an.getState().running, false);
+  assert.equal(s.an.getState().completed, 2);
+  assert.equal(outcomes.length, 2);
+});
+
+test('selective analysis queue removal matches name and root, preserving running and manual jobs', async () => {
+  const s = setup(() => ({ code: 1, stderr: 'model unavailable' }), 'claude');
+  const transcribed = path.join(s.processed, 'transcribed');
+  fs.mkdirSync(transcribed);
+  const name = 'same-diarizer-response.json';
+  for (const dir of [s.processed, transcribed]) fs.writeFileSync(path.join(dir, name), JSON.stringify({ segments: [] }));
+  // The queue has the same basename in two different logical roots.
+  const an = createMeetingAnalyzer({
+    resolveFolders: () => ({ processed: s.processed, transcribed }),
+    resolveAi: () => 'claude',
+    findClaudeExe: () => 'claude.exe',
+    spawn: fakeSpawnFactory(s.spawns, () => ({ code: 1, stderr: 'model unavailable' })),
+  });
+  an.start('m.json', 'processed');
+  an.start(name, 'transcribed'); an.start(name, 'processed');
+  assert.equal(an.clearQueue([], 'transcribed'), 0);
+  assert.equal(an.clearQueue([name]), 0, 'a selective call must name its root');
+  assert.equal(an.clearQueue(['m.json', name], 'transcribed'), 1);
+  assert.deepEqual(an.getState().queue, [{ name, kind: 'processed' }]);
+  assert.equal(an.getState().name, 'm.json');
+  assert.equal(an.clearQueue(), 1, 'no-argument auth stop still clears all pending roots');
+  assert.equal(an.getState().running, true);
+  for (let i = 0; i < 100 && an.getState().running; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual([an.getState().completed, an.getState().failed], [0, 1]);
+  assert.equal(s.spawns.length, 1);
+});
+
+test('auth outcome arrives before the analyzer pumps its next queued job', async () => {
+  const s = setup(() => ({ code: 1, stdout: 'Failed to authenticate: OAuth session expired and could not be refreshed' }), 'claude');
+  fs.writeFileSync(path.join(s.processed, 'next.json'), JSON.stringify({ segments: [] }));
+  const outcomes = [];
+  s.an.onOutcome(entry => { outcomes.push(entry); if (entry.authRequired) s.an.clearQueue(); });
+  s.an.start('m.json'); s.an.start('next.json');
+  for (let i = 0; i < 100 && s.an.getState().running; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(s.an.getState().running, false);
+  assert.equal(s.spawns.length, 1);
+  assert.equal(outcomes.length, 1);
+  assert.equal(outcomes[0].authRequired, true);
+  assert.equal(outcomes[0].status, 'error');
+  assert.equal(s.an.getState().failed, 1);
+});
 // Fake `copilot --acp`: a minimal ACP JSON-RPC responder over the same PassThrough-based fake
 // process shape as fakeSpawnFactory, but request/response driven (copilot's session/prompt only
 // resolves at end of turn -- see copilotvoice-session.js's runCopilotBatchPrompt) rather than a
@@ -343,6 +413,15 @@ test('post-analysis task list: one dated checklist per batch, pointing at the me
   fs.writeFileSync(path.join(dir, 'a.json'), JSON.stringify({ subject: 'Weekly Sync', is_recurring: true, organizer: 'David Mastalski' }));
   fs.writeFileSync(path.join(dir, 'b-diarizer-response.json'), '{"segments":[]}');
   const taskDir = path.join(processed, 'lists');
+  // The queue releases running before its asynchronous task-list hand-off publishes.
+  // Wait for that observable result, rather than guessing a filesystem delay.
+  async function waitForList(leaf) {
+    const file = path.join(taskDir, leaf);
+    const deadline = Date.now() + 5000;
+    while (!fs.existsSync(file) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(fs.existsSync(file), true, 'task list was not published: ' + leaf);
+    return file;
+  }
   const an = createMeetingAnalyzer({
     resolveFolders: () => ({ unprocessed: processed, processed }),
     resolveAi: () => 'claude',
@@ -354,8 +433,7 @@ test('post-analysis task list: one dated checklist per batch, pointing at the me
   an.start('2026/08/a-diarizer-response.json');
   an.start('2026/08/b-diarizer-response.json');
   await drained(an);
-  await settle();
-  const listPath = path.join(taskDir, '2026-08-17_10-42-13.md');
+  const listPath = await waitForList('2026-08-17_10-42-13.md');
   const body = fs.readFileSync(listPath, 'utf8');
   assert.match(body, /^# Analysis batch — 2026-08-17 10:42:13/);
   assert.match(body, /2 meeting\(s\) analyzed\./);
@@ -367,8 +445,7 @@ test('post-analysis task list: one dated checklist per batch, pointing at the me
   fs.writeFileSync(path.join(dir, 'c-diarizer-response.json'), '{"segments":[]}');
   an.start('2026/08/c-diarizer-response.json');
   await drained(an);
-  await settle();
-  assert.equal(fs.existsSync(path.join(taskDir, '2026-08-17_10-42-13_1.md')), true);
+  await waitForList('2026-08-17_10-42-13_1.md');
 });
 
 test('task list disabled: nothing written', async () => {
@@ -649,6 +726,44 @@ test('joplin: disabled -> never called; failure -> analysis still succeeds, surf
   assert.equal(st.joplin.ok, false);
   assert.match(st.joplin.error, /could not reach Joplin/);
   assert.equal(bodyOf(fs.readFileSync(path.join(fail.processed, 'm.md'), 'utf8')), 'notes');
+});
+
+test('export failures are per-file outcome warnings and never leak to the following job', async () => {
+  let enabled = true;
+  const s = setup(() => ({ stdout: 'notes' }), 'claude', null, {
+    resolveJoplin: () => ({ enabled }),
+    joplinNotes: { createAnalysisNote: async () => { throw new Error('Joplin unavailable'); } },
+    resolveObsidian: () => ({ enabled, vault: 'test-vault' }),
+    obsidianExport: { resolveVault: () => { throw new Error('vault unavailable'); } },
+  });
+  const outcomes = [];
+  s.an.onOutcome(entry => outcomes.push(entry));
+  s.an.start('m.json'); await drained(s.an);
+  assert.equal(outcomes[0].status, 'done');
+  assert.equal(outcomes[0].warning, 'Joplin export failed: Joplin unavailable\nObsidian export failed: vault unavailable');
+  assert.equal(s.an.getState().lastDone.warning, outcomes[0].warning);
+  assert.equal(s.an.getState().failed, 0);
+  enabled = false;
+  fs.writeFileSync(path.join(s.processed, 'next.json'), JSON.stringify({ segments: [] }));
+  s.an.start('next.json'); await drained(s.an);
+  assert.equal(outcomes[1].status, 'done');
+  assert.equal(outcomes[1].warning, undefined, 'disabled exports do not inherit an earlier file error');
+});
+
+test('Obsidian conflicts remain a completed analysis with an actionable outcome warning', async () => {
+  const s = setup(() => ({ stdout: 'notes' }), 'claude', null, {
+    resolveObsidian: () => ({ enabled: true, vault: 'test-vault' }),
+    obsidianExport: {
+      resolveVault: () => {},
+      exportMeetingFile: async () => ({ state: 'conflict', path: 'm.md', conflict: 'm.conflict.md' }),
+    },
+  });
+  const outcomes = [];
+  s.an.onOutcome(entry => outcomes.push(entry));
+  s.an.start('m.json'); await drained(s.an);
+  assert.equal(outcomes[0].status, 'done');
+  assert.match(outcomes[0].warning, /Obsidian export conflict:.*m\.conflict\.md/);
+  assert.equal(s.an.getState().failed, 0);
 });
 
 test('companion metadata + VTT ride along in the CLI input; legacy name never self-includes', async () => {
