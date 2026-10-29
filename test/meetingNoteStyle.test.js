@@ -306,6 +306,84 @@ test('an edited Minutes note re-analyzed under Classic (Use Details Folder off) 
   assert.equal(readRecord(fs, s.classicMd).ok, true);
 });
 
+test('Apply never replaces a note of the target style that is not its base', async () => {
+  const s = setup([reply('First pass.'), reply('Second pass.')], { noteStyle: 'minutes', useDetailsFolder: true });
+  await analyze(s);
+  fs.writeFileSync(s.minutesMd, fs.readFileSync(s.minutesMd, 'utf8').replace('First pass.', 'Edited.'));
+  s.setFiling({ noteStyle: 'classic' });
+  await analyze(s, transcriptRel(s));                                                 // a Classic proposal for the Minutes note
+  fs.writeFileSync(s.classicMd, 'someone else\'s Classic note');
+  const minutesBefore = fs.readFileSync(s.minutesMd, 'utf8');
+  const r = await s.an.applyProposed(path.basename(s.minutesMd));
+  assert.equal(r.ok, false);
+  assert.match(r.error, /already exists/);
+  assert.equal(fs.readFileSync(s.classicMd, 'utf8'), 'someone else\'s Classic note');
+  assert.equal(fs.readFileSync(s.minutesMd, 'utf8'), minutesBefore);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', BASE + '.proposed.md')), true);
+});
+
+test('a note of this style that appears while the other style\'s note is being re-analyzed is never replaced', async () => {
+  const s = setup([reply('First pass.')], { noteStyle: 'minutes', useDetailsFolder: true });
+  await analyze(s);
+  // Now under Classic, the fake CLI drops a Classic note in place mid-analysis (a sync restore, say).
+  const an2 = createMeetingAnalyzer({
+    resolveFolders: () => ({ unprocessed: s.processed, processed: s.processed }),
+    resolveAi: () => 'claude', findClaudeExe: () => 'claude.exe', findCodexExe: () => null,
+    spawn: fakeSpawn([], () => { fs.writeFileSync(s.classicMd, 'appeared meanwhile'); return { stdout: reply('Second pass.'), code: 0 }; }),
+    filingOptions: () => ({ noteStyle: 'classic', useDetailsFolder: true }),
+  });
+  assert.equal(an2.start(transcriptRel(s)).ok, true);
+  await drained(an2);
+  assert.match(an2.getState().error.error, /appeared during analysis/);
+  assert.equal(fs.readFileSync(s.classicMd, 'utf8'), 'appeared meanwhile');
+  assert.equal(readFrontmatter(fs.readFileSync(s.minutesMd, 'utf8')).ok, true);
+});
+
+// Apply moving a Classic note into its recurring-meeting folder (Separate recurring meetings turned on after the proposal).
+async function recurringProposal() {
+  const s = setup([reply('First pass.'), reply('Second pass.')], { separateTranscript: true });
+  fs.writeFileSync(path.join(s.processed, BASE + '.json'), JSON.stringify({ subject: 'G1 Weekly Review', is_recurring: true, start: '2026-10-14T22:00:00+00:00' }));
+  await analyze(s);
+  fs.writeFileSync(s.classicMd, fs.readFileSync(s.classicMd, 'utf8').replace('First pass.', 'Edited.'));
+  await analyze(s, transcriptRel(s));
+  s.setFiling({ separateRecurring: true });
+  const home = path.join(s.processed, String(new Date('2026-10-14T22:00:00+00:00').getFullYear()), 'G1-Weekly-Review');
+  return { s, home };
+}
+test('Apply into a recurring folder moves the note, its record and its clean transcript together', async () => {
+  const { s, home } = await recurringProposal();
+  const r = await s.an.applyProposed(path.basename(s.classicMd));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.warning, undefined);
+  const moved = path.join(home, BASE + '-analysis.md');
+  assert.equal(fs.readFileSync(moved, 'utf8'), writer099(notes099('Second pass.'), true).md);
+  assert.equal(readRecord(fs, moved).ok, true);
+  assert.equal(fs.existsSync(path.join(home, 'details', BASE + '-clean_transcript.txt')), true);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', BASE + '.bedrock.json')), false);
+  assert.equal(fs.existsSync(path.join(s.processed, 'details', BASE + '-clean_transcript.txt')), false);
+});
+test('Apply into a recurring folder refuses a clash with either style and keeps the originals when the move fails', async () => {
+  {
+    const { s, home } = await recurringProposal();
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, BASE + '.md'), 'a Minutes note already filed there');
+    const r = await s.an.applyProposed(path.basename(s.classicMd));
+    assert.match(r.warning, /already exists/);
+    assert.equal(fs.readFileSync(path.join(home, BASE + '.md'), 'utf8'), 'a Minutes note already filed there');
+    assert.equal(fs.existsSync(s.classicMd), true);                                    // applied in place, not moved
+    assert.equal(readRecord(fs, s.classicMd).ok, true);
+  }
+  {
+    const { s, home } = await recurringProposal();
+    fs.mkdirSync(path.join(home, 'details', BASE + '.bedrock.json'), { recursive: true });   // the record cannot be written there
+    const r = await s.an.applyProposed(path.basename(s.classicMd));
+    assert.equal(r.md, path.relative(s.processed, path.join(home, BASE + '-analysis.md')).split(path.sep).join('/'));
+    assert.match(r.warning, /still in/);
+    assert.equal(fs.existsSync(path.join(s.processed, 'details', BASE + '.bedrock.json')), true);   // originals kept
+    assert.equal(fs.existsSync(path.join(s.processed, 'details', BASE + '-clean_transcript.txt')), true);
+  }
+});
+
 test('flipping Use Details Folder between analyses moves the record and never leaves two', async () => {
   const s = setup([reply('First pass.'), reply('Second pass.')], { useDetailsFolder: false });
   await analyze(s);

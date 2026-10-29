@@ -584,9 +584,13 @@ function createMeetingAnalyzer(deps) {
     // Stale-write checks: the previous file's bytes must still be what the job read, no file may
     // have appeared at the destination meanwhile, and every input the model saw must still hash
     // the same (the analysis describes THOSE bytes, not whatever is on disk now).
+    // When the previous was the other style's file, this style's name must still be free: a note
+    // that appeared there meanwhile is not the one the analysis read, and is never replaced.
+    const ownNoteAppeared = () => !!previousPath && path.resolve(previousPath) !== path.resolve(mdPath) && fsMod.existsSync(mdPath);
     if (previousPath) {
       const nowBytes = await fsp.readFile(previousPath);
       if (sha256(nowBytes) !== previousHash) throw new Error('meeting file changed during analysis — not published (re-run to analyze the current file)');
+      if (ownNoteAppeared()) throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)');
     } else if (notePaths(path.dirname(mdPath), base, classic).some(p => fsMod.existsSync(p))) {
       throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)');
     }
@@ -646,6 +650,7 @@ function createMeetingAnalyzer(deps) {
         await fsp.mkdir(path.dirname(mdPath), { recursive: true });   // a recurring or date folder may not exist yet
         const tmp = mdPath + '.tmp';
         await fsp.writeFile(tmp, fileText);
+        if (ownNoteAppeared()) { await fsp.rm(tmp, { force: true }); throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)'); }
         await fsp.rename(tmp, mdPath);
       } catch (e) {
         if (staged) await staged.rollback();   // nothing committed: the copies go, transcribed stays whole
@@ -1040,6 +1045,11 @@ function createMeetingAnalyzer(deps) {
       if (pb.proposal_base_hash && (!baseBytes || sha256(baseBytes) !== pb.proposal_base_hash)) {
         return { ok: false, error: 'the notes changed after this proposal was made — re-analyze to get a fresh proposal' };
       }
+      // A proposal in the other style lands on a different file: if a note already sits there (a
+      // copy, a sync restore, an analysis since), it is nobody's base and is never replaced.
+      const otherNoteInTheWay = () => path.resolve(basePath) !== path.resolve(mdFile) && fsMod.existsSync(mdFile);
+      const inTheWay = () => ({ ok: false, error: 'a meeting file already exists at ' + path.relative(processed, mdFile) + ' — nothing replaced (move or remove it, then apply again)' });
+      if (otherNoteInTheWay()) return inTheWay();
       let revision = 0, carry = {}, current = null;
       if (baseBytes) {
         current = meetingRecord.readRecord(fsMod, basePath);
@@ -1067,6 +1077,7 @@ function createMeetingAnalyzer(deps) {
       }
       const tmp = mdFile + '.tmp';
       await fsp.writeFile(tmp, text);
+      if (otherNoteInTheWay()) { await fsp.rm(tmp, { force: true }); return inTheWay(); }   // re-checked right before the replace
       await fsp.rename(tmp, mdFile);
       // The other style's file (backed up above) is retired. A Classic note replaced in place is
       // never removed: basePath IS mdFile.
@@ -1087,23 +1098,30 @@ function createMeetingAnalyzer(deps) {
           const fileOpts = Object.assign({}, opts, { noteStyle: classic ? 'classic' : 'minutes' });
           const target = await resolveTarget(jsonAbs, base, fileOpts);
           if (path.resolve(target.mdPath) !== path.resolve(mdFile)) {
-            if (fsMod.existsSync(target.mdPath)) throw new Error('a meeting file already exists at ' + path.relative(processed, target.mdPath));
+            // Either style's note already in the destination folder is another file: never joined, never replaced.
+            const clash = notePaths(path.dirname(target.mdPath), base, classic).find(p => fsMod.existsSync(p));
+            if (clash) throw new Error('a meeting file already exists at ' + path.relative(processed, clash));
             await preflightSources(jsonAbs, base, target);
             await fsp.mkdir(path.dirname(target.mdPath), { recursive: true });
             await fsp.rename(mdFile, target.mdPath);
+            mdFinal = target.mdPath;   // the note is there now, whatever happens next
             if (classic) {
-              // The record and the clean transcript follow the note to its new folder.
+              // The record and the clean transcript follow the note: written and checked at the new
+              // folder first, and only then removed from the old one (a failure keeps the originals).
+              const moved = await writeClassicSide(target.mdPath, base, data, cleanTranscript, revision, opts.useDetailsFolder);
+              if (moved) throw new Error(moved + '; the tracking file and clean transcript are still in ' + path.relative(processed, path.dirname(mdFile)));
               for (const leaf of [meetingRecord.recordName(base), base + '-clean_transcript.txt']) {
                 for (const p of meetingRecord.findSide(fsMod, mdFile, leaf)) await fsp.rm(p, { force: true });
               }
-              const moved = await writeClassicSide(target.mdPath, base, data, cleanTranscript, revision, opts.useDetailsFolder);
-              if (moved) throw new Error(moved);
             }
           }
           await fileSet(jsonAbs, null, null, base, fileOpts, target);
           mdFinal = target.mdPath;
         }
-      } catch (e) { log('applied proposal is saved, but filing it to its final folder failed: ' + e.message); return { ok: true, name: n, warning: 'applied; filing failed: ' + e.message }; }
+      } catch (e) {
+        log('applied proposal is saved, but filing it to its final folder failed: ' + e.message);
+        return { ok: true, name: n, md: relToProcessed(mdFinal), warning: 'applied as ' + relToProcessed(mdFinal) + '; filing failed: ' + e.message };
+      }
       // The applied version is the meeting file now: the vault copy follows it (same edit guard).
       await exportToObsidian(base, mdFinal, carry.exports);
       if (lastProposed && lastProposed.name === base) lastProposed = null;
