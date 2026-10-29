@@ -81,6 +81,7 @@ const STATIC_FILES = {
   '/face/renderer.js': 'application/javascript; charset=utf-8',   // AI Voice face (OqxFace canvas renderer)
   '/recorderview.js': 'application/javascript; charset=utf-8',
   '/system-audio-capture.js': 'application/javascript; charset=utf-8',
+  '/recorder-audio-worklet.js': 'application/javascript; charset=utf-8',
   '/slidecapture-view.js': 'application/javascript; charset=utf-8',
   '/diagnosticsview.js': 'application/javascript; charset=utf-8',
   '/discordview.js': 'application/javascript; charset=utf-8',

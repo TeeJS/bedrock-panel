@@ -52,9 +52,9 @@ function startCapture() {
   resolveMicDeviceId(curMicLabel).then(function (deviceId) {
     if (gen !== captureGen) return null;   // stopped or superseded while resolving
     var micConstraints = {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
     };
     // `exact`: with `ideal`, Chromium opens the Windows default mic instead of this one. An
     // unplugged mic still falls back to the system default — SystemAudioCapture retries without
