@@ -80,13 +80,22 @@ can send them to a diarizing transcription server, then to an AI for meeting not
   up by the next batch; an older header-only WAV with no audio is skipped, not counted as a
   failure), and once that queue has fully drained (including the server
   start/stop hooks) every row the Analysis screen lists — every transcript waiting in the
-  Transcribed folder — is queued for analysis. The space left of the
-  button reads **Batching…** while it runs and **Batch completed** (or **Batch completed
-  (N failed)**) when it ends; the button is disabled meanwhile. The batch runs in the
-  main process, so leaving the page or reloading the panel doesn't stop it. If the
-  analysis CLI reports it needs sign-in (for Claude: its login has expired), the
-  batch drops the rest of the analysis queue and shows **Batch stopped: Claude needs
-  sign-in** — run `claude auth login` on the PC, then tap **Batch** again.
+  Transcribed folder — is queued for analysis. The tap also opens the **Batch** page: a
+  status line (**Transcribing 2 of 5 processed · 1 failed · then analyzing**, or the
+  server start/wait with its clock) over every file of the batch in order — the file being
+  worked is outlined with its elapsed time, the row after it reads **Next**, finished rows
+  read **Transcribed / Analyzed / Transcribe failed / Analyze failed** with the full error
+  text under the name. **Back to meetings** returns to the console and **Batch** reopens
+  the page while it runs; the space left of the button reads **Transcribing 4 of 12…**
+  meanwhile. **Cancel batch** (two taps: `Cancel batch` → `Really cancel?`) drops every
+  file not yet started, lets the one in progress finish its step, and then shows the
+  summary. When the batch ends the page is the summary — **Transcribed 3 of 4 · Analyzed
+  2 of 3 · 2 failed · 1 not started** — and stays until the next batch starts; tapping
+  **Batch** again is the retry (failed files are still where the screens list them).
+  The batch runs in the main process, so leaving the page or reloading the panel doesn't
+  stop it. If the analysis CLI reports it needs sign-in (for Claude: its login has
+  expired), the batch drops the rest of the analysis queue and shows **Batch stopped:
+  Claude needs sign-in** — run `claude auth login` on the PC, then tap **Batch** again.
 - **Unprocessed** — list, play, transcribe, and delete recordings in one screen. Each
   row has **Transcribe / Play / Delete**; the header adds **Transcribe selected** and
   **Delete selected** (deletes are two-tap: `Delete` → `Confirm?`). Transcription sends
