@@ -1566,7 +1566,9 @@ function appPageUrl(page, preview) {
   if (!def) return 'about:blank';
   if (def.served) {                                                          // served by the local server (live data, same-origin fetch, grid launch)
     const opts = page.options || {};                                         // non-secret options only; secrets are served by /app-config
-    const qs = [appOptionQuery(def, opts, o => o.type !== 'secret' && !o.serverOnly), themeParams(page), audioDefaultParams(def)].filter(Boolean).join('&');
+    // The editor's live preview is a second copy of the real page against the same host: pages that
+    // hold shared host state (AI Voice's mic / wake gate) read this flag and stay display-only.
+    const qs = [appOptionQuery(def, opts, o => o.type !== 'secret' && !o.serverOnly), themeParams(page), audioDefaultParams(def), preview ? '_editorPreview=1' : ''].filter(Boolean).join('&');
     if (def._folder) return 'http://127.0.0.1:' + serverPort + '/apps/' + encodeURIComponent(def.id) + '/' + appEntryUrlPath(def.entry || def.file) + (qs ? '?' + qs : '');
     const base = 'http://127.0.0.1:' + serverPort + '/' + def.id + (qs ? '?' + qs : '');
     if (!sysserver || def.id !== 'github') return base;

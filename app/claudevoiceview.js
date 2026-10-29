@@ -3,6 +3,11 @@ function $(id) { return document.getElementById(id); }
 // Theme — read directly from the served query (musicview.js's pattern). No options here are secret
 // (confirmed in apps.json), so there's no /app-config fetch needed at all for config.
 var Q = new URLSearchParams(location.search);
+// The editor's live preview (main's appPageUrl(..., preview)): a second copy of this page talking to
+// the SAME backend host as the panel's. It must never open the mic or arm the wake gate — every arm
+// bumps the host's generation and resets its window, which made the panel page's utterances
+// "stale" and dropped whenever the editor was open.
+var EDITOR_PREVIEW = Q.get('_editorPreview') === '1';
 // This one page serves EVERY AI Voice backend: the page itself is served at /ai-voice, and every
 // server route carries the page's backend as a sub-prefix (/ai-voice/<backend>/turn, ...), so
 // requests bind to the right backend host no matter which page is on screen. Backend-specific
@@ -448,7 +453,9 @@ function connectEvents() {
       applyWakeState(msg.wake);
       syncPickButtons();
       // Turned on from the editor while the mic is open: the gate is shut until this page arms it.
-      if (msg.wake && msg.wake.enabled && msg.wake.state === 'off' && conversationOpen) wakeArm(true);
+      // The editor's preview copy only shows the state; the panel page owns the mic and the gate.
+      if (EDITOR_PREVIEW) {}
+      else if (msg.wake && msg.wake.enabled && msg.wake.state === 'off' && conversationOpen) wakeArm(true);
       else if (msg.wake && msg.wake.enabled && !conversationOpen) wakeAutoOpen();   // wake word just turned on: open the mic
     } else if (msg.type === 'permission-mode') {
       currentMode = msg.mode || currentMode;
@@ -1064,6 +1071,7 @@ var wakeChimeOn = Q.get('wakeChime') === '1';
 var wakeTick = null;
 function wakeOn() { return !!(wakeState && wakeState.enabled); }
 function wakeArm(on) {
+  if (EDITOR_PREVIEW) return Promise.resolve();   // the preview never touches the shared gate
   captureEpoch++;   // synchronous: anything captured before this boundary is stale, whatever the host says later
   wakeHold = false;
   if (!wakeOn() && on) return Promise.resolve();
@@ -1129,9 +1137,11 @@ function wakeReplyEnded(completed) {
 function wakeMuted() { try { return localStorage.getItem('cvWakeMuted') === '1'; } catch (e) { return false; } }
 function setWakeMuted(on) { try { localStorage.setItem('cvWakeMuted', on ? '1' : '0'); } catch (e) {} }
 function wakeAutoOpen() {
+  if (EDITOR_PREVIEW) return;
   if (wakeOn() && !conversationOpen && !wakeMuted() && vad && !document.hidden && wakeState.state !== 'not-ready') window.oqxToggleConversation(true);
 }
 window.oqxToggleConversation = function (auto) {
+  if (EDITOR_PREVIEW) return;   // no mic in the editor's preview copy (and never an arm of the shared gate)
   if (!vad) { $('textInput').focus(); return; }   // VAD script failed to load -- fall back to at least focusing input
   if (auto !== true) setWakeMuted(conversationOpen);   // a human tap: closing it is a mute that sticks; opening clears it
   if (conversationOpen) {

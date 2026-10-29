@@ -119,6 +119,9 @@ editor's AI Voice page options) and the page waits for the persona's name.
 - **The mic button is still the hard off.** One tap arms the wake word, a second tap closes the mic.
   Typing works at all times, wake word or not. With the permission mode set to run commands without
   approval, anything said after the phrase is acted on, so keep the phrase distinctive.
+- **The editor's live preview only watches.** The page preview in the editor is a second copy of the
+  same page; it shows the wake state but never opens a mic or arms the wake word, so editing the page
+  while the panel is listening does not interrupt it.
 
 Whisper often writes a spoken "hey" as "a", "hay", "hate", "pain", "ay", "eh", "hi" or "he" ("A norm." for
 "Hey Norm"), so every "Hey <name>" phrase also accepts those in front of the same name. After a clear "hey" or
