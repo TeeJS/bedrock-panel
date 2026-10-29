@@ -318,6 +318,10 @@
   .bItem .st.ok { color:var(--accept); } .bItem .st.err { color:var(--danger); } .bItem .st.now { color:var(--accent); } .bItem .st.next { color:var(--fg); }
   .bItem .fsub { font-size:16px; white-space:normal; }   /* the full error text, never clipped */
   .bItem .t { font-size:20px; font-weight:700; color:var(--fg); font-variant-numeric:tabular-nums; flex:0 0 auto; }
+  /* light theme: the page's green (2.9:1) and red (4.3:1) on white are too faint for words that must be read;
+     Batch-scoped shades clear 4.5:1 on the row (5.4:1 / 6.5:1) */
+  body.light .bItem .st.ok { color:#167a3c; }
+  body.light .bItem .st.err, body.light .bItem .fsub.err, body.light #batchStrip .err { color:#b91c1c; }
 </style>
 </head>
 <body>
