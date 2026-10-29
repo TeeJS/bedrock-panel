@@ -112,6 +112,11 @@ const STRUCTURED_TAIL_INSTRUCTION_CLASSIC = STRUCTURED_TAIL_INSTRUCTION
   .replace(/ADDITIONAL REQUIRED OUTPUT \(overrides only two earlier rules: "nothing after these sections" and\n\s*the transcript line shape; every other instruction above still applies\)\./,
     'ADDITIONAL REQUIRED OUTPUT (overrides only one earlier rule: "nothing after these sections"; every\nother instruction above still applies).')
   .replace(/\n1\. Transcript lines:[\s\S]*?Never invent a time\.\n\n2\. After the last section/, '\nAfter the last section');
+// Rewording the block above must not silently re-send the timing rule to Classic: fail at load.
+if (STRUCTURED_TAIL_INSTRUCTION_CLASSIC === STRUCTURED_TAIL_INSTRUCTION || /Transcript lines:/.test(STRUCTURED_TAIL_INSTRUCTION_CLASSIC)
+  || !STRUCTURED_TAIL_INSTRUCTION_CLASSIC.includes('<!-- BEDROCK-STRUCTURED v' + STRUCTURED_TAIL_VERSION + ' -->')) {
+  throw new Error('meetingAnalyze: the Classic structured-tail instruction no longer derives from the Minutes one — update STRUCTURED_TAIL_INSTRUCTION_CLASSIC');
+}
 const CODEX_ISOLATION_ARGS = Object.freeze(['--sandbox', 'read-only', '--ephemeral', '-c', 'mcp_servers={}',
   '--disable', 'browser_use', '--disable', 'computer_use', '--disable', 'apps']);
 // Work bounds: a transcript past this is refused up front (one call cannot cover it honestly), and
@@ -667,11 +672,11 @@ function createMeetingAnalyzer(deps) {
         left = sourceSet(jsonPath, base).map(s => s.name);
       }
       const tl0 = fm.bedrock.exports && fm.bedrock.exports.task_list;
-      if (!(tl0 && tl0.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: target.meta ? path.join(target.fileDir, base + '.json') : null, meta: target.meta });
+      if (!sideWarning && !(tl0 && tl0.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: target.meta ? path.join(target.fileDir, base + '.json') : null, meta: target.meta });
       const warnings = [
         sideWarning,
-        await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports),
-        await exportToObsidian(base, mdPath, fm.bedrock.exports),
+        sideWarning ? null : await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports),   // no record, no export state: skip rather than half-export
+        sideWarning ? null : await exportToObsidian(base, mdPath, fm.bedrock.exports),
       ].filter(Boolean);
       const out = { md: relToProcessed(mdPath) };
       if (left.length) { warnings.unshift('committed, with leftovers in transcribed: ' + left.join(', ')); log('analysis committed; cleanup left files in transcribed: ' + left.join(', ')); }
@@ -693,11 +698,11 @@ function createMeetingAnalyzer(deps) {
     const filed = await fileSet(jsonPath, null, null, base, opts, target);
     // Hand-offs happen once per meeting: a re-analysis whose task-list export already succeeded is not listed again.
     const tl = fm.bedrock.exports && fm.bedrock.exports.task_list;
-    if (!(tl && tl.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: filed ? filed.sidecar : null, meta: filed ? filed.meta : target.meta });
+    if (!sideWarning && !(tl && tl.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: filed ? filed.sidecar : null, meta: filed ? filed.meta : target.meta });
     const warnings = [
       sideWarning,
-      await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports),
-      await exportToObsidian(base, mdPath, fm.bedrock.exports),
+      sideWarning ? null : await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports),   // no record, no export state: skip rather than half-export
+      sideWarning ? null : await exportToObsidian(base, mdPath, fm.bedrock.exports),
     ].filter(Boolean);
     const out = { md: relToProcessed(mdPath) };
     if (warnings.length) out.warning = warnings.join('\n');
@@ -746,6 +751,9 @@ function createMeetingAnalyzer(deps) {
       }
       if (cleanTranscript !== null) { await fsp.writeFile(txtPath + '.tmp', cleanTranscript); await fsp.rename(txtPath + '.tmp', txtPath); }
       const recPath = path.join(side, meetingRecord.recordName(base));
+      // The record being replaced is kept beside its .revN.md, like the clean transcript above.
+      const revRec = path.join(side, base + '.rev' + rev + '.bedrock.json');
+      if (rev && fsMod.existsSync(recPath) && !fsMod.existsSync(revRec)) await fsp.copyFile(recPath, revRec);
       meetingRecord.writeClassicRecord(fsMod, recPath, mdPath, data);
       await retireClassicRecords(mdPath, base, rev, recPath);
       return null;

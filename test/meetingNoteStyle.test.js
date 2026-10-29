@@ -199,6 +199,7 @@ test('Classic re-analysis without edits replaces the note in place and keeps the
   assert.equal(fs.readFileSync(s.classicMd, 'utf8'), writer099(notes099('Second pass.'), true).md);
   assert.equal(fs.readFileSync(path.join(s.processed, 'details', BASE + '.rev1.md'), 'utf8'), first);
   assert.equal(fs.existsSync(path.join(s.processed, 'details', BASE + '-clean_transcript.rev1.txt')), true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.processed, 'details', BASE + '.rev1.bedrock.json'), 'utf8')).data.bedrock.revision, 1);
   const r = readRecord(fs, s.classicMd);
   assert.equal(r.ok, true);
   assert.equal(r.data.bedrock.revision, 2);
@@ -357,6 +358,53 @@ test('Classic task list: listed once, recorded in the tracking file', async () =
   assert.equal(readRecord(fs, s.classicMd).data.bedrock.exports.task_list.state, 'succeeded');
   await analyze(s, transcriptRel(s));
   assert.equal(fs.readdirSync(tasks).length, 1);
+});
+
+test('a tracking file that cannot be written skips the exports and says why, rather than half-exporting', async () => {
+  const calls = [];
+  const s = setup([reply('First pass.')], {}, {
+    joplinNotes: { tagsFor: () => [], getNote: async () => null, createAnalysisNote: async o => { calls.push(o); return { id: o.id, applied: [], skipped: [] }; } },
+    resolveJoplin: () => ({ enabled: true, url: 'http://j', token: 't', notebook: 'n' }),
+  });
+  fs.mkdirSync(path.join(s.processed, 'details', BASE + '.bedrock.json'), { recursive: true });   // a folder where the record goes
+  await analyze(s);
+  assert.equal(fs.readFileSync(s.classicMd, 'utf8'), notes099('First pass.'));
+  assert.match(s.an.getState().lastDone.warning, /tracking file not written/);
+  assert.equal(calls.length, 0);
+});
+
+// ---- record edge cases ----
+
+test('the record matches its note in either Unicode form (macOS hands names back decomposed)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oqx-nfc-'));
+  const base = 'Café sync';                                                     // NFC
+  const md = path.join(dir, base + '-analysis.md');
+  fs.writeFileSync(md, notes099('x'));
+  const data = { title: 'x', type: 'meeting', date: '2026-10-14T15:57:16-07:00', duration: '1m', status: 'complete', bedrock: { note_style: 'classic' } };
+  fs.writeFileSync(path.join(dir, base + '.bedrock.json'), JSON.stringify({ schema: 1, note: (base + '-analysis.md').normalize('NFD'), data }));
+  const r = readRecord(fs, md);
+  assert.equal(r.ok, true, r.reason);
+  assert.equal(r.style, 'classic');
+});
+
+test('a Classic note that opens with "---" is still read by its record, not as a broken header', () => {
+  const s = setup([]);
+  fs.writeFileSync(s.classicMd, '---\nnot: a header\n---\n# Meeting Analysis\n');
+  const data = { title: 'x', type: 'meeting', date: '2026-10-14T15:57:16-07:00', duration: '1m', status: 'complete', bedrock: { note_style: 'classic' } };
+  fs.writeFileSync(path.join(s.processed, BASE + '.bedrock.json'), JSON.stringify({ schema: 1, note: BASE + '-analysis.md', data }));
+  assert.equal(readRecord(fs, s.classicMd).style, 'classic');
+  const lib = createMeetingLibrary({ resolveFolders: () => ({ processed: s.processed }) });
+  const row = lib.listMeetings().files.find(f => f.base === BASE);
+  assert.deepEqual([row.status, row.legacy, row.readOnly], ['complete', false, false]);
+});
+
+test('a stray .proposed.md beside a Classic note is not offered for review unless it is a Classic proposal', async () => {
+  const s = setup([reply('First pass.')], { useDetailsFolder: false });
+  await analyze(s);
+  fs.writeFileSync(path.join(s.processed, BASE + '.proposed.md'), '# not a proposal');
+  const lib = createMeetingLibrary({ resolveFolders: () => ({ processed: s.processed }) });
+  assert.equal(lib.listMeetings().files.find(f => f.base === BASE).proposed, false);
+  assert.equal((await s.an.applyProposed(path.basename(s.classicMd))).error, 'no proposal to apply');
 });
 
 // ---- the Completed list ----

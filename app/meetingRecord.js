@@ -67,15 +67,17 @@ function findSide(fsMod, mdPath, leaf) {
 }
 
 // The Classic record for mdPath, or { ok: false, reason }. `path` is where it was found.
+// Names compare in NFC: macOS file systems hand back a name in either Unicode form, and a sync or
+// copy tool may store "café" decomposed, so the same note must match either way.
 function readClassicRecord(fsMod, mdPath) {
-  const note = path.basename(mdPath);
+  const note = path.basename(mdPath).normalize('NFC');
   const found = [];
   for (const p of findSide(fsMod, mdPath, recordName(baseOfNote(mdPath)))) {
     try {
       if (fsMod.statSync(p).size > MAX_RECORD_BYTES) continue;
       const raw = fsMod.readFileSync(p);
       const rec = JSON.parse(raw.toString('utf8'));
-      if (!rec || rec.schema !== RECORD_SCHEMA || rec.note !== note || !rec.data) continue;   // another note's, or not ours
+      if (!rec || rec.schema !== RECORD_SCHEMA || typeof rec.note !== 'string' || rec.note.normalize('NFC') !== note || !rec.data) continue;   // another note's, or not ours
       if (!validateFrontmatter(rec.data).ok) continue;
       found.push({ path: p, data: rec.data, hash: sha256(raw) });
     } catch (e) { /* corrupt: not a record */ }
@@ -87,14 +89,18 @@ function readClassicRecord(fsMod, mdPath) {
 
 // The record of a note in either style: { ok, style, data, body, bytes, recordPath? } or
 // { ok: false, style, reason, body?, bytes? }. `body` is the note's markdown (the header removed
-// for Minutes; the whole file for Classic). Style comes from the file itself, never the setting.
+// for Minutes; the whole file for Classic). Style comes from the file itself, never the setting:
+// a <base>-analysis.md is Classic whatever its first line looks like (an AI reply may open with
+// "---"), any other .md is Minutes when it has a header and an untracked note when it has none.
 function readRecord(fsMod, mdPath) {
   let bytes;
   try { bytes = fsMod.readFileSync(mdPath); } catch (e) { return { ok: false, style: null, reason: 'unreadable' }; }
   const text = bytes.toString('utf8');
-  const fm = readFrontmatter(text);
-  if (fm.ok) return { ok: true, style: 'minutes', data: fm.data, body: fm.body, bytes };
-  if (fm.reason !== 'no-frontmatter') return { ok: false, style: 'minutes', reason: fm.reason, bytes };
+  if (!isClassicName(mdPath)) {
+    const fm = readFrontmatter(text);
+    if (fm.ok) return { ok: true, style: 'minutes', data: fm.data, body: fm.body, bytes };
+    if (fm.reason !== 'no-frontmatter') return { ok: false, style: 'minutes', reason: fm.reason, bytes };
+  }
   const body = text.replace(/^﻿/, '');
   const rec = readClassicRecord(fsMod, mdPath);
   if (!rec.ok) return { ok: false, style: 'classic', reason: rec.reason, body, bytes };
