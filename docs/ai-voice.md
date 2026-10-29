@@ -116,6 +116,10 @@ editor's AI Voice page options) and the page waits for the persona's name.
   as a request.
 - **Chime.** Off by default. On, a short two-note chime through the page's speaker confirms the name
   was heard.
+- **Ready before you speak.** Arming the wake word starts the agent session at once (the page opening
+  its mic, a mic tap, or coming back to the page), so the first "hey *name*" answer does not pay the
+  CLI's cold start. Without the wake word the session still starts on the first turn, and either way
+  it runs until *End conversation*.
 - **The mic button is still the hard off.** One tap arms the wake word, a second tap closes the mic.
   Typing works at all times, wake word or not. With the permission mode set to run commands without
   approval, anything said after the phrase is acted on, so keep the phrase distinctive.

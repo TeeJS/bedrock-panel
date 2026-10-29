@@ -11,15 +11,15 @@ const { createVoicePanelHost } = require('../app/voicepanel-host');
 const { ensurePersonas } = require('../app/face/persona');
 const wyoming = require('../app/claudevoice-wyoming');
 
-function make(options, log) {
+function make(options, log, noStart) {
   const grid = { id: 'wake-test', kind: 'app', app: 'ai-voice', options: { face: 'side', profilePick: 'chat', personaPick: 'jarvis', wakeWord: 'on', projectDir: __dirname } };
   Object.assign(grid.options, options || {});
   const config = { grids: [grid], settings: { aiProfiles: [{ id: 'chat', name: 'Chat', prompt: '' }] } };
   ensurePersonas(config);
   const adapter = new EventEmitter(); let running = false;
-  const sent = [], events = [];
+  const sent = [], events = [], starts = [];
   Object.assign(adapter, {
-    start: () => { running = true; return true; }, stop: () => { running = false; },
+    start: () => { running = true; starts.push(1); return true; }, stop: () => { running = false; },
     isRunning: () => running, sendTurn: t => { sent.push(t); return true; }, setProfilePrompt: () => true,
     sessionId: () => 'wake-session', mode: () => 'default', currentModel: () => 'test', projectDir: () => __dirname,
     validModel: () => true, listModes: () => [], listModels: () => [],
@@ -30,8 +30,8 @@ function make(options, log) {
     getDocumentsPath: () => __dirname, voiceEndpoints: () => ({ sttHost: 'stt.test', sttPort: 10300 }),
   } });
   host.handlers.subscribe(new EventEmitter(), { writeHead() {}, write(line) { if (line.startsWith('data: ')) events.push(JSON.parse(line.slice(6))); } });
-  host.handlers.sessionStart();
-  return { h: host.handlers, adapter, grid, sent, events, cleanup: () => host.shutdown() };
+  if (!noStart) host.handlers.sessionStart();
+  return { h: host.handlers, adapter, grid, sent, events, starts, cleanup: () => host.shutdown() };
 }
 // The STT stub: transcribe() returns the next "heard" text.
 let heard = '';
@@ -55,6 +55,28 @@ test('wake on: only the addressed command comes back; unaddressed speech is empt
   assert.deepEqual(await hear(x, 'Hey Jarvis, what time is it?', armed.gen), { ok: true, text: 'what time is it?', wake: 'addressed' });
   assert.equal(x.h.getState().transcript.length, 0);   // the host logs turns, not utterances: nothing was sent yet
   assert.equal(x.sent.length, 0);
+});
+
+test('arming the wake word pre-warms the session; tap-to-talk and re-arms do not start another', async t => {
+  const x = make({}, null, true); t.after(x.cleanup);
+  assert.equal(x.adapter.isRunning(), false);
+  const armed = x.h.wakeArm(true);
+  assert.equal(armed.wake.state, 'waiting');
+  assert.equal(x.adapter.isRunning(), true);
+  assert.deepEqual(x.starts, [1]);
+  assert.ok(x.events.some(e => e.type === 'session-started'));
+  x.h.wakeArm(true);                                   // hidden -> visible re-arm: already running
+  assert.deepEqual(x.starts, [1]);
+  x.h.wakeArm(false);                                  // mic closed: the session is not ended by disarming
+  assert.equal(x.adapter.isRunning(), true);
+  // The first addressed utterance is a plain turn on the warm session, not a lazy start.
+  const r = await hear(x, 'hey jarvis what time is it', x.h.wakeArm(true).gen);
+  x.h.onTurn(r.text, false);
+  assert.deepEqual(x.starts, [1]); assert.deepEqual(x.sent, ['what time is it']);
+  // Wake word off: arming is a no-op and the session stays lazy.
+  const y = make({ wakeWord: 'off' }, null, true); t.after(y.cleanup);
+  y.h.wakeArm(true);
+  assert.equal(y.adapter.isRunning(), false);
 });
 
 test('wake on: the name alone opens a listening window; the next utterance is the request', async t => {
