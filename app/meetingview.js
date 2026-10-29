@@ -882,9 +882,8 @@ function renderBatchPage(st) {
     var l = st.last;
     html = 'Stopped' + (l && l.status === 'done' ? ' after finishing <b>' + escHtml(batchName(l.stage, l.name)) + '</b>' : '') + ' &nbsp;·&nbsp; ' + batchSummary(st)
       + ' &nbsp;·&nbsp; each row says where its file went';
-    stripErr = !!(batchCounts(st).failed || batchCounts(st).warnings);
   }
-  else if (st.phase === 'done') { html = batchSummary(st); stripErr = !!(batchCounts(st).failed || batchCounts(st).warnings); }
+  else if (st.phase === 'done') html = batchSummary(st);   // the failed / warnings spans carry their own red; the line itself stays plain
   else html = 'No batch has run yet';
   if (html !== batchStripText) { batchStripText = html; $('batchStripText').innerHTML = html; }
   $('batchStrip').classList.toggle('err', stripErr);
