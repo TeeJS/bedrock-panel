@@ -837,7 +837,8 @@ function batchProgressHtml(st) {   // the running strip: stage, processed count,
   else parts.push(verb + ' &nbsp;<b>' + (c.done + c.failed) + ' of ' + c.total + '</b>&nbsp; processed');
   if (head && c.total) parts.push('<b>' + (c.done + c.failed) + ' of ' + c.total + '</b>&nbsp; processed');
   if (c.failed) parts.push('<span class="err">' + c.failed + ' failed</span>');
-  if (c.skipped) parts.push(c.skipped + ' skipped');
+  var skipped = st.counts.transcribe.skipped || 0;   // recordings are skipped before transcription; keep the count through analysis
+  if (skipped) parts.push(skipped + ' skipped');
   if (!analyzing) parts.push('then analyzing');
   return parts.join(' &nbsp;·&nbsp; ');
 }
@@ -880,7 +881,7 @@ function renderBatchPage(st) {
   else if (st.phase === 'cancelled') {
     var l = st.last;
     html = 'Stopped' + (l && l.status === 'done' ? ' after finishing <b>' + escHtml(batchName(l.stage, l.name)) + '</b>' : '') + ' &nbsp;·&nbsp; ' + batchSummary(st)
-      + (st.counts.transcribe.done ? ' &nbsp;·&nbsp; finished recordings are on the Analysis screen' : '');
+      + ' &nbsp;·&nbsp; each row says where its file went';
     stripErr = !!(batchCounts(st).failed || batchCounts(st).warnings);
   }
   else if (st.phase === 'done') { html = batchSummary(st); stripErr = !!(batchCounts(st).failed || batchCounts(st).warnings); }
@@ -985,7 +986,9 @@ $('batchBack').onclick = function () {
 $('batchCancel').onclick = function () {
   var b = $('batchCancel');
   if (!batchArm) {   // first tap arms; the name changes so the second tap is not colour alone
-    b.textContent = 'Finish this file, then stop?'; b.classList.add('confirm');   // says what Cancel does: the file in progress completes, the rest is dropped
+    // says what Cancel does: a file in progress completes, the rest is dropped
+    var running = batchState && batchState.now && batchState.now.name;
+    b.textContent = running ? 'Finish this file, then stop?' : 'Stop before the first file?'; b.classList.add('confirm');
     batchArm = setTimeout(batchDisarm, 6000);
     return;
   }

@@ -162,7 +162,7 @@ function createMeetingBatch(deps) {
     const busy = new Set(getBusyFiles());
     const names = [], skipped = [];
     for (const file of list('unprocessed').files) {
-      if (!/.wav$/i.test(file.name)) continue;
+      if (!/\.wav$/i.test(file.name)) continue;
       // A recording still being written stays for the next batch; a 44-byte WAV is the recorder's
       // header alone (a capture that never got audio) and could only fail upload. Both are listed
       // as skipped, with the reason, so the page says why a file the Unprocessed screen shows is
