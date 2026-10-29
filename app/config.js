@@ -4530,7 +4530,7 @@
     const th = currentTheme();
     // Meeting recording settings (config.settings.meeting) — global so auto-record works regardless of
     // which app the panel is showing. Same shape as MEETING_DEFAULTS in main.js.
-    const currentMe = () => Object.assign({ folder: '', transcribedFolder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: IS_MAC ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', obsidianEnabled: false, obsidianVault: '', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', zoomUseDefaults: true, zoomMute: 'alt+a', zoomVideo: 'alt+v', zoomAccept: 'control+shift+a', zoomDecline: 'control+shift+d', zoomLeave: 'alt+q', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' }, (config.settings || {}).meeting || {}, ((config.settings || {}).meeting || {}).busyMqttBaseTopic === 'open-quake' ? { busyMqttBaseTopic: 'bedrock-panel' } : {});
+    const currentMe = () => Object.assign({ folder: '', transcribedFolder: '', processedFolder: '', processedByDate: false, transcribeUrl: '', transcribeEngine: IS_MAC ? 'local' : 'server', analysisAi: 'claude', micDevice: '', echoGate: false, silenceStopMin: 0, autoRecord: false, recordApps: 'Zoom.exe,Teams.exe,ms-teams.exe', outlookEnabled: false, meetingInfoSource: 'classic', outlookAccount: '', outlookCalendar: 'Calendar', outlookSkipPrefixes: 'Canceled:', transcribeThreshold: '', myName: '', separateRecurring: false, appendMeetingName: false, noteStyle: 'classic', separateTranscript: false, useDetailsFolder: false, transcribeHooksEnabled: false, preTranscribeCmd: '', postTranscribeCmd: '', taskListEnabled: false, taskListFolder: '', joplinEnabled: false, joplinUrl: '', joplinToken: '', joplinNotebook: 'NW Pipe', obsidianEnabled: false, obsidianVault: '', slideCaptureEnabled: false, slideAutoStartOnSelect: false, slideNotifications: true, slideHotkeyToggle: 'Ctrl+Alt+S', slideHotkeySelect: 'Ctrl+Alt+W', slideHotkeyManual: 'Ctrl+Alt+C', slideAppFilter: '', slideIdleStopMin: 30, highlightEnabled: false, panelsOpen: '', largeRecordButton: false, busyEnabled: false, busyApps: 'Zoom.exe,Teams.exe,ms-teams.exe,Webex.exe,slack.exe,Discord.exe', busyOnRecording: true, busyOffDelaySec: 5, busyLightEnabled: false, busyLightBusyColor: '#ff0000', busyLightFreeColor: '#00ff00', busyLightBrightness: 100, busyManualColor: '#a020f0', busyLightFreeOff: false, busySchedEnabled: false, busySchedDays: '1,2,3,4,5', busySchedStart: '08:00', busySchedEnd: '17:00', busySchedPerDay: false, busySchedTimes: {}, busyWledEnabled: false, busyWledHost: '', zoomUseDefaults: true, zoomMute: 'alt+a', zoomVideo: 'alt+v', zoomAccept: 'control+shift+a', zoomDecline: 'control+shift+d', zoomLeave: 'alt+q', busyMqttEnabled: false, busyMqttUrl: '', busyMqttUser: '', busyMqttPassword: '', busyMqttBaseTopic: 'bedrock-panel' }, (config.settings || {}).meeting || {}, ((config.settings || {}).meeting || {}).busyMqttBaseTopic === 'open-quake' ? { busyMqttBaseTopic: 'bedrock-panel' } : {});
     const me = currentMe();
     // Day set for the busylight schedule. Built here so the markup below stays readable; the empty
     // guard matters because ''.split(',') yields [''] and Number('') is 0, which would silently
@@ -4958,7 +4958,16 @@ ${IS_MAC ? `
       <div class="row"><label>API token</label>${secretInput(me.joplinToken || '', 'id="meJoplinToken" placeholder="Joplin › Tools › Options › Web Clipper"', 'flex:1')}</div>
       <div class="row"><label>Notebook</label>
         <input id="meJoplinNb" value="${esc(me.joplinNotebook)}" style="width:230px"></div>
-      <p class="hint" style="margin-top:12px">Filing: at analysis, everything except the meeting .md (WAV, transcript, meeting info, capture info, captions, screenshots) moves into a <b>details\\</b> subfolder of the meeting's folder. The .md always contains the full transcript.</p>
+      <div class="row" style="margin-top:12px"><label>Note style</label>
+        <select id="meNoteStyle" style="flex:1"><option value="classic" ${me.noteStyle === 'minutes' ? '' : 'selected'}>Classic</option><option value="minutes" ${me.noteStyle === 'minutes' ? 'selected' : ''}>Minutes Compatible</option></select></div>
+      <details class="hint"><summary>How each analyzed meeting is written. <b>Classic</b>: <b>&lt;name&gt;-analysis.md</b>, the way 0.9.9 wrote it. <b>Minutes Compatible</b>: one <b>&lt;name&gt;.md</b> with the meeting's facts in a header that Minutes and Obsidian can read.</summary> Classic keeps a small <b>&lt;name&gt;.bedrock.json</b> beside the meeting's sources, so a re-analysis still never overwrites notes you edited and exports are never duplicated. Changing this rewrites no existing file; the next analysis of a meeting uses the new style.</details>
+      <div id="meClassicOpts">
+      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meSepTx" ${me.separateTranscript ? 'checked' : ''}> Separate Clean Transcript</label></div>
+      <p class="hint">Leaves the full transcript out of the analysis .md and saves it as <b>&lt;name&gt;-clean_transcript.txt</b> instead.</p>
+      <div class="row"><label class="iconopt" style="width:auto"><input type="checkbox" id="meDetails" ${me.useDetailsFolder ? 'checked' : ''}> Use Details Folder</label></div>
+      <p class="hint">At analysis, everything except the notes .md (WAV, transcript, meeting info, clean transcript) moves into a <b>details\\</b> subfolder of the meeting's folder.</p>
+      </div>
+      <p class="hint" id="meMinutesFiling">Filing: at analysis, everything except the meeting .md (WAV, transcript, meeting info, capture info, captions, screenshots) moves into a <b>details\\</b> subfolder of the meeting's folder. The .md always contains the full transcript.</p>
       <div class="row" style="margin-top:12px"><label>Speaker threshold</label>
         <input type="number" id="meThreshold" min="0" max="1" step="0.05" value="${esc(me.transcribeThreshold)}" style="width:120px">
         <span class="hint" style="margin:0 0 0 8px">blank = server default</span></div>
@@ -6489,6 +6498,17 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       syncMeetingSource();
       document.getElementById('meSepRec').onchange = e => saveMe({ separateRecurring: e.target.checked });
       document.getElementById('meAppendName').onchange = e => saveMe({ appendMeetingName: e.target.checked });
+      // Separate Clean Transcript and Use Details Folder are Classic options; Minutes Compatible files
+      // one way only, so its fixed filing note shows instead.
+      const syncNoteStyle = () => {
+        const classic = document.getElementById('meNoteStyle').value !== 'minutes';
+        document.getElementById('meClassicOpts').style.display = classic ? '' : 'none';
+        document.getElementById('meMinutesFiling').style.display = classic ? 'none' : '';
+      };
+      document.getElementById('meNoteStyle').onchange = e => { saveMe({ noteStyle: e.target.value === 'minutes' ? 'minutes' : 'classic' }); syncNoteStyle(); };
+      syncNoteStyle();
+      document.getElementById('meSepTx').onchange = e => saveMe({ separateTranscript: e.target.checked });
+      document.getElementById('meDetails').onchange = e => saveMe({ useDetailsFolder: e.target.checked });
       // macOS: the calendar name is rarely "Calendar" (Google names it after the address), so the last
       // Check Connection result fills it in when the saved name is not one of the chosen account's calendars.
       let lastCheckedAccounts = [];

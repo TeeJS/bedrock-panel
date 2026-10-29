@@ -78,8 +78,10 @@ On the machines:
 - **Minutes Compatible:** the record stays in the file's header, as now.
 - **Classic:** the record lives in `<recording>.bedrock.json`, next to the sources. The `.md` has
   no header. Earlier revisions and **Review new** versions sit beside the sources too.
-- **The AI gets the same prompt in both styles.** In Classic, Bedrock removes the structured block it
-  asks for from the `.md` and keeps what it found in the tracking file.
+- **The AI gets the same prompt in both styles, except one instruction.** Classic leaves out the
+  instruction that rewrites transcript lines as `[Name 1:23] text`, so Classic transcripts keep
+  0.9.9's `**Name:** text` lines. In Classic, Bedrock removes the structured block it asks for from
+  the `.md` and keeps what it found in the tracking file.
 - **The Obsidian vault copy keeps the local name:** `<recording>-analysis.md` in Classic.
 - **The same in both styles:** the three folders, the **Batch** page, filing by the meeting's date,
   the Obsidian export option, merging recordings, and the quit warning.

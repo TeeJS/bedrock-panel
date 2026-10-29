@@ -24,6 +24,7 @@ const joplinNotesMod = require('./joplinNotes');
 const obsidianExportMod = require('./obsidianExport');
 const { parseStructuredTail, buildFrontmatter, validateFrontmatter, serializeFrontmatter, readFrontmatter } = require('./meetingFrontmatter');
 const { newId, sha256, formatTime, applyTurnTimes, aiHeadingsOf, baselineHash, mergeOwnership, assignItemIds, assembleFile } = require('./meetingFile');
+const meetingRecord = require('./meetingRecord');
 
 // The analysis rewrites the whole transcript, so its run time grows with the meeting: observed
 // 2026-10-22 with claude -p, a 124 KB / 78-min diarizer JSON took 9m39s and a 162 KB / 89-min one
@@ -105,6 +106,12 @@ TURNS:
 - 2: segments 4-4
 <!-- /BEDROCK-STRUCTURED -->
 `;
+// Classic note style: the same block, without rule 1 — the transcript keeps the prompt's own
+// "**Name:**" turn labels exactly as 0.9.9 wrote them (Classic carries no turn times).
+const STRUCTURED_TAIL_INSTRUCTION_CLASSIC = STRUCTURED_TAIL_INSTRUCTION
+  .replace(/ADDITIONAL REQUIRED OUTPUT \(overrides only two earlier rules: "nothing after these sections" and\n\s*the transcript line shape; every other instruction above still applies\)\./,
+    'ADDITIONAL REQUIRED OUTPUT (overrides only one earlier rule: "nothing after these sections"; every\nother instruction above still applies).')
+  .replace(/\n1\. Transcript lines:[\s\S]*?Never invent a time\.\n\n2\. After the last section/, '\nAfter the last section');
 const CODEX_ISOLATION_ARGS = Object.freeze(['--sandbox', 'read-only', '--ephemeral', '-c', 'mcp_servers={}',
   '--disable', 'browser_use', '--disable', 'computer_use', '--disable', 'apps']);
 // Work bounds: a transcript past this is refused up front (one call cannot cover it honestly), and
@@ -126,12 +133,11 @@ function authRequiredMsg(ai) {
 // response is <base>-diarizer-response.json (legacy plain <base>.json still accepted), the
 // analysis is <base>-analysis.md — matching the naming T.J.'s pre-existing pipeline used, which
 // other services key off.
-// One file per meeting: <base>.md beside (or one level above) the transcript. Pre-format analyses
-// were <base>-analysis.md; readers still accept that name, the app never writes it again.
+// Minutes Compatible writes one file per meeting: <base>.md beside (or one level above) the
+// transcript. Classic keeps that original <base>-analysis.md name (meetingRecord.js); readers accept both.
 function mdPathFor(jsonPath) {
   return jsonPath.replace(/-diarizer-response\.json$/i, '.json').replace(/\.json$/i, '.md');
 }
-function legacyMdPathFor(mdPath) { return mdPath.replace(/\.md$/i, '-analysis.md'); }
 // Duration from the wav header without reading the whole file (headers are tiny; the data is not).
 function wavDurationFromHeader(fsMod, wavPath) {
   try {
@@ -398,6 +404,9 @@ function createMeetingAnalyzer(deps) {
   async function runJob(name, ai, jsonPath, kind) {
     kind = normKind(kind);
     const opts = filingOptions() || {};
+    // Note style (Settings → Meeting → Advanced settings): main always says which; a caller that
+    // doesn't (tests, older wiring) gets Minutes Compatible, the format this module was built on.
+    const classic = styleOf(opts) === 'classic';
     const dir = path.dirname(jsonPath);
     const base = path.basename(jsonPath).replace(/-diarizer-response\.json$/i, '').replace(/\.json$/i, '');
     if (kind === 'transcribed') {
@@ -416,11 +425,13 @@ function createMeetingAnalyzer(deps) {
     const mdPath = target.mdPath;
     // A finished file already where this transcript would publish: a leftover set (cleared, no
     // model call) or a genuinely different meeting with the same name (refused) — clearLeftovers decides.
-    if (kind === 'transcribed' && (fsMod.existsSync(mdPath) || fsMod.existsSync(legacyMdPathFor(mdPath)))) return clearLeftovers(name, jsonPath, base, mdPath);
+    const existingAtTarget = notePaths(path.dirname(mdPath), base, classic).find(p => fsMod.existsSync(p));
+    if (kind === 'transcribed' && existingAtTarget) return clearLeftovers(name, jsonPath, base, existingAtTarget);
     // The structured-tail contract rides on whatever prompt is configured (built-in or the user's
     // edited copy) — the user's text is never modified, only followed by the fixed block.
     const promptPath = resolvePromptPath();
-    const prompt = (await fsp.readFile(promptPath, 'utf8')) + STRUCTURED_TAIL_INSTRUCTION;
+    const tailInstruction = classic ? STRUCTURED_TAIL_INSTRUCTION_CLASSIC : STRUCTURED_TAIL_INSTRUCTION;
+    const prompt = (await fsp.readFile(promptPath, 'utf8')) + tailInstruction;
     const transcript = await fsp.readFile(jsonPath, 'utf8');
     if (transcript.length > MAX_INPUT_CHARS) throw new Error('transcript too large for one analysis (' + transcript.length + ' chars, limit ' + MAX_INPUT_CHARS + ') — not analyzed');
 
@@ -430,14 +441,18 @@ function createMeetingAnalyzer(deps) {
     // A file left in the transcript's own folder by an earlier layout counts as the previous too.
     // A transcribed-kind job has no previous (the existence check above already returned): the
     // transcript's own folder is a waiting room, never a place a meeting file lives.
-    const previousCandidates = kind === 'transcribed' ? [] : [mdPath, legacyMdPathFor(mdPath)];
-    const dateFolderMd = mdTargetFor(jsonPath);
-    if (kind !== 'transcribed' && dateFolderMd !== mdPath) previousCandidates.push(dateFolderMd, legacyMdPathFor(dateFolderMd));
+    // Either note style's file counts as the previous one (this style's name first), so switching
+    // styles carries the record across; the record is read from the file's own style, never the setting.
+    const previousCandidates = kind === 'transcribed' ? [] : notePaths(path.dirname(mdPath), base, classic);
+    const dateFolderHome = path.dirname(mdTargetFor(jsonPath));
+    if (kind !== 'transcribed' && dateFolderHome !== path.dirname(mdPath)) previousCandidates.push(...notePaths(dateFolderHome, base, classic));
     const previousPath = previousCandidates.find(p => fsMod.existsSync(p)) || null;
     if (previousPath) await reconcilePendingExports(previousPath);   // a pending Joplin export from a crashed run, before we snapshot the bytes
-    const previousBytes = previousPath ? await fsp.readFile(previousPath) : null;
+    const previous = previousPath ? meetingRecord.readRecord(fsMod, previousPath) : null;
+    if (previous && !previous.ok && previous.reason === 'unreadable') throw new Error('the existing meeting file could not be read — not analyzed');
+    if (previous && !previous.ok && previous.reason === 'record-conflict') log('two tracking files for ' + path.basename(previousPath) + ' — treated as untracked: ' + (previous.paths || []).join(', '));
+    const previousBytes = previous ? previous.bytes || null : null;
     const previousHash = previousBytes ? sha256(previousBytes) : null;
-    const previous = previousBytes ? readFrontmatter(previousBytes.toString('utf8')) : null;
     const previousFm = previous && previous.ok ? previous.data : null;
     const previousBedrock = (previousFm && previousFm.bedrock && typeof previousFm.bedrock === 'object') ? previousFm.bedrock : {};
 
@@ -484,14 +499,24 @@ function createMeetingAnalyzer(deps) {
     if (tail.malformed) log('structured block malformed (' + tail.errors.join('; ') + ') — prose kept, extraction marked');
     let segments = [];
     try { const t = JSON.parse(transcript); segments = Array.isArray(t.segments) ? t.segments : []; } catch (e) { /* builder tolerates */ }
-    const timed = applyTurnTimes(tail.bodyWithoutTail, tail.structured.turns, segments);
+    // Classic writes the AI's text as 0.9.9 did: no turn times and no appended diarizer transcript;
+    // with Separate Clean Transcript on, everything from "## Transcript" on goes to its own .txt.
+    const timed = classic ? { body: tail.bodyWithoutTail, evidence: 'limited', turns: 0, unverified: 0 } : applyTurnTimes(tail.bodyWithoutTail, tail.structured.turns, segments);
     let body = timed.body;
+    let cleanTranscript = null;
+    if (classic && opts.separateTranscript) {
+      const split = splitCleanTranscript(body);
+      if (split) { body = split.notes; cleanTranscript = split.transcript; }
+      else log('no "## Transcript" heading in the AI output — keeping the combined .md');
+    }
     if (timed.unverified) log('transcript turns without a verifiable time: ' + timed.unverified + ' of ' + timed.turns + ' — evidence limited');
     // A complete meeting file always carries the full transcript. If the model's output has no
     // transcript turns (notes-only prompt, truncated reply), the raw diarizer transcript is
     // appended with its real labels and times — never a "complete" file with the dialogue missing.
     let transcriptSource = 'model';
-    if (!timed.turns) {
+    if (classic) {
+      if (cleanTranscript === null && !/^##\s*Transcript\s*$/im.test(body)) transcriptSource = 'none';
+    } else if (!timed.turns) {
       const raw = segments.map(s => '[' + String((s && s.speaker) || 'Speaker') + ' ' + formatTime(Number(s && s.start) || 0) + '] ' + String((s && s.text) || '').trim()).filter(l => l.length > 3);
       if (raw.length) {
         body = body.replace(/\s+$/, '') + '\n\n## Transcript\n' + raw.join('\n') + '\n';
@@ -523,7 +548,10 @@ function createMeetingAnalyzer(deps) {
       transcript: transcriptSource === 'none' ? 'absent' : 'present',
       ai_sections: aiHeadingsOf(body),
       exports: Object.assign({}, previousBedrock.exports || {}),
+      note_style: classic ? 'classic' : 'minutes',
     });
+    if (cleanTranscript !== null) fm.bedrock.clean_transcript = base + '-clean_transcript.txt';
+    else delete fm.bedrock.clean_transcript;
     assignItemIds(fm, previousFm, now());
     // Which date chose the folder (calendar start, capture start, or the file-name stamp) is
     // recorded in the file, with the warning when the calendar's start could not be read.
@@ -544,7 +572,8 @@ function createMeetingAnalyzer(deps) {
     fm.bedrock.baseline_hash = baselineHash(body, fm.bedrock.ai_sections);
     const valid = validateFrontmatter(fm);
     if (!valid.ok) throw new Error('meeting file failed validation — not published: ' + valid.errors.join('; '));
-    const fileText = assembleFile(serializeFrontmatter(fm), body);
+    // Classic: the .md is the body alone (no header); the record goes to <base>.bedrock.json.
+    const fileText = classic ? body : assembleFile(serializeFrontmatter(fm), body);
     for (const w of built.warnings || []) log('frontmatter: ' + w);
 
     // Stale-write checks: the previous file's bytes must still be what the job read, no file may
@@ -553,11 +582,11 @@ function createMeetingAnalyzer(deps) {
     if (previousPath) {
       const nowBytes = await fsp.readFile(previousPath);
       if (sha256(nowBytes) !== previousHash) throw new Error('meeting file changed during analysis — not published (re-run to analyze the current file)');
-    } else if (fsMod.existsSync(mdPath) || fsMod.existsSync(legacyMdPathFor(mdPath))) {
+    } else if (notePaths(path.dirname(mdPath), base, classic).some(p => fsMod.existsSync(p))) {
       throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)');
     }
     const inputsHashNow = async () => sha256([
-      (await fsp.readFile(promptPath, 'utf8')) + STRUCTURED_TAIL_INSTRUCTION,
+      (await fsp.readFile(promptPath, 'utf8')) + tailInstruction,
       await fsp.readFile(jsonPath, 'utf8').catch(() => ''),
       await readOptional(path.join(dir, base + '.json'), jsonPath), await readOptional(companionVtt(dir, base, kind)), highlightsBlock(await readOptional(path.join(dir, base + '.json'), jsonPath)) || '',
     ].join('\u0000'));
@@ -574,7 +603,7 @@ function createMeetingAnalyzer(deps) {
       staged = await stageSources(jsonPath, base, target);
       // Copying a long recording takes time: nothing may have appeared at the destination meanwhile,
       // and the inputs must still be the bytes the analysis describes. Re-checked right before commit.
-      if (fsMod.existsSync(mdPath) || fsMod.existsSync(legacyMdPathFor(mdPath))) { await staged.rollback(); throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)'); }
+      if (notePaths(path.dirname(mdPath), base, classic).some(p => fsMod.existsSync(p))) { await staged.rollback(); throw new Error('a meeting file appeared during analysis — not published (re-run to analyze the current file)'); }
       if (await inputsHashNow() !== inputHash) { await staged.rollback(); throw new Error('analysis inputs changed during analysis — not published (re-run to analyze the current files)'); }
     } else if (!proposed) await preflightSources(jsonPath, base, target);
     let publishedMd = null;
@@ -583,21 +612,28 @@ function createMeetingAnalyzer(deps) {
       // refuse if the file moved on. Sources stay where they are: the kept notes still own them.
       fm.bedrock.proposal_base_hash = previousHash;
       fm.bedrock.proposal_base_path = path.basename(previousPath);
+      // A Classic proposal uses the same header + body form (it is a review copy, not a note); its
+      // body is exactly the .md Apply will write, and a split-off transcript waits beside it.
       const proposedText = assembleFile(serializeFrontmatter(fm), body);
       // The proposal lives beside the notes it would replace (the row the user sees), even when
       // the recurring rule would file a fresh analysis elsewhere; apply moves it to the final home.
-      const detDir = path.join(path.dirname(previousPath), 'details');
+      // Where the existing note's own style keeps it: beside a Classic note only with Use Details
+      // Folder off; a Minutes (or other) note's proposal is always in details\ (the list looks there).
+      const detDir = meetingRecord.isClassicName(previousPath) ? meetingRecord.sideDirFor(previousPath, 'classic', opts.useDetailsFolder) : path.join(path.dirname(previousPath), 'details');
       await fsp.mkdir(detDir, { recursive: true });
       const proposedPath = path.join(detDir, base + '.proposed.md');
       const tmp = proposedPath + '.tmp';
       await fsp.writeFile(tmp, proposedText);
       await fsp.rename(tmp, proposedPath);
+      const proposedTxt = path.join(detDir, base + '.proposed-clean_transcript.txt');
+      if (cleanTranscript !== null) { await fsp.writeFile(proposedTxt + '.tmp', cleanTranscript); await fsp.rename(proposedTxt + '.tmp', proposedTxt); }
+      else await fsp.rm(proposedTxt, { force: true });
       lastProposed = { name: base, path: proposedPath, finishedAt: now() };
       log('existing notes were edited by hand (or are pre-format) — new analysis saved for review: ' + proposedPath);
       return;
     } else {
       if (previousPath === mdPath && previousFm && previousFm.status !== 'processing') {
-        const detDir = path.join(path.dirname(mdPath), 'details');
+        const detDir = meetingRecord.sideDirFor(mdPath, classic ? 'classic' : 'minutes', opts.useDetailsFolder);
         await fsp.mkdir(detDir, { recursive: true });
         await fsp.copyFile(mdPath, path.join(detDir, base + '.rev' + (Number(previousBedrock.revision) || 0) + '.md'));
       }
@@ -612,6 +648,10 @@ function createMeetingAnalyzer(deps) {
       }
       publishedMd = mdPath;
     }
+    // Classic: the .md is committed; the clean transcript and the record follow. A failure here
+    // leaves a note without a (current) record, which the next analysis treats as edited: a
+    // proposal, never an overwrite. It is reported, not thrown — the note itself is published.
+    const sideWarning = classic ? await writeClassicSide(mdPath, base, fm, cleanTranscript, Number(previousBedrock.revision) || 0, opts.useDetailsFolder) : null;
     if (staged) {
       // Committed. Sources are already filed; now the originals leave transcribed — companions
       // first, the transcript last, so the Analysis row disappears only when its set is gone. The
@@ -629,6 +669,7 @@ function createMeetingAnalyzer(deps) {
       const tl0 = fm.bedrock.exports && fm.bedrock.exports.task_list;
       if (!(tl0 && tl0.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: target.meta ? path.join(target.fileDir, base + '.json') : null, meta: target.meta });
       const warnings = [
+        sideWarning,
         await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports),
         await exportToObsidian(base, mdPath, fm.bedrock.exports),
       ].filter(Boolean);
@@ -638,11 +679,14 @@ function createMeetingAnalyzer(deps) {
       return out;
     }
 
-    // An earlier-layout file (date folder) that served as the previous moves aside as a revision.
+    // An earlier-layout file (date folder) or the other note style's file that served as the
+    // previous moves aside as a revision; a Classic record it leaves behind is retired with it.
     if (publishedMd && previousPath && previousPath !== mdPath) {
-      const detDir = path.join(path.dirname(mdPath), 'details');
+      const rev = Number(previousBedrock.revision) || 0;
+      const detDir = meetingRecord.sideDirFor(mdPath, classic ? 'classic' : 'minutes', opts.useDetailsFolder);
       await fsp.mkdir(detDir, { recursive: true });
-      await fsp.rename(previousPath, path.join(detDir, base + '.rev' + (Number(previousBedrock.revision) || 0) + '.md')).catch(e => log('could not move the earlier file aside: ' + e.message));
+      await fsp.rename(previousPath, path.join(detDir, base + '.rev' + rev + '.md')).catch(e => log('could not move the earlier file aside: ' + e.message));
+      if (!classic && previous && previous.style === 'classic') await retireClassicRecords(previousPath, base, rev, null);
     }
     // Sources travel into details/ beside the published file; the .md itself is already in place.
     // A filing failure after publish is a visible job failure (the file is saved; the sources are not where the file says).
@@ -651,12 +695,71 @@ function createMeetingAnalyzer(deps) {
     const tl = fm.bedrock.exports && fm.bedrock.exports.task_list;
     if (!(tl && tl.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: filed ? filed.sidecar : null, meta: filed ? filed.meta : target.meta });
     const warnings = [
+      sideWarning,
       await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports),
       await exportToObsidian(base, mdPath, fm.bedrock.exports),
     ].filter(Boolean);
     const out = { md: relToProcessed(mdPath) };
     if (warnings.length) out.warning = warnings.join('\n');
     return out;
+  }
+
+  // A meeting's pending proposal: details\<base>.proposed.md, or beside the note when it is a
+  // Classic proposal (Use Details Folder off). Anything else beside a note is not a proposal.
+  function findProposal(home, base) {
+    const inDetails = path.join(home, 'details', base + '.proposed.md');
+    if (fsMod.existsSync(inDetails)) return inDetails;
+    const beside = path.join(home, base + '.proposed.md');
+    try {
+      const fm = readFrontmatter(fsMod.readFileSync(beside, 'utf8'));
+      return fm.ok && fm.data.bedrock && fm.data.bedrock.note_style === 'classic' ? beside : null;
+    } catch (e) { return null; }
+  }
+  // Note style from the filing options; absent = Minutes Compatible (see runJob).
+  function styleOf(opts) { return opts && opts.noteStyle === 'classic' ? 'classic' : 'minutes'; }
+  // A meeting's note in one folder, this style's name first, then the other style's (a style switch,
+  // or a 0.9.9 -analysis.md under Minutes Compatible).
+  function notePaths(home, base, classic) {
+    const own = classic ? meetingRecord.classicName(base) : meetingRecord.minutesName(base);
+    const other = classic ? meetingRecord.minutesName(base) : meetingRecord.classicName(base);
+    return [path.join(home, own), path.join(home, other)];
+  }
+  // Split a Classic body at its "## Transcript" heading exactly as 0.9.9 did (c0f45d8,
+  // meetingAnalyze.js:235-245): the notes keep everything before it, the transcript file gets the rest.
+  function splitCleanTranscript(markdown) {
+    const m = /^##\s*Transcript\s*$/im.exec(markdown);
+    if (!m) return null;
+    return { notes: markdown.slice(0, m.index).trimEnd() + '\n', transcript: markdown.slice(m.index + m[0].length).trim() + '\n' };
+  }
+  // Classic side files after the .md is committed: the clean transcript (or none), then the record,
+  // both in the side folder. Copies found anywhere else (Use Details Folder flipped since the last
+  // analysis) are kept as revisions, so exactly one record ever names the note. Returns a warning or null.
+  async function writeClassicSide(mdPath, base, data, cleanTranscript, rev, useDetailsFolder) {
+    try {
+      const side = meetingRecord.sideDirFor(mdPath, 'classic', useDetailsFolder);
+      await fsp.mkdir(side, { recursive: true });
+      const txtLeaf = base + '-clean_transcript.txt', txtPath = path.join(side, txtLeaf);
+      for (const p of meetingRecord.findSide(fsMod, mdPath, txtLeaf)) {
+        const keep = path.join(path.dirname(p), base + '-clean_transcript.rev' + rev + '.txt');
+        if (!fsMod.existsSync(keep)) await fsp.copyFile(p, keep);
+        if (cleanTranscript === null || path.resolve(p) !== path.resolve(txtPath)) await fsp.rm(p, { force: true });
+      }
+      if (cleanTranscript !== null) { await fsp.writeFile(txtPath + '.tmp', cleanTranscript); await fsp.rename(txtPath + '.tmp', txtPath); }
+      const recPath = path.join(side, meetingRecord.recordName(base));
+      meetingRecord.writeClassicRecord(fsMod, recPath, mdPath, data);
+      await retireClassicRecords(mdPath, base, rev, recPath);
+      return null;
+    } catch (e) {
+      log('classic tracking file not written for ' + path.basename(mdPath) + ': ' + e.message);
+      return 'tracking file not written (' + e.message + ') — the next analysis of this meeting is saved for review';
+    }
+  }
+  // Every Classic record for this note other than `keep` becomes <base>.revN.bedrock.json.
+  async function retireClassicRecords(mdPath, base, rev, keep) {
+    for (const p of meetingRecord.findSide(fsMod, mdPath, meetingRecord.recordName(base))) {
+      if (keep && path.resolve(p) === path.resolve(keep)) continue;
+      await fsp.rename(p, path.join(path.dirname(p), base + '.rev' + rev + '.bedrock.json')).catch(e => log('could not retire ' + p + ': ' + e.message));
+    }
   }
 
   function relToProcessed(p) { return path.relative(resolveFolders().processed, p).split(path.sep).join('/'); }
@@ -730,8 +833,12 @@ function createMeetingAnalyzer(deps) {
   // beside it byte for byte (the leftover of a cleanup that failed after commit) — remove the
   // originals, no model call — or it is a different meeting with the same name: refuse.
   async function clearLeftovers(name, jsonPath, base, mdPath) {
-    const target = { mdPath, fileDir: path.join(path.dirname(mdPath), 'details') };
-    if (!(await sourcesAlreadyFiled(jsonPath, base, target))) {
+    // A Classic note may have its sources beside it (Use Details Folder off), so both side folders count.
+    let filed = false;
+    for (const fileDir of meetingRecord.isClassicName(mdPath) ? meetingRecord.sideDirs(mdPath) : [path.join(path.dirname(mdPath), 'details')]) {
+      if (await sourcesAlreadyFiled(jsonPath, base, { mdPath, fileDir })) { filed = true; break; }
+    }
+    if (!filed) {
       throw new Error('a completed meeting file already exists at ' + relToProcessed(mdPath) + ' — not published (rename the transcript or remove the finished file first)');
     }
     const left = await removeOriginals(jsonPath, base);
@@ -866,7 +973,8 @@ function createMeetingAnalyzer(deps) {
   async function reconcilePendingExports(mdFile) {
     let exports = null;
     try {
-      const parsed = readFrontmatter(await fsp.readFile(mdFile, 'utf8'));
+      const parsed = meetingRecord.readRecord(fsMod, mdFile);
+      if (parsed.reason === 'unreadable') throw new Error('meeting file unreadable');
       exports = (parsed.ok && parsed.data.bedrock && parsed.data.bedrock.exports) || null;
     } catch (e) { log('export reconcile skipped: ' + e.message); return; }
     try {
@@ -901,28 +1009,32 @@ function createMeetingAnalyzer(deps) {
     const n = safeRelPath(name);
     if (!n || !/\.md$/i.test(n)) return { ok: false, error: 'bad name' };
     const processed = resolveFolders().processed;
-    // Always land on the canonical <base>.md, even when the row was a legacy -analysis.md.
-    const base = path.basename(n).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/\.md$/i, '');
-    const mdFile = path.join(path.dirname(path.join(processed, n)), base + '.md');
-    const detDir = path.join(path.dirname(mdFile), 'details');
-    const proposedPath = path.join(detDir, base + '.proposed.md');
-    if (!fsMod.existsSync(proposedPath)) return { ok: false, error: 'no proposal to apply' };
+    const base = meetingRecord.baseOfNote(n);
+    const home = path.dirname(path.join(processed, n));
+    const proposedPath = findProposal(home, base);
+    if (!proposedPath) return { ok: false, error: 'no proposal to apply' };
     if (running && running.kind === 'processed' && running.name && transcriptForMd(n) === running.name) return { ok: false, error: 'this meeting is being analyzed right now' };
     try {
       const proposed = readFrontmatter(await fsp.readFile(proposedPath, 'utf8'));
       if (!proposed.ok) return { ok: false, error: 'proposal unreadable' };
       const pb = proposed.data.bedrock || {};
+      // The note takes the style the proposal was written in (its body is that style's), whatever
+      // the setting says now; a proposal from before the setting existed is Minutes Compatible.
+      const classic = pb.note_style === 'classic';
+      const opts = filingOptions() || {};
+      const mdFile = path.join(home, classic ? meetingRecord.classicName(base) : meetingRecord.minutesName(base));
+      const detDir = meetingRecord.sideDirFor(mdFile, classic ? 'classic' : 'minutes', opts.useDetailsFolder);
       // The proposal was generated against specific bytes; the file it would replace must still be
       // exactly those bytes, or the user's later edits / completed items would be lost.
-      const basePath = pb.proposal_base_path ? path.join(path.dirname(mdFile), String(pb.proposal_base_path)) : (fsMod.existsSync(mdFile) ? mdFile : legacyMdPathFor(mdFile));
+      const basePath = pb.proposal_base_path ? path.join(home, String(pb.proposal_base_path)) : (notePaths(home, base, classic).find(p => fsMod.existsSync(p)) || mdFile);
       if (path.dirname(path.resolve(basePath)) !== path.dirname(path.resolve(mdFile))) return { ok: false, error: 'proposal base path outside the meeting folder' };
       const baseBytes = fsMod.existsSync(basePath) ? await fsp.readFile(basePath) : null;
       if (pb.proposal_base_hash && (!baseBytes || sha256(baseBytes) !== pb.proposal_base_hash)) {
         return { ok: false, error: 'the notes changed after this proposal was made — re-analyze to get a fresh proposal' };
       }
-      let revision = 0, carry = {};
+      let revision = 0, carry = {}, current = null;
       if (baseBytes) {
-        const current = readFrontmatter(baseBytes.toString('utf8'));
+        current = meetingRecord.readRecord(fsMod, basePath);
         if (current.ok && current.data.bedrock) {
           revision = Number(current.data.bedrock.revision) || 0;
           carry = { meeting_id: current.data.bedrock.meeting_id, exports: current.data.bedrock.exports };
@@ -935,17 +1047,28 @@ function createMeetingAnalyzer(deps) {
       data.bedrock.baseline_hash = baselineHash(proposed.body, data.bedrock.ai_sections || []);
       const valid = validateFrontmatter(data);
       if (!valid.ok) return { ok: false, error: 'proposal failed validation: ' + valid.errors.join('; ') };
-      const text = assembleFile(serializeFrontmatter(data), proposed.body);
+      // Classic: the proposal's body IS the note; its record and split-off transcript go beside it.
+      const text = classic ? proposed.body : assembleFile(serializeFrontmatter(data), proposed.body);
+      const proposedTxt = path.join(path.dirname(proposedPath), base + '.proposed-clean_transcript.txt');
+      const cleanTranscript = classic && fsMod.existsSync(proposedTxt) ? await fsp.readFile(proposedTxt, 'utf8') : null;
       // validated; now back up, re-check the base once more, and replace
       if (baseBytes) {
+        await fsp.mkdir(detDir, { recursive: true });
         await fsp.copyFile(basePath, path.join(detDir, base + '.rev' + revision + '.md'));
         if (sha256(await fsp.readFile(basePath)) !== sha256(baseBytes)) return { ok: false, error: 'the notes changed while applying — nothing replaced' };
       }
       const tmp = mdFile + '.tmp';
       await fsp.writeFile(tmp, text);
       await fsp.rename(tmp, mdFile);
-      if (baseBytes && path.resolve(basePath) !== path.resolve(mdFile)) await fsp.unlink(basePath).catch(() => {});   // legacy -analysis.md retired
+      // The other style's file (backed up above) is retired. A Classic note replaced in place is
+      // never removed: basePath IS mdFile.
+      if (baseBytes && path.resolve(basePath) !== path.resolve(mdFile)) {
+        await fsp.unlink(basePath).catch(() => {});
+        if (!classic && current && current.style === 'classic') await retireClassicRecords(basePath, base, revision, null);
+      }
+      const sideWarning = classic ? await writeClassicSide(mdFile, base, data, cleanTranscript, revision, opts.useDetailsFolder) : null;
       await fsp.unlink(proposedPath);
+      await fsp.rm(proposedTxt, { force: true });
       // Final destination (recurring rule) and source filing happen now, as they would after an
       // ordinary publish: the applied file moves to its home and the sources follow into details/.
       let mdFinal = mdFile;
@@ -953,15 +1076,23 @@ function createMeetingAnalyzer(deps) {
         const jsonRel = transcriptForMd(path.posix.join(path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n), base + '.md'));
         if (jsonRel) {
           const jsonAbs = path.join(processed, jsonRel);
-          const opts = filingOptions() || {};
-          const target = await resolveTarget(jsonAbs, base, opts);
+          const fileOpts = Object.assign({}, opts, { noteStyle: classic ? 'classic' : 'minutes' });
+          const target = await resolveTarget(jsonAbs, base, fileOpts);
           if (path.resolve(target.mdPath) !== path.resolve(mdFile)) {
             if (fsMod.existsSync(target.mdPath)) throw new Error('a meeting file already exists at ' + path.relative(processed, target.mdPath));
             await preflightSources(jsonAbs, base, target);
             await fsp.mkdir(path.dirname(target.mdPath), { recursive: true });
             await fsp.rename(mdFile, target.mdPath);
+            if (classic) {
+              // The record and the clean transcript follow the note to its new folder.
+              for (const leaf of [meetingRecord.recordName(base), base + '-clean_transcript.txt']) {
+                for (const p of meetingRecord.findSide(fsMod, mdFile, leaf)) await fsp.rm(p, { force: true });
+              }
+              const moved = await writeClassicSide(target.mdPath, base, data, cleanTranscript, revision, opts.useDetailsFolder);
+              if (moved) throw new Error(moved);
+            }
           }
-          await fileSet(jsonAbs, null, null, base, opts, target);
+          await fileSet(jsonAbs, null, null, base, fileOpts, target);
           mdFinal = target.mdPath;
         }
       } catch (e) { log('applied proposal is saved, but filing it to its final folder failed: ' + e.message); return { ok: true, name: n, warning: 'applied; filing failed: ' + e.message }; }
@@ -969,26 +1100,15 @@ function createMeetingAnalyzer(deps) {
       await exportToObsidian(base, mdFinal, carry.exports);
       if (lastProposed && lastProposed.name === base) lastProposed = null;
       log('proposed analysis applied: ' + n);
-      return { ok: true, name: n };
+      return sideWarning ? { ok: true, name: n, warning: sideWarning } : { ok: true, name: n };
     } catch (e) { return { ok: false, error: (e && e.message) || 'apply failed' }; }
   }
 
-  // Rewrite only the frontmatter of a published meeting file (export state, revision bookkeeping):
-  // read, hash, mutate the parsed frontmatter, re-serialize with the SAME body, write via
-  // temp+rename, and refuse if the bytes moved between read and write.
+  // Rewrite only the record of a published meeting (export state, revision bookkeeping), in either
+  // note style: the Minutes header with the SAME body, or the Classic <base>.bedrock.json. Refuses
+  // if the bytes moved between read and write (meetingRecord.patchRecord).
   async function patchFrontmatter(filePath, mutate) {
-    const bytes = await fsp.readFile(filePath);
-    const parsed = readFrontmatter(bytes.toString('utf8'));
-    if (!parsed.ok) throw new Error('cannot patch a file without readable frontmatter');
-    const data = parsed.data;
-    mutate(data);
-    const valid = validateFrontmatter(data);
-    if (!valid.ok) throw new Error('patched frontmatter invalid: ' + valid.errors.join('; '));
-    const again = await fsp.readFile(filePath);
-    if (sha256(again) !== sha256(bytes)) throw new Error('file changed while patching');
-    const tmp = filePath + '.tmp';
-    await fsp.writeFile(tmp, assembleFile(serializeFrontmatter(data), parsed.body));
-    await fsp.rename(tmp, filePath);
+    meetingRecord.patchRecord(fsMod, filePath, mutate);
   }
 
   // Post-analysis Joplin note (replaces the retired Cowork pipeline's note step). The body is the
@@ -1112,8 +1232,12 @@ function createMeetingAnalyzer(deps) {
       const year = when.date ? String(when.date.getFullYear()) : ym ? ym[1] : String(new Date(now()).getFullYear());
       home = path.join(resolveFolders().processed, year, recurringName);
     }
-    const fileDir = opts.useDetailsFolder || kind === 'transcribed' ? path.join(home, 'details') : home;
-    return { dir, home, fileDir, meta, mdPath: path.join(home, base + '.md'), dateSource, dateWarning };
+    // Classic files the sources exactly as Use Details Folder says, from any stage; Minutes
+    // Compatible always into details\ (main passes useDetailsFolder: true for it).
+    const classic = styleOf(opts) === 'classic';
+    const fileDir = classic ? (opts.useDetailsFolder ? path.join(home, 'details') : home)
+      : opts.useDetailsFolder || kind === 'transcribed' ? path.join(home, 'details') : home;
+    return { dir, home, fileDir, meta, mdPath: path.join(home, classic ? meetingRecord.classicName(base) : meetingRecord.minutesName(base)), dateSource, dateWarning };
   }
 
   // The date that files a meeting (decided 2026-10-15): the calendar sidecar's start, in this
@@ -1228,7 +1352,7 @@ function createMeetingAnalyzer(deps) {
       let dest = null, pendingHash = null;
       for (const it of items) {
         try {
-          const tl = readFrontmatter(await fsp.readFile(it.md, 'utf8')).data.bedrock.exports.task_list;
+          const tl = meetingRecord.readRecord(fsMod, it.md).data.bedrock.exports.task_list;
           if (tl && tl.state === 'pending' && tl.file) { dest = path.join(folder, path.basename(String(tl.file))); pendingHash = tl.hash || null; break; }
         } catch (e) { /* no readable export state: a fresh name below */ }
       }
@@ -1416,7 +1540,8 @@ function createMeetingAnalyzer(deps) {
     }
     if (proposed) {   // the reviewable new analysis kept beside the sources
       const base = path.posix.basename(n).replace(/(?:[-_ ]+meeting)?[-_ ]+analysis\.md$/i, '').replace(/(-diarizer-response)?\.(?:md|json)$/i, '');
-      const p = path.join(resolveFolders().processed, path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n), 'details', base + '.proposed.md');
+      const home = path.join(resolveFolders().processed, path.posix.dirname(n) === '.' ? '' : path.posix.dirname(n));
+      const p = findProposal(home, base);
       try { return { ok: true, markdown: fsMod.readFileSync(p, 'utf8'), proposed: true }; } catch (e) { return { ok: false, error: 'no proposal to review' }; }
     }
     const jsonAbs = path.join(resolveFolders().processed, n).replace(/\.md$/i, '.json');

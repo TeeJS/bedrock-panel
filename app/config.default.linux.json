@@ -15,6 +15,9 @@
     "github": {
       "repository": "",
       "branch": ""
+    },
+    "meeting": {
+      "noteStyle": "minutes"
     }
   },
   "grids": [
