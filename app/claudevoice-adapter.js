@@ -219,4 +219,4 @@ function createClaudeVoiceAdapter({ getServerPort, getUserDataPath, log }) {
   };
 }
 
-module.exports = { createClaudeVoiceAdapter, claudeTurnError };
+module.exports = { createClaudeVoiceAdapter, claudeTurnError, CLAUDE_VOICE_MODEL_PICKS };
