@@ -217,7 +217,7 @@ backend, Whisper and Piper the page already uses; nothing extra runs.
   a quiet **Controls** button or a tap on the face reveals mic, speaker, stop-speaking and settings,
   and an error or approval always shows its controls).
 - **Persona** (Settings → Persona): who the face is. Ships with a starter set (Mimi, Jarvis,
-  CRT Terminal, Startup Intern, Dust Sprite); the default is *None*, a plain face. Each can have its own
+  CRT Terminal, Startup Intern, Pixie); the default is *None*, a plain face. Each can have its own
   Piper voice and a spoken name for the *Wake word* (above). A persona's prompt is added to the page's profile, never replacing
   it, and is ignored on structured-output profiles such as Panel Builder. Changing the persona
   restarts that backend's session once the current reply or approval is finished; changing the face

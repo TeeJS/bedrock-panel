@@ -77,7 +77,7 @@ const KAWAII_PERSONA = {
   name: 'Mimi',
   version: PERSONA_SCHEMA_VERSION,
   prompt: KAWAII_PROMPT,
-  voice: 'en_US-amy-medium',
+  voice: 'en_GB-semaine-medium#poppy',   // semaine has four speakers; poppy is the one picked for Mimi
   face: {
     style: 'kawaii', color: '#ff8fc8', cheekColor: '#ff6fa8', eyeGap: 18, dozeAfterSeconds: 60,
     emotions: {
@@ -181,7 +181,7 @@ const JARVIS_PERSONA = {
 
 // Amber phosphor, square-ish eyes, slow lazy blink: a terminal.
 const CRT_PERSONA = {
-  id: 'crt', wakeName: 'terminal', name: 'CRT Terminal', version: PERSONA_SCHEMA_VERSION, prompt: CRT_PROMPT, voice: 'en_US-hfc_male-medium',
+  id: 'crt', wakeName: 'crt', name: 'CRT Terminal', version: PERSONA_SCHEMA_VERSION, prompt: CRT_PROMPT, voice: 'en_US-hfc_male-medium',
   face: {
     style: 'crt', color: '#ffb000', eyeGap: 20, dozeAfterSeconds: 45, blinkMinMs: 5000, blinkMaxMs: 12000,
     emotions: {
@@ -215,7 +215,9 @@ const INTERN_PERSONA = {
 
 // Soft grey, huge round eyes, dozes quickly: a sleepy little spirit.
 const SPRITE_PERSONA = {
-  id: 'sprite', wakeName: 'sprite', aliases: ['haste bright', 'hastebrite', 'haste brite', 'taste bright', 'peace bright'], name: 'Dust Sprite', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT, voice: 'en_GB-southern_english_female-low',
+  // Named Pixie: "Hey Dust Sprite" woke the page 3 times in 12 (Whisper heard "desperate", "does sprite").
+  // The id stays 'sprite' so pages that picked it keep it.
+  id: 'sprite', wakeName: 'pixie', name: 'Pixie', version: PERSONA_SCHEMA_VERSION, prompt: SPRITE_PROMPT, voice: 'en_GB-southern_english_female-low',
   face: {
     style: 'sprite', color: '#272833', cheekColor: '#d9a3a3', eyeGap: 14, dozeAfterSeconds: 25, blinkMinMs: 2500, blinkMaxMs: 7000,   // color = body (soot); eyes stay white
     emotions: {

@@ -1,7 +1,7 @@
 # Personas for the AI Voice face
 
 A persona is who the animated face on an **AI Voice** page is: a name, a prompt, and how the face looks.
-Bedrock Panel ships a starter set (**Mimi**, **Jarvis**, **CRT Terminal**, **Startup Intern** and **Dust Sprite**); characters that belong to someone else are not built in and come as packs instead (see the [persona packs repository](https://github.com/TeeJS/bedrock-personas), currently private: clone it and use **Choose file…** or the personas folder, since **From a URL** fetches only public links). Any number more can be added by importing a
+Bedrock Panel ships a starter set (**Mimi**, **Jarvis**, **CRT Terminal**, **Startup Intern** and **Pixie** (a dust sprite)); characters that belong to someone else are not built in and come as packs instead (see the [persona packs repository](https://github.com/TeeJS/bedrock-personas), currently private: clone it and use **Choose file…** or the personas folder, since **From a URL** fetches only public links). Any number more can be added by importing a
 small JSON file, so you never need a new build of the app to make your own.
 
 A persona is **data only**. It cannot contain code, and it can never carry credentials: API keys stay in

@@ -117,3 +117,14 @@ test('built-in prompts are spoken-first, carry no body abilities and no tagged e
   });
   assert.match(KAWAII_PERSONA.prompt, /Mimi/);
 });
+
+test('built-in defaults: Mimi speaks as semaine/poppy, CRT wakes to "hey crt", the intern to "hey intern", Pixie to "hey pixie"', () => {
+  const c = ensurePersonas({ settings: {} });
+  const by = id => c.settings.personas.find(p => p.id === id);
+  assert.equal(by('kawaii').voice, 'en_GB-semaine-medium#poppy');
+  assert.equal(by('crt').wakeName, 'crt');
+  assert.equal(by('intern').wakeName, 'intern');
+  assert.equal(by('sprite').name, 'Pixie');
+  assert.equal(by('sprite').wakeName, 'pixie');
+  assert.equal(by('sprite').voice, 'en_GB-southern_english_female-low');
+});

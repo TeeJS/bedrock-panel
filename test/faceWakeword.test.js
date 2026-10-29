@@ -271,12 +271,14 @@ test('state: the lower bound is exact for a VAD-dated start; the 500 ms toleranc
   assert.equal(st.onUtterance('tail', st.gen, 1600, 2900, true).action, 'drop');     // estimated, 600 ms early: still early
 });
 
-test('sprite aliases: what Whisper wrote for "Hey Sprite" in the live test all wake', () => {
+test('the built-in sprite persona is Pixie and wakes to "Hey Pixie"', () => {
   const { SPRITE_PERSONA: sprite } = require('../app/face/persona');
   assert.ok(sprite, 'built-in sprite persona');
+  assert.equal(sprite.name, 'Pixie');
   const r = ww.resolvePhrase({ persona: sprite });
+  assert.equal(r.phrase, 'hey pixie');
   const m = ww.createWakeMatcher(r);
-  for (const t of ['Hastebrite.', 'Haste bright.', 'taste bright.', 'Peace, Bright.', 'Hey Sprite.']) assert.equal(m.match(t).wake, true, t);
+  for (const t of ['Hey Pixie.', 'Hey, Pixie!', 'Pixie.']) assert.equal(m.match(t).wake, true, t);
 });
 
 test('replyInvitesAnswer: a question or an offer opens the follow-up, a plain statement does not', () => {
