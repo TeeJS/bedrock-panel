@@ -94,12 +94,24 @@ function httpPostWav(url, filename, buf, timeoutMs, fields) {
 function createMeetingTranscriber(deps) {
   const fsMod = deps.fs || require('fs');
   const fsp = fsMod.promises;
+  const outcomeListeners = new Set();
+
+  function onOutcome(listener) {
+    if (typeof listener !== 'function') throw new TypeError('outcome listener must be a function');
+    outcomeListeners.add(listener);
+    return () => outcomeListeners.delete(listener);
+  }
+
   // Record a finished-file entry at the head of `recent`, capped to the most recent RECENT_MAX.
   const pushRecent = entry => {
     if (entry.status === 'done') completed++;
     else failed++;
     recent.unshift(entry);
     if (recent.length > RECENT_MAX) recent.length = RECENT_MAX;
+    for (const listener of Array.from(outcomeListeners)) {
+      // Observers must not change queue outcomes or prevent the next job from running.
+      try { listener(Object.assign({}, entry)); } catch (e) {}
+    }
   };
   const fetchImpl = deps.fetchImpl || fetch;         // health probe only (short, cheap)
   const httpPost = deps.httpPost || httpPostWav;     // the long-running upload
@@ -202,6 +214,19 @@ function createMeetingTranscriber(deps) {
     pump();
   }
 
+  // Drop pending jobs only. An omitted argument preserves the clear-all convention;
+  // an empty selection removes nothing. The running file always finishes normally.
+  function clearQueue(names) {
+    const all = arguments.length === 0;
+    const selected = new Set(Array.isArray(names) ? names : []);
+    let removed = 0;
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (all || selected.has(queue[i])) { queue.splice(i, 1); removed++; }
+    }
+    if (!hookRunning) maybeRunPostHook();
+    return removed;
+  }
+
   // Queue fully drained with a batch active -> run the post hook once (e.g. stop the container).
   // Jobs arriving while it runs wait (hookRunning) and trigger a fresh pre hook afterwards —
   // start/stop commands never overlap.
@@ -237,8 +262,12 @@ function createMeetingTranscriber(deps) {
       hookPhase = 'pre';
       log('running pre-transcription command');
       execHook(hooks.pre, 'pre-hook')
-        .then(() => { hookPhase = 'waiting'; return waitForServer(); })
-        .then(() => { batchActive = true; })
+        .then(() => {
+          // START succeeded: even a failed health wait must still get its STOP hook.
+          batchActive = true;
+          hookPhase = 'waiting';
+          return waitForServer();
+        })
         .catch(e => {
           const msg = 'transcription-server start failed: ' + e.message;
           log(msg);
@@ -246,7 +275,13 @@ function createMeetingTranscriber(deps) {
             pushRecent({ name: queue.shift(), status: 'error', error: msg, finishedAt: now() });
           }
         })
-        .finally(() => { hookRunning = false; hookPhase = null; pump(); });
+        .finally(() => {
+          hookRunning = false;
+          hookPhase = null;
+          // A cancellation during startup may have removed the entire waiting queue.
+          maybeRunPostHook();
+          pump();
+        });
       return;
     }
     if (hooks.enabled && !batchActive) batchActive = true;   // post-only config still batches
@@ -388,7 +423,7 @@ function createMeetingTranscriber(deps) {
     }
   }
 
-  return { enqueue, getState };
+  return { enqueue, getState, onOutcome, clearQueue };
 }
 
 module.exports = { createMeetingTranscriber, runShellHook };

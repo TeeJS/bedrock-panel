@@ -269,8 +269,22 @@ function createMeetingAnalyzer(deps) {
   let lastJoplin = null; // { name, ok, error?, applied?, skipped?, finishedAt } for the panel
   let lastObsidian = null; // { name, ok, state?, path?, conflict?, error?, finishedAt } for the panel
   let lastProposed = null; // { name, path, finishedAt } — a re-analysis saved for review instead of replacing edited notes
+  const outcomeListeners = new Set();
   const resolveMyName = deps.resolveMyName || null;   // () => the operator's enrolled name (Settings → Meeting → My name)
   const foldersError = deps.foldersError || (() => '');   // () => '' or why the three roots overlap; re-checked as each job starts
+
+  function onOutcome(listener) {
+    if (typeof listener !== 'function') throw new TypeError('outcome listener must be a function');
+    outcomeListeners.add(listener);
+    return () => outcomeListeners.delete(listener);
+  }
+
+  function emitOutcome(entry) {
+    for (const listener of Array.from(outcomeListeners)) {
+      // A subscriber cannot turn a successful publication into a failed job.
+      try { listener(Object.assign({}, entry)); } catch (e) {}
+    }
+  }
 
   function getState() {
     return {
@@ -361,6 +375,7 @@ function createMeetingAnalyzer(deps) {
         lastDone = Object.assign({ name: n, kind, finishedAt: now() }, r || {});
         lastError = null;
         log('analysis done: ' + n + (r && r.warning ? ' — ' + r.warning : ''));
+        emitOutcome(Object.assign({ status: 'done', error: null }, lastDone));
       })
       .catch(e => {
         failed++;
@@ -371,6 +386,7 @@ function createMeetingAnalyzer(deps) {
         lastError = AUTH_FAILURE_RE.test(raw)
           ? { name: n, kind, error: authRequiredMsg(ai), authRequired: true, finishedAt: now() }
           : { name: n, kind, error: raw, finishedAt: now() };
+        emitOutcome(Object.assign({ status: 'error' }, lastError));
       })
       .finally(() => {
         running = null;
@@ -612,10 +628,13 @@ function createMeetingAnalyzer(deps) {
       }
       const tl0 = fm.bedrock.exports && fm.bedrock.exports.task_list;
       if (!(tl0 && tl0.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: target.meta ? path.join(target.fileDir, base + '.json') : null, meta: target.meta });
-      await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports);
-      await exportToObsidian(base, mdPath, fm.bedrock.exports);
+      const warnings = [
+        await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports),
+        await exportToObsidian(base, mdPath, fm.bedrock.exports),
+      ].filter(Boolean);
       const out = { md: relToProcessed(mdPath) };
-      if (left.length) { out.warning = 'committed, with leftovers in transcribed: ' + left.join(', '); log('analysis committed; cleanup left files in transcribed: ' + left.join(', ')); }
+      if (left.length) { warnings.unshift('committed, with leftovers in transcribed: ' + left.join(', ')); log('analysis committed; cleanup left files in transcribed: ' + left.join(', ')); }
+      if (warnings.length) out.warning = warnings.join('\n');
       return out;
     }
 
@@ -631,9 +650,13 @@ function createMeetingAnalyzer(deps) {
     // Hand-offs happen once per meeting: a re-analysis whose task-list export already succeeded is not listed again.
     const tl = fm.bedrock.exports && fm.bedrock.exports.task_list;
     if (!(tl && tl.state === 'succeeded')) batchDone.push({ base, md: mdPath, sidecar: filed ? filed.sidecar : null, meta: filed ? filed.meta : target.meta });
-    await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports);
-    await exportToObsidian(base, mdPath, fm.bedrock.exports);
-    return { md: relToProcessed(mdPath) };
+    const warnings = [
+      await createJoplinNote(base, mdPath, fileText, fm.bedrock.exports),
+      await exportToObsidian(base, mdPath, fm.bedrock.exports),
+    ].filter(Boolean);
+    const out = { md: relToProcessed(mdPath) };
+    if (warnings.length) out.warning = warnings.join('\n');
+    return out;
   }
 
   function relToProcessed(p) { return path.relative(resolveFolders().processed, p).split(path.sep).join('/'); }
@@ -994,6 +1017,7 @@ function createMeetingAnalyzer(deps) {
     } catch (e) {
       lastJoplin = { name: base, ok: false, error: (e && e.message) || 'failed', finishedAt: now() };
       log('joplin note failed: ' + base + ' — ' + lastJoplin.error + ' (export left pending; reconciled on the next analysis of this meeting)');
+      return 'Joplin export failed: ' + lastJoplin.error;
     }
   }
 
@@ -1020,6 +1044,7 @@ function createMeetingAnalyzer(deps) {
       if (r.state === 'conflict') {
         lastObsidian = { name: base, ok: false, state: r.state, path: r.path, conflict: r.conflict, error: 'the vault copy was edited there — new analysis saved beside it as ' + path.posix.basename(r.conflict), finishedAt: now() };
         log('obsidian export conflict: ' + base + ' — vault copy edited, new analysis written to ' + r.conflict);
+        return 'Obsidian export conflict: ' + lastObsidian.error;
       } else {
         lastObsidian = { name: base, ok: true, state: r.state, path: r.path, finishedAt: now() };
         log('obsidian export written: ' + r.path + (r.left ? ' (earlier copy left in place: ' + r.left + ')' : ''));
@@ -1027,6 +1052,7 @@ function createMeetingAnalyzer(deps) {
     } catch (e) {
       lastObsidian = { name: base, ok: false, error: (e && e.message) || 'failed', finishedAt: now() };
       log('obsidian export failed: ' + base + ' — ' + lastObsidian.error);
+      return 'Obsidian export failed: ' + lastObsidian.error;
     }
   }
 
@@ -1400,15 +1426,23 @@ function createMeetingAnalyzer(deps) {
     return { ok: false, error: 'not analyzed' };
   }
 
-  // Drop every pending job (the running one finishes on its own). Returns how many were dropped;
-  // used by the batch coordinator to stop a sweep once the CLI reports it needs sign-in.
-  function clearQueue() {
-    const n = queue.length;
-    queue.length = 0;
-    return n;
+  // No arguments drops every pending job for existing auth-stop callers. A selective
+  // removal requires the exact root, so a batch never drops an unrelated re-analysis.
+  function clearQueue(names, kind) {
+    const all = arguments.length === 0;
+    const selected = new Set(Array.isArray(names) ? names : []);
+    if (!all && kind !== 'transcribed' && kind !== 'processed') return 0;
+    let removed = 0;
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (all || (queue[i].kind === kind && selected.has(queue[i].name))) {
+        queue.splice(i, 1);
+        removed++;
+      }
+    }
+    return removed;
   }
 
-  return { start, getState, result, clearQueue, applyProposed, isBusy };
+  return { start, getState, result, clearQueue, onOutcome, applyProposed, isBusy };
 }
 
 module.exports = { createMeetingAnalyzer, slimTranscript, highlightsBlock, analysisTimeoutMs, CLAUDE_ISOLATION_ARGS, CODEX_ISOLATION_ARGS };
