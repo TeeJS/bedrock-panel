@@ -2551,6 +2551,10 @@
     const CV_BACKENDS = ['claude', 'codex', 'copilot', 'owui', 'api'];
     const cvBackend = CV_BACKENDS.includes(optVal(g, 'backend', 'claude')) ? optVal(g, 'backend', 'claude') : 'claude';
     const isCliBackend = cvBackend === 'claude' || cvBackend === 'codex' || cvBackend === 'copilot';
+    // Claude model picks for the page (modelPick): the same aliases the panel's Settings → Model offers
+    // (CLAUDE_VOICE_MODEL_PICKS in app/claudevoice-adapter.js; test/aiVoiceModelPick.test.js keeps the
+    // two lists equal). '' = no --model flag, the Claude account's default.
+    const CV_CLAUDE_MODELS = [['', 'Default (Claude account setting)'], ['fable', 'Fable'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku']];
     // Permission-mode choice sets differ per CLI backend (they map to each CLI's own flags), so they
     // live here rather than in the single ai-voice apps.json entry.
     // [value, short label, supporting text] — the label is what the closed <select> shows, so it stays
@@ -2629,7 +2633,10 @@
             <option value="owui" ${cvBackend === 'owui' ? 'selected' : ''}>Open WebUI — your server (Auth tab connection)</option>
             <option value="api" ${cvBackend === 'api' ? 'selected' : ''}>API endpoint — your own key (OpenAI, DeepSeek, OpenRouter, …)</option>
           </select></div>
-        <p id="cvCliWarn" class="hint" style="display:none;color:#ff8a8a;font-weight:600"></p>` + (cvBackend === 'owui' ? `
+        <p id="cvCliWarn" class="hint" style="display:none;color:#ff8a8a;font-weight:600"></p>` + (cvBackend === 'claude' ? `
+        <div class="row"><label>Model</label>
+          <select id="cvModel" style="width:320px">${CV_CLAUDE_MODELS.map(m => `<option value="${esc(m[0])}" ${cvVal('modelPick', '') === m[0] ? 'selected' : ''}>${esc(m[1])}</option>`).join('')}</select></div>
+        <p class="hint" style="margin:2px 0 0">This page's model, used instead of your Claude account's default. Faster models answer sooner. The panel's <b>Settings → Model</b> changes the same setting; a change here applies from the next message.</p>` : '') + (cvBackend === 'owui' ? `
         <details class="hint"><summary>Chats against the Open WebUI connection configured on <b>Settings → Auth</b> (URL, API key, default model).</summary> No working folder and no permission modes — the chat API can't touch files or run commands.</details>` : cvBackend === 'api' ? `
         <div class="row"><label>Endpoint</label>
           <select id="cvApiPreset" style="width:230px">
@@ -2924,6 +2931,8 @@
       if (cvProfile) cvProfile.onchange = e => setOpt('profilePick', e.target.value);
       const cvFace = document.getElementById('cvFace');
       if (cvFace) cvFace.onchange = e => setOpt('face', e.target.value);
+      const cvModel = document.getElementById('cvModel');
+      if (cvModel) cvModel.onchange = e => setOpt('modelPick', e.target.value);
       const cvPersona = document.getElementById('cvPersona');
       if (cvPersona) cvPersona.onchange = e => { setOpt('personaPick', e.target.value); syncWakeUi(); };
       // Wake word rows. The preview mirrors the main process's resolver (app/face/wakeword.js:

@@ -231,6 +231,17 @@ The panel's **Settings → Model** picker follows the backend: Claude's fixed pi
 Copilot's discovered lists, Open WebUI's `/api/models`, or your API endpoint's `/models`. Blank =
 that backend's default.
 
+A Claude Code page also has a **Model** setting in the editor (the page's **Agent** section): Default
+(your Claude account's model), Fable, Opus, Sonnet or Haiku. It is the same setting as the panel's
+**Settings → Model**, so either place changes it for that page; a change made in the editor reaches
+a running conversation before your next message. A faster model answers sooner: the account default
+is often the largest model.
+
+With the wake word on, the page starts its Claude session as soon as it is listening for the name,
+so the first answer does not wait for Claude to start. If the persona (or the model) has changed
+since that session started, for example after switching to another AI Voice page with a different
+persona, it is restarted right then, not on your first request.
+
 ## Wyoming STT/TTS
 
 Speech-to-text and text-to-speech run against [Wyoming](https://github.com/rhasspy/wyoming)

@@ -58,6 +58,9 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
   // personaPick straight into the page options without going through setPersona, so onTurn compares
   // this against the current pick and restarts the session before sending when they differ.
   let sessionPersonaId = null;
+  // The model pick ('' = account default) the running session was started or switched with; null
+  // while no session runs. applyModelPick() compares it with the page's saved pick.
+  let sessionModelPick = null;
   // ---- Wake word (transcript gate; app/face/wakeword.js) ----
   // The page keeps POSTing each VAD utterance to /audio; transcribe() runs STT as always and, when
   // the page's wakeWord option is on, lets the state machine decide: addressed text comes back as the
@@ -130,10 +133,18 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     // Pre-warm: a page that arms the wake word has said "stay ready", so start the agent session now
     // rather than on the first addressed utterance -- a cold CLI spawn (tens of seconds for the first
     // "hey <name>" answer) otherwise lands right after the wake word. Only here, only while the gate
-    // is really open: a tap-to-talk page keeps the lazy first-turn start, and a session already
-    // running (page reload, hidden -> visible re-arm) is left alone.
-    if (r.ready && !adapter.isRunning()) {
-      try { startSession(); } catch (e) { say('wake pre-warm: session start failed: ' + e.message); }
+    // is really open: a tap-to-talk page keeps the lazy first-turn start. A session already running
+    // (page reload, hidden -> visible re-arm) is kept, unless it was started for another persona or
+    // model: then it is brought in line now, between turns, so the restart is not paid on the first
+    // request after the switch.
+    if (r.ready) {
+      try {
+        if (!adapter.isRunning()) startSession();
+        else if (!turnActive && state.status !== 'approval') {
+          if (personaChangedOutside()) startSession(adapter.projectDir() || undefined);
+          else applyModelPick();
+        }
+      } catch (e) { say('wake pre-warm: session start failed: ' + e.message); }
     }
     return { ok: true, gen: g, wake: wakeSnapshot() };
   }
@@ -399,6 +410,15 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     const cur = currentPersona();
     return (cur ? cur.id : '') !== (sessionPersonaId || '');
   }
+  // The page's saved model (modelPick: the editor's Model or the panel's Settings → Model) versus the
+  // one the running session uses. A change made in the editor is switched in before the next message.
+  function applyModelPick() {
+    if (sessionModelPick === null) return;
+    const opts = deps.activeServedAppConfig(appId);
+    const pick = (opts && opts.options.modelPick) || '';
+    if (pick === sessionModelPick || !adapter.validModel(pick)) return;
+    if (adapter.setModel(pick)) { sessionModelPick = pick; say('model switched to ' + (pick || 'the account default') + ' (page setting)'); }
+  }
   // Tell the page a switch is waiting on the live turn (and keep it in /state for reloads).
   function announcePendingPersona() {
     const p = currentPersona();
@@ -444,6 +464,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       if (turnActive || state.status === 'approval') requestPromptApply('restart');
       else { if (!startSession(adapter.projectDir() || undefined)) return { ok: false }; lazyStart = true; }
     }
+    if (!lazyStart && !turnActive && state.status !== 'approval') applyModelPick();
     // CLI semantics (explicitly required): a turn sent while one is in flight WAITS -- the current
     // reply finishes its text and speech, then the queued entry dispatches. Its speech-stream id
     // is announced later via the 'turn-speech' broadcast (there is no id to hand back yet).
@@ -774,6 +795,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     promptInstructedTags = false;   // a fresh session starts clean; assembledPrompt() below sets it if the face is on
     const persona = currentPersona();
     sessionPersonaId = persona ? persona.id : '';
+    sessionModelPick = opts.options.modelPick || '';
     adapter.start({
       projectDir,
       // '' (the consolidated manifest's neutral default) must read as "adapter's own default",
@@ -807,6 +829,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
     pendingApply = null;
     promptInstructedTags = false;
     sessionPersonaId = null;
+    sessionModelPick = null;
     deps.clearRingOverride();
     broadcast({ type: 'session-stopped' });
     return true;
@@ -928,7 +951,7 @@ function createVoicePanelHost({ appId, storageKey, log, adapter, branding, deps 
       panelAccept,
       panelCancel,
       saveRoutine,
-      setModel: model => adapter.setModel(model),
+      setModel: model => { const ok = adapter.setModel(model); if (ok && sessionModelPick !== null) sessionModelPick = model; return ok; },
       sessionStart: startSession,
       sessionStop: stopSession,
       subscribe,
