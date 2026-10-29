@@ -925,6 +925,7 @@ function renderBatch(st) {
 function openBatchPage() {
   if (batchState) renderBatchPage(batchState);
   $('batchOverlay').classList.add('show');
+  $('wrap').inert = true;   // the console under the opaque page is out of reach for keyboard and knob
   $('batchTitle').focus();
 }
 function batchPoll() {
@@ -949,6 +950,7 @@ $('btnBatch').onclick = function () {
 $('batchBack').onclick = function () {
   batchDisarm();
   $('batchOverlay').classList.remove('show');
+  $('wrap').inert = false;
   $('btnBatch').focus();
 };
 $('batchCancel').onclick = function () {
