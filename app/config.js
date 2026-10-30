@@ -1633,6 +1633,52 @@
   function refocusAfterDialog() { try { if (configApi.refocusEditor) configApi.refocusEditor(); } catch (e) {} }
   function ask(msg) { const r = window.confirm(msg); refocusAfterDialog(); return r; }
   function tell(msg) { window.alert(msg); refocusAfterDialog(); }
+
+  // ---- app updates (main: updater.js) ----
+  // Main pushes a Status on every change; the header link and Settings > Software > Updates read it.
+  let updateStatus = null;
+  function updateStatusText(st) {
+    if (!st) return '';
+    if (!st.supported) return st.reason || 'Updates are not available in this build.';
+    const v = st.available ? st.available.version : '';
+    switch (st.state) {
+      case 'checking': return 'Checking for updates…';
+      case 'up-to-date': return 'Bedrock Panel ' + st.currentVersion + ' is up to date.';
+      case 'available': return 'Version ' + v + ' is available' + (st.skipped ? ' (you skipped it)' : '') + (st.portable ? ' — download it from the release page.' : '.');
+      case 'downloading': return 'Downloading ' + v + (st.progress != null ? ' (' + st.progress + '%)' : '') + '…';
+      case 'ready': return st.pending && st.pending.choice === 'onClose' ? v + ' is ready and installs when you close Bedrock Panel.' : v + ' is ready to install.';
+      case 'error': return 'Could not check for updates: ' + (st.lastError || 'unknown error');
+      default: return '';
+    }
+  }
+  function updateCheckedText(iso) {
+    const t = iso ? Date.parse(iso) : NaN;
+    if (!isFinite(t)) return '';
+    const sec = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (sec < 60) return 'Last checked just now';
+    if (sec < 3600) return 'Last checked ' + Math.round(sec / 60) + ' min ago';
+    if (sec < 86400) return 'Last checked ' + Math.round(sec / 3600) + ' h ago';
+    return 'Last checked ' + Math.round(sec / 86400) + ' days ago';
+  }
+  function renderUpdateUi() {
+    const st = updateStatus;
+    // Header link: an update you can act on. With automatic updates off it only appears for the result
+    // of your own Check now, or an install you chose — the same rule as the tray item.
+    const link = document.getElementById('appUpdate');
+    if (link) {
+      const auto = ((config.settings || {}).updates || {}).automatic !== false;
+      const v = st && st.available && st.available.version;
+      const show = !!(st && st.supported && v && !st.skipped && ['available', 'downloading', 'ready'].includes(st.state) && (auto || st.manual || st.pending));
+      link.hidden = !show;
+      if (show) link.textContent = st.state === 'ready' ? 'v' + v + ' ready to install' : st.state === 'downloading' ? 'downloading v' + v + '…' : 'v' + v + ' available';
+    }
+    const statusEl = document.getElementById('sUpStatus');
+    if (statusEl) statusEl.textContent = updateStatusText(st);
+    const checkedEl = document.getElementById('sUpChecked');
+    if (checkedEl) checkedEl.textContent = st ? updateCheckedText(st.lastCheckedAt) : '';
+    const checkBtn = document.getElementById('sUpCheck');
+    if (checkBtn) checkBtn.disabled = !st || !st.supported || st.state === 'checking' || st.state === 'downloading';
+  }
   async function doSave() {
     // Model-level gate: never report "saved" while any number draft is invalid.
     const bad = invalidNumberOptions();
@@ -4619,6 +4665,16 @@
       <p class="hint">Not available on Linux. Knowing which application is in front means asking the desktop about another application's windows, which Wayland deliberately does not allow. The setting is inert on this platform rather than switched off silently.</p>` : ''}
       <details class="hint"><summary>Map apps to a page under that page's Advanced settings → “Focus trigger app(s)”.</summary> Detection polls in the background and only switches once the newly-focused app has held focus for a couple seconds, so quick alt-tabbing won't cause flicker — and manually navigating the panel away is never overridden; it only re-triggers on the next focus change. With <b>Pause auto-rotation</b> on, rotation holds off the moment a mapped app takes focus and picks back up the moment it loses focus.</details>
 
+      <p class="sectitle">Updates</p>
+      <div class="row"><label style="width:150px">Automatic updates</label>
+        <input type="checkbox" id="sUpAuto" style="width:auto;flex:none"><span class="hint" style="margin:0 0 0 8px">check for new versions and offer to install them</span></div>
+      <div class="row"><label style="width:150px">Include beta versions</label>
+        <input type="checkbox" id="sUpBeta" style="width:auto;flex:none"><span class="hint" style="margin:0 0 0 8px">also offer beta (pre-release) versions</span></div>
+      <div class="row"><button id="sUpCheck" type="button">Check now</button>
+        <span id="sUpStatus" class="hint" role="status" aria-live="polite" style="margin:0 0 0 10px"></span></div>
+      <p class="hint" id="sUpChecked" style="margin:0"></p>
+      <details class="hint"><summary>When <b>Automatic updates</b> is on, Bedrock Panel checks about a minute after it starts, then every 12 hours while it runs. <b>Check now</b> works any time.</summary> Updates come from Bedrock Panel's GitHub releases. When one is found you choose: <b>Install when I close Bedrock Panel</b>, <b>Install now and restart</b>, <b>Skip this version</b>, or <b>Not now</b> (asked again after 24 hours or at the next start). <b>Include beta versions</b> is greyed out while automatic updates are off. Changes to these two boxes apply when you click <b>Save</b>. The portable version never updates itself; it links to the download instead.</details>
+
       <p class="sectitle">Setup &amp; troubleshooting</p>
       <div class="row"><button id="sRunSetup">Re-run first-time setup…</button></div>
       <p class="hint">Reopens the first-launch mode picker and device walkthrough.</p>`;
@@ -5923,6 +5979,20 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       if (runSel) { runSel.value = runModeVal; runSel.onchange = e => { setS('runMode', e.target.value); const d = document.getElementById('sSwDeps'); if (d) d.style.display = e.target.value === 'software' ? '' : 'none'; }; }
       const runSetupBtn = document.getElementById('sRunSetup');
       if (runSetupBtn) runSetupBtn.onclick = () => { try { configApi.openWelcome(); } catch (e) {} };
+      // Updates: the two boxes save like every other setting (applied on Save); Check now runs at once.
+      const curUpd = () => Object.assign({ automatic: true, includeBetas: false }, (config.settings || {}).updates || {});
+      const saveUpd = u => { if (!config.settings) config.settings = {}; config.settings.updates = { automatic: u.automatic !== false, includeBetas: u.includeBetas === true }; markDirty(); };
+      const upAuto = document.getElementById('sUpAuto'), upBeta = document.getElementById('sUpBeta'), upCheck = document.getElementById('sUpCheck');
+      if (upAuto && upBeta) {
+        const u = curUpd();
+        upAuto.checked = u.automatic !== false;
+        upBeta.checked = u.includeBetas === true;
+        upBeta.disabled = !upAuto.checked;
+        upAuto.onchange = e => { const n = curUpd(); n.automatic = e.target.checked; saveUpd(n); upBeta.disabled = !e.target.checked; renderUpdateUi(); };
+        upBeta.onchange = e => { const n = curUpd(); n.includeBetas = e.target.checked; saveUpd(n); };
+      }
+      if (upCheck) upCheck.onclick = async () => { upCheck.disabled = true; try { await configApi.checkForUpdatesNow(); } catch (e) {} };
+      renderUpdateUi();
       // Software window: pages (default) vs stacked panes. Which pane shows is runtime state (the
       // window's ☰ selector), not a setting — mirrors how the active page works.
       const swDisp = document.getElementById('sSwDisplay');
@@ -6981,6 +7051,13 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       paneIndex = cur >= 0 ? cur : 0;
     }
     try { const v = await configApi.getAppVersion(); const el = document.getElementById('appVer'); if (el && v) el.textContent = 'v' + v; } catch (e) {}
+    try {
+      updateStatus = await configApi.getUpdateStatus();
+      configApi.onUpdateStatus(st => { updateStatus = st; renderUpdateUi(); });
+      const link = document.getElementById('appUpdate');
+      if (link) link.onclick = () => { try { configApi.openUpdatePrompt(); } catch (e) {} };
+    } catch (e) {}
+    renderUpdateUi();
     try { appDefs = await configApi.getApps(); } catch (e) {}
     try { haCacheLocal = await configApi.getHaCache(); } catch (e) {}   // for iconHtml's HA icon resolution
     render(); setState('All changes saved', 'saved');

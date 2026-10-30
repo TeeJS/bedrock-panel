@@ -1,7 +1,7 @@
 # Settings & knob lighting
 
 The editor's **⚙ Settings** page (top-right) holds the app- and device-level options,
-split into a **Software** tab (on launch, screen rotation), a **Hardware** tab (knob
+split into a **Software** tab (on launch, screen rotation, updates), a **Hardware** tab (knob
 ring, microphone, and on a Mac the permissions block), a **Theme** tab (light/dark + accent color), an **Apps** tab
 (which apps appear in the picker), a **Drop-In Apps** tab (manage installed drop-ins),
 an **Auth** tab (Home Assistant credentials — see below), a **Meeting** tab (recording
@@ -33,6 +33,20 @@ protection and what the knob does in monitor mode):
   cause flicker — and manually navigating away is never overridden, since it only
   re-triggers on the next focus change. Tick **Pause auto-rotation** to hold rotation off
   for as long as a mapped app stays focused, picking back up the moment it loses focus.
+- **Updates** (Software tab) — Bedrock Panel updates itself from its GitHub releases. With
+  **Automatic updates** on (the default) it checks about a minute after it starts, then every
+  12 hours while it runs. When a new version is found you get a prompt with four choices:
+  **Install when I close Bedrock Panel** (the default), **Install now and restart** (if a
+  recording or transcription is running you're asked first), **Skip this version** (no more
+  prompts for it until a newer one ships), or **Not now** (asked again after 24 hours or at the
+  next start). The tray menu shows the update's state and has **Check for updates**; the editor
+  header shows a **vX available** link. **Include beta versions** (off by default) also offers
+  pre-releases; it's greyed out while automatic updates are off. **Check now** works any time,
+  even with automatic updates off. Turning automatic updates off stops all automatic checks,
+  notifications and installs. Both boxes apply on **Save**. The portable version never updates
+  itself; its prompt links to the download instead. On Windows the update's signature is checked
+  with PowerShell, so on a machine where that's a problem, turn automatic updates off and install
+  new versions from the [releases page](https://github.com/TeeJS/bedrock-panel/releases).
 - **Dashboards → Reload hotkey** — a global combo that force-reloads whatever dashboard
   page is currently showing, from anywhere, even when Bedrock Panel isn't focused. Switching
   away to another page and back does **not** reload a dashboard on its own (that's what
