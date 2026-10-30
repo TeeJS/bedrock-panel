@@ -769,6 +769,10 @@ function migrateConfig(c) {
   require('./appOptionMigrations').migrateAppOptions(c);
   c.settings.discord = normalizeDiscordSettings(c.settings.discord);
   c.settings.github = normalizeGitHubSettings(c.settings.github);
+  {
+    const u = c.settings.updates || {};
+    c.settings.updates = { automatic: u.automatic !== false, includeBetas: u.includeBetas === true };   // automatic on, betas off by default
+  }
   (c.grids || []).forEach(g => {
     if (g.kind === 'web') {
       if (!g.auth) g.auth = g.haToken ? { type: 'ha', token: g.haToken } : { type: 'none' };
@@ -3975,6 +3979,7 @@ function trayMenu() {
   const ringOn = lighting().effect !== 0;
   const items = [
     { label: 'Bedrock Panel v' + app.getVersion(), enabled: false },
+    ...(appUpdater ? appUpdater.trayItems() : []),
     { type: 'separator' },
     { label: 'Open editor', click: () => openConfigWindow() },
     { label: micState ? 'Mic: on — click to disable' : 'Mic: off — click to enable', click: () => toggleMic() },
@@ -4028,6 +4033,51 @@ function confirmQuitIfBusy() {
   if (choice !== 1) return false;
   quitApproved = true;
   return true;
+}
+// App self-update (updater.js): electron-updater against this repo's GitHub releases. Settings live in
+// settings.updates (editor-owned); skip / not-now / last-checked state lives in userData/update-state.json
+// so an editor Save can never overwrite it. Development runs get a stub and report "not supported".
+let appUpdater = null;
+function updateStatePath() { return path.join(app.getPath('userData'), 'update-state.json'); }
+function initAppUpdater() {
+  if (appUpdater) return appUpdater;
+  const { createUpdater } = require('./updater');
+  let au;
+  if (app.isPackaged) au = require('electron-updater').autoUpdater;
+  else au = { on() {}, checkForUpdates() {}, downloadUpdate() {}, quitAndInstall() {} };   // never called: unsupported
+  appUpdater = createUpdater({
+    autoUpdater: au,
+    isPackaged: app.isPackaged,
+    currentVersion: app.getVersion(),
+    env: process.env,
+    getSettings: () => (config.settings || {}).updates || {},
+    readState: () => JSON.parse(fs.readFileSync(updateStatePath(), 'utf8')),
+    writeState: (s) => fs.writeFileSync(updateStatePath(), JSON.stringify(s, null, 2)),
+    // No parent window: the prompt has to work when only the tray is running.
+    showPrompt: async (p) => {
+      const r = await dialog.showMessageBox({ type: 'info', title: 'Bedrock Panel update', message: p.message, detail: p.detail, buttons: p.buttons, defaultId: p.defaultId, cancelId: p.cancelId, noLink: true });
+      try { if (configWin && !configWin.isDestroyed() && configWin.isVisible()) { configWin.blur(); configWin.focus(); } } catch (e) {}   // electron#31917
+      return r.response;
+    },
+    showMessage: async (m) => { await dialog.showMessageBox({ type: 'info', title: m.title, message: m.message, buttons: ['OK'], noLink: true }); },
+    notify: (title, body) => notifyUser(title, body),
+    openExternal: (url) => { if (/^https:\/\/github\.com\/TeeJS\/bedrock-panel\/releases\//.test(url)) shell.openExternal(url); },
+    confirmQuitIfBusy: () => confirmQuitIfBusy(),
+    // CancellationToken from the SAME builder-util-runtime copy electron-updater itself loads (its own
+    // dependency, resolved from its folder), so cancel() reaches its download. No token = no cancel only.
+    makeCancellationToken: () => {
+      try {
+        const rt = require.resolve('builder-util-runtime', { paths: [path.dirname(require.resolve('electron-updater'))] });
+        return new (require(rt).CancellationToken)();
+      } catch (e) { console.log('[updater] no cancellation token: ' + (e && e.message)); return null; }
+    },
+    onStatus: (status) => {
+      refreshTray();
+      try { if (configWin && !configWin.isDestroyed()) configWin.webContents.send('updates:status', status); } catch (e) {}
+    },
+    log: (msg) => console.log(msg),
+  });
+  return appUpdater;
 }
 let trayImgNormal = null, trayImgRecording = null;
 // Red-tinted copy of the tray icon for the LucidType "dictating" state — derived from the app icon at
@@ -4136,7 +4186,9 @@ app.whenReady().then(async () => {
   // Linux: create the uinput virtual keyboard now. The compositor needs a moment to notice a new
   // input device, and paying that on the first macro tap loses the keystroke. No-op elsewhere.
   try { mediaKeys.warmUp(); } catch (e) {}
+  try { initAppUpdater(); } catch (e) { console.log('[updater] init failed: ' + (e && e.message)); }
   createTray();
+  if (appUpdater) appUpdater.start();
   // SystemView: live local metrics server on 127.0.0.1 (OS-assigned port) + ensure the dashboard page.
   // Lazy-required so a metrics/load failure can never crash the rest of the app.
   //
@@ -4756,6 +4808,10 @@ app.whenReady().then(async () => {
     return { source, installed, managed: !!installed && installed.startsWith('/usr/lib/') };
   });
   ipcMain.handle('getAppVersion', (e) => isFrom(e, configWin) ? app.getVersion() : null);
+  // App updates (updater.js): status for Settings > Software > Updates, a manual check, reopen the prompt.
+  ipcMain.handle('updates:getStatus', (e) => (isFrom(e, configWin) && appUpdater) ? appUpdater.getStatus() : null);
+  ipcMain.handle('updates:checkNow', (e) => (isFrom(e, configWin) && appUpdater) ? appUpdater.checkNow() : { started: false });
+  ipcMain.handle('updates:openPrompt', (e) => (isFrom(e, configWin) && appUpdater) ? appUpdater.openPrompt() : { opened: false });
   ipcMain.handle('listOAuthProviders', (e) => isFrom(e, configWin) ? oauthProviderPayload() : []);
   ipcMain.handle('connectOAuthProvider', async (e, provider, scopes) => {
     if (!isFrom(e, configWin)) return { ok: false, error: 'unauthorized' };
@@ -5031,6 +5087,7 @@ app.whenReady().then(async () => {
     if (!saved) { config = previousConfig; return { ok: false, error: 'secure persistence failed' }; }
     if (githubClientChanged) { oauthHandler.clearRefresh('github'); oauthHandler.cancelDeviceFlow('github'); }
     if (githubClientChanged || githubSettingsChanged) { try { sysserver.clearGitHubCapability(); } catch (error) {} }
+    if (appUpdater) appUpdater.applySettings();                 // automatic updates on/off, betas
     pushToPanel(); applyKnobSettings(); refreshTray(); applyRotationSettings(wasRot); applyFocusFollowSettings(); applyShortcuts(); applyTheme();
     reservedDisplay.setEnabled(reservedDisplayEnabled(appSettings()));   // stays off in software mode
     if (!monitorMode) { displayArrange.setEnabled(panelFarRightEnabled(appSettings())); displayArrange.request('settings saved'); }   // macOS: (re)check the arrangement when the toggle is on
