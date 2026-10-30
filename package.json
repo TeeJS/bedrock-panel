@@ -34,6 +34,7 @@
     "@jitsi/robotjs": "^0.6.22",
     "adm-zip": "^0.6.0",
     "dbus-next": "^0.10.2",
+    "electron-updater": "^6.8.11",
     "emojilib": "^4.0.3",
     "mqtt": "^5.15.2",
     "node-hid": "^3.3.0",
@@ -83,6 +84,13 @@
       "!my-meeting-analysis-prompt.md",
       "!**/__pycache__/**"
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "TeeJS",
+        "repo": "bedrock-panel"
+      }
+    ],
     "npmRebuild": false,
     "afterPack": "./afterpack.js",
     "asarUnpack": [
@@ -99,7 +107,10 @@
       ],
       "icon": "app/icon.png",
       "signtoolOptions": {
-        "sign": "./sign.js"
+        "sign": "./sign.js",
+        "publisherName": [
+          "CN=Thomas Schmitz, O=Thomas Schmitz, L=Springville, S=ut, C=US"
+        ]
       }
     },
     "portable": {

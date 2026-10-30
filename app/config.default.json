@@ -1,6 +1,10 @@
 {
   "activeGridId": "default",
   "settings": {
+    "updates": {
+      "automatic": true,
+      "includeBetas": false
+    },
     "discord": {
       "enabled": true,
       "applicationIdOverride": "",
