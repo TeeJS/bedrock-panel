@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   previewLinuxVoice(id) { return ipcRenderer.invoke('previewLinuxVoice', id); },
   onLinuxSpeechProgress(cb) { ipcRenderer.on('linuxSpeechProgress', (_e, p) => cb(p)); },            // macOS: re-read the installed voices   // macOS built-in speech engine: running / ready / permission / voices
   getAppVersion() { return ipcRenderer.invoke('getAppVersion'); },
+  // App updates (main: updater.js) — Settings > Software > Updates and the header's "update available" link
+  getUpdateStatus() { return ipcRenderer.invoke('updates:getStatus'); },
+  checkForUpdatesNow() { return ipcRenderer.invoke('updates:checkNow'); },
+  openUpdatePrompt() { return ipcRenderer.invoke('updates:openPrompt'); },
+  onUpdateStatus(cb) { ipcRenderer.on('updates:status', (_e, st) => cb(st)); },
   getApps() { return ipcRenderer.invoke('getApps'); },
   getMacPermissions() { return ipcRenderer.invoke('getMacPermissions'); },
   requestMacPermission(kind) { return ipcRenderer.invoke('requestMacPermission', kind); },

@@ -67,6 +67,10 @@
     color: #8aa0b6; padding: 8px 14px; margin-bottom: -1px; font-weight: 500; }
   button.tab:hover { background: transparent; color: #dbe5f0; }
   button.tab.on { color: #ffffff; border-bottom-color: #2b8bff; }
+  /* "v1.0.1 available" beside the version in the header — opens the update prompt */
+  button.updLink { background: transparent; border: none; padding: 0 4px; color: #4ea3ff; font-size: 13px; font-weight: 600; }
+  button.updLink:hover { background: transparent; text-decoration: underline; }
+  button.updLink[hidden] { display: none; }
   /* Sidebar mode switch: segmented control, distinct from content tabs. Three segments must fit
      one row even at the 180px minimum sidebar width. */
   .grids .tabbar { flex-wrap: nowrap; gap: 2px; background: #0e141c; border: 1px solid #1e2733; border-bottom: 1px solid #1e2733; border-radius: 8px; padding: 3px; }
@@ -386,7 +390,7 @@
 </head>
 <body>
   <header>
-    <h1>Bedrock Panel Editor <span id="appVer" style="font-size:13px; font-weight:400; opacity:.6"></span></h1>
+    <h1>Bedrock Panel Editor <span id="appVer" style="font-size:13px; font-weight:400; opacity:.6"></span><button id="appUpdate" type="button" class="updLink" hidden></button></h1>
     <span class="sub">edit, then Save &amp; apply to push to the panel</span>
     <span style="flex:1"></span>
     <button id="settingsBtn">⚙ Settings</button>
