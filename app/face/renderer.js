@@ -257,6 +257,14 @@
         // the tie hangs in the gap between them.
         ctx.fillStyle = '#273d47';
         ctx.beginPath(); ctx.rect(-82, 54, 164, 20); ctx.fill();
+        // Lapels: a lighter band each side from the shoulder down to the collar tip, over the jacket.
+        ctx.fillStyle = '#3b5566'; ctx.lineWidth = 1;
+        for (const side of [-1, 1]) {
+          ctx.beginPath(); ctx.moveTo(side * 48, 57); ctx.lineTo(side * 78, 60); ctx.lineTo(side * 62, 74); ctx.lineTo(side * 25, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        // White shirt showing between the collar points, behind the tie.
+        ctx.fillStyle = '#f5f4e6';
+        ctx.beginPath(); ctx.moveTo(-14, 54); ctx.lineTo(14, 54); ctx.lineTo(14, 74); ctx.lineTo(-14, 74); ctx.closePath(); ctx.fill();
         ctx.fillStyle = '#f5f4e6'; ctx.lineWidth = 1;
         for (const side of [-1, 1]) {
           ctx.beginPath(); ctx.moveTo(side * 6, 57); ctx.lineTo(side * 48, 57); ctx.lineTo(side * 25, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
