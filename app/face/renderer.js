@@ -268,15 +268,15 @@
           ctx.beginPath(); ctx.moveTo(side * 46, 58); ctx.lineTo(side * 72, 66); ctx.lineTo(side * 64, 78);
           ctx.lineTo(side * 22, 130); ctx.lineTo(side * 4, 126); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
-        ctx.fillStyle = '#f5f4e6';
-        for (const side of [-1, 1]) {
-          // The collar's outer edge is the lapel's inner edge: no space between them.
-          ctx.beginPath(); ctx.moveTo(side * 3, 58); ctx.lineTo(side * 46, 58); ctx.lineTo(side * 31.2, 82); ctx.closePath(); ctx.fill(); ctx.stroke();
-        }
         ctx.fillStyle = '#9b2a22';
         ctx.beginPath(); ctx.moveTo(-5, 70); ctx.lineTo(5, 70); ctx.lineTo(10, 118); ctx.lineTo(0, 130); ctx.lineTo(-10, 118); ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Broad shoulders taper to a flat base that joins the tie below.
-        ctx.beginPath(); ctx.moveTo(0, 58); ctx.lineTo(9, 63); ctx.lineTo(5, 70); ctx.lineTo(-5, 70); ctx.lineTo(-9, 63); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // The knot's upper shoulders extend beneath the collar; its flat base joins the tie below.
+        ctx.beginPath(); ctx.moveTo(0, 55); ctx.lineTo(10, 63); ctx.lineTo(5, 70); ctx.lineTo(-5, 70); ctx.lineTo(-10, 63); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#f5f4e6';
+        for (const side of [-1, 1]) {
+          // Paint the collar over the knot. Its outer edge meets the lapel's inner edge.
+          ctx.beginPath(); ctx.moveTo(side * 3, 58); ctx.lineTo(side * 46, 58); ctx.lineTo(side * 31.2, 82); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
         // Ears: plain flat half circles behind the head, no inner contours.
         // The flat edge sits inside the head, so the head's own outline is the line that attaches them.
@@ -290,26 +290,26 @@
         ctx.beginPath(); ctx.moveTo(-39, -55); ctx.lineTo(39, -55); ctx.quadraticCurveTo(43, -55, 43, -50); ctx.lineTo(46, 58);
         ctx.lineTo(-46, 58); ctx.lineTo(-43, -50); ctx.quadraticCurveTo(-43, -55, -39, -55); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
-        // Hair: forelock sweeping to the viewer's left, a lobe on the viewer's right ending above the
-        // ear, a bridge over the crown and a temple lock on the left. The pieces are filled without
-        // outlines and a single contour is drawn round the whole mass, so no seams show inside the hair.
+        // Hair: forelock sweeping to the viewer's left, a lobe on the viewer's right ending at the
+        // ear's top attachment, a bridge over the crown and a temple lock on the left. The pieces are filled
+        // without outlines and a single contour is drawn round the whole mass, so no seams show inside the hair.
         ctx.fillStyle = '#8c472d';
         ctx.beginPath(); ctx.moveTo(-44, -39); ctx.quadraticCurveTo(-53, -44, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
         ctx.quadraticCurveTo(4, -86, 21, -74); ctx.quadraticCurveTo(26, -66, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47);
         ctx.quadraticCurveTo(-35, -43, -44, -39); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(28, -52); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
-        ctx.lineTo(46, -26); ctx.quadraticCurveTo(45, -22, 41, -27); ctx.quadraticCurveTo(38, -30, 37, -40);
+        ctx.quadraticCurveTo(48, -32, 44, -18); ctx.quadraticCurveTo(39, -21, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.closePath(); ctx.fill();
         // The crown dips at x 19 (the part) and the lobe rises again from there.
         ctx.beginPath(); ctx.moveTo(21, -74); ctx.quadraticCurveTo(30, -80, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
         ctx.lineTo(46, -40); ctx.lineTo(37, -42); ctx.lineTo(28, -52);
         ctx.quadraticCurveTo(18, -62, 14, -73); ctx.lineTo(21, -74); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-47, -26);
-        ctx.quadraticCurveTo(-45, -22, -42, -27); ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-41, -40); ctx.lineTo(-42, -27); ctx.quadraticCurveTo(-45, -22, -47, -26); ctx.lineTo(-49, -36);
+        ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-44, -18);
+        ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-41, -40); ctx.lineTo(-44, -18); ctx.lineTo(-49, -36);
         ctx.quadraticCurveTo(-50, -41, -47.5, -43.5); ctx.quadraticCurveTo(-52, -48, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
         ctx.quadraticCurveTo(4, -86, 21, -74); ctx.quadraticCurveTo(30, -80, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
-        ctx.lineTo(46, -26); ctx.quadraticCurveTo(45, -22, 41, -27); ctx.quadraticCurveTo(38, -30, 37, -40);
+        ctx.quadraticCurveTo(48, -32, 44, -18); ctx.quadraticCurveTo(39, -21, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47); ctx.quadraticCurveTo(-35, -43, -41, -40);
         ctx.closePath(); ctx.stroke();
         // A straight part with two comb lines meeting it inside the hair silhouette.
