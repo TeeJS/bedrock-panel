@@ -252,20 +252,17 @@
         // Jacket, shirt, collar wings, knot and tie, all drawn before the head. No neck: the jaw sits on the collar.
         // The white collar spreads wider than the head: two tall wings from the shoulder points down to the knot.
         ctx.fillStyle = '#f5f4e6';
-        // A broad white band under the jaw, pointed collar flaps descending to the knot, jacket out to the edges.
-        ctx.beginPath(); ctx.rect(-53, 54, 106, 20); ctx.fill(); ctx.stroke();
+        // One big white chevron under the jaw: full jaw width at the top, narrowing to the knot, with the jacket
+        // diagonals running from the jaw corners down to the edges and the knot at the foot of a small V notch.
         ctx.fillStyle = '#273d47';
-        for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 53, 54); ctx.lineTo(side * 80, 60); ctx.lineTo(side * 82, 74);
-          ctx.lineTo(side * 53, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        }
+        ctx.beginPath(); ctx.rect(-82, 54, 164, 20); ctx.fill();
         ctx.fillStyle = '#f5f4e6';
-        for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 46, 54); ctx.lineTo(side * 27, 61); ctx.lineTo(side * 8, 68); ctx.lineTo(side * 4, 54); ctx.closePath(); ctx.fill(); ctx.stroke();
-        }
-        ctx.fillStyle = '#a9342b';
-        ctx.beginPath(); ctx.moveTo(-4, 69); ctx.lineTo(4, 69); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, 63); ctx.lineTo(6, 67); ctx.lineTo(0, 71); ctx.lineTo(-6, 67); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-53, 54); ctx.lineTo(53, 54); ctx.lineTo(16, 74); ctx.lineTo(-16, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.lineWidth = 1;
+        for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * 53, 54); ctx.lineTo(side * 7, 67); ctx.lineTo(0, 61); ctx.stroke(); }
+        ctx.lineWidth = 0.8; ctx.fillStyle = '#a9342b';
+        ctx.beginPath(); ctx.moveTo(-4.5, 70); ctx.lineTo(4.5, 70); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 59); ctx.lineTo(7, 66); ctx.lineTo(0, 72); ctx.lineTo(-7, 66); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Ears: plain flat half circles behind the head, no inner contours.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
@@ -294,10 +291,10 @@
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(0, -29); ctx.lineTo(0, -3); ctx.stroke();
         ctx.lineWidth = 1; ctx.fillStyle = '#e2a17b';
-        // The knob flares out like a lever handle: narrow flat top, sides slanting outward, rounded wide bottom, slit across it.
-        ctx.beginPath(); ctx.moveTo(-6, -3); ctx.lineTo(6, -3); ctx.lineTo(12.5, 5); ctx.quadraticCurveTo(13.5, 8, 10, 8);
-        ctx.lineTo(-10, 8); ctx.quadraticCurveTo(-13.5, 8, -12.5, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(-10, 3.5); ctx.lineTo(10, 3.5); ctx.stroke();
+        // The knob is a dome: arched on top, flat along the bottom, the stem running into the top of the arch.
+        ctx.beginPath(); ctx.moveTo(-10, 7); ctx.lineTo(-10, 3); ctx.quadraticCurveTo(-10, -6, 0, -6); ctx.quadraticCurveTo(10, -6, 10, 3);
+        ctx.lineTo(10, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(-10, 7); ctx.lineTo(10, 7); ctx.stroke();
         // Freckles: three per cheek in a triangle, one on top and two below.
         ctx.fillStyle = '#b77b5a';
         for (const side of [-1, 1]) for (const point of [[34, 2], [30, 8], [38, 8]]) dot(side * point[0], point[1], 1.2);
