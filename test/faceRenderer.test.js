@@ -76,11 +76,11 @@ test('cartoon persona keeps open circular eyes and a fixed grille through every 
   h.renderer.start();
   let grille;
   const check = () => {
-    const mouth = h.fills.find(f => f.path[0]?.join() === 'moveTo,-31,16');
+    const mouth = h.fills.find(f => f.path[0]?.join() === 'moveTo,-24,18');
     assert.ok(mouth, 'fixed grin is drawn');
     if (!grille) grille = mouth.path;
     assert.deepEqual(mouth.path, grille, 'grin geometry never changes');
-    const whites = h.fills.filter(f => f.path[0]?.[0] === 'arc' && f.path[0][3] === 11.5);
+    const whites = h.fills.filter(f => f.path[0]?.[0] === 'arc' && f.path[0][3] === 8.5);
     assert.equal(whites.length, 2, 'both eyes remain fully open and circular');
     assert.ok(whites.every(f => f.color === '#fffaf1'));
     const head = h.fills.find(f => f.color === '#f5c49f');
