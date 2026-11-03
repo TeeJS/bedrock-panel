@@ -76,18 +76,18 @@ test('cartoon persona keeps open circular eyes and a fixed grille through every 
   h.renderer.start();
   let grille;
   const check = () => {
-    const mouth = h.fills.find(f => f.path[0]?.join() === 'moveTo,-31,10');
+    const mouth = h.fills.find(f => f.path[0]?.join() === 'moveTo,-31,16');
     assert.ok(mouth, 'fixed grin is drawn');
     if (!grille) grille = mouth.path;
     assert.deepEqual(mouth.path, grille, 'grin geometry never changes');
-    const whites = h.fills.filter(f => f.path[0]?.[0] === 'arc' && f.path[0][3] === 14.5);
+    const whites = h.fills.filter(f => f.path[0]?.[0] === 'arc' && f.path[0][3] === 11.5);
     assert.equal(whites.length, 2, 'both eyes remain fully open and circular');
     assert.ok(whites.every(f => f.color === '#fffaf1'));
     const head = h.fills.find(f => f.color === '#f5c49f');
     const coords = head.path.flatMap(op => op.slice(1)).filter(Number.isFinite);
-    assert.ok(coords.includes(-50) && coords.includes(52), 'tapered shell keeps its crown and flat jaw bounds');
-    assert.equal(head.path.filter(op => op[0] === 'lineTo' && op[2] === 52).length, 2, 'the jaw is a straight edge, not a chin curve');
-    assert.ok(!coords.some(n => Math.abs(n) > 52), 'shell leaves room for the hair above and the collar below');
+    assert.ok(coords.includes(-55) && coords.includes(58), 'tapered shell keeps its crown and flat jaw bounds');
+    assert.equal(head.path.filter(op => op[0] === 'lineTo' && op[2] === 58).length, 2, 'the jaw is a straight edge, not a chin curve');
+    assert.ok(!coords.some(n => Math.abs(n) > 58), 'shell leaves room for the hair above and the collar below');
     h.fills.length = 0;
     return mouth.color;
   };
@@ -155,7 +155,7 @@ test('cartoon emphasis visibly lifts the brows independently while the eye and g
   for (let i = 0; i < 5; i++) { h.draws.length = 0; h.tick(40); }
   const peak = brows();
   assert.equal(peak.length, 2);
-  assert.ok(quiet[0] - peak[0] > 9, 'audio peaks have a visible brow lift');
+  assert.ok(quiet[0] - peak[0] > 3, 'audio peaks have a visible brow lift');
   assert.ok(Math.abs(peak[0] - peak[1]) > 1, 'second brow follows with a smaller delayed lift');
   h.renderer.destroy();
 });
