@@ -270,7 +270,8 @@
         }
         ctx.fillStyle = '#f5f4e6';
         for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 3, 58); ctx.lineTo(side * 40, 58); ctx.lineTo(side * 29, 82); ctx.closePath(); ctx.fill(); ctx.stroke();
+          // The collar's outer edge is the lapel's inner edge: no space between them.
+          ctx.beginPath(); ctx.moveTo(side * 3, 58); ctx.lineTo(side * 46, 58); ctx.lineTo(side * 31.2, 82); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
         ctx.fillStyle = '#9b2a22';
         ctx.beginPath(); ctx.moveTo(-5, 70); ctx.lineTo(5, 70); ctx.lineTo(10, 118); ctx.lineTo(0, 130); ctx.lineTo(-10, 118); ctx.closePath(); ctx.fill(); ctx.stroke();
