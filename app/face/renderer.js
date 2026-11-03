@@ -265,14 +265,10 @@
         ctx.fillStyle = '#a9342b';
         ctx.beginPath(); ctx.moveTo(-4, 48); ctx.lineTo(4, 48); ctx.lineTo(5, 55); ctx.lineTo(-5, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(-3.5, 55); ctx.lineTo(3.5, 55); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Ears: an outer shell with a helix curve, a tragus notch and a lobe.
+        // Ears: plain flat half circles, no inner contours.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 44, -17); ctx.quadraticCurveTo(side * 56, -20, side * 54, -6);
-          ctx.quadraticCurveTo(side * 53, 5, side * 46, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(side * 46, -13); ctx.quadraticCurveTo(side * 53, -13, side * 50, -4);
-          ctx.quadraticCurveTo(side * 49, 0, side * 47, 0); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(side * 47, -8); ctx.quadraticCurveTo(side * 50, -8, side * 49, -3); ctx.stroke();
+          ctx.beginPath(); ctx.arc(side * 45, -6, 11, -Math.PI / 2, Math.PI / 2, side === -1); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
         // Head: a tapered cylinder, narrower at the crown, with a dead-flat bottom edge.
         ctx.fillStyle = '#f5c49f';
@@ -298,9 +294,9 @@
         ctx.lineWidth = 0.8; ctx.fillStyle = '#e2a17b';
         ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(5, 0); ctx.lineTo(8, 9); ctx.quadraticCurveTo(8, 12, 5, 12);
         ctx.lineTo(-5, 12); ctx.quadraticCurveTo(-8, 12, -8, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Freckles: a cluster on each cheek under the eye.
+        // Freckles: three per cheek in a triangle, one on top and two below.
         ctx.fillStyle = '#b77b5a';
-        for (const side of [-1, 1]) for (const point of [[30, 4], [35, 2], [33, 8], [39, 7], [29, 11], [37, 12]]) dot(side * point[0], point[1], 1.1);
+        for (const side of [-1, 1]) for (const point of [[34, 3], [30, 9], [38, 9]]) dot(side * point[0], point[1], 1.2);
         ctx.fillStyle = '#543828'; ctx.strokeStyle = '#543828';
       }
       const gap = clamp(number(f.eyeGap, 16), 0, 60);
@@ -393,13 +389,13 @@
         ctx.beginPath(); ctx.moveTo(-31, 25); ctx.lineTo(31, 25); ctx.quadraticCurveTo(34, 25, 33, 28);
         ctx.quadraticCurveTo(28, 46, 0, 47); ctx.quadraticCurveTo(-28, 46, -33, 28);
         ctx.quadraticCurveTo(-34, 25, -31, 25); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.stroke();
+        ctx.strokeStyle = '#111111'; ctx.lineWidth = 1.1; ctx.stroke();
         if (lit) {
           ctx.fillStyle = '#c2ff85'; ctx.beginPath(); ctx.moveTo(-29, 26); ctx.lineTo(29, 26);
           ctx.lineTo(28, 30); ctx.lineTo(-28, 30); ctx.closePath(); ctx.fill();
         }
-        // A grille, not teeth: evenly spaced vertical bars from the flat lip to the curved bottom, no middle line.
-        ctx.strokeStyle = '#995b46';
+        // A grille, not teeth: evenly spaced black vertical bars from the flat lip to the curved bottom, no middle line.
+        ctx.strokeStyle = '#111111';
         for (const x of [-25, -18.5, -12, -5.5, 1, 7.5, 14, 20.5]) {
           const t = Math.abs(x) / 33, bottom = 28 + (1 - t * t) * 18;
           line(x + 2.2, 25.5, (x + 2.2) * 0.92, bottom, 0.8);
