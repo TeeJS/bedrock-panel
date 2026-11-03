@@ -275,25 +275,26 @@
         ctx.fillStyle = '#f5c49f';
         ctx.beginPath(); ctx.moveTo(-39, -55); ctx.lineTo(39, -55); ctx.quadraticCurveTo(43, -55, 43, -50); ctx.lineTo(46, 58);
         ctx.lineTo(-46, 58); ctx.lineTo(-43, -50); ctx.quadraticCurveTo(-43, -55, -39, -55); ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Hair: silhouette traced from reference frame 11 (eye centre anchored, scaled to the head width),
-        // smoothed through the traced points; strand lines traced from T.J.'s drawing.
+        // Hair: silhouette traced from reference frame 13 and strand lines from frame 11, both mapped onto
+        // the canvas (eye centre anchored, scaled to the head width); the outline is smoothed through the
+        // traced points and each strand is one fitted curve.
         ctx.fillStyle = '#8c472d'; ctx.strokeStyle = '#111111'; ctx.lineWidth = 1.4; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(-55.2, -50.95); ctx.quadraticCurveTo(-51.5, -56.3, -46.25, -62.15); ctx.quadraticCurveTo(-41, -68, -34, -73.5);
-        ctx.quadraticCurveTo(-27, -79, -19.4, -81.3); ctx.quadraticCurveTo(-11.8, -83.6, -4.35, -83.6); ctx.quadraticCurveTo(3.1, -83.6, 15.5, -77.65);
-        ctx.quadraticCurveTo(27.9, -71.7, 34.1, -72.9); ctx.quadraticCurveTo(40.3, -74.1, 43.4, -66.35); ctx.quadraticCurveTo(46.5, -58.6, 45.9, -37.2);
-        ctx.quadraticCurveTo(45.3, -15.8, 42.8, -15.8); ctx.quadraticCurveTo(40.3, -15.8, 31.6, -36.05); ctx.quadraticCurveTo(22.9, -56.3, 3.1, -53.3);
-        ctx.quadraticCurveTo(-16.7, -50.3, -21.7, -47.95); ctx.quadraticCurveTo(-26.7, -45.6, -29.85, -43.3); ctx.quadraticCurveTo(-33, -41, -36.05, -39.7);
-        ctx.quadraticCurveTo(-39.1, -38.4, -40.95, -36.6); ctx.quadraticCurveTo(-42.8, -34.8, -43.4, -31.25); ctx.quadraticCurveTo(-44, -27.7, -47.1, -27.7);
-        ctx.quadraticCurveTo(-50.2, -27.7, -54.55, -30.7); ctx.quadraticCurveTo(-58.9, -33.7, -58.9, -39.65); ctx.quadraticCurveTo(-58.9, -45.6, -55.2, -50.95);
+        ctx.moveTo(-53.15, -52.35); ctx.quadraticCurveTo(-46.1, -57.9, -44.05, -61.45); ctx.quadraticCurveTo(-42, -65, -32.9, -70.55);
+        ctx.quadraticCurveTo(-23.8, -76.1, -16.75, -78.15); ctx.quadraticCurveTo(-9.7, -80.2, 4.45, -80.7); ctx.quadraticCurveTo(18.6, -81.2, 26.2, -78.15);
+        ctx.quadraticCurveTo(33.8, -75.1, 36.85, -71.55); ctx.quadraticCurveTo(39.9, -68, 41.9, -57.4); ctx.quadraticCurveTo(43.9, -46.8, 45.9, -44.25);
+        ctx.quadraticCurveTo(47.9, -41.7, 47.9, -34.15); ctx.quadraticCurveTo(47.9, -26.6, 44.4, -20.5); ctx.quadraticCurveTo(40.9, -14.4, 40.4, -9.85);
+        ctx.quadraticCurveTo(39.9, -5.3, 37.85, -5.3); ctx.quadraticCurveTo(35.8, -5.3, 33.3, -23); ctx.quadraticCurveTo(30.8, -40.7, 21.7, -43.75);
+        ctx.quadraticCurveTo(12.6, -46.8, -2.6, -46.8); ctx.quadraticCurveTo(-17.8, -46.8, -27.9, -43.75); ctx.quadraticCurveTo(-38, -40.7, -41.55, -28.6);
+        ctx.quadraticCurveTo(-45.1, -16.5, -46.6, -13.95); ctx.quadraticCurveTo(-48.1, -11.4, -50.1, -11.4); ctx.quadraticCurveTo(-52.1, -11.4, -54.15, -11.9);
+        ctx.quadraticCurveTo(-56.2, -12.4, -58.2, -29.6); ctx.quadraticCurveTo(-60.2, -46.8, -53.15, -52.35);
         ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Strand lines: T.J.'s drawn lines, each fitted to one smooth, even curve.
+        // Strands: three even arcs sweeping from the upper left toward the part, and the lobe's inner edge.
         ctx.lineWidth = 1.2;
-        ctx.beginPath(); ctx.moveTo(-53.4, -53.9); ctx.quadraticCurveTo(-7.7, -96.5, 19.2, -63.6); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-38.1, -66); ctx.quadraticCurveTo(-8.8, -65.3, 20.1, -52.1); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(27.4, -70.3); ctx.quadraticCurveTo(25, -66.1, 20.5, -53.5); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(23.1, -50.8); ctx.quadraticCurveTo(32.8, -41.9, 43.3, -17.4); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(26.5, -61.2); ctx.quadraticCurveTo(40.4, -68.8, 44.8, -65.7); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-46, -58); ctx.quadraticCurveTo(-14, -78, 24, -70); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-40, -52); ctx.quadraticCurveTo(-10, -70, 22, -61); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-30, -48); ctx.quadraticCurveTo(-5, -60, 16, -53); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(33, -74); ctx.quadraticCurveTo(30, -58, 31, -41); ctx.stroke();
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
         // Nose: a toaster lever. A vertical stem runs down from between the eyes to a wide knob with a slit.
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
