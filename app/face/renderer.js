@@ -14,10 +14,10 @@
 
   const CARTOON_POSES = {
     // [brow lift, brow slant, pupil x, pupil y, pupil radius]: the pupil grows with surprise and shrinks with anger.
-    neutral: [0, 0, 0, 0, 3.9], happy: [-8, 0.08, 1, -4, 4.3],
-    sad: [1, 0.48, 0, 7, 3.5], angry: [5, -0.55, 0, 3, 3],
-    surprised: [-9, 0, 0, -4, 5.3], sleepy: [4, 0, 0, 7, 3.8],
-    thinking: [-8, 0.12, 7, -7, 3.9], listening: [-6, 0, 0, -2, 4.3],
+    neutral: [0, 0, 0, 0, 4.3], happy: [-8, 0.08, 1, -4, 4.7],
+    sad: [1, 0.48, 0, 7, 3.9], angry: [5, -0.55, 0, 3, 3.3],
+    surprised: [-9, 0, 0, -4, 5.8], sleepy: [4, 0, 0, 7, 4.2],
+    thinking: [-8, 0.12, 7, -7, 4.3], listening: [-6, 0, 0, -2, 4.7],
   };
   const KEYS = ['eyeW', 'eyeH', 'radius', 'browSlant', 'lowerLid', 'upperLid'];
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -252,16 +252,18 @@
         // Jacket, shirt, collar wings, knot and tie, all drawn before the head. No neck: the jaw sits on the collar.
         // The white collar spreads wider than the head: two tall wings from the shoulder points down to the knot.
         ctx.fillStyle = '#f5f4e6';
-        // One big white chevron under the jaw: full jaw width at the top, narrowing to the knot, with the jacket
-        // diagonals running from the jaw corners down to the edges and the knot at the foot of a small V notch.
+        // Spread collar: the two white wings start together at the knot under the jaw and their tips point out
+        // and down toward the shoulders, the jacket outside and below them, the tie hanging between.
         ctx.fillStyle = '#273d47';
         ctx.beginPath(); ctx.rect(-82, 54, 164, 20); ctx.fill();
         ctx.fillStyle = '#f5f4e6';
-        ctx.beginPath(); ctx.moveTo(-53, 54); ctx.lineTo(53, 54); ctx.lineTo(16, 74); ctx.lineTo(-16, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.lineWidth = 1;
-        for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * 53, 54); ctx.lineTo(side * 7, 71); ctx.lineTo(0, 65); ctx.stroke(); }
-        ctx.lineWidth = 0.8; ctx.fillStyle = '#a9342b';
-        ctx.beginPath(); ctx.moveTo(0, 64); ctx.lineTo(7, 70); ctx.lineTo(0, 76); ctx.lineTo(-7, 70); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.rect(-8, 54, 16, 20); ctx.fill();
+        for (const side of [-1, 1]) {
+          ctx.beginPath(); ctx.moveTo(side * 2, 54); ctx.lineTo(side * 30, 54); ctx.lineTo(side * 42, 70); ctx.lineTo(side * 7, 65); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        ctx.fillStyle = '#a9342b';
+        ctx.beginPath(); ctx.moveTo(-4, 64); ctx.lineTo(4, 64); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 55); ctx.lineTo(6, 60); ctx.lineTo(0, 65); ctx.lineTo(-6, 60); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Ears: plain flat half circles behind the head, no inner contours.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
@@ -304,7 +306,7 @@
       }
       const gap = clamp(number(f.eyeGap, 16), 0, 60);
       const [ew, eh, radius, slant, lower, upper] = current;
-      const separation = cartoon ? 18.5 : (ew + gap) / 2;
+      const separation = cartoon ? 19.5 : (ew + gap) / 2;
       const speaking = state === 'speaking' && !asleep;
       const eyeY = cartoon ? -17 : -10 + gazeY;
       const pose = asleep ? 'sleepy' : state === 'thinking' ? 'thinking' : state === 'error' ? 'sad' : state === 'approval' ? 'surprised' : cartoon && state === 'listening' ? 'listening' : emotion;
@@ -324,11 +326,11 @@
           }
           ctx.fillStyle = ink;
         } else if (style === 'cartoon') {
-          ctx.fillStyle = '#fffaf1'; dot(0, 0, 8.5);
+          ctx.fillStyle = '#fffaf1'; dot(0, 0, 9.5);
           ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.stroke();
           const energy = speaking ? smoothLevel : 0;
           const pupil = pupilRadius + energy * 0.5;
-          const travel = 7.5 - pupil;
+          const travel = 8.5 - pupil;
           const px = clamp((pupilX + gazeX) * (1 - energy * 0.85), -travel, travel);
           const py = clamp((pupilY + gazeY) * (1 - energy * 0.65), -travel, travel);
           ctx.fillStyle = '#2f58b3'; dot(px, py, pupil);

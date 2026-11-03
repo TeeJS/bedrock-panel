@@ -80,7 +80,7 @@ test('cartoon persona keeps open circular eyes and a fixed grille through every 
     assert.ok(mouth, 'fixed grin is drawn');
     if (!grille) grille = mouth.path;
     assert.deepEqual(mouth.path, grille, 'grin geometry never changes');
-    const whites = h.fills.filter(f => f.path[0]?.[0] === 'arc' && f.path[0][3] === 8.5);
+    const whites = h.fills.filter(f => f.path[0]?.[0] === 'arc' && f.path[0][3] === 9.5);
     assert.equal(whites.length, 2, 'both eyes remain fully open and circular');
     assert.ok(whites.every(f => f.color === '#fffaf1'));
     const head = h.fills.find(f => f.color === '#f5c49f');
