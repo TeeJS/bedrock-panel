@@ -83,7 +83,7 @@ test('cartoon persona keeps open circular eyes and a fixed grille through every 
     const whites = h.fills.filter(f => f.path[0]?.[0] === 'arc' && f.path[0][3] === 9.5);
     assert.equal(whites.length, 2, 'both eyes remain fully open and circular');
     assert.ok(whites.every(f => f.color === '#fffaf1'));
-    const head = h.fills.find(f => f.color === '#f5c49f');
+    const head = h.fills.find(f => f.color === '#e8b7ab');
     const coords = head.path.flatMap(op => op.slice(1)).filter(Number.isFinite);
     assert.ok(coords.includes(-55) && coords.includes(58), 'tapered shell keeps its crown and flat jaw bounds');
     assert.equal(head.path.filter(op => op[0] === 'lineTo' && op[2] === 58).length, 2, 'the jaw is a straight edge, not a chin curve');
