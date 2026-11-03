@@ -278,19 +278,20 @@
         // outlines and a single contour is drawn round the whole mass, so no seams show inside the hair.
         ctx.fillStyle = '#8c472d';
         ctx.beginPath(); ctx.moveTo(-44, -39); ctx.quadraticCurveTo(-53, -44, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
-        ctx.quadraticCurveTo(5, -86, 23, -64); ctx.quadraticCurveTo(30, -57, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47);
+        ctx.quadraticCurveTo(4, -86, 21, -74); ctx.quadraticCurveTo(26, -66, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47);
         ctx.quadraticCurveTo(-35, -43, -44, -39); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(28, -52); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
         ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(7, -77.5); ctx.quadraticCurveTo(26, -80, 39, -74); ctx.quadraticCurveTo(45, -76, 47, -50);
+        // The crown dips at x 19 (the part) and the lobe rises again from there.
+        ctx.beginPath(); ctx.moveTo(21, -74); ctx.quadraticCurveTo(30, -80, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
         ctx.lineTo(46, -40); ctx.lineTo(37, -42); ctx.lineTo(28, -52);
-        ctx.quadraticCurveTo(26, -58, 18, -67); ctx.closePath(); ctx.fill();
+        ctx.quadraticCurveTo(18, -62, 14, -73); ctx.lineTo(21, -74); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-47, -26);
         ctx.quadraticCurveTo(-45, -22, -42, -27); ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(-41, -40); ctx.lineTo(-42, -27); ctx.quadraticCurveTo(-45, -22, -47, -26); ctx.lineTo(-49, -36);
         ctx.quadraticCurveTo(-50, -41, -47.5, -43.5); ctx.quadraticCurveTo(-52, -48, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
-        ctx.quadraticCurveTo(-5.8, -84.4, 7.16, -77.44); ctx.quadraticCurveTo(26, -80, 39, -74); ctx.quadraticCurveTo(45, -76, 47, -50);
+        ctx.quadraticCurveTo(4, -86, 21, -74); ctx.quadraticCurveTo(30, -80, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
         ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47); ctx.quadraticCurveTo(-35, -43, -41, -40);
         ctx.closePath(); ctx.stroke();
