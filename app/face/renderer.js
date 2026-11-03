@@ -389,9 +389,12 @@
           ctx.fillStyle = '#c2ff85'; ctx.beginPath(); ctx.moveTo(-29, 26); ctx.lineTo(29, 26);
           ctx.lineTo(28, 30); ctx.lineTo(-28, 30); ctx.closePath(); ctx.fill();
         }
+        // A grille, not teeth: evenly spaced vertical bars from the flat lip to the curved bottom, no middle line.
         ctx.strokeStyle = '#995b46';
-        line(-31, 36, 31, 36, 0.65);
-        for (const x of [-24, -12, 0, 12, 24]) line(x, 26, x * 0.9, 36 + (1 - Math.abs(x) / 31) * 10, 0.65);
+        for (const x of [-25, -18.5, -12, -5.5, 1, 7.5, 14, 20.5]) {
+          const t = Math.abs(x) / 33, bottom = 28 + (1 - t * t) * 18;
+          line(x + 2.2, 25.5, (x + 2.2) * 0.92, bottom, 0.8);
+        }
         ctx.restore();
       } else if (speaking && smoothLevel > 0.015) {
         const h = 3 + Math.min(style === 'sprite' ? 12 : 20, smoothLevel * 27), w = style === 'sprite' ? 10 : style === 'kawaii' ? 13 : 23;
