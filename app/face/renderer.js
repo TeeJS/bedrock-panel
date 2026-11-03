@@ -246,25 +246,24 @@
       if (style === 'cartoon') {
         // Norm: a tapered tin head with a flat underside, swept hair, metal-bar brows and a suit collar.
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.lineJoin = 'round';
-        // No neck: the jaw sits straight on the shoulders. Jacket with notched lapels, white collar wings, knot and tie.
+        // No neck: the jaw sits straight on the shoulders. Jacket with lapels, a wide white collar whose two
+        // wings meet at the tie knot, and the tie between them.
         ctx.fillStyle = '#3d4a5c';
         ctx.beginPath(); ctx.moveTo(-70, 74); ctx.lineTo(-70, 62); ctx.quadraticCurveTo(-62, 50, -30, 47);
         ctx.lineTo(30, 47); ctx.quadraticCurveTo(62, 50, 70, 62); ctx.lineTo(70, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#fffaf1';
-        ctx.beginPath(); ctx.moveTo(-16, 48); ctx.lineTo(0, 66); ctx.lineTo(16, 48); ctx.closePath(); ctx.fill();
         ctx.fillStyle = '#4f5e73';
         for (const side of [-1, 1]) {
-          // Lapel: a band from the shoulder notch down to the chest, inside edge along the shirt V.
-          ctx.beginPath(); ctx.moveTo(side * 16, 48); ctx.lineTo(side * 29, 48); ctx.lineTo(side * 26, 53); ctx.lineTo(side * 31, 55);
-          ctx.lineTo(side * 11, 74); ctx.lineTo(side * 5, 74); ctx.lineTo(side * 1, 67); ctx.closePath(); ctx.fill(); ctx.stroke();
-          // Collar wing folded over the lapel, pointing at the knot.
-          ctx.fillStyle = '#fffaf1';
-          ctx.beginPath(); ctx.moveTo(side * 16, 48); ctx.lineTo(side * 4, 61); ctx.lineTo(side * 6, 48); ctx.closePath(); ctx.fill(); ctx.stroke();
-          ctx.fillStyle = '#4f5e73';
+          ctx.beginPath(); ctx.moveTo(side * 24, 47); ctx.lineTo(side * 38, 47); ctx.lineTo(side * 34, 54); ctx.lineTo(side * 40, 57);
+          ctx.lineTo(side * 16, 74); ctx.lineTo(side * 8, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        ctx.fillStyle = '#fffaf1';
+        ctx.beginPath(); ctx.moveTo(-24, 47); ctx.lineTo(-8, 74); ctx.lineTo(8, 74); ctx.lineTo(24, 47); ctx.closePath(); ctx.fill(); ctx.stroke();
+        for (const side of [-1, 1]) {
+          ctx.beginPath(); ctx.moveTo(side * 24, 47); ctx.lineTo(side * 4, 60); ctx.lineTo(side * 4, 47); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
         ctx.fillStyle = '#a9342b';
-        ctx.beginPath(); ctx.moveTo(-4, 48); ctx.lineTo(4, 48); ctx.lineTo(5, 55); ctx.lineTo(-5, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-3.5, 55); ctx.lineTo(3.5, 55); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-4.5, 55); ctx.lineTo(4.5, 55); ctx.lineTo(8, 74); ctx.lineTo(-8, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-4, 47); ctx.lineTo(4, 47); ctx.lineTo(5.5, 56); ctx.lineTo(-5.5, 56); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Ears: plain flat half circles, no inner contours.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
@@ -275,25 +274,30 @@
         ctx.beginPath(); ctx.moveTo(-40, -46); ctx.lineTo(40, -46); ctx.quadraticCurveTo(43, -46, 43, -43);
         ctx.lineTo(47, 50); ctx.lineTo(-47, 50); ctx.lineTo(-43, -43); ctx.quadraticCurveTo(-43, -46, -40, -46);
         ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Hair: parted on the viewer's right, poofed up and swept over to the viewer's left.
+        // Hair: parted on the viewer's right. The poof sweeps to the viewer's left; right of the part a solid
+        // lobe covers the corner of the head down to brow height. No sideburns: both ends stop at the temples.
         ctx.fillStyle = '#8c472d';
-        ctx.beginPath(); ctx.moveTo(18, -43);
-        ctx.quadraticCurveTo(0, -47, -20, -44); ctx.quadraticCurveTo(-36, -42, -40, -38);
-        ctx.lineTo(-42, -16); ctx.lineTo(-47, -14); ctx.lineTo(-47, -44);
-        ctx.quadraticCurveTo(-50, -70, -16, -72); ctx.quadraticCurveTo(14, -73, 24, -62);
-        ctx.quadraticCurveTo(36, -66, 45, -54); ctx.lineTo(46, -26); ctx.lineTo(42, -24); ctx.lineTo(41, -44);
-        ctx.quadraticCurveTo(38, -50, 26, -48); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(16, -42);
+        ctx.quadraticCurveTo(-4, -46, -24, -42); ctx.quadraticCurveTo(-38, -40, -44, -33);
+        ctx.quadraticCurveTo(-49, -32, -48, -40); ctx.quadraticCurveTo(-50, -56, -42, -62);
+        ctx.quadraticCurveTo(-34, -74, -6, -74); ctx.quadraticCurveTo(14, -74, 22, -64);
+        ctx.quadraticCurveTo(38, -70, 46, -56); ctx.quadraticCurveTo(50, -42, 47, -30);
+        ctx.quadraticCurveTo(45, -25, 38, -28); ctx.quadraticCurveTo(28, -30, 22, -35);
+        ctx.quadraticCurveTo(19, -38, 16, -42); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.strokeStyle = '#b16a43'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(14, -50); ctx.quadraticCurveTo(-2, -66, -36, -58); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(10, -46); ctx.quadraticCurveTo(-6, -56, -30, -50); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(12, -50); ctx.quadraticCurveTo(-4, -66, -36, -58); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(8, -46); ctx.quadraticCurveTo(-8, -56, -32, -50); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(30, -58); ctx.quadraticCurveTo(42, -52, 42, -36); ctx.stroke();
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
-        ctx.beginPath(); ctx.moveTo(18, -43); ctx.quadraticCurveTo(22, -52, 30, -60); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(16, -42); ctx.quadraticCurveTo(20, -52, 28, -62); ctx.stroke();
         // Nose: a toaster lever. A vertical slot runs down from between the brows and the knob sits at its foot.
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(0, 0); ctx.stroke();
-        ctx.lineWidth = 0.8; ctx.fillStyle = '#e2a17b';
-        ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(5, 0); ctx.lineTo(8, 9); ctx.quadraticCurveTo(8, 12, 5, 12);
-        ctx.lineTo(-5, 12); ctx.quadraticCurveTo(-8, 12, -8, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // The knob: a wide rounded rectangle, flat on top, rounder underneath, the slot meeting its top centre.
+        ctx.lineWidth = 1; ctx.fillStyle = '#e2a17b';
+        ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0); ctx.quadraticCurveTo(9.5, 0, 9.5, 2.5); ctx.lineTo(9.5, 6);
+        ctx.quadraticCurveTo(9.5, 10, 5, 10); ctx.lineTo(-5, 10); ctx.quadraticCurveTo(-9.5, 10, -9.5, 6); ctx.lineTo(-9.5, 2.5);
+        ctx.quadraticCurveTo(-9.5, 0, -7, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Freckles: three per cheek in a triangle, one on top and two below.
         ctx.fillStyle = '#b77b5a';
         for (const side of [-1, 1]) for (const point of [[34, 3], [30, 9], [38, 9]]) dot(side * point[0], point[1], 1.2);
