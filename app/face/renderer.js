@@ -311,6 +311,11 @@
         ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47); ctx.quadraticCurveTo(-35, -43, -41, -40);
         ctx.closePath(); ctx.stroke();
+        // A short part and two comb lines sit inside the existing hair silhouette.
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(21, -74); ctx.bezierCurveTo(18, -67, 21, -59, 28, -52); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(25, -56); ctx.bezierCurveTo(8, -72, -7, -81, -22, -78); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(27, -53); ctx.bezierCurveTo(8, -66, -16, -71, -35, -64); ctx.stroke();
         // Nose: a toaster lever. A vertical stem runs down from between the eyes to a wide knob with a slit.
         ctx.strokeStyle = '#291a16'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(0, -29); ctx.lineTo(0, -3); ctx.stroke();
