@@ -210,7 +210,7 @@
       // The cartoon character is drawn at 0.84 anchored at the top (crown at pre-scale y -86), so the head keeps
       // its size and the suit coat below the jaw is cropped by the canvas bottom.
       const k = cartoon ? 0.84 : 1;
-      ctx.translate(width / 2, height / 2 + (cartoon ? (-74 + 86 * k) : 0) * scale); ctx.scale(scale * k, scale * k);
+      ctx.translate(width / 2, height / 2 + (cartoon ? (-59 + 86 * k) : 0) * scale); ctx.scale(scale * k, scale * k);
       if (style === 'butler' || style === 'intern') { drawCharacter(style, time, blink); return; }
       const baseInk = f.color || accent;
       const ink = style === 'sprite' ? '#fffaf2' : style === 'oled' ? readableInk(baseInk, background) : baseInk;
@@ -268,61 +268,68 @@
           ctx.beginPath(); ctx.moveTo(side * 46, 58); ctx.lineTo(side * 72, 66); ctx.lineTo(side * 64, 78);
           ctx.lineTo(side * 22, 130); ctx.lineTo(side * 4, 126); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
-        ctx.fillStyle = '#f5f4e6';
-        for (const side of [-1, 1]) {
-          // The collar's outer edge is the lapel's inner edge: no space between them.
-          ctx.beginPath(); ctx.moveTo(side * 3, 58); ctx.lineTo(side * 46, 58); ctx.lineTo(side * 31.2, 82); ctx.closePath(); ctx.fill(); ctx.stroke();
-        }
         ctx.fillStyle = '#9b2a22';
         ctx.beginPath(); ctx.moveTo(-5, 70); ctx.lineTo(5, 70); ctx.lineTo(10, 118); ctx.lineTo(0, 130); ctx.lineTo(-10, 118); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, 58); ctx.lineTo(7, 65); ctx.lineTo(0, 72); ctx.lineTo(-7, 65); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // The knot's upper shoulders extend beneath the collar; its flat base joins the tie below.
+        ctx.beginPath(); ctx.moveTo(0, 55); ctx.lineTo(10, 63); ctx.lineTo(5, 70); ctx.lineTo(-5, 70); ctx.lineTo(-10, 63); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#f5f4e6';
+        for (const side of [-1, 1]) {
+          // Paint the collar over the knot. Its outer edge meets the lapel's inner edge.
+          ctx.beginPath(); ctx.moveTo(side * 3, 58); ctx.lineTo(side * 46, 58); ctx.lineTo(side * 31.2, 82); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
         // Ears: plain flat half circles behind the head, no inner contours.
         // The flat edge sits inside the head, so the head's own outline is the line that attaches them.
-        ctx.fillStyle = '#f2bd96'; ctx.strokeStyle = '#111111'; ctx.lineWidth = 1.4;
+        ctx.fillStyle = '#e3afa4'; ctx.strokeStyle = '#1e1714'; ctx.lineWidth = 1.4;
         for (const side of [-1, 1]) {
           ctx.beginPath(); ctx.arc(side * 43, -9, 9, -Math.PI / 2, Math.PI / 2, side === -1); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
-        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
+        ctx.strokeStyle = '#1e1714'; ctx.lineWidth = 1.4;
         // Head: a tapered cylinder, narrower at the crown, with a dead-flat bottom edge over the collar seam.
-        ctx.fillStyle = '#f5c49f';
+        ctx.fillStyle = '#e8b7ab';
         ctx.beginPath(); ctx.moveTo(-39, -55); ctx.lineTo(39, -55); ctx.quadraticCurveTo(43, -55, 43, -50); ctx.lineTo(46, 58);
         ctx.lineTo(-46, 58); ctx.lineTo(-43, -50); ctx.quadraticCurveTo(-43, -55, -39, -55); ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Hair: forelock sweeping to the viewer's left, a lobe on the viewer's right running down beside the
-        // eye to the ear, a bridge over the crown and a temple lock on the left. The pieces are filled without
-        // outlines and a single contour is drawn round the whole mass, so no seams show inside the hair.
+        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
+        // Hair: forelock sweeping to the viewer's left, a lobe on the viewer's right ending at the
+        // ear's top attachment, a bridge over the crown and a temple lock on the left. The pieces are filled
+        // without outlines and a single contour is drawn round the whole mass, so no seams show inside the hair.
         ctx.fillStyle = '#8c472d';
         ctx.beginPath(); ctx.moveTo(-44, -39); ctx.quadraticCurveTo(-53, -44, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
         ctx.quadraticCurveTo(4, -86, 21, -74); ctx.quadraticCurveTo(26, -66, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47);
         ctx.quadraticCurveTo(-35, -43, -44, -39); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(28, -52); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
-        ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
+        ctx.quadraticCurveTo(48, -32, 44, -18); ctx.quadraticCurveTo(39, -21, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.closePath(); ctx.fill();
         // The crown dips at x 19 (the part) and the lobe rises again from there.
         ctx.beginPath(); ctx.moveTo(21, -74); ctx.quadraticCurveTo(30, -80, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
         ctx.lineTo(46, -40); ctx.lineTo(37, -42); ctx.lineTo(28, -52);
         ctx.quadraticCurveTo(18, -62, 14, -73); ctx.lineTo(21, -74); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-47, -26);
-        ctx.quadraticCurveTo(-45, -22, -42, -27); ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-41, -40); ctx.lineTo(-42, -27); ctx.quadraticCurveTo(-45, -22, -47, -26); ctx.lineTo(-49, -36);
+        ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-44, -18);
+        ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-41, -40); ctx.lineTo(-44, -18); ctx.lineTo(-49, -36);
         ctx.quadraticCurveTo(-50, -41, -47.5, -43.5); ctx.quadraticCurveTo(-52, -48, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
         ctx.quadraticCurveTo(4, -86, 21, -74); ctx.quadraticCurveTo(30, -80, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
-        ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
+        ctx.quadraticCurveTo(48, -32, 44, -18); ctx.quadraticCurveTo(39, -21, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47); ctx.quadraticCurveTo(-35, -43, -41, -40);
         ctx.closePath(); ctx.stroke();
+        // A straight part with two comb lines meeting it inside the hair silhouette.
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(21, -74); ctx.lineTo(28, -52); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(26.7, -56); ctx.bezierCurveTo(8, -72, -7, -81, -22, -78); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(27.7, -53); ctx.bezierCurveTo(8, -66, -16, -71, -35, -64); ctx.stroke();
         // Nose: a toaster lever. A vertical stem runs down from between the eyes to a wide knob with a slit.
-        ctx.strokeStyle = '#593524'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
+        ctx.strokeStyle = '#291a16'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(0, -29); ctx.lineTo(0, -3); ctx.stroke();
-        ctx.lineWidth = 1; ctx.fillStyle = '#e2a17b';
+        ctx.lineWidth = 1; ctx.fillStyle = '#d6a197';
         // The knob is a dome: arched on top, flat along the bottom, the stem running into the top of the arch.
         ctx.beginPath(); ctx.moveTo(-10, 7); ctx.lineTo(-10, 3); ctx.quadraticCurveTo(-10, -6, 0, -6); ctx.quadraticCurveTo(10, -6, 10, 3);
         ctx.lineTo(10, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
         // A shaded strip along the bottom of the dome with a thin separator above it.
-        ctx.fillStyle = '#c98a66'; ctx.beginPath(); ctx.rect(-10, 4, 20, 3); ctx.fill();
+        ctx.fillStyle = '#bc8379'; ctx.beginPath(); ctx.rect(-10, 4, 20, 3); ctx.fill();
         ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-10, 4); ctx.lineTo(10, 4); ctx.stroke();
         ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(-10, 7); ctx.lineTo(10, 7); ctx.stroke();
         // Freckles: three per cheek in a triangle, one on top and two below.
-        ctx.fillStyle = '#b77b5a';
+        ctx.fillStyle = '#b77e73';
         for (const side of [-1, 1]) for (const point of [[34, 2], [30, 8], [38, 8]]) dot(side * point[0], point[1], 1.2);
         ctx.fillStyle = '#543828'; ctx.strokeStyle = '#543828';
       }
@@ -330,7 +337,7 @@
       const [ew, eh, radius, slant, lower, upper] = current;
       const separation = cartoon ? 19.5 : (ew + gap) / 2;
       const speaking = state === 'speaking' && !asleep;
-      const eyeY = cartoon ? -17 : -10 + gazeY;
+      const eyeY = cartoon ? -20 : -10 + gazeY;
       const pose = asleep ? 'sleepy' : state === 'thinking' ? 'thinking' : state === 'error' ? 'sad' : state === 'approval' ? 'surprised' : cartoon && state === 'listening' ? 'listening' : emotion;
 
       const [browY, browAngle, pupilX, pupilY, pupilRadius] = CARTOON_POSES[pose];
@@ -349,7 +356,7 @@
           ctx.fillStyle = ink;
         } else if (style === 'cartoon') {
           ctx.fillStyle = '#fffaf1'; dot(0, 0, 9.5);
-          ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.stroke();
+          ctx.strokeStyle = '#1e1714'; ctx.lineWidth = 1.05; ctx.stroke();
           const energy = speaking ? smoothLevel : 0;
           const pupil = pupilRadius + energy * 0.5;
           const travel = 8.5 - pupil;
@@ -363,7 +370,8 @@
           const idleLift = !reduced && state === 'idle' && !asleep ? Math.sin(time / 1800 + side) * 0.8 : 0;
           ctx.save(); ctx.translate(0, Math.max(-23, -19 + browY + (pose === 'thinking' && side === 1 ? 13 : 0) - browEnergy * 4 + idleLift));
           // A rigid metal bar: it lifts and tilts with expression but never bends.
-          ctx.rotate(side * (browAngle + browEnergy * 0.12)); ctx.fillStyle = '#8a4a30'; ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
+          ctx.rotate((side === -1 ? -0.14 : 0.02) + side * (browAngle + browEnergy * 0.12));
+          ctx.fillStyle = '#8a4a30'; ctx.strokeStyle = '#1e1714'; ctx.lineWidth = 1.05;
           ctx.beginPath(); ctx.rect(-11, -2.4, 22, 4.8); ctx.fill(); ctx.stroke(); ctx.restore();
           ctx.fillStyle = ink;
         } else {
