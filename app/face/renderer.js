@@ -273,15 +273,20 @@
         ctx.fillStyle = '#f5c49f';
         ctx.beginPath(); ctx.moveTo(-39, -55); ctx.lineTo(39, -55); ctx.quadraticCurveTo(43, -55, 43, -50); ctx.lineTo(46, 58);
         ctx.lineTo(-46, 58); ctx.lineTo(-43, -50); ctx.quadraticCurveTo(-43, -55, -39, -55); ctx.closePath(); ctx.fill(); ctx.stroke();
-        // Hair: one continuous mass, the forelock sweeping to the viewer's left and the upright lobe on the
-        // viewer's right running down beside the eye to the ear, with only a subtle seam for the part.
+        // Hair: one compact forelock sweeping to the viewer's left, its lower edge above the brows.
         ctx.fillStyle = '#8c472d';
-        ctx.beginPath(); ctx.moveTo(-42, -39); ctx.quadraticCurveTo(-53, -44, -49, -54); ctx.quadraticCurveTo(-43, -75, -22, -82);
-        ctx.quadraticCurveTo(5, -86, 23, -64); ctx.quadraticCurveTo(30, -72, 39, -75); ctx.quadraticCurveTo(47, -78, 48, -62);
-        ctx.quadraticCurveTo(51, -43, 48, -12); ctx.quadraticCurveTo(47, -7, 40, -8); ctx.quadraticCurveTo(35, -10, 35, -25);
-        ctx.lineTo(35, -43); ctx.quadraticCurveTo(20, -53, -19, -47); ctx.quadraticCurveTo(-35, -43, -42, -39);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(24, -64); ctx.quadraticCurveTo(31, -58, 35, -45); ctx.stroke(); ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(-44, -39); ctx.quadraticCurveTo(-53, -44, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
+        ctx.quadraticCurveTo(5, -86, 23, -63); ctx.quadraticCurveTo(30, -57, 31, -49); ctx.quadraticCurveTo(5, -53, -19, -47);
+        ctx.quadraticCurveTo(-35, -43, -44, -39); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // A separate narrow upright lobe on the viewer's right, with the part seam between the two.
+        ctx.beginPath(); ctx.moveTo(30, -51); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
+        ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
+        ctx.quadraticCurveTo(36, -47, 30, -51); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // Bridge the notch so the hair top is continuous, then a thin seam for the part.
+        ctx.beginPath(); ctx.moveTo(12, -72); ctx.quadraticCurveTo(28, -79, 39, -74); ctx.lineTo(37, -42); ctx.lineTo(31, -49);
+        ctx.quadraticCurveTo(26, -58, 18, -67); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(12, -72); ctx.quadraticCurveTo(28, -79, 39, -74); ctx.stroke();
+        ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(30, -52); ctx.quadraticCurveTo(32, -60, 34, -67); ctx.stroke(); ctx.lineWidth = 0.8;
         // Left temple lock: a small wedge framing the left ear rather than a cap over the brow.
         ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-47, -26);
         ctx.quadraticCurveTo(-45, -22, -42, -27); ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill(); ctx.stroke();
