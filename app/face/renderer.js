@@ -246,17 +246,25 @@
       if (style === 'cartoon') {
         // Norm: a tapered tin head with a flat underside, swept hair, metal-bar brows and a suit collar.
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.lineJoin = 'round';
-        // No neck: the suit, shirt and tie start right under the flat jaw, which sits on the shoulders.
+        // No neck: the jaw sits straight on the shoulders. Jacket with notched lapels, white collar wings, knot and tie.
+        ctx.fillStyle = '#3d4a5c';
+        ctx.beginPath(); ctx.moveTo(-70, 74); ctx.lineTo(-70, 62); ctx.quadraticCurveTo(-62, 50, -30, 47);
+        ctx.lineTo(30, 47); ctx.quadraticCurveTo(62, 50, 70, 62); ctx.lineTo(70, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#fffaf1';
-        ctx.beginPath(); ctx.moveTo(-19, 48); ctx.lineTo(0, 66); ctx.lineTo(19, 48); ctx.lineTo(19, 74); ctx.lineTo(-19, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#2d3a55';
+        ctx.beginPath(); ctx.moveTo(-16, 48); ctx.lineTo(0, 66); ctx.lineTo(16, 48); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#4f5e73';
         for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 68, 74); ctx.lineTo(side * 67, 58); ctx.quadraticCurveTo(side * 48, 50, side * 19, 48);
-          ctx.lineTo(side * 4, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+          // Lapel: a band from the shoulder notch down to the chest, inside edge along the shirt V.
+          ctx.beginPath(); ctx.moveTo(side * 16, 48); ctx.lineTo(side * 29, 48); ctx.lineTo(side * 26, 53); ctx.lineTo(side * 31, 55);
+          ctx.lineTo(side * 11, 74); ctx.lineTo(side * 5, 74); ctx.lineTo(side * 1, 67); ctx.closePath(); ctx.fill(); ctx.stroke();
+          // Collar wing folded over the lapel, pointing at the knot.
+          ctx.fillStyle = '#fffaf1';
+          ctx.beginPath(); ctx.moveTo(side * 16, 48); ctx.lineTo(side * 4, 61); ctx.lineTo(side * 6, 48); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#4f5e73';
         }
-        ctx.fillStyle = '#b8352c';
-        ctx.beginPath(); ctx.moveTo(-4, 54); ctx.lineTo(4, 54); ctx.lineTo(6.5, 74); ctx.lineTo(-6.5, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-4.5, 49); ctx.lineTo(4.5, 49); ctx.lineTo(4, 55); ctx.lineTo(-4, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#a9342b';
+        ctx.beginPath(); ctx.moveTo(-4, 48); ctx.lineTo(4, 48); ctx.lineTo(5, 55); ctx.lineTo(-5, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-3.5, 55); ctx.lineTo(3.5, 55); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Ears: an outer shell with a helix curve, a tragus notch and a lobe.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
