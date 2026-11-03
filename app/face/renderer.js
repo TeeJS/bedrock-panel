@@ -259,10 +259,9 @@
         ctx.fillStyle = '#f5f4e6';
         ctx.beginPath(); ctx.moveTo(-53, 54); ctx.lineTo(53, 54); ctx.lineTo(16, 74); ctx.lineTo(-16, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.lineWidth = 1;
-        for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * 53, 54); ctx.lineTo(side * 7, 67); ctx.lineTo(0, 61); ctx.stroke(); }
+        for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(side * 53, 54); ctx.lineTo(side * 7, 71); ctx.lineTo(0, 65); ctx.stroke(); }
         ctx.lineWidth = 0.8; ctx.fillStyle = '#a9342b';
-        ctx.beginPath(); ctx.moveTo(-4.5, 70); ctx.lineTo(4.5, 70); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, 59); ctx.lineTo(7, 66); ctx.lineTo(0, 72); ctx.lineTo(-7, 66); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 64); ctx.lineTo(7, 70); ctx.lineTo(0, 76); ctx.lineTo(-7, 70); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Ears: plain flat half circles behind the head, no inner contours.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
@@ -278,13 +277,13 @@
         ctx.quadraticCurveTo(5, -86, 23, -63); ctx.quadraticCurveTo(30, -57, 31, -49); ctx.quadraticCurveTo(5, -53, -19, -47);
         ctx.quadraticCurveTo(-35, -43, -44, -39); ctx.closePath(); ctx.fill(); ctx.stroke();
         // A separate narrow upright lobe on the viewer's right, with the part seam between the two.
-        ctx.beginPath(); ctx.moveTo(30, -51); ctx.quadraticCurveTo(36, -65, 43, -63); ctx.quadraticCurveTo(48, -58, 47, -45);
-        ctx.lineTo(46, -32); ctx.quadraticCurveTo(45, -28, 41, -30); ctx.quadraticCurveTo(38, -32, 37, -40);
+        ctx.beginPath(); ctx.moveTo(30, -51); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
+        ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
         ctx.quadraticCurveTo(36, -47, 30, -51); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(30, -51); ctx.lineTo(37, -40); ctx.stroke();
         // Left temple lock: a small wedge framing the left ear rather than a cap over the brow.
-        ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-47, -24);
-        ctx.quadraticCurveTo(-44, -21, -40, -27); ctx.lineTo(-39, -40); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-47, -26);
+        ctx.quadraticCurveTo(-45, -22, -42, -27); ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#8c472d'; ctx.beginPath(); ctx.moveTo(-44, -39); ctx.quadraticCurveTo(-35, -43, -19, -47);
         ctx.quadraticCurveTo(-28, -40, -40, -41); ctx.closePath(); ctx.fill();
         // Nose: a toaster lever. A vertical stem runs down from between the eyes to a wide knob with a slit.
@@ -294,6 +293,9 @@
         // The knob is a dome: arched on top, flat along the bottom, the stem running into the top of the arch.
         ctx.beginPath(); ctx.moveTo(-10, 7); ctx.lineTo(-10, 3); ctx.quadraticCurveTo(-10, -6, 0, -6); ctx.quadraticCurveTo(10, -6, 10, 3);
         ctx.lineTo(10, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // A shaded strip along the bottom of the dome with a thin separator above it.
+        ctx.fillStyle = '#c98a66'; ctx.beginPath(); ctx.rect(-10, 4, 20, 3); ctx.fill();
+        ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-10, 4); ctx.lineTo(10, 4); ctx.stroke();
         ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(-10, 7); ctx.lineTo(10, 7); ctx.stroke();
         // Freckles: three per cheek in a triangle, one on top and two below.
         ctx.fillStyle = '#b77b5a';
