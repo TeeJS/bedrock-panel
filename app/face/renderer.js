@@ -275,7 +275,8 @@
         }
         ctx.fillStyle = '#9b2a22';
         ctx.beginPath(); ctx.moveTo(-5, 70); ctx.lineTo(5, 70); ctx.lineTo(10, 118); ctx.lineTo(0, 130); ctx.lineTo(-10, 118); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, 58); ctx.lineTo(7, 65); ctx.lineTo(0, 72); ctx.lineTo(-7, 65); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // Broad shoulders taper to a flat base that joins the tie below.
+        ctx.beginPath(); ctx.moveTo(0, 58); ctx.lineTo(9, 63); ctx.lineTo(5, 70); ctx.lineTo(-5, 70); ctx.lineTo(-9, 63); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
         // Ears: plain flat half circles behind the head, no inner contours.
         // The flat edge sits inside the head, so the head's own outline is the line that attaches them.
