@@ -281,20 +281,30 @@
         ctx.quadraticCurveTo(4, -86, 21, -74); ctx.quadraticCurveTo(26, -66, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47);
         ctx.quadraticCurveTo(-35, -43, -44, -39); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(28, -52); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
-        ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
+        ctx.quadraticCurveTo(50, -28, 46, -7); ctx.quadraticCurveTo(45, -1, 41, -3); ctx.quadraticCurveTo(38, -5, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.closePath(); ctx.fill();
         // The crown dips at x 19 (the part) and the lobe rises again from there.
         ctx.beginPath(); ctx.moveTo(21, -74); ctx.quadraticCurveTo(30, -80, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
-        ctx.lineTo(46, -40); ctx.lineTo(37, -42); ctx.lineTo(28, -52);
+        ctx.quadraticCurveTo(49, -40, 46, -30); ctx.lineTo(37, -42); ctx.lineTo(28, -52);
         ctx.quadraticCurveTo(18, -62, 14, -73); ctx.lineTo(21, -74); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-47, -26);
-        ctx.quadraticCurveTo(-45, -22, -42, -27); ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-41, -40); ctx.lineTo(-42, -27); ctx.quadraticCurveTo(-45, -22, -47, -26); ctx.lineTo(-49, -36);
-        ctx.quadraticCurveTo(-50, -41, -47.5, -43.5); ctx.quadraticCurveTo(-52, -48, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
+        ctx.beginPath(); ctx.moveTo(-38, -50); ctx.quadraticCurveTo(-54, -48, -51, -34); ctx.quadraticCurveTo(-49, -18, -44, -18);
+        ctx.lineTo(-40, -40); ctx.closePath(); ctx.fill();
+        // Whole-hair outline in black.
+        ctx.strokeStyle = '#111111'; ctx.lineWidth = 1.4; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-41, -40); ctx.lineTo(-44, -18); ctx.quadraticCurveTo(-49, -18, -51, -34);
+        ctx.quadraticCurveTo(-52.5, -42, -49, -50); ctx.quadraticCurveTo(-50, -52, -49, -54); ctx.quadraticCurveTo(-43, -76, -22, -82);
         ctx.quadraticCurveTo(4, -86, 21, -74); ctx.quadraticCurveTo(30, -80, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
-        ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
+        ctx.quadraticCurveTo(50, -28, 46, -7); ctx.quadraticCurveTo(45, -1, 41, -3); ctx.quadraticCurveTo(38, -5, 37, -40);
         ctx.quadraticCurveTo(36, -47, 28, -52); ctx.quadraticCurveTo(5, -53, -19, -47); ctx.quadraticCurveTo(-35, -43, -41, -40);
         ctx.closePath(); ctx.stroke();
+        // Strand lines like the show: the part line from the crown notch down to the hairline, and three
+        // sweeps fanning from the part across the forelock to the viewer's left.
+        ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.moveTo(21, -74); ctx.quadraticCurveTo(26, -64, 28, -52); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(20, -73); ctx.quadraticCurveTo(-2, -82, -32, -68); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(20, -71); ctx.quadraticCurveTo(2, -74, -22, -60); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(20, -68); ctx.quadraticCurveTo(6, -64, -8, -54); ctx.stroke();
+        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
         // Nose: a toaster lever. A vertical stem runs down from between the eyes to a wide knob with a slit.
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
         ctx.beginPath(); ctx.moveTo(0, -29); ctx.lineTo(0, -3); ctx.stroke();
