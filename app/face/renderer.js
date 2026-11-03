@@ -252,18 +252,18 @@
         // Jacket, shirt, collar wings, knot and tie, all drawn before the head. No neck: the jaw sits on the collar.
         // The white collar spreads wider than the head: two tall wings from the shoulder points down to the knot.
         ctx.fillStyle = '#f5f4e6';
-        // Spread collar: the two white wings start together at the knot under the jaw and their tips point out
-        // and down toward the shoulders, the jacket outside and below them, the tie hanging between.
+        // Dress-shirt collar: two white triangles under the jaw, base along the jaw from the knot out to the
+        // corner, tip pointing down at a quarter head-width from centre; the jacket fills everything else and
+        // the tie hangs in the gap between them.
         ctx.fillStyle = '#273d47';
         ctx.beginPath(); ctx.rect(-82, 54, 164, 20); ctx.fill();
-        ctx.fillStyle = '#f5f4e6';
-        ctx.beginPath(); ctx.rect(-8, 54, 16, 20); ctx.fill();
+        ctx.fillStyle = '#f5f4e6'; ctx.lineWidth = 1;
         for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 2, 54); ctx.lineTo(side * 30, 54); ctx.lineTo(side * 42, 70); ctx.lineTo(side * 7, 65); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(side * 6, 57); ctx.lineTo(side * 48, 57); ctx.lineTo(side * 25, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
-        ctx.fillStyle = '#a9342b';
-        ctx.beginPath(); ctx.moveTo(-4, 64); ctx.lineTo(4, 64); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, 55); ctx.lineTo(6, 60); ctx.lineTo(0, 65); ctx.lineTo(-6, 60); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.lineWidth = 0.8; ctx.fillStyle = '#a9342b';
+        ctx.beginPath(); ctx.moveTo(-4, 65); ctx.lineTo(4, 65); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 57); ctx.lineTo(6, 61); ctx.lineTo(0, 66); ctx.lineTo(-6, 61); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Ears: plain flat half circles behind the head, no inner contours.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
@@ -282,7 +282,11 @@
         ctx.beginPath(); ctx.moveTo(30, -51); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
         ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
         ctx.quadraticCurveTo(36, -47, 30, -51); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(30, -51); ctx.lineTo(37, -40); ctx.stroke();
+        // Bridge the notch so the hair top is continuous, then a thin seam for the part.
+        ctx.beginPath(); ctx.moveTo(12, -72); ctx.quadraticCurveTo(28, -79, 39, -74); ctx.lineTo(37, -42); ctx.lineTo(31, -49);
+        ctx.quadraticCurveTo(26, -58, 18, -67); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(12, -72); ctx.quadraticCurveTo(28, -79, 39, -74); ctx.stroke();
+        ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(30, -52); ctx.quadraticCurveTo(32, -60, 34, -67); ctx.stroke(); ctx.lineWidth = 0.8;
         // Left temple lock: a small wedge framing the left ear rather than a cap over the brow.
         ctx.beginPath(); ctx.moveTo(-38, -47); ctx.quadraticCurveTo(-51, -47, -49, -36); ctx.lineTo(-47, -26);
         ctx.quadraticCurveTo(-45, -22, -42, -27); ctx.lineTo(-41, -40); ctx.closePath(); ctx.fill(); ctx.stroke();
