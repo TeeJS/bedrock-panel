@@ -252,24 +252,24 @@
         // Jacket, shirt, collar wings, knot and tie, all drawn before the head. No neck: the jaw sits on the collar.
         // The white collar spreads wider than the head: two tall wings from the shoulder points down to the knot.
         ctx.fillStyle = '#f5f4e6';
-        // Suit coat, shirt, collar and tie in the strip below the jaw: navy coat; white shirt between the
-        // collar points; two white collar triangles whose outer edges ARE the inner edges of the lapels (no
-        // gap between collar and lapel); lapels run from the jaw corners out to the shoulders; dark red tie.
-        ctx.strokeStyle = '#111111'; ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
-        ctx.fillStyle = '#2e3f5c';
+        // Suit coat, shirt, collar and tie in the strip below the jaw (the v25 shapes): jacket band; lapels from
+        // the jaw corners out to the shoulders; the whole area between the lapels is white shirt, so there is no
+        // dark gap beside the collar; the two collar triangles sit on that white; knot and tie in the centre.
+        ctx.strokeStyle = '#593524'; ctx.lineWidth = 1; ctx.lineJoin = 'round';
+        ctx.fillStyle = '#273d47';
         ctx.beginPath(); ctx.rect(-82, 54, 164, 20); ctx.fill();
-        ctx.fillStyle = '#364a6b';
+        ctx.fillStyle = '#3b5566';
         for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 48, 56); ctx.lineTo(side * 80, 60); ctx.lineTo(side * 64, 74); ctx.lineTo(side * 25, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(side * 48, 57); ctx.lineTo(side * 78, 60); ctx.lineTo(side * 62, 74); ctx.lineTo(side * 25, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
         ctx.fillStyle = '#f5f4e6';
-        ctx.beginPath(); ctx.rect(-14, 54, 28, 20); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-48, 54); ctx.lineTo(48, 54); ctx.lineTo(48, 57); ctx.lineTo(25, 74); ctx.lineTo(-25, 74); ctx.lineTo(-48, 57); ctx.closePath(); ctx.fill();
         for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 5, 56); ctx.lineTo(side * 48, 56); ctx.lineTo(side * 25, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(side * 6, 57); ctx.lineTo(side * 48, 57); ctx.lineTo(side * 25, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
-        ctx.fillStyle = '#9b2a22';
-        ctx.beginPath(); ctx.moveTo(-4, 64); ctx.lineTo(4, 64); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, 56); ctx.lineTo(6, 60.5); ctx.lineTo(0, 65); ctx.lineTo(-6, 60.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.lineWidth = 0.8; ctx.fillStyle = '#a9342b';
+        ctx.beginPath(); ctx.moveTo(-4, 65); ctx.lineTo(4, 65); ctx.lineTo(7, 74); ctx.lineTo(-7, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, 57); ctx.lineTo(6, 61); ctx.lineTo(0, 66); ctx.lineTo(-6, 61); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
         // Ears: plain flat half circles behind the head, no inner contours.
         // The flat edge sits inside the head, so the head's own outline is the line that attaches them.
