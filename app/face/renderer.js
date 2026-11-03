@@ -284,11 +284,12 @@
         ctx.beginPath(); ctx.moveTo(10, -46); ctx.quadraticCurveTo(-6, -56, -30, -50); ctx.stroke();
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
         ctx.beginPath(); ctx.moveTo(18, -43); ctx.quadraticCurveTo(22, -52, 30, -60); ctx.stroke();
-        // Nose: the crease above and a toaster-lever tab below it.
-        ctx.strokeStyle = '#a0623f'; ctx.lineWidth = 1.2;
-        ctx.beginPath(); ctx.moveTo(-5, -4); ctx.lineTo(5, -4); ctx.stroke();
-        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.fillStyle = '#e2a17b';
-        ctx.beginPath(); ctx.moveTo(-6, -1); ctx.lineTo(6, -1); ctx.lineTo(7.5, 8); ctx.quadraticCurveTo(0, 13, -7.5, 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // Nose: a toaster lever. A vertical slot runs down from between the brows and the knob sits at its foot.
+        ctx.strokeStyle = '#593524'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(0, 0); ctx.stroke();
+        ctx.lineWidth = 0.8; ctx.fillStyle = '#e2a17b';
+        ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(5, 0); ctx.lineTo(8, 9); ctx.quadraticCurveTo(8, 12, 5, 12);
+        ctx.lineTo(-5, 12); ctx.quadraticCurveTo(-8, 12, -8, 9); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Freckles: a cluster on each cheek under the eye.
         ctx.fillStyle = '#b77b5a';
         for (const side of [-1, 1]) for (const point of [[30, 4], [35, 2], [33, 8], [39, 7], [29, 11], [37, 12]]) dot(side * point[0], point[1], 1.1);
