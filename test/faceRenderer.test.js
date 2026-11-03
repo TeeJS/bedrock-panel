@@ -85,8 +85,9 @@ test('cartoon persona keeps open circular eyes and a fixed grille through every 
     assert.ok(whites.every(f => f.color === '#fffaf1'));
     const head = h.fills.find(f => f.color === '#f5c49f');
     const coords = head.path.flatMap(op => op.slice(1)).filter(Number.isFinite);
-    assert.ok(coords.includes(-59) && coords.includes(58), 'tall shell retains forehead and chin bounds');
-    assert.ok(!coords.some(n => Math.abs(n) > 59), 'shell stays narrower than its 117-unit height');
+    assert.ok(coords.includes(-46) && coords.includes(50), 'tapered shell keeps its crown and flat jaw bounds');
+    assert.equal(head.path.filter(op => op[0] === 'lineTo' && op[2] === 50).length, 2, 'the jaw is a straight edge, not a chin curve');
+    assert.ok(!coords.some(n => Math.abs(n) > 50), 'shell leaves room for the hair above and the collar below');
     h.fills.length = 0;
     return mouth.color;
   };

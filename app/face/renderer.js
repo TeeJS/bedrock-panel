@@ -13,10 +13,11 @@
   };
 
   const CARTOON_POSES = {
-    neutral: [0, 0, 0, 0, 4.3], happy: [-8, 0.08, 1, -4, 4.8],
-    sad: [1, 0.48, 0, 7, 4], angry: [5, -0.55, 0, 3, 3.5],
-    surprised: [-9, 0, 0, -4, 6], sleepy: [4, 0, 0, 7, 4.3],
-    thinking: [-8, 0.12, 7, -7, 4.3], listening: [-6, 0, 0, -2, 4.8],
+    // [brow lift, brow slant, pupil x, pupil y, pupil radius]: the pupil grows with surprise and shrinks with anger.
+    neutral: [0, 0, 0, 0, 6.6], happy: [-8, 0.08, 1, -4, 7.2],
+    sad: [1, 0.48, 0, 7, 6], angry: [5, -0.55, 0, 3, 5],
+    surprised: [-9, 0, 0, -4, 9], sleepy: [4, 0, 0, 7, 6.4],
+    thinking: [-8, 0.12, 7, -7, 6.6], listening: [-6, 0, 0, -2, 7.2],
   };
   const KEYS = ['eyeW', 'eyeH', 'radius', 'browSlant', 'lowerLid', 'upperLid'];
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -243,32 +244,55 @@
         ctx.fillStyle = ink; ctx.strokeStyle = ink;
       }
       if (style === 'cartoon') {
-        // Flat cel shapes with a rigid shell; expression belongs to the brows and pupils.
+        // Norm: a tapered tin head with a flat underside, swept hair, metal-bar brows and a suit collar.
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.lineJoin = 'round';
+        // Suit, shirt and tie sit behind the head so the flat jaw reads as a lid on the neck.
+        ctx.fillStyle = '#e2a17b'; ctx.beginPath(); ctx.rect(-13, 46, 26, 14); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#fffaf1';
+        ctx.beginPath(); ctx.moveTo(-17, 55); ctx.lineTo(0, 71); ctx.lineTo(17, 55); ctx.lineTo(17, 74); ctx.lineTo(-17, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#2d3a55';
+        for (const side of [-1, 1]) {
+          ctx.beginPath(); ctx.moveTo(side * 68, 74); ctx.lineTo(side * 66, 64); ctx.quadraticCurveTo(side * 42, 58, side * 17, 55);
+          ctx.lineTo(side * 3, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        ctx.fillStyle = '#b8352c';
+        ctx.beginPath(); ctx.moveTo(-3.5, 58); ctx.lineTo(3.5, 58); ctx.lineTo(6, 74); ctx.lineTo(-6, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-4, 55); ctx.lineTo(4, 55); ctx.lineTo(3.5, 59); ctx.lineTo(-3.5, 59); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // Ears: an outer shell with a helix curve, a tragus notch and a lobe.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.ellipse(side * 49, -8, 7, 12, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(side * 51, -13); ctx.quadraticCurveTo(side * 46, -15, side * 49, -3); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(side * 44, -17); ctx.quadraticCurveTo(side * 56, -20, side * 54, -6);
+          ctx.quadraticCurveTo(side * 53, 5, side * 46, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(side * 46, -13); ctx.quadraticCurveTo(side * 53, -13, side * 50, -4);
+          ctx.quadraticCurveTo(side * 49, 0, side * 47, 0); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(side * 47, -8); ctx.quadraticCurveTo(side * 50, -8, side * 49, -3); ctx.stroke();
         }
+        // Head: a tapered cylinder, narrower at the crown, with a dead-flat bottom edge.
         ctx.fillStyle = '#f5c49f';
-        ctx.beginPath(); ctx.moveTo(-49, -49); ctx.quadraticCurveTo(-50, -59, -37, -59);
-        ctx.lineTo(37, -59); ctx.quadraticCurveTo(50, -59, 49, -49); ctx.lineTo(46, 29);
-        ctx.quadraticCurveTo(45, 51, 32, 53); ctx.quadraticCurveTo(0, 58, -32, 53);
-        ctx.quadraticCurveTo(-45, 51, -46, 29); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-40, -46); ctx.lineTo(40, -46); ctx.quadraticCurveTo(43, -46, 43, -43);
+        ctx.lineTo(47, 50); ctx.lineTo(-47, 50); ctx.lineTo(-43, -43); ctx.quadraticCurveTo(-43, -46, -40, -46);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        // Hair: parted on the viewer's right, poofed up and swept over to the viewer's left.
         ctx.fillStyle = '#8c472d';
-        ctx.beginPath(); ctx.moveTo(-49, -27); ctx.lineTo(-50, -49);
-        ctx.quadraticCurveTo(-50, -64, -32, -64); ctx.lineTo(34, -64);
-        ctx.quadraticCurveTo(51, -62, 50, -46); ctx.lineTo(49, -27);
-        ctx.lineTo(43, -30); ctx.lineTo(42, -53); ctx.lineTo(23, -63);
-        ctx.quadraticCurveTo(-4, -55, -39, -57); ctx.lineTo(-43, -29); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#b16a43';
-        ctx.beginPath(); ctx.moveTo(-43, -60); ctx.quadraticCurveTo(-14, -54, 23, -64);
-        ctx.lineTo(37, -60); ctx.quadraticCurveTo(0, -53, -43, -57); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#e2a17b';
-        ctx.beginPath(); ctx.moveTo(-4, 4); ctx.quadraticCurveTo(7, 1, 7, 10);
-        ctx.quadraticCurveTo(3, 16, -5, 11); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(18, -43);
+        ctx.quadraticCurveTo(0, -47, -20, -44); ctx.quadraticCurveTo(-36, -42, -40, -38);
+        ctx.lineTo(-42, -16); ctx.lineTo(-47, -14); ctx.lineTo(-47, -44);
+        ctx.quadraticCurveTo(-50, -70, -16, -72); ctx.quadraticCurveTo(14, -73, 24, -62);
+        ctx.quadraticCurveTo(36, -66, 45, -54); ctx.lineTo(46, -26); ctx.lineTo(42, -24); ctx.lineTo(41, -44);
+        ctx.quadraticCurveTo(38, -50, 26, -48); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = '#b16a43'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(14, -50); ctx.quadraticCurveTo(-2, -66, -36, -58); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(10, -46); ctx.quadraticCurveTo(-6, -56, -30, -50); ctx.stroke();
+        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(18, -43); ctx.quadraticCurveTo(22, -52, 30, -60); ctx.stroke();
+        // Nose: the crease above and a toaster-lever tab below it.
+        ctx.strokeStyle = '#a0623f'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.moveTo(-5, -4); ctx.lineTo(5, -4); ctx.stroke();
+        ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.fillStyle = '#e2a17b';
+        ctx.beginPath(); ctx.moveTo(-6, -1); ctx.lineTo(6, -1); ctx.lineTo(7.5, 8); ctx.quadraticCurveTo(0, 13, -7.5, 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // Freckles: a cluster on each cheek under the eye.
         ctx.fillStyle = '#b77b5a';
-        for (const side of [-1, 1]) for (const point of [[33, 12], [38, 8], [41, 15]]) dot(side * point[0], point[1], 1.05);
+        for (const side of [-1, 1]) for (const point of [[30, 4], [35, 2], [33, 8], [39, 7], [29, 11], [37, 12]]) dot(side * point[0], point[1], 1.1);
         ctx.fillStyle = '#543828'; ctx.strokeStyle = '#543828';
       }
       const gap = clamp(number(f.eyeGap, 16), 0, 60);
@@ -300,15 +324,16 @@
           const travel = 13.5 - pupil;
           const px = clamp((pupilX + gazeX) * (1 - energy * 0.85), -travel, travel);
           const py = clamp((pupilY + gazeY) * (1 - energy * 0.65), -travel, travel);
-          ctx.fillStyle = '#355479'; dot(px, py, pupil);
-          ctx.fillStyle = '#172b43'; dot(px, py, pupil * 0.51);
-          ctx.fillStyle = '#fffaf1'; dot(px - 1.2, py - 1.4, 1);
+          ctx.fillStyle = '#2f58b3'; dot(px, py, pupil);
+          ctx.fillStyle = '#10131c'; dot(px, py, pupil * 0.55);
+          ctx.fillStyle = '#fffaf1'; dot(px - pupil * 0.3, py - pupil * 0.35, pupil * 0.2);
           ctx.fillStyle = '#543828';
           const browEnergy = speaking ? (side === -1 ? smoothLevel : emphasisLevel * 0.82) : 0;
           const idleLift = !reduced && state === 'idle' && !asleep ? Math.sin(time / 1800 + side) * 0.8 : 0;
           ctx.save(); ctx.translate(0, Math.max(-31, -19 + browY + (pose === 'thinking' && side === 1 ? 13 : 0) - browEnergy * 11 + idleLift));
-          ctx.rotate(side * (browAngle + browEnergy * 0.12)); ctx.strokeStyle = '#422719'; ctx.lineWidth = 3.1; ctx.lineCap = 'round';
-          ctx.beginPath(); ctx.moveTo(-11, 0); ctx.quadraticCurveTo(0, pose === 'happy' || pose === 'surprised' ? -5 : -1.5, 11, 0); ctx.stroke(); ctx.restore();
+          // A rigid metal bar: it lifts and tilts with expression but never bends.
+          ctx.rotate(side * (browAngle + browEnergy * 0.12)); ctx.fillStyle = '#8a4a30'; ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8;
+          ctx.beginPath(); ctx.rect(-11, -2.4, 22, 4.8); ctx.fill(); ctx.stroke(); ctx.restore();
           ctx.fillStyle = ink;
         } else {
           ctx.rotate(side * slant / 120);
@@ -357,17 +382,17 @@
         // Keep the entire tooth grille fixed, including in silence, sleep and surprise.
         const lit = speaking && smoothLevel > 0.015;
         ctx.fillStyle = lit ? '#7cfc3a' : '#fffaf1';
-        ctx.beginPath(); ctx.moveTo(-31, 25); ctx.quadraticCurveTo(0, 28, 31, 25);
-        ctx.quadraticCurveTo(34, 25, 32, 29); ctx.lineTo(28, 40); ctx.quadraticCurveTo(27, 43, 23, 43);
-        ctx.lineTo(-23, 43); ctx.quadraticCurveTo(-27, 43, -28, 40); ctx.lineTo(-32, 29);
+        ctx.beginPath(); ctx.moveTo(-31, 25); ctx.lineTo(31, 25); ctx.quadraticCurveTo(34, 25, 33, 28);
+        ctx.quadraticCurveTo(28, 46, 0, 47); ctx.quadraticCurveTo(-28, 46, -33, 28);
         ctx.quadraticCurveTo(-34, 25, -31, 25); ctx.closePath(); ctx.fill();
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.stroke();
         if (lit) {
-          ctx.fillStyle = '#c2ff85'; ctx.beginPath(); ctx.moveTo(-27, 25.5); ctx.quadraticCurveTo(0, 30, 27, 25.5);
-          ctx.lineTo(25.8, 29); ctx.quadraticCurveTo(0, 33, -25.8, 29); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#c2ff85'; ctx.beginPath(); ctx.moveTo(-29, 26); ctx.lineTo(29, 26);
+          ctx.lineTo(28, 30); ctx.lineTo(-28, 30); ctx.closePath(); ctx.fill();
         }
         ctx.strokeStyle = '#995b46';
-        for (const x of [-18, -6, 6, 18]) line(x, 29, x * 0.88, 40, 0.65);
+        line(-31, 36, 31, 36, 0.65);
+        for (const x of [-24, -12, 0, 12, 24]) line(x, 26, x * 0.9, 36 + (1 - Math.abs(x) / 31) * 10, 0.65);
         ctx.restore();
       } else if (speaking && smoothLevel > 0.015) {
         const h = 3 + Math.min(style === 'sprite' ? 12 : 20, smoothLevel * 27), w = style === 'sprite' ? 10 : style === 'kawaii' ? 13 : 23;
