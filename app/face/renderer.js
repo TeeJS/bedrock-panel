@@ -279,9 +279,13 @@
         ctx.quadraticCurveTo(5, -86, 23, -63); ctx.quadraticCurveTo(30, -57, 31, -49); ctx.quadraticCurveTo(5, -53, -19, -47);
         ctx.quadraticCurveTo(-35, -43, -44, -39); ctx.closePath(); ctx.fill(); ctx.stroke();
         // A separate narrow upright lobe on the viewer's right, with the part seam between the two.
-        ctx.beginPath(); ctx.moveTo(30, -51); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
+        // The lobe is filled without an outline so it reads as one mass with the forelock; only its outer
+        // contour, from the crown round the right edge to the lower tip, is drawn.
+        ctx.beginPath(); ctx.moveTo(28, -52); ctx.quadraticCurveTo(36, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
         ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.quadraticCurveTo(38, -10, 37, -40);
-        ctx.quadraticCurveTo(36, -47, 30, -51); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.quadraticCurveTo(36, -47, 28, -52); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(30, -70); ctx.quadraticCurveTo(38, -75, 43, -73); ctx.quadraticCurveTo(48, -68, 47, -50);
+        ctx.lineTo(46, -12); ctx.quadraticCurveTo(45, -6, 41, -8); ctx.stroke();
         // Bridge the notch so the hair top is continuous, then a thin seam for the part.
         ctx.beginPath(); ctx.moveTo(12, -72); ctx.quadraticCurveTo(28, -79, 39, -74); ctx.lineTo(37, -42); ctx.lineTo(31, -49);
         ctx.quadraticCurveTo(26, -58, 18, -67); ctx.closePath(); ctx.fill();
