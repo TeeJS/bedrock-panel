@@ -246,18 +246,17 @@
       if (style === 'cartoon') {
         // Norm: a tapered tin head with a flat underside, swept hair, metal-bar brows and a suit collar.
         ctx.strokeStyle = '#593524'; ctx.lineWidth = 0.8; ctx.lineJoin = 'round';
-        // Suit, shirt and tie sit behind the head so the flat jaw reads as a lid on the neck.
-        ctx.fillStyle = '#e2a17b'; ctx.beginPath(); ctx.rect(-13, 46, 26, 14); ctx.fill(); ctx.stroke();
+        // No neck: the suit, shirt and tie start right under the flat jaw, which sits on the shoulders.
         ctx.fillStyle = '#fffaf1';
-        ctx.beginPath(); ctx.moveTo(-17, 55); ctx.lineTo(0, 71); ctx.lineTo(17, 55); ctx.lineTo(17, 74); ctx.lineTo(-17, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-19, 48); ctx.lineTo(0, 66); ctx.lineTo(19, 48); ctx.lineTo(19, 74); ctx.lineTo(-19, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#2d3a55';
         for (const side of [-1, 1]) {
-          ctx.beginPath(); ctx.moveTo(side * 68, 74); ctx.lineTo(side * 66, 64); ctx.quadraticCurveTo(side * 42, 58, side * 17, 55);
-          ctx.lineTo(side * 3, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(side * 68, 74); ctx.lineTo(side * 67, 58); ctx.quadraticCurveTo(side * 48, 50, side * 19, 48);
+          ctx.lineTo(side * 4, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
         }
         ctx.fillStyle = '#b8352c';
-        ctx.beginPath(); ctx.moveTo(-3.5, 58); ctx.lineTo(3.5, 58); ctx.lineTo(6, 74); ctx.lineTo(-6, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-4, 55); ctx.lineTo(4, 55); ctx.lineTo(3.5, 59); ctx.lineTo(-3.5, 59); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-4, 54); ctx.lineTo(4, 54); ctx.lineTo(6.5, 74); ctx.lineTo(-6.5, 74); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-4.5, 49); ctx.lineTo(4.5, 49); ctx.lineTo(4, 55); ctx.lineTo(-4, 55); ctx.closePath(); ctx.fill(); ctx.stroke();
         // Ears: an outer shell with a helix curve, a tragus notch and a lobe.
         ctx.fillStyle = '#f2bd96';
         for (const side of [-1, 1]) {
