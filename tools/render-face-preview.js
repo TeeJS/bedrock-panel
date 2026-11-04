@@ -9,6 +9,7 @@ const os = require('node:os');
 const output = process.argv[2] || path.join(process.cwd(), 'face-preview.png');
 const background = /^#[0-9a-f]{6}$/i.test(process.argv[3] || '') ? process.argv[3] : '#05070a';
 const collar = process.argv[4] === 'collar';
+const style = process.argv[4] === 'rocky' ? 'rocky' : 'cartoon';
 const rendererSource = fs.readFileSync(path.join(__dirname, '..', 'app', 'face', 'renderer.js'), 'utf8');
 app.setPath('userData', path.join(os.tmpdir(), 'codex-norm-face-preview'));
 app.disableHardwareAcceleration();
@@ -34,7 +35,7 @@ app.whenReady().then(async () => {
       canvas.style.transform = 'translateY(-550px)';
     }
     const renderer = window.OqxFace.create(document.querySelector('#face'), {
-      persona: { face: { style: 'cartoon', dozeAfterSeconds: 0 } },
+      persona: { id: ${JSON.stringify(style)}, face: { style: ${JSON.stringify(style)}, dozeAfterSeconds: 0 } },
       background: ${JSON.stringify(background)},
     });
     renderer.setReducedMotion(true);

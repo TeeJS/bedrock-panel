@@ -38,7 +38,8 @@ const OLED_EYES = {
 //   sprite   a round soot body with two oversized white eyes and a tiny mouth
 //   butler   an older cel-animated gentleman: gray side hair and mustache, heavy lids, modest mouth
 //   intern   an angular vector head with a dark cowlick, glasses and a headset; moves only on activity
-const FACE_STYLES = ['oled', 'cartoon', 'kawaii', 'crt', 'sprite', 'butler', 'intern'];
+//   rocky    a five-limbed faceted stone creature with mineral seams (Rocky's old OLED pack is drawn this way too)
+const FACE_STYLES = ['oled', 'cartoon', 'kawaii', 'crt', 'sprite', 'butler', 'intern', 'rocky'];
 
 const FACE_DEFAULTS = {
   style: 'oled',

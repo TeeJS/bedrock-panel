@@ -3,15 +3,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { create } = require('../app/face/renderer');
 
-function harness(face) {
+function harness(face, id) {
   let now = 0, sequence = 0;
-  const pending = new Map(), draws = [], fills = [];
+  const pending = new Map(), draws = [], fills = [], strokes = [];
   let path = [];
   const ctx = new Proxy({}, {
     get(target, key) { return target[key] || ((...args) => {
       draws.push([key, ...args]);
       if (key === 'beginPath') path = [];
       else if (key === 'fill') fills.push({ color: target.fillStyle, path: path.slice() });
+      else if (key === 'stroke') strokes.push({ color: target.strokeStyle, path: path.slice() });
       else if (['arc', 'roundRect', 'moveTo', 'lineTo', 'quadraticCurveTo', 'closePath'].includes(key)) path.push([key, ...args]);
     }); },
     set(target, key, value) { target[key] = value; return true; },
@@ -22,9 +23,9 @@ function harness(face) {
     requestAnimationFrame(cb) { const id = ++sequence; pending.set(id, cb); return id; },
     cancelAnimationFrame(id) { pending.delete(id); },
   };
-  const renderer = create(canvas, { environment, persona: { face: face || {} } });
+  const renderer = create(canvas, { environment, persona: { id, face: face || {} } });
   function tick(ms) { now += ms; const tasks = [...pending.values()]; pending.clear(); tasks.forEach(cb => cb(now)); }
-  return { renderer, pending, draws, fills, canvas, tick };
+  return { renderer, pending, draws, fills, strokes, canvas, tick };
 }
 
 test('face starts lazily and stop/destroy cancel the pending frame', () => {
@@ -58,7 +59,7 @@ test('active speech prevents idle dozing and leaving speech closes the mouth', (
 });
 
 test('device pixel ratio is capped and all supported persona styles draw', () => {
-  for (const style of ['oled', 'cartoon', 'kawaii', 'crt', 'sprite', 'butler', 'intern']) {
+  for (const style of ['oled', 'cartoon', 'kawaii', 'crt', 'sprite', 'butler', 'intern', 'rocky']) {
     const h = harness({ style });
     assert.equal(h.canvas.width, 840); assert.equal(h.canvas.height, 900);
     h.renderer.setReducedMotion(true); h.renderer.start();
@@ -68,6 +69,37 @@ test('device pixel ratio is capped and all supported persona styles draw', () =>
     assert.ok(h.draws.length > 20);
     h.renderer.destroy(); assert.equal(h.pending.size, 0);
   }
+});
+
+test('Rocky legacy OLED persona renders the five-limbed stone creature without OLED eyes', () => {
+  const h = harness({ style: 'oled' }, 'rocky');
+  h.renderer.start(); h.tick(34);
+  assert.ok(h.fills.filter(f => f.color === '#98704c').length >= 1, 'faceted shell is present');
+  assert.ok(h.fills.filter(f => f.color === '#8c6849').length >= 2, 'front legs are present');
+  assert.ok(h.fills.filter(f => f.color === '#67b99a').length >= 1, 'mineral inclusions are present');
+  assert.equal(h.fills.filter(f => f.path[0]?.[0] === 'roundRect' && f.path[0][3] >= 30).length, 0, 'no OLED eye bars');
+  h.strokes.length = 0;
+  h.renderer.setState('speaking'); h.renderer.setLevel(1); h.tick(34);
+  assert.ok(h.strokes.some(s => s.color === '#8be3bd'), 'mineral seams glow while speaking');
+  h.renderer.destroy();
+});
+
+test('Rocky gestures when listening and speaking, then settles under reduced motion', () => {
+  const h = harness({ style: 'rocky', dozeAfterSeconds: 0 });
+  const frameMotion = () => h.draws.filter(d => d[0] === 'translate' || d[0] === 'rotate');
+  h.renderer.start(); h.draws.length = 0; h.tick(34);
+  const idle = frameMotion();
+  h.draws.length = 0; h.tick(520);
+  assert.notDeepEqual(frameMotion(), idle, 'idle weight shifts visibly');
+  h.renderer.setState('listening'); h.draws.length = 0; h.tick(34);
+  const listening = frameMotion();
+  assert.ok(listening.some(d => d[0] === 'rotate' && d[1] < -0.25), 'one limb rises to listen');
+  h.renderer.setState('speaking'); h.renderer.setLevel(1); h.draws.length = 0; h.tick(70);
+  assert.notDeepEqual(frameMotion(), listening, 'speech changes body and limb pose');
+  h.renderer.setReducedMotion(true); h.renderer.setState('idle'); h.draws.length = 0; h.tick(70);
+  const still = frameMotion(); h.draws.length = 0; h.tick(520);
+  assert.deepEqual(frameMotion(), still, 'reduced motion freezes idle movement');
+  h.renderer.destroy();
 });
 
 // Assert rendered geometry, so a blink/lid or mouth-animation regression is observable.
