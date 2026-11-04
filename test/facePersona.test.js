@@ -56,6 +56,7 @@ test('normalizePersona keeps style, cheekColor and the phase-2 voice field, and 
   assert.equal(p.face.blinkMinMs, 500);
   assert.equal(p.face.blinkMaxMs, 9000);
   assert.equal(normalizePersona({ id: 'y', face: { style: 'metal' } }).face.style, 'oled');
+  assert.equal(normalizePersona({ id: 'rocky', face: { style: 'rocky' } }).face.style, 'rocky');
 });
 
 test('resolvePersona: blank or unknown id is no persona, not the first entry', () => {

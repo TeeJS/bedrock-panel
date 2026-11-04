@@ -843,7 +843,7 @@
   // ---- Personas rows (Settings -> AI Profiles -> Personas): name / style / colors / prompt per row,
   // add/remove, plus JSON import (validated) and per-row export (clipboard + on-screen JSON). Same
   // live-edit model as the profile rows: mutate config.settings.personas in place, Save persists.
-  const PERSONA_STYLES = [['oled', 'OLED robot'], ['cartoon', 'Cartoon human'], ['kawaii', 'Kawaii (Mimi)'], ['crt', 'CRT terminal'], ['sprite', 'Dust sprite (color = body)'], ['butler', 'Butler (Jarvis)'], ['intern', 'Intern (vector head)']];
+  const PERSONA_STYLES = [['oled', 'OLED robot'], ['rocky', 'Stone creature (Rocky)'], ['cartoon', 'Cartoon human'], ['kawaii', 'Kawaii (Mimi)'], ['crt', 'CRT terminal'], ['sprite', 'Dust sprite (color = body)'], ['butler', 'Butler (Jarvis)'], ['intern', 'Intern (vector head)']];
   function personaRowsHtml(list) {
     const rows = Array.isArray(list) ? list : [];
     if (!rows.length) return '<p class="hint">No personas yet — add one below, or import one.</p>';
@@ -851,7 +851,7 @@
       const face = p.face || {};
       return `<div class="row" data-idx="${i}" style="margin-top:10px;align-items:flex-start;flex-wrap:wrap">
         <input class="psName" placeholder="Persona name" value="${esc(p.name || '')}" style="width:160px">
-        <select class="psStyle" style="width:170px;margin-left:8px">${PERSONA_STYLES.map(s => `<option value="${s[0]}" ${(face.style || 'oled') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select>
+        <select class="psStyle" style="width:170px;margin-left:8px">${PERSONA_STYLES.map(s => `<option value="${s[0]}" ${((p.id === 'rocky' && (!face.style || face.style === 'oled')) ? 'rocky' : face.style || 'oled') === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select>
         <input class="psColor" placeholder="#rrggbb or blank" value="${esc(face.color || '')}" style="width:150px;margin-left:8px" title="Face color as #rrggbb; blank uses the page accent. A value that is not #rrggbb is not saved.">
         <input class="psCheek" placeholder="cheek #rrggbb" value="${esc(face.cheekColor || '')}" style="width:130px;margin-left:8px" title="Blush/cheek color; blank uses the face color">
         <input class="psVoice" list="psVoiceList" placeholder="Voice: page default" value="${esc(p.voice || '')}" style="width:200px;margin-left:8px" title="Piper voice name for this persona (e.g. en_US-lessac-medium). A voice with several speakers takes the speaker after a #: en_GB-semaine-medium#poppy. Blank = the page's default voice. Use 'Load available voices' to see what the TTS server offers.">

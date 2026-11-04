@@ -77,6 +77,87 @@
     }
     function dot(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
 
+    function polygon(points, fill, stroke) {
+      ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+      ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke(); }
+    }
+
+    // Rocky is a stone creature, not a face with eyes. The five segmented limbs, broad
+    // faceted carapace and small mineral seams carry expression at panel scale.
+    function drawRocky(time) {
+      const talking = state === 'speaking' && !asleep;
+      const listening = state === 'listening' && !asleep;
+      const thinking = state === 'thinking' && !asleep;
+      const motion = reduced || asleep ? 0 : 1;
+      const breath = Math.sin(time / 1150);
+      const step = Math.sin(time / 260);
+      const voice = talking ? smoothLevel : 0;
+      const attention = listening ? 1 : state === 'approval' ? 0.8 : 0;
+      const idleSway = motion * (thinking ? Math.sin(time / 650) * 1.2 : breath * 2.5);
+      const bodyLift = voice * 6 + attention * 2.5 + motion * Math.max(0, breath) * 2;
+      const shellTilt = motion * Math.sin(time / 1550) * 0.018 + attention * 0.025;
+      const limbPulse = motion * (voice * (0.55 + 0.45 * step) + (emotion === 'happy' ? 0.18 : 0));
+      const edge = '#392a24';
+      ctx.save(); ctx.translate(idleSway, -bodyLift + (asleep ? 5 : 0)); ctx.rotate(shellTilt);
+      // Two limbs behind the shell. Each has a shoulder, a distinct elbow and a broad foot.
+      for (const side of [-1, 1]) {
+        ctx.save(); ctx.translate(side * 37, -27);
+        ctx.rotate(-side * (attention * (side === 1 ? 0.22 : 0.08) + limbPulse * 0.12 + motion * breath * 0.025));
+        ctx.translate(-side * 37, 27);
+        if (side === -1) {
+          polygon([[-37,-29],[-61,-49],[-75,-34],[-65,-13],[-49,-7],[-30,-10]], '#72523b', edge);
+          polygon([[-65,-13],[-78,8],[-74,39],[-61,47],[-53,28],[-49,-7]], '#8b694a', edge);
+        } else {
+          polygon([[38,-29],[62,-48],[76,-31],[65,-9],[48,-5],[30,-10]], '#76563e', edge);
+          polygon([[65,-9],[77,11],[73,41],[60,46],[53,26],[48,-5]], '#96704c', edge);
+        }
+        ctx.restore();
+      }
+      // The broad, low shell has no head or human facial features.
+      polygon([[-46,-38],[-24,-55],[19,-55],[47,-37],[51,-5],[36,25],[3,39],[-34,27],[-51,-4]], '#98704c', edge);
+      polygon([[-46,-38],[-24,-55],[19,-55],[5,-33],[-25,-25]], '#c19a68');
+      polygon([[19,-55],[47,-37],[51,-5],[28,-17],[5,-33]], '#aa8056');
+      polygon([[-51,-4],[-25,-25],[5,-33],[12,7],[-16,20],[-34,27]], '#a57b51');
+      polygon([[5,-33],[28,-17],[51,-5],[36,25],[12,7]], '#8c6443');
+      polygon([[-34,27],[-16,20],[12,7],[36,25],[3,39]], '#674b36');
+      ctx.strokeStyle = '#674a36'; ctx.lineWidth = 1;
+      line(-25,-25,5,-33,1); line(5,-33,12,7,1); line(-16,20,12,7,1);
+      // Three forward legs overlap the shell and give the silhouette its five-point stance.
+      for (const side of [-1, 1]) {
+        ctx.save(); ctx.translate(side * 35, 8);
+        const gesture = attention * (side === 1 ? 0.3 : 0.06) + limbPulse * (side === 1 ? 0.2 : 0.12);
+        ctx.rotate(-side * (gesture + motion * breath * 0.025));
+        ctx.scale(side, 1);
+        polygon([[0,-6],[16,-10],[29,7],[22,24],[10,29],[-4,16]], '#ad8358', edge);
+        polygon([[22,20],[34,25],[37,56],[31,68],[17,66],[12,42]], '#8c6849', edge);
+        polygon([[16,-10],[29,7],[22,24],[11,14]], '#c39b68');
+        polygon([[22,20],[34,25],[37,56],[26,48]], '#a77d53');
+        polygon([[17,66],[31,68],[37,56],[33,73],[20,74]], '#6b4c36', edge);
+        ctx.restore();
+      }
+      ctx.save(); ctx.translate(0, thinking ? motion * Math.max(0, step) * -4 : -voice * 3);
+      polygon([[-11,21],[10,21],[17,39],[8,51],[-7,51],[-17,38]], '#af865a', edge);
+      polygon([[-17,38],[-7,51],[-9,70],[-22,70],[-25,58]], '#8c6746', edge);
+      polygon([[8,51],[17,39],[25,58],[22,70],[9,70]], '#966f4a', edge);
+      polygon([[-22,70],[-9,70],[9,70],[22,70],[17,76],[-18,76]], '#624633', edge);
+      ctx.restore();
+      // Teal inclusions are restrained and brighten during speech, like resonance in stone.
+      ctx.save(); ctx.globalAlpha = asleep ? 0.3 : 0.55 + Math.max(voice, attention * 0.5) * 0.35;
+      polygon([[-34,-40],[-27,-44],[-22,-39],[-27,-34]], '#67b99a');
+      polygon([[26,-39],[32,-36],[29,-30],[23,-32]], '#5cae92');
+      polygon([[-58,4],[-53,1],[-51,8],[-56,11]], '#68bda2');
+      polygon([[50,7],[55,4],[58,10],[53,13]], '#68bda2');
+      polygon([[-1,12],[4,9],[7,14],[2,18]], '#56ab91');
+      ctx.restore();
+      if (talking && voice > 0.02) {
+        ctx.save(); ctx.globalAlpha = voice * 0.65; ctx.strokeStyle = '#8be3bd';
+        line(-27,-25,5,-33,1.5); line(5,-33,12,7,1.5); ctx.restore();
+      }
+      ctx.restore();
+    }
+
     // Original human archetypes have their own silhouette and facial construction.
     function drawCharacter(style, time, blink) {
       const butler = style === 'butler';
@@ -203,14 +284,15 @@
 
     function draw(time, blink) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, width, height);
-      const f = face(), style = f.style || 'oled';
+      const f = face(), style = persona && persona.id === 'rocky' && (!f.style || f.style === 'oled') ? 'rocky' : f.style || 'oled';
       const cartoon = style === 'cartoon';
-      const tall = cartoon || style === 'butler' || style === 'intern' || style === 'crt';
-      const scale = tall ? Math.min(width / (style === 'crt' ? 156 : 136), height / 148) : Math.min(width / 164, height / 102);
+      const tall = cartoon || style === 'butler' || style === 'intern' || style === 'crt' || style === 'rocky';
+      const scale = tall ? Math.min(width / (style === 'rocky' ? 164 : style === 'crt' ? 156 : 136), height / (style === 'rocky' ? 160 : 148)) : Math.min(width / 164, height / 102);
       // The cartoon character is drawn at 0.84 anchored at the top (crown at pre-scale y -86), so the head keeps
       // its size and the suit coat below the jaw is cropped by the canvas bottom.
       const k = cartoon ? 0.84 : 1;
       ctx.translate(width / 2, height / 2 + (cartoon ? (-59 + 86 * k) : 0) * scale); ctx.scale(scale * k, scale * k);
+      if (style === 'rocky') { drawRocky(time); return; }
       if (style === 'butler' || style === 'intern') { drawCharacter(style, time, blink); return; }
       const baseInk = f.color || accent;
       const ink = style === 'sprite' ? '#fffaf2' : style === 'oled' ? readableInk(baseInk, background) : baseInk;
