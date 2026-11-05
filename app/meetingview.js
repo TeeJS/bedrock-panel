@@ -1016,6 +1016,7 @@ function anPoll() {
     else if (st.error) { n.textContent = splitRel(st.error.name).base + ': ' + st.error.error; n.classList.add('err'); }
     else if (st.joplin && st.joplin.ok === false) { n.textContent = 'Joplin note failed (' + st.joplin.name + '): ' + st.joplin.error; n.classList.add('err'); }
     else if (st.obsidian && st.obsidian.ok === false) { n.textContent = 'Obsidian export (' + st.obsidian.name + '): ' + st.obsidian.error; n.classList.add('err'); }
+    else if (st.vaultPush && st.vaultPush.ok === false) { n.textContent = 'Vault push: ' + st.vaultPush.error; n.classList.add('err'); }
     else if (st.lastDone && st.lastDone.warning) { n.textContent = splitRel(st.lastDone.name).base + ': ' + st.lastDone.warning; n.classList.remove('err'); }   // e.g. committed, with leftovers in transcribed
     else { n.textContent = ''; n.classList.remove('err'); }
     var fin = (st.lastDone && st.lastDone.finishedAt) || 0;
