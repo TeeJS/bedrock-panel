@@ -314,9 +314,11 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   after **Apply this version** on a reviewed re-analysis), copies the finished meeting
   `.md` into the **Vault folder** at the same relative path it has under Completed
   Meetings (`YYYY\<Meeting-Name>\` for recurring meetings, `YYYY\MM\` with Organize by
-  date, the root otherwise), so the vault mirrors Completed one-to-one. Bedrock only
-  writes the file — it never runs git; the vault's own sync (the Obsidian Git plugin, a
-  phone git client) commits and pushes. The meeting file records the export under
+  date, the root otherwise), so the vault mirrors Completed one-to-one. Only the
+  `.md` is copied; the sources in `details\` stay in Completed. The copy itself never runs
+  git: the vault is committed and pushed by **Push the vault to its git remote after each
+  export** (below) when that is on, and otherwise by the vault's own sync (the Obsidian Git
+  plugin, a phone git client). The meeting file records the export under
   `bedrock.exports.obsidian` (`state`: `pending` → `succeeded` or `conflict`, the
   vault-relative `path`, and the `hash` of the bytes written), so an agent reading
   Completed can tell whether a meeting is in the vault. Edits made in the vault are never
@@ -327,6 +329,24 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   copy is removed from the vault and an edited one is left in place. A vault folder that
   is not set or not there (an unmounted drive) is reported on the panel and nothing is
   written or recorded; a failed export never fails the analysis.
+- **Advanced → Push the vault to its git remote after each export** (off by default; needs
+  **Copy meeting files into an Obsidian vault**) — after the copy, Bedrock commits
+  everything changed in the vault (`vault backup: bedrock <PC name> <date>`), merges in
+  the remote's changes, and pushes, so meetings reach the remote with Obsidian closed.
+  The Obsidian Git plugin can stay enabled; the two share the vault.
+  - **What it needs:** Git installed, and the vault folder itself a git repository with a
+    remote branch and a sign-in already saved on the PC. Bedrock starts `git` directly,
+    only in the vault folder, and never asks for a password or shows a sign-in window.
+  - **What it never does:** force-push, reset, or rewrite history. When the remote changed
+    the same file as this PC (a speaker name fixed on a phone, say), the merge is backed
+    out, both versions are kept (this PC's as a local commit, the phone's on the remote),
+    nothing is pushed, and the Meeting panel says a merge is needed.
+  - **When a push fails** (sign-in refused, remote unreachable, the vault is not a git
+    repository, Git is not installed) the export still succeeds, the reason shows on the
+    Meeting panel as **Vault push: …** and as a warning on the analysis, and the commit
+    waits on the PC. The next export, and the next start of Bedrock, push everything
+    still waiting.
+  - The push result is not written into the meeting file.
 - **Advanced → Create Joplin notes for analyses** — after each analysis, creates a note
   in Joplin through the **Joplin API URL** (the Web Clipper service of Joplin Desktop,
   Tools › Options › Web Clipper — default port 41184) using the **API token** shown

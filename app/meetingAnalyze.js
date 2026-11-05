@@ -266,6 +266,9 @@ function createMeetingAnalyzer(deps) {
   // () => { enabled, vault } — post-analysis copy of the meeting file into an Obsidian vault (settings.meeting).
   const resolveObsidian = deps.resolveObsidian || (() => ({}));
   const obsidianExport = deps.obsidianExport || obsidianExportMod;
+  // { request(), idle(), getState() } — commits and pushes the vault after each export when the
+  // setting is on (vaultPush.js). Absent (tests, a boot without it): the export only copies.
+  const vaultPush = deps.vaultPush || null;
   const batchDone = [];   // successful analyses in the current batch, flushed to a task list on drain
 
   // Every job names its root: kind 'transcribed' (a flat transcript waiting in the transcribed
@@ -311,6 +314,7 @@ function createMeetingAnalyzer(deps) {
       failed,
       joplin: lastJoplin,
       obsidian: lastObsidian,
+      vaultPush: vaultPush ? vaultPush.getState() : null,   // { ok, state, error?, waiting?, finishedAt } — the last commit-and-push of the vault
       proposed: lastProposed,
     };
   }
@@ -1203,9 +1207,24 @@ function createMeetingAnalyzer(deps) {
   // `pending` (with the hash of the bytes being written) before the copy and `succeeded` /
   // `conflict` after; the vault is checked first so a missing vault records nothing. A failure
   // never fails the analysis (the .md is already saved); it is logged and shown on the panel.
+  //
+  // With the push setting on, the vault is then committed and pushed (vaultPush.js). The copy
+  // waits for any push already running, so a file is never written while git is merging there. A
+  // copy that could not be written is not followed by a push; a push that fails is a warning on
+  // the job and stays on the panel until a later one succeeds. The push result is never written
+  // into the meeting file.
   async function exportToObsidian(base, mdFile, exports) {
     const cfg = resolveObsidian() || {};
     if (!cfg.enabled) return;
+    if (vaultPush) await vaultPush.idle();
+    const warning = await copyToVault(cfg, base, mdFile, exports);
+    if (!vaultPush || !lastObsidian || lastObsidian.name !== base || !lastObsidian.path) return warning;   // nothing reached the vault
+    const pushed = await vaultPush.request();
+    const pushWarning = pushed && pushed.ok === false ? 'Vault push failed: ' + pushed.error : null;
+    return [warning, pushWarning].filter(Boolean).join('\n') || undefined;
+  }
+
+  async function copyToVault(cfg, base, mdFile, exports) {
     const prior = (exports && exports.obsidian) || null;
     const relPath = relToProcessed(mdFile);
     try {

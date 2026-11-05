@@ -3,9 +3,10 @@
 // Obsidian export for finished meeting files: a plain copy of the published <base>.md into an
 // Obsidian vault, at the same path under the vault root as the file has under Completed Meetings
 // (YYYY\<Meeting-Name>\ for recurring meetings, YYYY\MM\ for the rest, the root otherwise), so
-// the vault mirrors Completed one-to-one. Nothing here runs git: the vault's own sync (the
-// Obsidian Git plugin on the PC, a git client on a phone) commits and pushes; Bedrock only
-// writes the file. Deps are injected for tests: fs, log.
+// the vault mirrors Completed one-to-one. Nothing here runs git: this file only writes the copy.
+// Committing and pushing the vault is vaultPush.js when that setting is on, and otherwise the
+// vault's own sync (the Obsidian Git plugin on the PC, a git client on a phone). Deps are
+// injected for tests: fs, log.
 //
 // Edits made in the vault (speaker names fixed on a phone, say) are never overwritten. The
 // meeting file remembers the hash of the bytes Bedrock last wrote to the vault
