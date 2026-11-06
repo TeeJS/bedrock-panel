@@ -31,7 +31,7 @@ const els = {
   composer: $('composer'), viewerName: $('viewerName'), input: $('input'), sendBtn: $('sendBtn'), sendError: $('sendError'),
   modeSeg: $('modeSeg'), needsChip: $('needsChip'), needsN: $('needsN'), needsDock: $('needsDock'),
   focusAsk: $('focusAsk'), focusTranscript: $('focusTranscript'), focusMessages: $('focusMessages'),
-  focusComposer: $('focusComposer'), focusInput: $('focusInput'), focusSendBtn: $('focusSendBtn'), focusViewerName: $('focusViewerName'),
+  focusComposer: $('focusComposer'), focusInput: $('focusInput'), focusSendBtn: $('focusSendBtn'), focusViewerName: $('focusViewerName'), focusSendError: $('focusSendError'),
   overlay: $('overlay'), overlayKicker: $('overlayKicker'), overlayTitle: $('overlayTitle'),
   overlayBody: $('overlayBody'), overlayCount: $('overlayCount'), overlayList: $('overlayList'), overlayRetry: $('overlayRetry'), overlayHistory: $('overlayHistory'), overlayBack: $('overlayBack'),
   closeDlg: $('closeDlg'), closeDlgTitle: $('closeDlgTitle'), closeDlgBody: $('closeDlgBody'),
@@ -894,8 +894,20 @@ function renderNeeds(force) {
     state.status === 'closed' ? 'c' : 'o', state.dismissArm || '', state.needsError ? state.needsError.id : ''].join('|');
   if (!force && key === state.needsKey) return;
   state.needsKey = key;
+  // A new ask changes the key (count/nav must update), but the human may be mid-reply. Carry the
+  // focused textarea's focus, caret and scroll across the rebuild so typing is never interrupted.
+  const active = document.activeElement;
+  const focusAskId = (active && active.matches && active.matches('textarea[data-ask-id]')) ? active.dataset.askId : null;
+  const selStart = focusAskId ? active.selectionStart : 0;
+  const selEnd = focusAskId ? active.selectionEnd : 0;
+  const scrollTop = focusAskId ? active.scrollTop : 0;
   renderNeedsPanel(els.needsDock, ask, idx, n);
   renderNeedsPanel(els.focusAsk, ask, idx, n);
+  if (focusAskId) {
+    const panel = state.mode === '3' ? els.focusAsk : els.needsDock;
+    const ta = panel.querySelector('textarea[data-ask-id="' + focusAskId + '"]');
+    if (ta) { try { ta.focus(); ta.setSelectionRange(selStart, selEnd); ta.scrollTop = scrollTop; } catch (e) {} }
+  }
 }
 
 async function submitAnswer(ask, text) {
@@ -1002,12 +1014,17 @@ function onNeedsKeydown(e) {
 // Focus-mode general composer: a normal room message (not an ask answer).
 async function submitFocusMessage(text) {
   if (state.sending || !text || state.status === 'closed') return;
-  state.sending = true; els.focusSendBtn.disabled = true;
+  state.sending = true; els.focusSendBtn.disabled = true; els.focusSendError.hidden = true;
   try {
     const res = await callApi('send', { room: state.code }, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: text }),
     });
-    if (res.ok) { els.focusInput.value = ''; els.focusInput.style.height = 'auto'; await doPoll(); }
+    if (!res.ok) {
+      els.focusSendError.textContent = 'Send failed: ' + (res.error || 'unknown') + ' — your draft is kept.';
+      els.focusSendError.hidden = false;
+      return;                                 // draft preserved (input untouched)
+    }
+    els.focusInput.value = ''; els.focusInput.style.height = 'auto'; await doPoll();
   } finally { state.sending = false; els.focusSendBtn.disabled = state.status === 'closed' || !els.focusInput.value.trim(); }
 }
 
@@ -1020,6 +1037,7 @@ els.focusComposer.addEventListener('submit', (e) => { e.preventDefault(); submit
 els.focusInput.addEventListener('input', () => {
   els.focusInput.style.height = 'auto'; els.focusInput.style.height = Math.min(120, els.focusInput.scrollHeight) + 'px';
   els.focusSendBtn.disabled = state.status === 'closed' || !els.focusInput.value.trim();
+  els.focusSendError.hidden = true;   // clear a prior failure when the human edits the draft
 });
 els.focusInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); els.focusComposer.requestSubmit(); } });
 tap(els.focusSendBtn, () => els.focusComposer.requestSubmit());
