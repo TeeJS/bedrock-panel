@@ -66,6 +66,7 @@ const state = {
   askDrafts: new Map(),// id -> in-progress reply text (preserved across polls/mode switch)
   askSeenMax: null,    // highest ask id seen; a higher one is "new" (chime + auto-open)
   dockOpen: false,     // Classic: is the dock showing
+  autoOpenDone: false, // Classic: the dock auto-opens for the FIRST new ask only, then never again
   dismissArm: null,    // ask id armed for the confirm tap
   dismissTimer: null,
   needsError: null,    // { id, msg } shown under the current ask
@@ -449,7 +450,7 @@ async function attach(code) {
   setStatus(room.status || 'open');
   // Needs-you: reset the tray for this room, then load its open asks (no chime on first load).
   state.askSeenMax = null; state.askIdx = 0; state.askDrafts.clear();
-  state.dockOpen = false; state.dismissArm = null; state.needsError = null;
+  state.dockOpen = false; state.autoOpenDone = false; state.dismissArm = null; state.needsError = null;
   els.needsChip.hidden = false;
   setAsks(room.asks || []);
   hideOverlay();
@@ -746,6 +747,13 @@ window.oqKnob = function (ev) {
     return false;
   }
   if (!els.overlay.hidden) return false;
+  // A visible Needs-you question captures the knob: rotate scrolls the question, press jumps the
+  // transcript to newest. Falls through to plain transcript scroll when no question is shown.
+  const nb = activeNeedsBody();
+  if (nb) {
+    if (ev.type === 'rotate') { nb.scrollTop += ev.dir * 120; return true; }
+    if (ev.type === 'press') { scrollToBottom(); return true; }
+  }
   if (ev.type === 'rotate') { els.transcript.scrollTop += ev.dir * 120; return true; }
   if (ev.type === 'press') { scrollToBottom(); return true; }
   return false;
@@ -800,7 +808,15 @@ function setAsks(asks) {
   if (state.askIdx >= list.length) state.askIdx = Math.max(0, list.length - 1);
   if (isNew) {
     chimeOnce();
-    if (state.mode === '1' && !state.dockOpen) { state.dockOpen = true; els.shell.dataset.dock = 'open'; }
+    // Classic: auto-open the dock for the first new ask only; afterwards (or once the human has
+    // closed it) a new ask only re-lights the chip — never re-opens or yanks the card.
+    if (state.mode === '1' && !state.dockOpen && !state.autoOpenDone) {
+      state.dockOpen = true; state.autoOpenDone = true; els.shell.dataset.dock = 'open';
+    }
+  }
+  // Classic: when the last question clears, close the empty dock (it never sits open empty).
+  if (state.mode === '1' && list.length === 0 && state.dockOpen) {
+    state.dockOpen = false; els.shell.dataset.dock = 'closed';
   }
   state.askSeenMax = state.askSeenMax === null ? maxId : Math.max(state.askSeenMax, maxId);
   const ids = new Set(list.map((a) => a.id));
@@ -808,7 +824,9 @@ function setAsks(asks) {
   if (state.dismissArm && !ids.has(state.dismissArm)) state.dismissArm = null;
   if (state.needsError && !ids.has(state.needsError.id)) state.needsError = null;
   updateChip();
-  renderNeeds(true);
+  // Non-force: the key guard leaves the textarea (and its focus/caret) untouched on a 2s poll
+  // when the ask set is unchanged; it rebuilds only when something actually changed.
+  renderNeeds();
 }
 
 // Build one Needs-you panel (dock or focus) for the current ask. Text/names use textContent only.
@@ -913,18 +931,52 @@ async function doDismiss(ask) {
   } finally { state.answering = false; }
 }
 
-// Delegated handlers on each (stable) panel element, so rebuilt children stay wired.
-function onNeedsClick(e) {
-  const btn = e.target.closest && e.target.closest('button[data-act]');
-  if (!btn) return;
+// Run a panel button's action. Called from a delegated pointerdown (touch) and click (mouse/keyboard).
+function runNeedsAct(btn) {
   const act = btn.dataset.act;
-  if (act === 'close') { state.dockOpen = false; if (state.mode === '1') els.shell.dataset.dock = 'closed'; return; }
+  // A manual close latches the auto-open: later asks only re-light the chip, never re-open.
+  if (act === 'close') { state.dockOpen = false; state.autoOpenDone = true; if (state.mode === '1') els.shell.dataset.dock = 'closed'; return; }
   if (act === 'prev') { if (state.askIdx > 0) { state.askIdx--; state.dismissArm = null; renderNeeds(true); } return; }
   if (act === 'next') { if (state.askIdx < state.asks.length - 1) { state.askIdx++; state.dismissArm = null; renderNeeds(true); } return; }
   const ask = state.asks[state.askIdx];
   if (!ask) return;
   if (act === 'dismiss') { onDismiss(ask); return; }
   if (act === 'send') { const ta = btn.closest('.needs-reply').querySelector('textarea'); submitAnswer(ask, (ta.value || '').trim()); return; }
+}
+
+// Wire a (stable) panel: buttons activate on pointerdown because the panel delivers touch as
+// synthesized mouse events and a click may never form; the trailing click is swallowed so a real
+// mouse doesn't double-fire. Same pattern as tap(), but delegated so rebuilt children stay live.
+function wireNeedsPanel(panel) {
+  let armedAt = 0;
+  panel.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const btn = e.target.closest && e.target.closest('button[data-act]');
+    if (!btn || btn.disabled) return;
+    armedAt = Date.now();
+    runNeedsAct(btn);
+  });
+  panel.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('button[data-act]');
+    if (!btn) return;
+    e.preventDefault();
+    if (Date.now() - armedAt < TAP_SWALLOW_MS) return;   // pointerdown already handled it
+    if (btn.disabled) return;
+    runNeedsAct(btn);
+  });
+  panel.addEventListener('input', onNeedsInput);
+  panel.addEventListener('keydown', onNeedsKeydown);
+}
+
+// The visible Needs-you question body (if one is shown), so the knob can scroll it.
+function activeNeedsBody() {
+  let panel = null;
+  if (state.mode === '3') panel = els.focusAsk;
+  else if (state.mode === '2') panel = els.needsDock;
+  else if (state.mode === '1' && state.dockOpen) panel = els.needsDock;
+  if (!panel) return null;
+  const body = panel.querySelector('.needs-body');
+  return (body && body.querySelector('.needs-text')) ? body : null;
 }
 function onNeedsInput(e) {
   const ta = e.target;
@@ -957,11 +1009,8 @@ async function submitFocusMessage(text) {
 // ---- Wiring ----
 for (const b of els.modeSeg.querySelectorAll('button')) tap(b, () => applyMode(b.dataset.m));
 tap(els.needsChip, () => { state.dockOpen = !state.dockOpen; if (state.mode === '1') els.shell.dataset.dock = state.dockOpen ? 'open' : 'closed'; });
-for (const panel of [els.needsDock, els.focusAsk]) {
-  panel.addEventListener('click', onNeedsClick);
-  panel.addEventListener('input', onNeedsInput);
-  panel.addEventListener('keydown', onNeedsKeydown);
-}
+wireNeedsPanel(els.needsDock);
+wireNeedsPanel(els.focusAsk);
 els.focusComposer.addEventListener('submit', (e) => { e.preventDefault(); submitFocusMessage(els.focusInput.value.trim()); });
 els.focusInput.addEventListener('input', () => {
   els.focusInput.style.height = 'auto'; els.focusInput.style.height = Math.min(120, els.focusInput.scrollHeight) + 'px';
