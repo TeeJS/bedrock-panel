@@ -13,6 +13,11 @@ const DISCOVER_MS = 10000;
 const RETRY_MAX_MS = 15000;
 const DEFAULT_CLOSE_SUMMARY = 'Closed from panel';
 const TAP_SWALLOW_MS = 700;
+const DISMISS_ARM_MS = 4000;   // how long a 'Confirm dismiss' stays armed before relaxing
+// Chime on a new ask: on unless the app option explicitly disables it (a bool option arrives as
+// '0'/'false' when off, '1'/'true' or absent when on).
+const CHIME_ON = params.get('chime') !== 'false' && params.get('chime') !== '0';
+const MODES = ['1', '2', '3'];
 
 // ---- Element refs ----
 const $ = (id) => document.getElementById(id);
@@ -24,6 +29,9 @@ const els = {
   roomsCount: $('roomsCount'), roomList: $('roomList'),
   transcript: $('transcript'), messages: $('messages'), newPill: $('newPill'), newPillCount: $('newPillCount'),
   composer: $('composer'), viewerName: $('viewerName'), input: $('input'), sendBtn: $('sendBtn'), sendError: $('sendError'),
+  modeSeg: $('modeSeg'), needsChip: $('needsChip'), needsN: $('needsN'), needsDock: $('needsDock'),
+  focusAsk: $('focusAsk'), focusTranscript: $('focusTranscript'), focusMessages: $('focusMessages'),
+  focusComposer: $('focusComposer'), focusInput: $('focusInput'), focusSendBtn: $('focusSendBtn'), focusViewerName: $('focusViewerName'), focusSendError: $('focusSendError'),
   overlay: $('overlay'), overlayKicker: $('overlayKicker'), overlayTitle: $('overlayTitle'),
   overlayBody: $('overlayBody'), overlayCount: $('overlayCount'), overlayList: $('overlayList'), overlayRetry: $('overlayRetry'), overlayHistory: $('overlayHistory'), overlayBack: $('overlayBack'),
   closeDlg: $('closeDlg'), closeDlgTitle: $('closeDlgTitle'), closeDlgBody: $('closeDlgBody'),
@@ -51,6 +59,20 @@ const state = {
   rooms: [],           // last known open rooms (rail list)
   closeTarget: null,   // room being closed via the dialog
   closing: false,      // guard against double close
+  // ---- Needs-you tray + view modes ----
+  mode: '1',           // '1' Classic | '2' 3-Panel | '3' Focus
+  asks: [],            // open asks (from hydrate/poll)
+  askIdx: 0,           // which ask is shown (one at a time)
+  askDrafts: new Map(),// id -> in-progress reply text (preserved across polls/mode switch)
+  askSeenMax: null,    // highest ask id seen; a higher one is "new" (chime + auto-open)
+  dockOpen: false,     // Classic: is the dock showing
+  autoOpenDone: false, // Classic: the dock auto-opens for the FIRST new ask only, then never again
+  dismissArm: null,    // ask id armed for the confirm tap
+  dismissTimer: null,
+  needsError: null,    // { id, msg } shown under the current ask
+  needsKey: '',        // last render key, so a poll doesn't clobber a draft mid-type
+  answering: false,    // guard against double answer/dismiss
+  audio: null,         // lazily-created AudioContext for the chime
 };
 
 // ---- Small helpers ----
@@ -109,6 +131,8 @@ function setStatus(status) {
   const closed = status === 'closed';
   els.input.disabled = closed;
   els.sendBtn.disabled = closed || !els.input.value.trim();
+  els.focusInput.disabled = closed;
+  els.focusSendBtn.disabled = closed || !els.focusInput.value.trim();
 }
 
 // ---- Overlay state screens ----
@@ -349,7 +373,9 @@ function messageEl(m) {
   name.textContent = m.sender;
   const role = document.createElement('span');
   role.className = 'msg-role';
-  role.textContent = state.roles.get(m.sender) || (m.kind === 'human' ? 'human' : (m.kind === 'agent' ? 'agent' : ''));
+  role.textContent = m.kind === 'ask'
+    ? ('Ask #' + m.id)
+    : (state.roles.get(m.sender) || (m.kind === 'human' ? 'human' : (m.kind === 'agent' ? 'agent' : '')));
   head.append(name, role);
   const body = document.createElement('div');
   body.className = 'msg-body';
@@ -372,6 +398,11 @@ function appendMessages(list) {
   const frag = document.createDocumentFragment();
   for (const m of fresh) frag.append(messageEl(m));
   els.messages.append(frag);
+  // Mirror into the Focus-mode room feed (separate DOM, so build fresh nodes).
+  const ffrag = document.createDocumentFragment();
+  for (const m of fresh) ffrag.append(messageEl(m));
+  els.focusMessages.append(ffrag);
+  els.focusTranscript.scrollTop = els.focusTranscript.scrollHeight;
   if (state.atBottom) {
     scrollToBottom();
   } else {
@@ -383,6 +414,7 @@ function appendMessages(list) {
 
 function scrollToBottom() {
   els.transcript.scrollTop = els.transcript.scrollHeight;
+  els.focusTranscript.scrollTop = els.focusTranscript.scrollHeight;
   state.atBottom = true;
   state.newCount = 0;
   els.newPill.hidden = true;
@@ -401,11 +433,13 @@ async function attach(code) {
   const room = res.room;
   state.viewerName = room.viewer_name || 'viewer';
   els.viewerName.textContent = state.viewerName;
+  els.focusViewerName.textContent = state.viewerName;
   els.roomTitle.textContent = room.title || 'Agent Room';
   els.roomCode.textContent = room.code || code;
   els.objective.textContent = room.objective || '—';
   applyRoster(room.participants);
   els.messages.textContent = '';
+  els.focusMessages.textContent = '';
   state.seen = new Set();
   state.atBottom = true;
   const msgs = room.messages || [];
@@ -414,6 +448,11 @@ async function attach(code) {
   scrollToBottom();
   setMode(room.addressed_only);
   setStatus(room.status || 'open');
+  // Needs-you: reset the tray for this room, then load its open asks (no chime on first load).
+  state.askSeenMax = null; state.askIdx = 0; state.askDrafts.clear();
+  state.dockOpen = false; state.autoOpenDone = false; state.dismissArm = null; state.needsError = null;
+  els.needsChip.hidden = false;
+  setAsks(room.asks || []);
   hideOverlay();
   renderRoomList(state.rooms);                       // re-mark the current room in the rail list
   refreshRooms();                                    // and refresh it in the background
@@ -436,6 +475,7 @@ async function doPoll() {
     setStatus(res.status || 'open');
     if (Array.isArray(res.participants)) applyRoster(res.participants);   // apply even when empty (roster cleared on close)
     setMode(res.addressed_only);
+    if (Array.isArray(res.asks)) setAsks(res.asks);   // refresh the Needs-you tray
     if (res.messages && res.messages.length) appendMessages(res.messages);
     state.cursor = Math.max(state.cursor, Number(res.latest_message_id) || 0);
     return res;
@@ -707,9 +747,300 @@ window.oqKnob = function (ev) {
     return false;
   }
   if (!els.overlay.hidden) return false;
+  // A visible Needs-you question captures the knob: rotate scrolls the question, press jumps the
+  // transcript to newest. Falls through to plain transcript scroll when no question is shown.
+  const nb = activeNeedsBody();
+  if (nb) {
+    if (ev.type === 'rotate') { nb.scrollTop += ev.dir * 120; return true; }
+    if (ev.type === 'press') { scrollToBottom(); return true; }
+  }
   if (ev.type === 'rotate') { els.transcript.scrollTop += ev.dir * 120; return true; }
   if (ev.type === 'press') { scrollToBottom(); return true; }
   return false;
 };
 
+// ========================= Needs-you tray + view modes =========================
+const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+function loadMode() { try { const m = localStorage.getItem('agentroom.mode'); if (MODES.includes(m)) return m; } catch (e) {} return '1'; }
+
+// Switch layout. In 3-Panel/Focus the dock is permanent, so "open" only applies to Classic.
+function applyMode(mode, persist) {
+  if (!MODES.includes(mode)) mode = '1';
+  state.mode = mode;
+  if (persist !== false) { try { localStorage.setItem('agentroom.mode', mode); } catch (e) {} }
+  els.shell.dataset.mode = mode;
+  for (const b of els.modeSeg.querySelectorAll('button')) b.classList.toggle('on', b.dataset.m === mode);
+  els.shell.dataset.dock = (mode !== '1') ? 'open' : (state.dockOpen ? 'open' : 'closed');
+  renderNeeds(true);
+}
+
+// One short chime on a genuinely new ask. Web Audio only; silent if blocked or disabled.
+function chimeOnce() {
+  if (!CHIME_ON) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    const ctx = state.audio || (state.audio = new AC());
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.18, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.start(t); o.stop(t + 0.36);
+  } catch (e) {}
+}
+
+function updateChip() {
+  const n = state.asks.length;
+  els.needsN.textContent = String(n);
+  els.needsChip.classList.toggle('is-hot', n > 0);
+}
+
+// Apply a fresh open-asks list. A higher ask id than we've seen is "new": chime once and, in
+// Classic, auto-open the dock — but never move the visible card or wipe a draft (no index change).
+function setAsks(asks) {
+  const list = Array.isArray(asks) ? asks : [];
+  const curId = state.asks[state.askIdx] ? state.asks[state.askIdx].id : null;   // the question in view
+  const maxId = list.reduce((m, a) => Math.max(m, Number(a.id) || 0), 0);
+  const isNew = state.askSeenMax !== null && list.some((a) => Number(a.id) > state.askSeenMax);
+  state.asks = list;
+  // Keep the SAME question under the user by id, not by position: an ask removed out of band (e.g.
+  // answered from the web viewer) must not slide a different question into its place.
+  let idx = curId != null ? list.findIndex((a) => a.id === curId) : -1;
+  if (idx < 0) idx = Math.min(state.askIdx, Math.max(0, list.length - 1));
+  state.askIdx = Math.max(0, idx);
+  if (isNew) {
+    chimeOnce();
+    // Classic: auto-open the dock for the first new ask only; afterwards (or once the human has
+    // closed it) a new ask only re-lights the chip — never re-opens or yanks the card.
+    if (state.mode === '1' && !state.dockOpen && !state.autoOpenDone) {
+      state.dockOpen = true; state.autoOpenDone = true; els.shell.dataset.dock = 'open';
+    }
+  }
+  // Classic: when the last question clears, close the empty dock (it never sits open empty).
+  if (state.mode === '1' && list.length === 0 && state.dockOpen) {
+    state.dockOpen = false; els.shell.dataset.dock = 'closed';
+  }
+  state.askSeenMax = state.askSeenMax === null ? maxId : Math.max(state.askSeenMax, maxId);
+  const ids = new Set(list.map((a) => a.id));
+  for (const id of Array.from(state.askDrafts.keys())) if (!ids.has(id)) state.askDrafts.delete(id);
+  if (state.dismissArm && !ids.has(state.dismissArm)) state.dismissArm = null;
+  if (state.needsError && !ids.has(state.needsError.id)) state.needsError = null;
+  updateChip();
+  // Non-force: the key guard leaves the textarea (and its focus/caret) untouched on a 2s poll
+  // when the ask set is unchanged; it rebuilds only when something actually changed.
+  renderNeeds();
+}
+
+// Build one Needs-you panel (dock or focus) for the current ask. Text/names use textContent only.
+function renderNeedsPanel(panel, ask, idx, n) {
+  const isDock = panel.dataset.role === 'dock';
+  panel.textContent = '';
+  const head = mk('div', 'needs-head');
+  head.append(mk('span', 'needs-title', 'Needs you'));
+  if (ask) {
+    const who = mk('div', 'needs-who');
+    const dot = mk('span', 'needs-wdot'); dot.style.background = colorFor(ask.sender);
+    who.append(dot, mk('span', 'needs-wname', ask.sender),
+      mk('span', 'needs-tag', ask.implicit ? 'mentioned you' : 'ask #' + ask.id),
+      mk('span', 'needs-wtime', fmtTime(ask.created_at)));
+    head.append(who);
+  }
+  head.append(mk('span', 'needs-spacer'));
+  if (n > 1) {
+    head.append(mk('span', 'needs-count', (idx + 1) + ' of ' + n));
+    const prev = mk('button', 'needs-nav', '‹'); prev.type = 'button'; prev.dataset.act = 'prev'; prev.setAttribute('aria-label', 'Previous'); prev.disabled = idx <= 0;
+    const next = mk('button', 'needs-nav', '›'); next.type = 'button'; next.dataset.act = 'next'; next.setAttribute('aria-label', 'Next'); next.disabled = idx >= n - 1;
+    head.append(prev, next);
+  }
+  if (isDock) {
+    const x = mk('button', 'needs-nav needs-x', '✕'); x.type = 'button'; x.dataset.act = 'close'; x.setAttribute('aria-label', 'Close Needs you');
+    head.append(x);
+  }
+  panel.append(head);
+
+  const body = mk('div', 'needs-body');
+  if (ask) body.append(mk('p', 'needs-text', ask.content));
+  else body.append(mk('p', 'needs-empty', 'Nothing needs you right now.'));
+  if (ask && state.needsError && state.needsError.id === ask.id) body.append(mk('p', 'needs-error', state.needsError.msg));
+  panel.append(body);
+
+  if (ask) {
+    const reply = mk('div', 'needs-reply');
+    const ta = mk('textarea', 'composer-input'); ta.rows = 1; ta.maxLength = 20000;
+    ta.placeholder = 'Reply to ' + ask.sender + '…'; ta.dataset.askId = String(ask.id);
+    ta.disabled = state.status === 'closed';
+    if (state.askDrafts.has(ask.id)) ta.value = state.askDrafts.get(ask.id);
+    const armed = state.dismissArm === ask.id;
+    const dismiss = mk('button', 'needs-btn dismiss' + (armed ? ' armed' : ''), armed ? 'Confirm dismiss' : 'Dismiss');
+    dismiss.type = 'button'; dismiss.dataset.act = 'dismiss';
+    const send = mk('button', 'needs-btn primary', 'Send'); send.type = 'button'; send.dataset.act = 'send';
+    send.disabled = state.status === 'closed' || !ta.value.trim();
+    reply.append(ta, dismiss, send);
+    panel.append(reply);
+  }
+}
+
+// Rebuild both panels when the ask set / index / mode / arm / error changes. Guarded by a key so a
+// 2s poll never tears down the textarea the human is typing in.
+function renderNeeds(force) {
+  const n = state.asks.length;
+  if (state.askIdx >= n) state.askIdx = Math.max(0, n - 1);
+  const idx = state.askIdx;
+  const ask = n ? state.asks[idx] : null;
+  const key = [state.mode, state.asks.map((a) => a.id).join(','), idx,
+    state.status === 'closed' ? 'c' : 'o', state.dismissArm || '', state.needsError ? state.needsError.id : ''].join('|');
+  if (!force && key === state.needsKey) return;
+  state.needsKey = key;
+  // A new ask changes the key (count/nav must update), but the human may be mid-reply. Carry the
+  // focused textarea's focus, caret and scroll across the rebuild so typing is never interrupted.
+  const active = document.activeElement;
+  const focusAskId = (active && active.matches && active.matches('textarea[data-ask-id]')) ? active.dataset.askId : null;
+  const selStart = focusAskId ? active.selectionStart : 0;
+  const selEnd = focusAskId ? active.selectionEnd : 0;
+  const scrollTop = focusAskId ? active.scrollTop : 0;
+  renderNeedsPanel(els.needsDock, ask, idx, n);
+  renderNeedsPanel(els.focusAsk, ask, idx, n);
+  if (focusAskId) {
+    const panel = state.mode === '3' ? els.focusAsk : els.needsDock;
+    const ta = panel.querySelector('textarea[data-ask-id="' + focusAskId + '"]');
+    if (ta) { try { ta.focus(); ta.setSelectionRange(selStart, selEnd); ta.scrollTop = scrollTop; } catch (e) {} }
+  }
+}
+
+async function submitAnswer(ask, text) {
+  if (!ask || state.answering || !text) return;
+  state.answering = true; state.needsError = null;
+  try {
+    const res = await callApi('answer', { room: state.code, id: String(ask.id) }, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: text }),
+    });
+    if (!res.ok) { state.needsError = { id: ask.id, msg: 'Send failed: ' + (res.error || 'unknown') + ' — your reply is kept.' }; renderNeeds(true); return; }
+    state.askDrafts.delete(ask.id); state.dismissArm = null;
+    setAsks(Array.isArray(res.asks) ? res.asks : state.asks.filter((a) => a.id !== ask.id));
+    await doPoll();   // pull the human reply + any status change into the transcript
+  } finally { state.answering = false; }
+}
+
+function onDismiss(ask) {
+  if (state.dismissArm !== ask.id) {
+    state.dismissArm = ask.id; renderNeeds(true);
+    clearTimeout(state.dismissTimer);
+    state.dismissTimer = setTimeout(() => { if (state.dismissArm === ask.id) { state.dismissArm = null; renderNeeds(true); } }, DISMISS_ARM_MS);
+    return;
+  }
+  clearTimeout(state.dismissTimer); state.dismissArm = null;
+  doDismiss(ask);
+}
+
+async function doDismiss(ask) {
+  if (state.answering) return;
+  state.answering = true; state.needsError = null;
+  try {
+    const res = await callApi('dismiss', { room: state.code, id: String(ask.id) }, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    if (!res.ok) { state.needsError = { id: ask.id, msg: 'Dismiss failed: ' + (res.error || 'unknown') }; renderNeeds(true); return; }
+    state.askDrafts.delete(ask.id);
+    setAsks(Array.isArray(res.asks) ? res.asks : state.asks.filter((a) => a.id !== ask.id));
+  } finally { state.answering = false; }
+}
+
+// Run a panel button's action. Called from a delegated pointerdown (touch) and click (mouse/keyboard).
+function runNeedsAct(btn) {
+  const act = btn.dataset.act;
+  // A manual close latches the auto-open: later asks only re-light the chip, never re-open.
+  if (act === 'close') { state.dockOpen = false; state.autoOpenDone = true; if (state.mode === '1') els.shell.dataset.dock = 'closed'; return; }
+  if (act === 'prev') { if (state.askIdx > 0) { state.askIdx--; state.dismissArm = null; renderNeeds(true); } return; }
+  if (act === 'next') { if (state.askIdx < state.asks.length - 1) { state.askIdx++; state.dismissArm = null; renderNeeds(true); } return; }
+  const ask = state.asks[state.askIdx];
+  if (!ask) return;
+  if (act === 'dismiss') { onDismiss(ask); return; }
+  if (act === 'send') { const ta = btn.closest('.needs-reply').querySelector('textarea'); submitAnswer(ask, (ta.value || '').trim()); return; }
+}
+
+// Wire a (stable) panel: buttons activate on pointerdown because the panel delivers touch as
+// synthesized mouse events and a click may never form; the trailing click is swallowed so a real
+// mouse doesn't double-fire. Same pattern as tap(), but delegated so rebuilt children stay live.
+function wireNeedsPanel(panel) {
+  let armedAt = 0;
+  panel.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const btn = e.target.closest && e.target.closest('button[data-act]');
+    if (!btn || btn.disabled) return;
+    armedAt = Date.now();
+    runNeedsAct(btn);
+  });
+  panel.addEventListener('click', (e) => {
+    const btn = e.target.closest && e.target.closest('button[data-act]');
+    if (!btn) return;
+    e.preventDefault();
+    if (Date.now() - armedAt < TAP_SWALLOW_MS) return;   // pointerdown already handled it
+    if (btn.disabled) return;
+    runNeedsAct(btn);
+  });
+  panel.addEventListener('input', onNeedsInput);
+  panel.addEventListener('keydown', onNeedsKeydown);
+}
+
+// The visible Needs-you question body (if one is shown), so the knob can scroll it.
+function activeNeedsBody() {
+  let panel = null;
+  if (state.mode === '3') panel = els.focusAsk;
+  else if (state.mode === '2') panel = els.needsDock;
+  else if (state.mode === '1' && state.dockOpen) panel = els.needsDock;
+  if (!panel) return null;
+  const body = panel.querySelector('.needs-body');
+  return (body && body.querySelector('.needs-text')) ? body : null;
+}
+function onNeedsInput(e) {
+  const ta = e.target;
+  if (!ta.matches || !ta.matches('textarea[data-ask-id]')) return;
+  state.askDrafts.set(Number(ta.dataset.askId), ta.value);
+  const send = ta.closest('.needs-reply').querySelector('.needs-btn.primary');
+  if (send) send.disabled = state.status === 'closed' || !ta.value.trim();
+  ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px';
+}
+function onNeedsKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey && e.target.matches && e.target.matches('textarea[data-ask-id]')) {
+    e.preventDefault();
+    const ask = state.asks[state.askIdx];
+    if (ask) submitAnswer(ask, (e.target.value || '').trim());
+  }
+}
+
+// Focus-mode general composer: a normal room message (not an ask answer).
+async function submitFocusMessage(text) {
+  if (state.sending || !text || state.status === 'closed') return;
+  state.sending = true; els.focusSendBtn.disabled = true; els.focusSendError.hidden = true;
+  try {
+    const res = await callApi('send', { room: state.code }, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: text }),
+    });
+    if (!res.ok) {
+      els.focusSendError.textContent = 'Send failed: ' + (res.error || 'unknown') + ' — your draft is kept.';
+      els.focusSendError.hidden = false;
+      return;                                 // draft preserved (input untouched)
+    }
+    els.focusInput.value = ''; els.focusInput.style.height = 'auto'; await doPoll();
+  } finally { state.sending = false; els.focusSendBtn.disabled = state.status === 'closed' || !els.focusInput.value.trim(); }
+}
+
+// ---- Wiring ----
+for (const b of els.modeSeg.querySelectorAll('button')) tap(b, () => applyMode(b.dataset.m));
+tap(els.needsChip, () => { state.dockOpen = !state.dockOpen; if (state.mode === '1') els.shell.dataset.dock = state.dockOpen ? 'open' : 'closed'; });
+wireNeedsPanel(els.needsDock);
+wireNeedsPanel(els.focusAsk);
+els.focusComposer.addEventListener('submit', (e) => { e.preventDefault(); submitFocusMessage(els.focusInput.value.trim()); });
+els.focusInput.addEventListener('input', () => {
+  els.focusInput.style.height = 'auto'; els.focusInput.style.height = Math.min(120, els.focusInput.scrollHeight) + 'px';
+  els.focusSendBtn.disabled = state.status === 'closed' || !els.focusInput.value.trim();
+  els.focusSendError.hidden = true;   // clear a prior failure when the human edits the draft
+});
+els.focusInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); els.focusComposer.requestSubmit(); } });
+tap(els.focusSendBtn, () => els.focusComposer.requestSubmit());
+
+applyMode(loadMode(), false);
 init();

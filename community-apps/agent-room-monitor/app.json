@@ -1,8 +1,8 @@
 {
   "id": "agent-room-monitor",
   "name": "Agent Room Monitor",
-  "version": "1.1.7",
-  "description": "Watch, join, and close Agent Room meetings from the panel: lists the open rooms on the hosted Agent Room server, streams the live transcript, lets you type as the room's human viewer, closes a room with a summary, and browses closed rooms' transcripts under History.",
+  "version": "1.2.0",
+  "description": "Watch, join, and answer Agent Room meetings from the panel: lists the open rooms on the hosted Agent Room server, streams the live transcript, lets you type as the room's human viewer, answers the room's Needs-you questions in three switchable views (Classic, 3-Panel, Focus), closes a room with a summary, and browses closed rooms' transcripts under History.",
   "entry": "index.html",
   "served": true,
   "server": "server.js",
@@ -31,6 +31,13 @@
       "type": "text",
       "default": "",
       "help": "Leave blank to auto-discover open rooms (one open room attaches automatically; several show a picker, and the rail always lists them). Set a code to always open that room."
+    },
+    {
+      "key": "chime",
+      "label": "Chime on a new question",
+      "type": "bool",
+      "default": true,
+      "help": "Play a short sound when a new question lands in the Needs-you view. Turn off for a silent panel."
     }
   ]
 }
