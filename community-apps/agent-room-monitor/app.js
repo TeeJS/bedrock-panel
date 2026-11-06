@@ -802,10 +802,15 @@ function updateChip() {
 // Classic, auto-open the dock — but never move the visible card or wipe a draft (no index change).
 function setAsks(asks) {
   const list = Array.isArray(asks) ? asks : [];
+  const curId = state.asks[state.askIdx] ? state.asks[state.askIdx].id : null;   // the question in view
   const maxId = list.reduce((m, a) => Math.max(m, Number(a.id) || 0), 0);
   const isNew = state.askSeenMax !== null && list.some((a) => Number(a.id) > state.askSeenMax);
   state.asks = list;
-  if (state.askIdx >= list.length) state.askIdx = Math.max(0, list.length - 1);
+  // Keep the SAME question under the user by id, not by position: an ask removed out of band (e.g.
+  // answered from the web viewer) must not slide a different question into its place.
+  let idx = curId != null ? list.findIndex((a) => a.id === curId) : -1;
+  if (idx < 0) idx = Math.min(state.askIdx, Math.max(0, list.length - 1));
+  state.askIdx = Math.max(0, idx);
   if (isNew) {
     chimeOnce();
     // Classic: auto-open the dock for the first new ask only; afterwards (or once the human has
