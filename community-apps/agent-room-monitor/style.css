@@ -342,3 +342,70 @@ button:focus-visible, textarea:focus-visible, .transcript:focus-visible {
 }
 /* Rail action placed in flow under the copy (waiting screen History), not pinned to the bottom */
 .rail-inline { margin-top: var(--space-2); }
+
+/* ===== Needs-you: three view modes (1.2.0) ===== */
+/* Panel always sets data-theme explicitly, so --needs is themed the same way as the rest. */
+:root { --needs: var(--warning); }
+:root[data-theme="light"] { --needs: #8a5a00; }
+
+/* Top-bar mode toggle (segmented) */
+.modeseg { display: inline-flex; background: var(--surface-control); border-radius: 999px; padding: 3px; gap: 2px; }
+.modeseg button { min-height: 44px; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.modeseg button.on { background: var(--accent); color: var(--accent-ink); }
+
+/* Needs-you chip (Classic only) */
+.chip-needs { display: inline-flex; align-items: center; gap: 9px; }
+.chip-needs .needs-n { min-width: 24px; height: 24px; padding: 0 7px; border-radius: 999px; background: var(--surface); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
+.chip-needs.is-hot { background: var(--needs); color: #1a1405; }
+.chip-needs.is-hot .needs-n { background: #1a1405; color: var(--needs); }
+.chip-needs[hidden] { display: none; }
+
+/* Shared Needs-you panel (used by the dock in modes 1 & 2 and the Focus column in mode 3) */
+.needs { display: flex; flex-direction: column; background: var(--surface); min-width: 0; min-height: 0; }
+.needs[hidden] { display: none; }
+.needs-head { flex: 0 0 52px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 var(--space-2); border-bottom: 1px solid var(--line); }
+.needs-title { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--needs); white-space: nowrap; }
+.needs-who { display: flex; align-items: baseline; gap: 8px; min-width: 0; margin-left: 4px; }
+.needs-wdot { width: 11px; height: 11px; border-radius: 50%; align-self: center; flex: 0 0 auto; }
+.needs-wname { font-size: 17px; font-weight: 700; white-space: nowrap; }
+.needs-tag, .needs-wtime { font-size: 13px; color: var(--faint); white-space: nowrap; }
+.needs-spacer { flex: 1 1 auto; }
+.needs-count { font-size: 15px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.needs-nav { width: 46px; height: 46px; min-height: 46px; border-radius: var(--radius); background: var(--surface-control); color: var(--ink); font-size: 22px; line-height: 1; flex: 0 0 auto; }
+.needs-nav:disabled { opacity: 0.4; cursor: default; }
+.needs-x { background: none; color: var(--muted); font-size: 20px; }
+.needs-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-2) var(--space-2) var(--space-1); overscroll-behavior: contain; }
+.needs-text { font-size: 22px; line-height: 1.4; color: var(--ink); margin: 0; white-space: pre-wrap; word-break: break-word; -webkit-user-select: text; user-select: text; }
+.needs-empty { font-size: 19px; color: var(--muted); margin: 0; padding-top: 8px; }
+.needs-error { color: var(--error); font-size: 14px; margin: 6px 0 0; }
+.needs-reply { flex: 0 0 auto; display: flex; gap: 10px; align-items: flex-end; padding: 8px var(--space-2) 10px; border-top: 1px solid var(--line); }
+.needs-reply .composer-input { min-height: 54px; font-size: 18px; }
+.needs-btn { flex: 0 0 auto; min-width: 92px; min-height: 54px; border-radius: var(--radius); font-size: 17px; font-weight: 600; background: var(--surface-control); color: var(--ink); padding: 0 16px; }
+.needs-btn.primary { background: var(--accent); color: var(--accent-ink); }
+.needs-btn.primary:disabled { opacity: 0.45; cursor: default; }
+.needs-btn.dismiss { color: var(--muted); }
+.needs-btn.dismiss.armed { background: var(--error); color: var(--error-ink); min-width: 160px; }
+
+/* Mode 1 — Classic: the dock is a right overlay opened by the chip */
+.shell[data-mode="1"] .needs-dock { position: absolute; top: 52px; right: 0; bottom: 0; width: 900px; max-width: 100%; border-left: 3px solid var(--needs); box-shadow: -18px 0 40px rgba(0,0,0,0.45); z-index: 6; }
+.shell[data-mode="1"][data-dock="closed"] .needs-dock { display: none; }
+
+/* Mode 2 — 3-Panel: rail | transcript | dock, all present; the dock is permanent so it has no X */
+.shell[data-mode="2"] .needs-dock { flex: 0 0 600px; border-left: 3px solid var(--needs); }
+.shell[data-mode="2"] .needs-x { display: none; }
+.shell[data-mode="2"] .chip-needs, .shell[data-mode="3"] .chip-needs { display: none; }
+
+/* Mode 3 — Focus: the ask takes the surface, with a room feed + general composer beside it */
+.shell[data-mode="3"] .body { display: grid; grid-template-columns: minmax(0,1fr) 680px; }
+.shell[data-mode="3"] .rail, .shell[data-mode="3"] .main, .shell[data-mode="3"] .needs-dock { display: none; }
+.focus-ask { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); border-right: 1px solid var(--line); }
+.focus-ask .needs { flex: 1 1 auto; }
+.focus-ask .needs-text { font-size: 26px; line-height: 1.42; }
+.focus-ask .needs-reply .composer-input { min-height: 64px; font-size: 20px; }
+.focus-room { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); }
+.focus-room-head { flex: 0 0 52px; display: flex; align-items: center; padding: 0 var(--space-2); border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.focus-room .transcript { flex: 1 1 auto; }
+.focus-room .composer { flex: 0 0 auto; }
+.only-focus { display: none; }
+.shell[data-mode="3"] .only-focus { display: flex; }
+.msg-ask .msg-role { color: var(--needs); border: 1px solid var(--needs); border-radius: 999px; padding: 0 8px; text-transform: none; }

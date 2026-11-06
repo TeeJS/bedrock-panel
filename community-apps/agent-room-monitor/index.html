@@ -19,6 +19,12 @@
         <span id="closedBadge" class="closed-badge" hidden>Closed</span>
       </div>
       <div class="topbar-actions">
+        <div id="modeSeg" class="modeseg" role="group" aria-label="View mode">
+          <button type="button" data-m="1" aria-label="Classic view">Classic</button>
+          <button type="button" data-m="2" aria-label="Three-panel view">3-Panel</button>
+          <button type="button" data-m="3" aria-label="Needs-you focused view">Focus</button>
+        </div>
+        <button id="needsChip" class="chip chip-needs" type="button" aria-label="Open Needs you" hidden>Needs you <span id="needsN" class="needs-n">0</span></button>
         <button id="newRoomBtn" class="chip chip-accent" type="button" hidden>Open new room</button>
         <button id="roomsBtn" class="chip" type="button" hidden>Rooms</button>
         <button id="historyBtn" class="chip" type="button">History</button>
@@ -64,6 +70,28 @@
             <button id="sendBtn" class="send-btn" type="submit" aria-label="Send">↑</button>
           </div>
           <p id="sendError" class="send-error" role="alert" hidden></p>
+        </form>
+      </section>
+
+      <!-- Needs-you dock (modes 1 & 2); JS fills it. Visibility is driven by the mode CSS
+           (hidden in Classic until the chip opens it, and in Focus), not a static hidden attr. -->
+      <aside id="needsDock" class="needs needs-dock" data-role="dock" aria-label="Needs you"></aside>
+
+      <!-- Focus layout (mode 3 only) -->
+      <section class="focus-ask only-focus">
+        <div id="focusAsk" class="needs" data-role="focus" aria-label="Needs you"></div>
+      </section>
+      <section class="focus-room only-focus" aria-label="Room">
+        <div class="focus-room-head">Room</div>
+        <div id="focusTranscript" class="transcript" tabindex="0" aria-label="Transcript">
+          <ol id="focusMessages" class="messages"></ol>
+        </div>
+        <form id="focusComposer" class="composer" autocomplete="off">
+          <div class="composer-row">
+            <span class="composer-as">as <strong id="focusViewerName">viewer</strong></span>
+            <textarea id="focusInput" class="composer-input" rows="1" maxlength="20000" placeholder="Message the room…" aria-label="Message the room"></textarea>
+            <button id="focusSendBtn" class="send-btn" type="submit" aria-label="Send">↑</button>
+          </div>
         </form>
       </section>
     </div>
