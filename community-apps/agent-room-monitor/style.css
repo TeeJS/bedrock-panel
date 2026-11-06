@@ -350,7 +350,7 @@ button:focus-visible, textarea:focus-visible, .transcript:focus-visible {
 
 /* Top-bar mode toggle (segmented) */
 .modeseg { display: inline-flex; background: var(--surface-control); border-radius: 999px; padding: 3px; gap: 2px; }
-.modeseg button { min-height: 44px; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.modeseg button { min-height: 48px; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .modeseg button.on { background: var(--accent); color: var(--accent-ink); }
 
 /* Needs-you chip (Classic only) */
@@ -371,7 +371,7 @@ button:focus-visible, textarea:focus-visible, .transcript:focus-visible {
 .needs-tag, .needs-wtime { font-size: 13px; color: var(--faint); white-space: nowrap; }
 .needs-spacer { flex: 1 1 auto; }
 .needs-count { font-size: 15px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.needs-nav { width: 46px; height: 46px; min-height: 46px; border-radius: var(--radius); background: var(--surface-control); color: var(--ink); font-size: 22px; line-height: 1; flex: 0 0 auto; }
+.needs-nav { width: 48px; height: 48px; min-height: 48px; border-radius: var(--radius); background: var(--surface-control); color: var(--ink); font-size: 22px; line-height: 1; flex: 0 0 auto; }
 .needs-nav:disabled { opacity: 0.4; cursor: default; }
 .needs-x { background: none; color: var(--muted); font-size: 20px; }
 .needs-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-2) var(--space-2) var(--space-1); overscroll-behavior: contain; }
