@@ -27,6 +27,10 @@
 //                                                       -> { ok, ask, message, asks, participants }
 //   dismiss ?room=&id= (POST)     POST /api/rooms/:code/asks/:id/dismiss
 //                                                       -> { ok, ask, asks }
+//   poll ?room=&after=&viewer=1   adds &viewer=1 (nameless) so a v0.11.0 server marks the human
+//                                 present; the page sends viewer=1 only when the panel is composited.
+//   seen ?room= (POST {ids})      POST /api/rooms/:code/asks/seen {ids} -> { ok, asks }; a pre-0.11.0
+//                                 server 404s -> { ok:false, unsupported:true } (swallowed by the page).
 
 const REQUEST_TIMEOUT_MS = 8000;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
@@ -158,9 +162,12 @@ async function hydrate(base, headers, code) {
   return { ok: true, room: json };
 }
 
-async function poll(base, headers, code, after) {
+async function poll(base, headers, code, after, viewer) {
   const cursor = Math.max(0, parseInt(after, 10) || 0);
-  const { status, json } = await rawFetch(base + '/api/rooms/' + code + '/messages?after=' + cursor + '&wait=0', headers);
+  // viewer=1 (and NEVER a name) is the v0.11.0 "human present" stamp; the page only asks for it when
+  // the panel is actually composited (rAF heartbeat). An older server simply ignores the param.
+  const presence = String(viewer) === '1' ? '&viewer=1' : '';
+  const { status, json } = await rawFetch(base + '/api/rooms/' + code + '/messages?after=' + cursor + '&wait=0' + presence, headers);
   if (status === 404) throw new Error('room ' + code + ' not found');
   if (status !== 200 || !json) throw apiError(status, json);
   return {
@@ -249,6 +256,28 @@ async function dismissAsk(base, headers, code, id) {
   return { ok: true, ask: json.ask, asks: Array.isArray(json.asks) ? json.asks : [] };
 }
 
+// Mark the given open asks seen — the human has them in front of him on the panel. The page reports
+// once per id and retries on failure. IDs are validated here (positive integers, capped) so the
+// browser can't push junk. A pre-0.11.0 server 404s the route; we report that as `unsupported` so
+// the page stops trying rather than surfacing an error.
+async function seenAsks(base, headers, code, context) {
+  const body = bodyJson(context);
+  const raw = Array.isArray(body.ids) ? body.ids : [];
+  const ids = [];
+  for (const v of raw) {
+    const n = Number(v);
+    if (Number.isInteger(n) && n > 0 && n <= 1e15) ids.push(n);
+    if (ids.length >= 200) break;
+  }
+  if (!ids.length) return { ok: true, asks: [] };   // nothing valid to report — make no request
+  const { status, json } = await rawFetch(base + '/api/rooms/' + code + '/asks/seen', headers, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+  });
+  if (status === 404) return { ok: false, unsupported: true };   // pre-0.11.0 server: swallow silently
+  if (status !== 200 || !json) throw apiError(status, json);
+  return { ok: true, asks: Array.isArray(json.asks) ? json.asks : [] };
+}
+
 // The addressed-only mode is shown as a read-only badge (from poll), not mutated here — so there
 // is no `mode` action (avoids a dead, unvalidated write path).
 
@@ -261,11 +290,12 @@ async function handle(action, context) {
     if (action === 'list') return await listRooms(base, headers);
     if (action === 'history') return await listHistory(base, headers);
     if (action === 'hydrate') return await hydrate(base, headers, roomCode(query, options));
-    if (action === 'poll') return await poll(base, headers, roomCode(query, options), query.after);
+    if (action === 'poll') return await poll(base, headers, roomCode(query, options), query.after, query.viewer);
     if (action === 'send') return await send(base, headers, roomCode(query, options), context);
     if (action === 'close') return await closeRoom(base, headers, roomCode(query, options), context);
     if (action === 'answer') return await answerAsk(base, headers, roomCode(query, options), askId(query), context);
     if (action === 'dismiss') return await dismissAsk(base, headers, roomCode(query, options), askId(query));
+    if (action === 'seen') return await seenAsks(base, headers, roomCode(query, options), context);
     return { ok: false, error: 'unknown action' };
   } catch (error) {
     return { ok: false, error: safeError(error) };

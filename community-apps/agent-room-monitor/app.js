@@ -14,6 +14,10 @@ const RETRY_MAX_MS = 15000;
 const DEFAULT_CLOSE_SUMMARY = 'Closed from panel';
 const TAP_SWALLOW_MS = 700;
 const DISMISS_ARM_MS = 4000;   // how long a 'Confirm dismiss' stays armed before relaxing
+// The panel hides a served app by display:none on its <webview> WITHOUT flipping the guest's
+// document.visibilityState (verified), but requestAnimationFrame pauses when not composited. So a
+// stale rAF heartbeat = the panel isn't showing this app. Presence/seen are gated on a fresh frame.
+const HEARTBEAT_STALE_MS = 1500;
 // Chime on a new ask: on unless the app option explicitly disables it (a bool option arrives as
 // '0'/'false' when off, '1'/'true' or absent when on).
 const CHIME_ON = params.get('chime') !== 'false' && params.get('chime') !== '0';
@@ -73,6 +77,10 @@ const state = {
   needsKey: '',        // last render key, so a poll doesn't clobber a draft mid-type
   answering: false,    // guard against double answer/dismiss
   audio: null,         // lazily-created AudioContext for the chime
+  // ---- Presence + seen (Agent Room server 0.11.0) ----
+  lastFrameAt: 0,      // timestamp of the last rAF; stale => the webview is display:none (not shown)
+  reportedSeen: new Set(), // ask ids already reported seen (retry drops them back out)
+  seenUnsupported: false,  // a pre-0.11.0 server 404'd /asks/seen — stop trying
 };
 
 // ---- Small helpers ----
@@ -451,6 +459,7 @@ async function attach(code) {
   // Needs-you: reset the tray for this room, then load its open asks (no chime on first load).
   state.askSeenMax = null; state.askIdx = 0; state.askDrafts.clear();
   state.dockOpen = false; state.autoOpenDone = false; state.dismissArm = null; state.needsError = null;
+  state.reportedSeen.clear(); state.seenUnsupported = false;   // fresh seen-tracking for this room
   els.needsChip.hidden = false;
   setAsks(room.asks || []);
   hideOverlay();
@@ -469,7 +478,11 @@ async function doPoll() {
   if (state.polling || !state.code) return { skipped: true };
   state.polling = true;
   try {
-    const res = await callApi('poll', { room: state.code, after: String(state.cursor) });
+    // viewer=1 (nameless) marks the human present on a 0.11.0 server — but only when the panel is
+    // actually showing the room (composited + no overlay), so a screensaver never fakes presence.
+    const q = { room: state.code, after: String(state.cursor) };
+    if (isRoomInView()) q.viewer = '1';
+    const res = await callApi('poll', q);
     if (!res.ok) return res;
     if (state.status === 'error') hideOverlay();
     setStatus(res.status || 'open');
@@ -832,6 +845,7 @@ function setAsks(asks) {
   // Non-force: the key guard leaves the textarea (and its focus/caret) untouched on a 2s poll
   // when the ask set is unchanged; it rebuilds only when something actually changed.
   renderNeeds();
+  markSeen();   // report the selected ask seen when it's actually in front of him
 }
 
 // Build one Needs-you panel (dock or focus) for the current ask. Text/names use textContent only.
@@ -953,8 +967,8 @@ function runNeedsAct(btn) {
   const act = btn.dataset.act;
   // A manual close latches the auto-open: later asks only re-light the chip, never re-open.
   if (act === 'close') { state.dockOpen = false; state.autoOpenDone = true; if (state.mode === '1') els.shell.dataset.dock = 'closed'; return; }
-  if (act === 'prev') { if (state.askIdx > 0) { state.askIdx--; state.dismissArm = null; renderNeeds(true); } return; }
-  if (act === 'next') { if (state.askIdx < state.asks.length - 1) { state.askIdx++; state.dismissArm = null; renderNeeds(true); } return; }
+  if (act === 'prev') { if (state.askIdx > 0) { state.askIdx--; state.dismissArm = null; renderNeeds(true); markSeen(); } return; }
+  if (act === 'next') { if (state.askIdx < state.asks.length - 1) { state.askIdx++; state.dismissArm = null; renderNeeds(true); markSeen(); } return; }
   const ask = state.asks[state.askIdx];
   if (!ask) return;
   if (act === 'dismiss') { onDismiss(ask); return; }
@@ -1028,6 +1042,40 @@ async function submitFocusMessage(text) {
   } finally { state.sending = false; els.focusSendBtn.disabled = state.status === 'closed' || !els.focusInput.value.trim(); }
 }
 
+// ---- Presence + "seen" (Agent Room server 0.11.0) ----
+// Fresh rAF = the panel is compositing this app (see HEARTBEAT_STALE_MS). A display:none webview
+// (tile page / tile-grid screensaver) stalls rAF, so this reads false and presence/seen stop.
+function isComposited() { return (performance.now() - state.lastFrameAt) < HEARTBEAT_STALE_MS; }
+// The room content is actually on his screen: composited and no picker/History/close overlay over it.
+function isRoomInView() { return isComposited() && els.overlay.hidden && els.closeDlg.hidden; }
+// The selected ask is in front of him: room in view AND a panel that shows it (3-Panel/Focus always,
+// Classic only when the dock is open).
+function seenEligible() {
+  if (!isRoomInView()) return false;
+  if (state.mode === '2' || state.mode === '3') return true;
+  return state.mode === '1' && state.dockOpen;
+}
+// Report the selected ask seen — once per id, retry next tick on failure, stop silently on a 404.
+function markSeen() {
+  if (state.seenUnsupported || !state.code || !seenEligible()) return;
+  const ask = state.asks[state.askIdx];
+  if (!ask || state.reportedSeen.has(ask.id)) return;
+  if (ask.seen_at) { state.reportedSeen.add(ask.id); return; }   // server already recorded it
+  const id = ask.id;
+  state.reportedSeen.add(id);
+  callApi('seen', { room: state.code }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) })
+    .then((res) => {
+      if (res && res.unsupported) state.seenUnsupported = true;        // old server: give up quietly
+      else if (!res || !res.ok) state.reportedSeen.delete(id);         // transient: let a later tick retry
+    })
+    .catch(() => state.reportedSeen.delete(id));
+}
+function startHeartbeat() {
+  const tick = () => { state.lastFrameAt = performance.now(); requestAnimationFrame(tick); };
+  state.lastFrameAt = performance.now();
+  requestAnimationFrame(tick);
+}
+
 // ---- Wiring ----
 for (const b of els.modeSeg.querySelectorAll('button')) tap(b, () => applyMode(b.dataset.m));
 tap(els.needsChip, () => { state.dockOpen = !state.dockOpen; if (state.mode === '1') els.shell.dataset.dock = state.dockOpen ? 'open' : 'closed'; });
@@ -1042,5 +1090,6 @@ els.focusInput.addEventListener('input', () => {
 els.focusInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); els.focusComposer.requestSubmit(); } });
 tap(els.focusSendBtn, () => els.focusComposer.requestSubmit());
 
+startHeartbeat();
 applyMode(loadMode(), false);
 init();
