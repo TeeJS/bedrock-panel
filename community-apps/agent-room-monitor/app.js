@@ -463,6 +463,7 @@ async function attach(code) {
   els.needsChip.hidden = false;
   setAsks(room.asks || []);
   hideOverlay();
+  markSeen();   // the room is now in view (overlay gone) — report the shown ask without waiting a poll
   renderRoomList(state.rooms);                       // re-mark the current room in the rail list
   refreshRooms();                                    // and refresh it in the background
   if (room.status === 'closed') onClosed();          // no synthetic summary — the summary-kind message already rendered
@@ -786,6 +787,7 @@ function applyMode(mode, persist) {
   for (const b of els.modeSeg.querySelectorAll('button')) b.classList.toggle('on', b.dataset.m === mode);
   els.shell.dataset.dock = (mode !== '1') ? 'open' : (state.dockOpen ? 'open' : 'closed');
   renderNeeds(true);
+  markSeen();   // switching to a mode that shows the ask puts it in front — report it now, not next poll
 }
 
 // One short chime on a genuinely new ask. Web Audio only; silent if blocked or disabled.
@@ -1062,13 +1064,15 @@ function markSeen() {
   if (!ask || state.reportedSeen.has(ask.id)) return;
   if (ask.seen_at) { state.reportedSeen.add(ask.id); return; }   // server already recorded it
   const id = ask.id;
+  const room = state.code;               // pin the room; a stale response after a switch must be ignored
   state.reportedSeen.add(id);
-  callApi('seen', { room: state.code }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) })
+  callApi('seen', { room }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) })
     .then((res) => {
+      if (state.code !== room) return;                                // switched rooms — drop this reply
       if (res && res.unsupported) state.seenUnsupported = true;        // old server: give up quietly
       else if (!res || !res.ok) state.reportedSeen.delete(id);         // transient: let a later tick retry
     })
-    .catch(() => state.reportedSeen.delete(id));
+    .catch(() => { if (state.code === room) state.reportedSeen.delete(id); });
 }
 function startHeartbeat() {
   const tick = () => { state.lastFrameAt = performance.now(); requestAnimationFrame(tick); };
@@ -1078,7 +1082,7 @@ function startHeartbeat() {
 
 // ---- Wiring ----
 for (const b of els.modeSeg.querySelectorAll('button')) tap(b, () => applyMode(b.dataset.m));
-tap(els.needsChip, () => { state.dockOpen = !state.dockOpen; if (state.mode === '1') els.shell.dataset.dock = state.dockOpen ? 'open' : 'closed'; });
+tap(els.needsChip, () => { state.dockOpen = !state.dockOpen; if (state.mode === '1') els.shell.dataset.dock = state.dockOpen ? 'open' : 'closed'; markSeen(); });
 wireNeedsPanel(els.needsDock);
 wireNeedsPanel(els.focusAsk);
 els.focusComposer.addEventListener('submit', (e) => { e.preventDefault(); submitFocusMessage(els.focusInput.value.trim()); });
