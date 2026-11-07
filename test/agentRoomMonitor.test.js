@@ -82,3 +82,43 @@ test('answer surfaces a closed-room 409 as a clear error', async () => {
   assert.equal(res.ok, false);
   assert.match(res.error, /closed/);
 });
+
+test('poll with viewer=1 adds &viewer=1 and never a name (the v0.11.0 presence stamp)', async () => {
+  stub(200, { messages: [], latest_message_id: 0, participants: [], status: 'open', asks: [] });
+  await call('poll', { query: { after: '0', viewer: '1' } });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/api\/rooms\/AM-TEST\/messages\?after=0&wait=0&viewer=1$/);
+  assert.doesNotMatch(calls[0].url, /name=/);   // presence stamp requires NO name
+});
+
+test('poll without viewer does not send viewer=1', async () => {
+  stub(200, { messages: [], latest_message_id: 0, participants: [], status: 'open', asks: [] });
+  await call('poll', { query: { after: '3' } });
+  assert.match(calls[0].url, /messages\?after=3&wait=0$/);
+  assert.doesNotMatch(calls[0].url, /viewer=1/);
+});
+
+test('seen -> POST /api/rooms/:code/asks/seen {ids}, junk ids filtered out', async () => {
+  stub(200, { asks: [] });
+  const res = await call('seen', { body: { ids: [493, '494', -1, 0, 'x', 9.5, 500] } });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://127.0.0.1:7331/api/rooms/AM-TEST/asks/seen');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { ids: [493, 494, 500] });   // positive integers only
+  assert.equal(res.ok, true);
+});
+
+test('seen with no valid ids makes no request', async () => {
+  stub(200, { asks: [] });
+  const res = await call('seen', { body: { ids: ['nope', -3, 0] } });
+  assert.equal(calls.length, 0);
+  assert.equal(res.ok, true);
+});
+
+test('seen on a pre-0.11.0 server (404) is reported unsupported, not an error', async () => {
+  stub(404, { error: 'Not found' });
+  const res = await call('seen', { body: { ids: [5] } });
+  assert.equal(res.ok, false);
+  assert.equal(res.unsupported, true);
+  assert.equal(res.error, undefined);   // swallowed: no error surfaced to the page
+});

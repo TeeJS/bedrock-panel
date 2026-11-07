@@ -49,7 +49,18 @@ no questions to show.
 ## How it works
 
 The page never talks to the room server directly. It calls a small set of named actions on the
-app's own `server.js` (list, history, hydrate, poll, send, close, answer, dismiss), which maps each
-to one exact Agent Room API route, validates the room code and ask id, and adds the bearer token
+app's own `server.js` (list, history, hydrate, poll, send, close, answer, dismiss, seen), which maps
+each to one exact Agent Room API route, validates the room code and ask id, and adds the bearer token
 host-side. Answering an ask posts to `/api/rooms/:code/asks/:id/answer`; dismissing posts to the
 matching `/dismiss`; `poll` carries the open-questions list so the Needs-you view stays current.
+
+## Presence and "seen" (Agent Room server 0.11.0+)
+
+So agents know you're actually at the panel, `poll` adds `viewer=1` (never a name) to mark you
+**present**, and `seen` reports the question you're looking at as **seen** so an ask doesn't read as
+ignored. Both are gated on the panel actually showing this app: the panel hides a drop-in by
+`display:none` on its webview without changing the page's `visibilityState`, so presence/seen follow
+a `requestAnimationFrame` heartbeat instead — when the app is off-screen (a tile page or the
+tile-grid screensaver) the heartbeat stalls and presence lapses, and it resumes when you return.
+Presence is never stamped while the Rooms/History picker covers the room, and room discovery never
+stamps it. Against an older server this is inert: `viewer=1` is ignored and `seen` 404s silently.
