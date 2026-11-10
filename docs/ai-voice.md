@@ -286,13 +286,36 @@ small hand-rolled TCP client.
 - **"Failed to authenticate: OAuth session expired and could not be refreshed"** (Claude Code) —
   the CLI's own sign-in lapsed; the panel uses whatever account `claude` is signed in with. Open a
   terminal on the PC, run `claude`, type `/login`, finish the browser sign-in, then send the turn
-  again. The status line now says this itself.
+  again. The status line now says this itself. To avoid repeat logouts on a headless/kiosk PC, save
+  a long-lived **Claude token** on **Settings → Auth** (see below) — then this uses that instead.
 - **Voice does nothing on tap** — check the device mic is on (tray → mic).
 - **No transcription / no speech playback** — check **Settings → TTS/STT**; confirm the services
   are reachable (with tts-sst, check its tray status — on first run it's downloading models).
 - **Approvals never show up (Claude Code)** — Permission mode must be **Manual** *and* Touch
   approval on; toggling either takes effect for the *next* session.
-- **Security note** — nothing here stores an agent credential: CLI auth is your existing sign-in,
+### Claude token (Settings → Auth)
+
+By default the Claude backend uses whatever account `claude` is signed in with in a terminal. That
+sign-in can lapse, which is a problem on an always-on panel. On **Settings → Auth → Claude Code** you
+can paste a long-lived token so the Claude features (AI Voice, meeting analysis, LucidType) keep
+working without a fresh browser login:
+
+- In a terminal run `claude setup-token` (needs a Claude Pro, Max, Team, or Enterprise plan) and
+  paste the printed `sk-ant-oat…` token into the card. The **Created** date is stamped automatically;
+  the token lasts about a year, and the card warns as it nears expiry.
+- The token is stored **encrypted at rest** (DPAPI on Windows, the OS keychain elsewhere) and only
+  ever reaches the `claude` processes Bedrock Panel starts — never a URL, a command line, or a log.
+- While a token is set it replaces any `ANTHROPIC_API_KEY` for these features, and **claude.ai
+  connectors won't load** in the voice panel (a setup-token can only make model requests; local MCP
+  servers still work). Clear the field to go back to your normal `claude` login.
+- **Check** runs `claude auth status` and reports which credential Claude would use — it spends no
+  model tokens, but it doesn't prove the token is still valid; the first real turn does that.
+
+A running voice session keeps its current sign-in; a new or replaced token applies when the session
+next starts.
+
+- **Security note** — nothing here stores an agent credential unless you add one: CLI auth is your
+  existing sign-in (or the optional Auth-tab token, encrypted at rest), and
   Wyoming has no auth. The API backend's key is stored encrypted at rest and used only from the
   main process. The approval hook's per-launch token is never written to disk.
 
