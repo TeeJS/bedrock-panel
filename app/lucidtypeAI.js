@@ -43,6 +43,8 @@ function createLucidAI(deps) {
   const owuiClient = d.owuiClient || owuiClientMod;
   const log = d.log || (() => {});
   const now = d.now || Date.now;
+  // Base env for the `claude` spawn; main injects getClaudeEnv (adds the optional Auth-tab token).
+  const getClaudeEnv = d.getClaudeEnv || (() => process.env);
 
   // opts: { useEndpoint, endpoint, endpointKey, backend, model, timeoutMs, owui:{url,apiKey,model} }
   async function transform(systemPrompt, userText, opts) {
@@ -105,7 +107,8 @@ function createLucidAI(deps) {
   function runClaude(input, timeoutMs) {
     const exe = (d.findClaudeExe || require('./claudevoice-session').findClaudeExe)();
     if (!exe) return Promise.reject(new Error('Claude CLI not found on PATH'));
-    return runProc(exe, ['-p'], input, false, timeoutMs).then(r => r.stdout);
+    // getClaudeEnv() carries the optional Auth-tab token (CLAUDE_CODE_OAUTH_TOKEN) when one is set.
+    return runProc(exe, ['-p'], input, false, timeoutMs, getClaudeEnv()).then(r => r.stdout);
   }
   async function runCodex(input, timeoutMs) {
     const exe = (d.findCodexExe || require('./codexvoice-session').findCodexExe)();
@@ -116,10 +119,13 @@ function createLucidAI(deps) {
       return await fsp.readFile(outFile, 'utf8');
     } finally { try { await fsp.unlink(outFile); } catch (e) {} }
   }
-  function runProc(cmd, args, stdinText, shell, timeoutMs) {
+  function runProc(cmd, args, stdinText, shell, timeoutMs, env) {
     return new Promise((resolve, reject) => {
       let proc;
-      try { proc = spawnImpl(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: !!shell }); }
+      // env is passed only for the Claude path (the token env); undefined leaves process.env inherited.
+      const spawnOpts = { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: !!shell };
+      if (env) spawnOpts.env = env;
+      try { proc = spawnImpl(cmd, args, spawnOpts); }
       catch (e) { return reject(new Error('spawn failed: ' + e.message)); }
       let out = '', err = '', settled = false;
       const timer = setTimeout(() => { if (settled) return; settled = true; try { proc.kill(); } catch (e) {} reject(new Error('AI timed out')); }, timeoutMs);

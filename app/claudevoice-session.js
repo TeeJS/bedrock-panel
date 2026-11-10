@@ -48,6 +48,9 @@ function createClaudeVoiceSession(options) {
   const spawn = opts.spawn || childProcess.spawn;
   const execFileSync = opts.execFileSync || childProcess.execFileSync;
   const log = opts.log || (() => {});
+  // Base environment for the `claude` child. main.js injects getClaudeEnv, which adds the optional
+  // Auth-tab token (CLAUDE_CODE_OAUTH_TOKEN) when one is set; without it, this is plain process.env.
+  const getEnv = opts.getEnv || (() => process.env);
   const restartDelay = opts.restartDelay == null ? 1500 : opts.restartDelay;
 
   let child = null;
@@ -112,7 +115,7 @@ function createClaudeVoiceSession(options) {
       ], {
         cwd: projectDir,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: Object.assign({}, process.env, {
+        env: Object.assign({}, getEnv(), {
           OQX_VOICE_SESSION: '1',
           OQX_VOICE_PORT: String(voicePort || ''),
           OQX_VOICE_TOKEN: voiceToken || '',

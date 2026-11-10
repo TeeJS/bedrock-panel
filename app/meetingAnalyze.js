@@ -19,6 +19,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { safeRelPath, wavDurationMs } = require('./meetingLibrary');
 const { runCopilotBatchPrompt } = require('./copilotvoice-session');
+const claudeAuthMod = require('./claudeAuth');
 const owuiClientMod = require('./owuiClient');
 const joplinNotesMod = require('./joplinNotes');
 const obsidianExportMod = require('./obsidianExport');
@@ -126,10 +127,16 @@ const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const MAX_STDERR_BYTES = 1024 * 1024;   // diagnostics only; anything past this is dropped, not buffered
 // CLI sign-in failures (Claude prints these on stdout: "Failed to authenticate: OAuth session expired
 // and could not be refreshed"; Codex/Copilot use "not logged in" wording). Matched case-insensitively.
-const AUTH_FAILURE_RE = /failed to authenticate|not logged in|please run \/login|oauth[^\n]*expired|invalid api key/i;
+const AUTH_FAILURE_RE = /failed to authenticate|not logged in|please run \/login|oauth[^\n]*expired|invalid (api key|bearer token)/i;
 // Only Claude's sign-in command is verified (`claude auth login`); other backends get a generic line.
-function authRequiredMsg(ai) {
-  if (ai === 'claude') return 'Claude needs sign-in. On this PC run: claude auth login — then try again.';
+// claudeHasToken: when an Auth-tab Claude token is saved, a failure means the TOKEN is bad (it does
+// not fall back to the normal login), so point the user at replacing/clearing it instead.
+function authRequiredMsg(ai, claudeHasToken) {
+  if (ai === 'claude') {
+    return claudeHasToken
+      ? claudeAuthMod.rejectedTokenMessage()
+      : 'Claude needs sign-in. On this PC run: claude auth login — then try again.';
+  }
   const label = { codex: 'Codex', copilot: 'Copilot', owui: 'Open WebUI' }[ai] || 'The analysis AI';
   return label + ' needs sign-in. Sign in to it on this PC, then try again.';
 }
@@ -246,6 +253,9 @@ function createMeetingAnalyzer(deps) {
   const resolveOwui = deps.resolveOwui || (() => ({}));   // () => { url, apiKey, model } (settings.owui)
   const owuiClient = deps.owuiClient || owuiClientMod;
   const findClaudeExe = deps.findClaudeExe || require('./claudevoice-session').findClaudeExe;
+  // Base env for the `claude` spawn; main injects getClaudeEnv (adds the optional Auth-tab token).
+  const getClaudeEnv = deps.getClaudeEnv || (() => process.env);
+  const claudeHasToken = deps.claudeHasToken || (() => false);   // token-aware sign-in error text
   const findCodexExe = deps.findCodexExe || require('./codexvoice-session').findCodexExe;
   const findCopilotExe = deps.findCopilotExe || require('./copilotvoice-session').findCopilotExe;
   // promptPath may be a function (main.js prefers the user's editable copy in userData over the
@@ -415,7 +425,7 @@ function createMeetingAnalyzer(deps) {
         // The CLI's "session expired" lands on stdout and reads as noise on a 480px panel; swap it
         // for the one instruction that fixes it. authRequired lets the batch coordinator stop early.
         lastError = AUTH_FAILURE_RE.test(raw)
-          ? { name: n, kind, error: authRequiredMsg(ai), authRequired: true, finishedAt: now() }
+          ? { name: n, kind, error: authRequiredMsg(ai, claudeHasToken()), authRequired: true, finishedAt: now() }
           : { name: n, kind, error: raw, finishedAt: now() };
         emitOutcome(Object.assign({ status: 'error' }, lastError));
       })
@@ -1477,7 +1487,8 @@ function createMeetingAnalyzer(deps) {
     if (!exe) return Promise.reject(new Error('Claude CLI not found on PATH'));
     // `claude -p` with no positional prompt reads the whole prompt from stdin; response on stdout.
     // CLAUDE_ISOLATION_ARGS is what makes "tools denied" true (see the constant for the smoke test).
-    return runProc(exe, ['-p'].concat(CLAUDE_ISOLATION_ARGS), input, false, timeoutMs).then(r => r.stdout);
+    // getClaudeEnv() carries the optional Auth-tab token (CLAUDE_CODE_OAUTH_TOKEN) when one is set.
+    return runProc(exe, ['-p'].concat(CLAUDE_ISOLATION_ARGS), input, false, timeoutMs, getClaudeEnv()).then(r => r.stdout);
   }
 
   async function runCodex(input, timeoutMs) {
@@ -1552,11 +1563,14 @@ function createMeetingAnalyzer(deps) {
     return content;
   }
 
-  function runProc(cmd, args, stdinText, shell, timeoutMs) {
+  function runProc(cmd, args, stdinText, shell, timeoutMs, env) {
     return new Promise((resolve, reject) => {
       let proc;
       try {
-        proc = spawnImpl(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: !!shell });
+        // env is passed only for the Claude path (the token env); undefined leaves process.env inherited.
+        const spawnOpts = { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: !!shell };
+        if (env) spawnOpts.env = env;
+        proc = spawnImpl(cmd, args, spawnOpts);
       } catch (e) { return reject(new Error('spawn failed: ' + e.message)); }
       let out = '', err = '', settled = false;
       const timer = setTimeout(() => {

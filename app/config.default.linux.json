@@ -20,6 +20,10 @@
       "repository": "",
       "branch": ""
     },
+    "claudeAuth": {
+      "token": "",
+      "createdAt": ""
+    },
     "meeting": {
       "noteStyle": "minutes"
     }

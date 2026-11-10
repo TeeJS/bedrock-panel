@@ -12,6 +12,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { createClaudeVoiceSession } = require('./claudevoice-session');
+const claudeAuthMod = require('./claudeAuth');
 const claudeVoiceApprovals = require('./claudevoice-approvals');
 
 // Mid-session permission-mode switch (panel Mode button): restart the claude process with --resume
@@ -56,16 +57,23 @@ Bedrock Panel panel.
 // A turn's error as the panel shows it. When the CLI's own sign-in has lapsed (OAuth refresh
 // failed, logged out, bad key) the fix is in a terminal, not on the panel, so say how rather than
 // passing the bare CLI message through.
-const SIGN_IN_FAILURE = /failed to authenticate|oauth (session|token)[^.]*(expired|invalid|revoked)|login expired|not logged in|please run \/login|invalid api key/i;
-function claudeTurnError(result) {
+const SIGN_IN_FAILURE = /failed to authenticate|oauth (session|token)[^.]*(expired|invalid|revoked)|login expired|not logged in|please run \/login|invalid (api key|bearer token)/i;
+// hasToken: is an Auth-tab Claude token saved? A saved token that fails does NOT fall back to the
+// normal login (confirmed in the spike), so point the user at replacing/clearing the token instead
+// of signing in. Without a token, the fix is the terminal login.
+function claudeTurnError(result, hasToken) {
   const msg = String(result || 'error');
-  return SIGN_IN_FAILURE.test(msg) ? msg + ' — sign Claude Code back in: open a terminal on this PC, run claude, then type /login' : msg;
+  if (!SIGN_IN_FAILURE.test(msg)) return msg;
+  return hasToken
+    ? msg + ' — ' + claudeAuthMod.rejectedTokenMessage()
+    : msg + ' — sign Claude Code back in: open a terminal on this PC, run claude, then type /login';
 }
 
-function createClaudeVoiceAdapter({ getServerPort, getUserDataPath, log }) {
+function createClaudeVoiceAdapter({ getServerPort, getUserDataPath, log, getEnv, hasClaudeToken }) {
   const say = log || (() => {});
+  const tokenSaved = hasClaudeToken || (() => false);
   const emitter = new EventEmitter();
-  const session = createClaudeVoiceSession({ log: say });
+  const session = createClaudeVoiceSession({ log: say, getEnv });
   // Per-boot random token, handed to the `claude` process via env and echoed back by the PreToolUse
   // hook (Phase 7) so sysserver.js can tell a legitimate hook request from anything else that might
   // guess the loopback port -- the hook has no Origin/Sec-Fetch-Site header to check instead.
@@ -101,7 +109,7 @@ function createClaudeVoiceAdapter({ getServerPort, getUserDataPath, log }) {
     if (event.type === 'result') {
       emitter.emit('turn-complete', {
         text: typeof event.result === 'string' ? event.result : null,
-        error: event.is_error ? claudeTurnError(event.result) : null,
+        error: event.is_error ? claudeTurnError(event.result, tokenSaved()) : null,
       });
       return;
     }

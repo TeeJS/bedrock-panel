@@ -272,7 +272,7 @@ const { createSlideCapture } = require('./slideCapture');       // hidden-window
 const { createLucidDictation } = require('./lucidtypeDictation'); // hidden-window LucidType dictation (mic + VAD -> Wyoming STT -> text)
 const lucidWyoming = require('./claudevoice-wyoming');          // Wyoming STT client (transcribe) for dictation
 const lucidAImod = require('./lucidtypeAI');                    // LucidType cleanup/rewrite AI routing (agents / OWUI / direct endpoint)
-const lucidAI = lucidAImod.createLucidAI({ log: msg => console.log('[lucidtype-ai] ' + msg) });
+const lucidAI = lucidAImod.createLucidAI({ log: msg => console.log('[lucidtype-ai] ' + msg), getClaudeEnv: () => getClaudeEnv() });
 const { enableLoopbackAudioCapture } = require('./loopback-audio'); // system-audio loopback display-media handler (recorder session only)
 const desktopFocus = require('./desktopFocus');   // tracks the PC's OS-level foreground app; auto-switches the panel to a mapped page
 const ahk = require('./ahk');                  // macro "ahk" step backend (shells out to an installed AutoHotkey.exe)
@@ -286,6 +286,7 @@ const { createClaudeVoiceAdapter } = require('./claudevoice-adapter'); // Claude
 const { createCodexVoiceAdapter, findCodexExe } = require('./codexvoice-session'); // OpenAI Codex session adapter (app-server JSON-RPC over stdio)
 const { createCopilotVoiceAdapter, findCopilotExe } = require('./copilotvoice-session'); // GitHub Copilot CLI session adapter (ACP JSON-RPC over stdio)
 const { findClaudeExe } = require('./claudevoice-session'); // CLI presence probe for the editor's voice-app warning
+const claudeAuthMod = require('./claudeAuth'); // optional "Claude token" (claude setup-token): child env, expiry, messages
 const { createOwuiVoiceAdapter } = require('./owuivoice-session'); // Open WebUI chat adapter (HTTP/SSE, no CLI)
 const { createApiVoiceAdapter } = require('./apivoice-session'); // OpenAI-compatible API chat adapter (bring your own key, no CLI)
 const { createLiveTranslateHost } = require('./livetranslate-host'); // Live Translate app host (Soniox token mint + save-to-file, no LLM)
@@ -523,6 +524,8 @@ const claudeVoiceHost = createVoicePanelHost({
     getServerPort: () => serverPort,
     getUserDataPath: () => app.getPath('userData'),
     log: claudeVoiceLog,
+    getEnv: getClaudeEnv,                                   // inject the optional Auth-tab Claude token
+    hasClaudeToken: () => !!claudeAuthSettings().token,     // token-aware sign-in error text
   }),
   deps: voiceBackendDeps('claude'),
 });
@@ -2476,6 +2479,13 @@ function audioDefaultParams(def) {
 // secretStore, plaintext in memory like haAuth.token.
 const OWUI_DEFAULTS = { url: '', apiKey: '', model: '' };
 function owuiSettings() { return Object.assign({}, OWUI_DEFAULTS, (config.settings || {}).owui || {}); }
+
+// Optional "Claude token" (settings.claudeAuth, edited on the Auth tab). When a token is set, it is
+// injected as CLAUDE_CODE_OAUTH_TOKEN into the `claude` CLI spawns (voice, meeting analysis, LucidType)
+// so those features keep working after the interactive login lapses. Empty token = today's behavior.
+const CLAUDE_AUTH_DEFAULTS = { token: '', createdAt: '' };
+function claudeAuthSettings() { return Object.assign({}, CLAUDE_AUTH_DEFAULTS, (config.settings || {}).claudeAuth || {}); }
+function getClaudeEnv() { return claudeAuthMod.claudeChildEnv(process.env, claudeAuthSettings()); }
 // ---- LucidType dictation (Phase 1) ----
 // Settings live on the lucidtype PAGE's own options (grid.options), like every other app — mic,
 // hotkeys and notifications are all per-page. Dictation runs in the background, so it reads the
@@ -4479,12 +4489,27 @@ app.whenReady().then(async () => {
       // startup, once the network has had time to come up.
       const vaultPushBoot = setTimeout(() => { vaultPush.request(); }, 30000);
       if (vaultPushBoot.unref) vaultPushBoot.unref();
+      // One-per-launch heads-up when the saved Claude token is within 30 days of its one-year expiry
+      // (or past it). The Auth-tab pill always shows the state; this is the push so a headless/kiosk
+      // user notices before the token lapses. Fires after boot settles so it doesn't delay startup.
+      try {
+        const claudeAuth = claudeAuthSettings();
+        if (claudeAuthMod.shouldWarnExpiry(claudeAuth)) {
+          const expiryBoot = setTimeout(() => {
+            const daysLeft = claudeAuthMod.tokenExpiry(claudeAuth).daysLeft;
+            notifyUser('Bedrock Panel — Claude token', claudeAuthMod.expiryNoticeBody(daysLeft));
+          }, 8000);
+          if (expiryBoot.unref) expiryBoot.unref();
+        }
+      } catch (e) { console.log('[claude-token] expiry check failed: ' + e.message); }
       meetingAnalyzer = require('./meetingAnalyze').createMeetingAnalyzer({
         vaultPush,
         resolveFolders: resolveMeetingFolders,
         foldersError: () => meetingFoldersError(),   // re-checked when a queued job starts (settings can change mid-batch)
         resolveAi: () => meetingSettings().analysisAi,
         resolveOwui: owuiSettings,
+        getClaudeEnv: () => getClaudeEnv(),                       // optional Auth-tab Claude token
+        claudeHasToken: () => !!claudeAuthSettings().token,       // token-aware sign-in error text
         promptPath: () => fs.existsSync(userMeetingPromptPath()) ? userMeetingPromptPath() : path.join(__dirname, 'meeting-analysis-prompt.md'),
         // Note style plus the filing options it governs (meetingRecord.filingOptionsFor).
         filingOptions: () => require('./meetingRecord').filingOptionsFor(meetingSettings()),
@@ -4947,6 +4972,29 @@ app.whenReady().then(async () => {
       // api: nothing to probe here — the page's own URL/key fields carry the connection.
     } catch (err) {}
     return null;
+  });
+  // Auth tab "Check" for the Claude token: run `claude auth status --json` with the token env. It
+  // spends no model tokens and reports which credential Claude WOULD use — authMethod "oauth_token"
+  // means the saved token wins. It does NOT prove the token is still valid (the spike confirmed
+  // `auth status` doesn't validate); the card hint says so. The editor auto-saves before calling,
+  // like the Open WebUI/OBS tests, so this reads the just-saved token.
+  ipcMain.handle('testClaudeToken', (e) => {
+    if (!isFrom(e, configWin)) return { ok: false, error: 'unauthorized' };
+    const exe = findClaudeExe();
+    if (!exe) return { ok: false, error: 'Claude CLI not found on PATH.' };
+    return new Promise((resolve) => {
+      execFile(exe, ['auth', 'status', '--json'], { env: getClaudeEnv(), windowsHide: true, timeout: 15000, maxBuffer: 1 << 20 }, (err, stdout) => {
+        // `auth status` exits 1 when not logged in, but still prints JSON on stdout — parse either way.
+        let data = null;
+        try { data = JSON.parse(String(stdout || '')); } catch (_e) {}
+        if (data && typeof data === 'object') {
+          const method = data.authMethod || 'none';
+          resolve({ ok: true, loggedIn: !!data.loggedIn, authMethod: method, usingToken: method === 'oauth_token' });
+        } else {
+          resolve({ ok: false, error: (err && err.message) || 'Could not read auth status.' });
+        }
+      });
+    });
   });
   // "Test connection" for the Auth tab's Open WebUI section: normalize the URL and hit
   // /api/models with the key. Returns the model list so the editor can report a live count.

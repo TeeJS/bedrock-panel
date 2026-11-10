@@ -99,6 +99,8 @@ automatic gain control. Your meeting app continues to use its own microphone set
   stop it. If the analysis CLI reports it needs sign-in (for Claude: its login has
   expired), the batch drops the rest of the analysis queue and shows **Batch stopped:
   Claude needs sign-in** — run `claude auth login` on the PC, then tap **Batch** again.
+  To avoid repeat logouts, save a long-lived **Claude token** on **Settings → Auth** (made
+  with `claude setup-token`); the message then points you back there instead.
 - **Unprocessed** — list, play, transcribe, and delete recordings in one screen. Each
   row has **Transcribe / Play / Delete**; the header adds **Transcribe selected** and
   **Delete selected** (deletes are two-tap: `Delete` → `Confirm?`). Transcription sends

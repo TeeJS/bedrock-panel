@@ -180,6 +180,22 @@
       + `<input type="password" value="${esc(value)}" ${attrs || ''}>`
       + `<button type="button" class="reveal" tabindex="-1" title="Show / hide">👁</button></span>`;
   }
+  // Auth tab status pill for the optional Claude token. Mirrors app/claudeAuth.tokenExpiry (that
+  // module is the main-process source of truth; this renderer can't require it). stpill has only
+  // ok/off/err classes, so "expires soon" and "expired" both use err — the text tells them apart.
+  function claudeTokenPill(cl) {
+    const token = String((cl && cl.token) || '').replace(/\s+/g, '');
+    if (!token) return { cls: 'off', text: 'Not set' };
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String((cl && cl.createdAt) || '').trim());
+    if (!m) return { cls: 'ok', text: 'Set' };
+    const DAY = 86400000;
+    const expiresAt = Date.UTC(+m[1], +m[2] - 1, +m[3]) + 365 * DAY;
+    const daysLeft = Math.ceil((expiresAt - Date.now()) / DAY);
+    if (daysLeft < 0) return { cls: 'err', text: 'Probably expired' };
+    if (daysLeft <= 30) return { cls: 'err', text: daysLeft <= 0 ? 'Expires today' : 'Expires in ' + daysLeft + ' day' + (daysLeft === 1 ? '' : 's') };
+    const d = new Date(expiresAt); const p = n => String(n).padStart(2, '0');
+    return { cls: 'ok', text: 'Set · expires about ' + d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) };
+  }
   // One-time delegated handler: an eyeball click toggles its field between hidden (••••) and visible.
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('.reveal'); if (!b) return;
@@ -5093,6 +5109,8 @@ ${IS_MAC ? `
     const ha = (s.haAuth && typeof s.haAuth === 'object') ? s.haAuth : { url: '', token: '', useHa: false };
     const ow = (s.owui && typeof s.owui === 'object') ? s.owui : { url: '', apiKey: '', model: '' };
     const obs = (s.obs && typeof s.obs === 'object') ? s.obs : {};
+    const cl = (s.claudeAuth && typeof s.claudeAuth === 'object') ? s.claudeAuth : { token: '', createdAt: '' };
+    const clPill = claudeTokenPill(cl);
     const authHtml = `
       <div class="card">
       <p class="sectitle">Home Assistant <span id="sHaPill" class="stpill ${ha.useHa ? 'ok' : 'off'}">${ha.useHa ? 'Enabled' : 'Disabled'}</span></p>
@@ -5119,6 +5137,18 @@ ${IS_MAC ? `
         <button id="sOwTest" type="button" style="margin-left:8px">Check connection</button></div>
       <p class="hint" id="sOwStatus" style="min-height:16px;margin:2px 0 0"></p>
       <details class="hint"><summary>One connection shared by the meeting <b>Analysis AI</b> (Open WebUI option on the Meeting tab) and the <b>Open WebUI Voice</b> panel app.</summary> The key is stored encrypted at rest. In Open WebUI: avatar (bottom-left) → Settings → Account → API Keys — an admin may need to enable API keys first.</details>
+      </div>
+
+      <div class="card">
+      <p class="sectitle">Claude Code <span id="sClPill" class="stpill ${clPill.cls}">${esc(clPill.text)}</span></p>
+      <p class="hint">Keeps Bedrock Panel's Claude features (AI Voice, meeting analysis, LucidType) working when your <code>claude</code> terminal login lapses. In a terminal run <code>claude setup-token</code> (needs a Claude Pro, Max, Team, or Enterprise plan), then paste the token here.</p>
+      <div class="row"><label>Token</label>${secretInput(cl.token || '', 'id="sClToken" placeholder="sk-ant-oat01-…"', 'flex:1')}</div>
+      <div class="row"><label>Created</label>
+        <input type="date" id="sClCreated" value="${esc(cl.createdAt || '')}" style="width:160px">
+        <span class="hint" style="margin:0 0 0 10px">set automatically on paste; one-year expiry is counted from here</span>
+        <button id="sClTest" type="button" style="margin-left:8px">Check</button></div>
+      <p class="hint" id="sClStatus" style="min-height:16px;margin:2px 0 0"></p>
+      <details class="hint"><summary>The token is stored encrypted at rest and only ever reaches the <code>claude</code> processes Bedrock Panel starts — never a URL or log.</summary> When a token is set it replaces any <code>ANTHROPIC_API_KEY</code> for these features, and claude.ai connectors won't load in the AI Voice panel (a setup-token can only make model requests). Clear the field to go back to your normal <code>claude</code> login.</details>
       </div>
 
       <div class="card">
@@ -5907,6 +5937,51 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       const obsStatus = document.getElementById('sObsStatus');
       if (obsTest) wireProbeTest(obsTest, obsStatus, () => configApi.probeObs(),
         r => 'OK — OBS-WebSocket v' + (r.obsVersion || '?') + ', ' + (r.sceneCount || 0) + ' scene(s)');
+
+      // Claude token (Auth tab) -> config.settings.claudeAuth. Pasting strips stray whitespace (a
+      // copy with trailing text once failed with "Invalid bearer token"), auto-stamps the created
+      // date, warns if the value isn't a setup-token, and refreshes the expiry pill. Check =
+      // auto-save-then-`claude auth status` (same pattern as owui/obs), reporting which credential wins.
+      const saveClaude = patch => {
+        if (!config.settings) config.settings = {};
+        const cur = (config.settings.claudeAuth && typeof config.settings.claudeAuth === 'object') ? config.settings.claudeAuth : { token: '', createdAt: '' };
+        config.settings.claudeAuth = Object.assign({ token: '', createdAt: '' }, cur, patch);
+        markDirty();
+      };
+      const clTokenEl = document.getElementById('sClToken');
+      const clCreatedEl = document.getElementById('sClCreated');
+      const clPillEl = document.getElementById('sClPill');
+      const clStatusEl = document.getElementById('sClStatus');
+      const refreshClPill = () => {
+        if (!clPillEl) return;
+        const p = claudeTokenPill(config.settings && config.settings.claudeAuth);
+        clPillEl.textContent = p.text; clPillEl.className = 'stpill ' + p.cls;
+      };
+      if (clTokenEl) clTokenEl.oninput = e => {
+        const cleaned = e.target.value.replace(/\s+/g, '');
+        if (cleaned !== e.target.value) e.target.value = cleaned;
+        const had = !!((config.settings && config.settings.claudeAuth && config.settings.claudeAuth.token) || '');
+        const patch = { token: cleaned };
+        // Stamp today's date when a token first appears (or replaces an empty one) and no date is set.
+        if (cleaned && !had && clCreatedEl && !clCreatedEl.value) {
+          patch.createdAt = new Date().toISOString().slice(0, 10);
+          clCreatedEl.value = patch.createdAt;
+        }
+        if (!cleaned) { patch.createdAt = ''; if (clCreatedEl) clCreatedEl.value = ''; }
+        saveClaude(patch);
+        refreshClPill();
+        if (clStatusEl) {
+          clStatusEl.textContent = cleaned && !/^sk-ant-oat/.test(cleaned) ? "That doesn't look like a setup-token (expected sk-ant-oat…), but it's saved." : '';
+          clStatusEl.style.color = '#c98';
+        }
+      };
+      if (clCreatedEl) clCreatedEl.oninput = e => { saveClaude({ createdAt: e.target.value }); refreshClPill(); };
+      const clTest = document.getElementById('sClTest');
+      if (clTest) wireProbeTest(clTest, clStatusEl, () => configApi.testClaudeToken(), r => {
+        if (!r.loggedIn) return 'Not signed in — paste a token above (or run claude /login).';
+        if (r.usingToken) return 'OK — the saved token is what Claude will use.';
+        return 'Signed in via ' + r.authMethod + ' (not the token). Clearing ANTHROPIC_API_KEY lets the token take over.';
+      });
 
       let oauthPoll = null;
       const oauthMsg = (id, text, bad) => {

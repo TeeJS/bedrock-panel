@@ -116,6 +116,8 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   probeVoiceCli(appId) { return ipcRenderer.invoke('probeVoiceCli', appId); },
   // Auth tab: test the saved Open WebUI connection (normalize URL + list models with the key).
   probeOwui(url, apiKey) { return ipcRenderer.invoke('probeOwui', url, apiKey); },
+  // Auth tab: `claude auth status --json` with the saved token — which credential Claude would use.
+  testClaudeToken() { return ipcRenderer.invoke('testClaudeToken'); },
   probeObs() { return ipcRenderer.invoke('probeObs'); },
   getObsSnapshot() { return ipcRenderer.invoke('getObsSnapshot'); },
   probeApiModels(url, apiKey) { return ipcRenderer.invoke('probeApiModels', url, apiKey); },
