@@ -1,10 +1,11 @@
 # Plan: optional "Claude token" setting
 
-Status: **APPROVED 2026-11-09** with the recommended options and defaults. **Phase 0 (the spike)
-is complete — every check passed**; see [Spike results](#spike-results). No app code has changed
-yet. Scope is Claude only: Codex and Copilot were considered and dropped (see
-[Out of scope](#out-of-scope)). Separate from `PROJECT.md` (the wake-word charter), which this
-does not touch.
+Status: **IMPLEMENTED 2026-11-09** (commit on the `claude-token-plan-c4aace` branch). Approved with
+the recommended options and defaults; Phase 0 spike passed (see [Spike results](#spike-results)); the
+Phase 1 code below is in. Unit tests pass (`npm test`); the Electron/manual checklist under
+[Verification](#verification) is still to run on a provisioned machine. Scope is Claude only: Codex
+and Copilot were considered and dropped (see [Out of scope](#out-of-scope)). Separate from
+`PROJECT.md` (the wake-word charter), which this does not touch.
 
 ## TL;DR
 
