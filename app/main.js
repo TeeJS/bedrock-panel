@@ -2776,7 +2776,7 @@ function readSystemAudioOnce() {
 // State the panel poller reads: recorder runtime state + the configured mic (so the page loads with
 // the editor-chosen mic as its default even when idle) + the auto-record flag.
 function meetingStateForPanel() {
-  const st = meetingRecorder ? meetingRecorder.getState() : { recording: false, startedAt: null, durationMs: 0, file: null, app: null, mic: '' };
+  const st = meetingRecorder ? meetingRecorder.getState() : { recording: false, startedAt: null, durationMs: 0, file: null, app: null, mic: '', error: '' };
   const m = meetingSettings();
   st.mic = st.mic || m.micDevice || '';
   st.micDef = audioDefaults().micLabel;   // app-wide default label so the panel picker can show "App-wide default"
@@ -2811,7 +2811,11 @@ async function onSlideRequest(cmd, arg) {
 // Panel remote for the recorder (start/stop/state/setMic), reached over HTTP via sysserver.
 function onMeetingRecordRequest(cmd, arg) {
   if (!meetingRecorder) return { ok: false, error: 'recorder unavailable' };
-  if (cmd === 'start') return { ok: true, state: meetingRecorder.start('manual') };
+  if (cmd === 'start') {
+    const state = meetingRecorder.start('manual');
+    // A start refused outright (recording folder unreachable) is reported to the page as an error.
+    return (!state.recording && state.error) ? { ok: false, error: state.error, state } : { ok: true, state };
+  }
   if (cmd === 'stop') return { ok: true, state: meetingRecorder.stop('manual') };
   if (cmd === 'state') return { ok: true, state: meetingStateForPanel() };
   if (cmd === 'setMic') { setMeetingMic(arg); return { ok: true, state: meetingStateForPanel() }; }

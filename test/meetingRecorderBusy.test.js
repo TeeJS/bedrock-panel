@@ -23,7 +23,7 @@ function setup(onRecordingComplete, patchFails, onRecordingDiscarded) {
   const disk = {
     mkdirSync() {},
     writeFileSync(p, data) { files[p] = String(data); },
-    createWriteStream() { return { write() {}, end(callback) { endings.push(callback); } }; },
+    createWriteStream() { return { on() {}, write() {}, end(callback) { endings.push(callback); } }; },
     openSync() { if (patchFails) throw new Error('patch failed'); return 1; },
     writeSync(fd, buffer, offset, length, position) { writes.push(position); },
     closeSync() {},

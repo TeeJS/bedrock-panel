@@ -305,12 +305,18 @@ function hlCmd(path) {
 $('hlToggle').onclick = function () { if ($('hlToggle').classList.contains('sdis')) return; hlCmd(hlState.highlighting ? '/highlight/stop' : '/highlight/start'); };
 $('hlClear').onclick = function () { if ($('hlClear').classList.contains('sdis')) return; hlCmd('/highlight/cancel'); };
 
+var shownRecError = '';
 function applyState(st) {
   curState = st || curState;
   globalMicLabel = curState.micDef || '';   // keep the inherited-default label fresh for the picker + row
   if (!micInitialized) { savedMicLabel = curState.mic || ''; micInitialized = true; syncMic(); }
   else if (!savedMicLabel) { syncMic(); }   // inheriting: reflect a changed app-wide default in the row
   var live = !!curState.recording;
+  // A recorder failure (recording folder unreachable or lost mid-meeting) is shown once per
+  // occurrence; auto-record has no button press to report it against.
+  var recErr = curState.error || '';
+  if (recErr && recErr !== shownRecError) statusShow(recErr, true);
+  shownRecError = recErr;
   // volume level (real, from main; when unreadable show a calm "System volume" label, no meter)
   var v = curState.volume;
   var known = (v != null);

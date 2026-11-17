@@ -65,6 +65,10 @@ automatic gain control. Your meeting app continues to use its own microphone set
     recording that stops before any audio arrives (a call that flickers on and off as it
     connects) is deleted with its sidecars instead of being left here; an empty slide-capture
     folder goes with it, one holding slides is kept.
+    If this folder cannot be reached when a recording starts (a network share while you are off
+    that network), nothing is recorded and the Meeting page shows **Recording folder
+    unavailable**; the app keeps running. If the folder is lost mid-recording the recording
+    stops, and whatever already reached the file is left in place (it may be incomplete).
   - **Transcribed Recordings** (default `…\transcribed`) — transcribed, not yet analyzed: the
     WAV, its `<name>-diarizer-response.json` transcript, sidecars, captions and screenshots, in
     one flat folder (no date subfolders, no stub `.md`). The transcript is the row the Analysis
