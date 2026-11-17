@@ -91,6 +91,7 @@ function createMeetingRecorder(deps) {
   let filePath = null;
   let triggerApp = null;       // which allowlisted app auto-started this, or null for manual
   let micLabel = '';
+  let lastError = '';          // why the last start/recording failed; cleared by the next good start
 
   // WAV write state.
   let stream = null;
@@ -178,10 +179,54 @@ function createMeetingRecorder(deps) {
     return doStart(reason, app);
   }
 
+  // The recording folder is often a network share. It can be unreachable at start (laptop off the
+  // LAN) or vanish mid-meeting; neither may take the whole app down. fs.createWriteStream reports
+  // an open/write failure as an async 'error' event, which with no listener is an uncaughtException
+  // (and main quits on those), so every stream gets this listener.
+  function onStreamError(failed, file, err) {
+    const code = (err && err.code) || 'error';
+    if (stream !== failed) {
+      // Already stopped: the failure hit while flushing/closing. finalizeFile's end() callback
+      // still runs and reports the file, so only record why.
+      log('wav write failed while closing (' + code + ') -> ' + file);
+      return;
+    }
+    const bytes = dataBytes;
+    sendCmd({ type: 'stop' });
+    recording = false;
+    stream = null;
+    startedAt = null;
+    triggerApp = null;
+    filePath = null;
+    try { failed.destroy(); } catch (e) {}
+    if (bytes === 0) {
+      // Nothing reached the file (the folder was unreachable from the start): same cleanup as an
+      // empty recording, so no stub or orphan sidecar is left for when the folder comes back.
+      lastError = 'Recording folder unavailable: ' + path.dirname(file);
+      try { fs.unlinkSync(file); } catch (e) {}
+      try { fs.unlinkSync(file.replace(/\.wav$/i, '') + '.capture.json'); } catch (e) {}
+      log('recording failed to start (' + code + '), folder unavailable -> ' + file);
+      try { if (deps.onRecordingDiscarded) deps.onRecordingDiscarded(path.basename(file)); } catch (e) {}
+    } else {
+      // Audio was captured before the folder went away. Leave whatever reached the file in place
+      // (its header is unpatched and the tail may be missing) rather than deleting a recording.
+      lastError = 'Recording stopped: lost the recording folder ' + path.dirname(file);
+      log('recording aborted (' + code + ') after ' + bytes + ' data bytes, file may be incomplete -> ' + file);
+    }
+    emitState();
+  }
+
   function doStart(reason, app) {
     const s = (deps.resolveSettings && deps.resolveSettings()) || {};
     const folder = (s.meetingFolder && String(s.meetingFolder).trim()) || (deps.defaultFolder && deps.defaultFolder()) || '.';
-    try { fs.mkdirSync(folder, { recursive: true }); } catch (e) { log('meeting folder create error: ' + e.message); }
+    try { fs.mkdirSync(folder, { recursive: true }); } catch (e) {
+      // mkdir -p succeeds on an existing folder, so a failure means it cannot be reached or made.
+      log('meeting folder create error: ' + e.message);
+      lastError = 'Recording folder unavailable: ' + folder;
+      log('recording not started (' + (reason || 'manual') + '), folder unavailable -> ' + folder);
+      emitState();
+      return getState();
+    }
 
     micLabel = s.micDevice || '';
     silenceStopMs = (Number(s.silenceStopMin) > 0) ? Number(s.silenceStopMin) * 60000 : 0;
@@ -190,14 +235,20 @@ function createMeetingRecorder(deps) {
     filePath = path.join(folder, timestampName(now));
     dataBytes = 0;
     try {
-      stream = fs.createWriteStream(filePath);
+      const opened = fs.createWriteStream(filePath);
+      const file = filePath;
+      opened.on('error', err => onStreamError(opened, file, err));
+      stream = opened;
       stream.write(wavHeader(0));   // placeholder sizes; patched on stop
     } catch (e) {
       log('cannot open wav file: ' + e.message);
+      lastError = 'Recording folder unavailable: ' + folder;
       stream = null; filePath = null;
+      emitState();
       return getState();
     }
 
+    lastError = '';
     recording = true;
     startedAt = now.getTime();
     triggerApp = app || null;
@@ -239,7 +290,8 @@ function createMeetingRecorder(deps) {
       const bytes = dataBytes;
       finalizingFiles.add(done);
       stream = null;
-      closing.end(() => {
+      closing.end(err => {
+        if (err) log('wav close error: ' + ((err && err.code) || 'error') + ' -> ' + done);
         if (bytes === 0) {
           // Nothing was captured (typically a call that flapped active -> ended within a second).
           // A header-only WAV can only fail transcription, so drop it and its capture sidecar
@@ -301,6 +353,7 @@ function createMeetingRecorder(deps) {
       file: filePath ? path.basename(filePath) : null,
       app: triggerApp,
       mic: micLabel,
+      error: lastError,
     };
   }
 
