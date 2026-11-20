@@ -157,7 +157,8 @@ you want; switch anytime from **Settings** or the tray's **Run mode** menu. → 
 ## Download
 
 Grab a build from the **[Releases](https://github.com/TeeJS/bedrock-panel/releases)** page:
-- **`bedrock-panel-portable.exe`** — Windows x64, run directly, no install.
+- **`bedrock-panel-portable.exe`** — Windows x64, run directly, no install. It unpacks to
+  `%USERPROFILE%\temp` (changeable in Settings → Software), never into AppData.
 - **`bedrock-panel-setup.exe`** — Windows x64 installer (Start-menu shortcut + uninstaller).
 - **`bedrock-panel-arm64.dmg`** — macOS on Apple Silicon (macOS 14.2+), signed and notarized: knob,
   touchscreen, Panel mode, Reserved Display, meeting recording with on-Mac transcription, and voice

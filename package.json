@@ -16,7 +16,7 @@
     "build:smtc": "node build-smtc.js",
     "build:mac-helpers": "node build-mac-helpers.js",
     "test": "node --test test/*.test.js",
-    "dist": "node build-dpapi.js && node build-smtc.js && electron-builder --win",
+    "dist": "node build-dpapi.js && node build-smtc.js && node build-portable-launcher.js && electron-builder --win",
     "dist:mac": "node build-mac-helpers.js && node build-mac.js",
     "dist:linux": "electron-builder --linux"
   },
@@ -62,6 +62,7 @@
       "!native/**",
       "!build-dpapi.js",
       "!build-smtc.js",
+      "!build-portable-launcher.js",
       "!build-mac.js",
       "!build-mac-helpers.js",
       "!sign.js",

@@ -5,6 +5,7 @@
       "automatic": true,
       "includeBetas": false
     },
+    "portableExtractDir": "",
     "discord": {
       "enabled": true,
       "applicationIdOverride": "",

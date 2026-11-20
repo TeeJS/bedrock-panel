@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   checkForUpdatesNow() { return ipcRenderer.invoke('updates:checkNow'); },
   openUpdatePrompt() { return ipcRenderer.invoke('updates:openPrompt'); },
   onUpdateStatus(cb) { ipcRenderer.on('updates:status', (_e, st) => cb(st)); },
+  // Windows portable build: where the launcher unpacks the app (main: portableExtract.js)
+  describePortableExtractDir(value) { return ipcRenderer.invoke('portableExtract:describe', value); },
   getApps() { return ipcRenderer.invoke('getApps'); },
   getMacPermissions() { return ipcRenderer.invoke('getMacPermissions'); },
   requestMacPermission(kind) { return ipcRenderer.invoke('requestMacPermission', kind); },
