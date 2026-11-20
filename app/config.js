@@ -4690,6 +4690,14 @@
         <span id="sUpStatus" class="hint" role="status" aria-live="polite" style="margin:0 0 0 10px"></span></div>
       <p class="hint" id="sUpChecked" style="margin:0"></p>
       <details class="hint"><summary>When <b>Automatic updates</b> is on, Bedrock Panel checks about a minute after it starts, then every 12 hours while it runs. <b>Check now</b> works any time.</summary> Updates come from Bedrock Panel's GitHub releases. When one is found you choose: <b>Install when I close Bedrock Panel</b>, <b>Install now and restart</b>, <b>Skip this version</b>, or <b>Not now</b> (asked again after 24 hours or at the next start). <b>Include beta versions</b> is greyed out while automatic updates are off. Changes to these two boxes apply when you click <b>Save</b>. The portable version never updates itself; it links to the download instead.</details>
+${!IS_WINDOWS ? '' : `
+
+      <p class="sectitle">Portable version</p>
+      <div class="row"><label style="width:150px">Extract folder</label>
+        <input type="text" id="sPortDir" placeholder="%USERPROFILE%\\temp" spellcheck="false" style="width:340px">
+        <button id="sPortDirBrowse" type="button" style="margin-left:8px">Browse…</button></div>
+      <p class="hint" id="sPortDirInfo" role="status" aria-live="polite" style="margin:0"></p>
+      <details class="hint"><summary>Where <b>bedrock-panel-portable.exe</b> unpacks the app each time it starts. Leave it empty for <b>%USERPROFILE%\\temp</b>.</summary> The portable version is a single file that unpacks Bedrock Panel into a folder and runs it from there. It never unpacks into AppData unless you pick a folder there yourself, because security software often blocks programs that run from AppData. Enter a full path; <b>%NAME%</b> variables are allowed. The change applies on <b>Save</b> and takes effect the next time the portable version starts. If the folder can't be created, the default is used. The installed version ignores this setting.</details>`}
 
       <p class="sectitle">Setup &amp; troubleshooting</p>
       <div class="row"><button id="sRunSetup">Re-run first-time setup…</button></div>
@@ -6070,6 +6078,24 @@ ${!IS_WINDOWS ? '' : `            <div class="row" style="margin-top:12px"><labe
       }
       if (upCheck) upCheck.onclick = async () => { upCheck.disabled = true; try { await configApi.checkForUpdatesNow(); } catch (e) {} };
       renderUpdateUi();
+      // Portable extract folder (Windows): saved like every other setting; the launcher reads it at its next start.
+      const portDir = document.getElementById('sPortDir'), portInfo = document.getElementById('sPortDirInfo');
+      if (portDir) {
+        const showPort = async () => {
+          let d = null;
+          try { d = await configApi.describePortableExtractDir(portDir.value); } catch (e) {}
+          if (!portInfo || !d) return;
+          portInfo.textContent = !d.valid
+            ? 'Not a usable folder. Enter a full path such as D:\\Apps\\temp. The default is used until this is fixed.'
+            : (d.usingDefault ? 'Default: ' : 'Extracts to: ') + d.dir + (d.underAppData ? '. This folder is inside AppData.' : '')
+              + (d.portable ? '' : ' (This copy is not the portable version, so the setting has no effect here.)');
+        };
+        portDir.value = s.portableExtractDir || '';
+        portDir.oninput = () => { setS('portableExtractDir', portDir.value.trim()); showPort(); };
+        const portBrowse = document.getElementById('sPortDirBrowse');
+        if (portBrowse) portBrowse.onclick = async () => { const p = await configApi.pickFolder(); if (p) { portDir.value = p; setS('portableExtractDir', p); showPort(); } };
+        showPort();
+      }
       // Software window: pages (default) vs stacked panes. Which pane shows is runtime state (the
       // window's ☰ selector), not a setting — mirrors how the active page works.
       const swDisp = document.getElementById('sSwDisplay');

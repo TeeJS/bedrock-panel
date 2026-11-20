@@ -140,7 +140,7 @@ npm start
 - `npm run build:smtc`: compile stale C# helpers when the Windows SDK/.NET toolchain exists.
 - `npm run build:mac-helpers`: compile stale Swift helpers on macOS (Xcode Command Line Tools).
 - `npm test`: run `node --test test/*.test.js`.
-- `npm run dist`: build Windows portable and NSIS packages under `dist/`.
+- `npm run dist`: build Windows portable and NSIS packages under `dist/` (patches the portable launcher first; see `build-portable-launcher.js`).
 - `npm run dist:mac`: build the macOS dmg/zip under `dist/` (macOS host; ad-hoc signed until a
   Developer ID exists).
 
@@ -218,6 +218,13 @@ Visual Studio 2022 C++ build tools and a working Python/node-gyp setup. See
   of extending it, so a list of negations silently drops every global exclusion and default ignore —
   the first macOS build packed `.git`, `docs`, `community-apps`, and the in-progress `dist` output
   (384 MB instead of 131 MB). Keep all exclusions in the global `build.files`.
+- The Windows portable build must never unpack into AppData (endpoint security blocks executables
+  that run from there). Stock electron-builder unpacks to `%TEMP%`; `build-portable-launcher.js`
+  patches the launcher template during `npm run dist` to use `%USERPROFILE%\temp` or the folder in
+  `settings.portableExtractDir`, which `app/portableExtract.js` mirrors into
+  `<userData>\portable-extract-dir.txt` for the launcher to read. Never run `electron-builder --win`
+  without that step, and keep the pointer file name and encoding (UTF-16LE, no BOM, no newline) in
+  step between the two files; `test/portableExtract.test.js` covers both.
 - `PROJECT.md` is a feature charter, not a complete architecture document. Validate its claims
   against current code before using it as implementation guidance.
 - Tests are sparse and do not cover real Electron windows, hardware, dashboards, or packaging.

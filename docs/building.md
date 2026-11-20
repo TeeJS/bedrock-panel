@@ -59,6 +59,15 @@ with the .NET Framework `csc.exe` — needs the Windows 10/11 SDK. It's idempote
 already-current builds) and best-effort: a missing/failed build means the dependent
 feature logs itself unavailable at runtime, it won't block `npm start`.
 
+`npm run dist` also runs `node build-portable-launcher.js`, which patches electron-builder's
+portable launcher template (`node_modules/app-builder-lib/templates/nsis/portable.nsi`) so
+`bedrock-panel-portable.exe` unpacks under `%USERPROFILE%\temp` (or the folder set in
+**Settings → Software → Portable version**) instead of `%TEMP%`, which is inside AppData.
+electron-builder gives the portable target no custom script or include, so the template is the
+only place to change it. Unlike the helper builds this step is **fatal**: if a new electron-builder
+release changes that template, the build stops and `build-portable-launcher.js` needs updating.
+The patch is idempotent, and a fresh `npm install` restores the stock template.
+
 These helpers exist deliberately: features that once shelled out to `powershell.exe`
 (now-playing, foreground-app tracking, window focus, volume reads) now use small signed
 persistent helpers instead, because repeated PowerShell process creation is flagged by

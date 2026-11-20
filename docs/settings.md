@@ -47,6 +47,14 @@ protection and what the knob does in monitor mode):
   itself; its prompt links to the download instead. On Windows the update's signature is checked
   with PowerShell, so on a machine where that's a problem, turn automatic updates off and install
   new versions from the [releases page](https://github.com/TeeJS/bedrock-panel/releases).
+- **Portable version → Extract folder** (Software tab, Windows) — `bedrock-panel-portable.exe` is a
+  single file that unpacks Bedrock Panel into a folder each time it starts and runs it from there.
+  It unpacks to `%USERPROFILE%\temp` by default, never into AppData, because security software
+  often blocks programs that run from AppData. Enter a full path (`%NAME%` variables are allowed)
+  or use **Browse…** to pick another folder; leave the box empty for the default. The line under
+  the box shows the folder that will be used and warns if it is inside AppData. The change applies
+  on **Save** and takes effect the next time the portable version starts. If the folder can't be
+  created, the default is used. The installed version ignores this setting.
 - **Dashboards → Reload hotkey** — a global combo that force-reloads whatever dashboard
   page is currently showing, from anywhere, even when Bedrock Panel isn't focused. Switching
   away to another page and back does **not** reload a dashboard on its own (that's what

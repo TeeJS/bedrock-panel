@@ -776,6 +776,7 @@ function migrateConfig(c) {
     const u = c.settings.updates || {};
     c.settings.updates = { automatic: u.automatic !== false, includeBetas: u.includeBetas === true };   // automatic on, betas off by default
   }
+  c.settings.portableExtractDir = require('./portableExtract').normalizeSetting(c.settings.portableExtractDir);   // '' = the default folder
   (c.grids || []).forEach(g => {
     if (g.kind === 'web') {
       if (!g.auth) g.auth = g.haToken ? { type: 'ha', token: g.haToken } : { type: 'none' };
@@ -1647,6 +1648,7 @@ function saveConfig() {
     const serialized = JSON.stringify(toPersist, null, 2);
     fs.writeFileSync(temporaryPath, serialized);
     fs.renameSync(temporaryPath, CONFIG_PATH);
+    syncPortableExtractDir();
     if (redactedSecrets && !secretRedactionWarned) {
       secretRedactionWarned = true;
       console.warn('[secretStore] ' + redactedSecrets + ' secret(s) could not be encrypted (no keyring/secure backend) and were NOT written to config.json. They remain active for this session only. Install/unlock a keyring, restart, and re-enter them in the editor to store them securely.');
@@ -4051,6 +4053,17 @@ function confirmQuitIfBusy() {
 // App self-update (updater.js): electron-updater against this repo's GitHub releases. Settings live in
 // settings.updates (editor-owned); skip / not-now / last-checked state lives in userData/update-state.json
 // so an editor Save can never overwrite it. Development runs get a stub and report "not supported".
+// Windows portable build: mirror settings.portableExtractDir into the pointer file its launcher reads
+// on the next start (portableExtract.js). Harmless for the installed build, which never reads it.
+function syncPortableExtractDir() {
+  if (process.platform !== 'win32') return;
+  try {
+    const r = require('./portableExtract').syncPointerFile({ userDataDir: USER_DIR, value: (config.settings || {}).portableExtractDir, env: process.env });
+    if (!r.ok) console.log('[portable] could not update the extract-folder file: ' + r.error);
+    else if (!r.valid) console.log('[portable] extract folder setting is not a usable absolute path; using the default');
+    else if (r.action !== 'none') console.log('[portable] extract folder for the next start: ' + r.dir);
+  } catch (e) { console.log('[portable] extract-folder sync failed: ' + (e && e.message)); }
+}
 let appUpdater = null;
 function updateStatePath() { return path.join(app.getPath('userData'), 'update-state.json'); }
 function initAppUpdater() {
@@ -4201,6 +4214,7 @@ app.whenReady().then(async () => {
   // input device, and paying that on the first macro tap loses the keystroke. No-op elsewhere.
   try { mediaKeys.warmUp(); } catch (e) {}
   try { initAppUpdater(); } catch (e) { console.log('[updater] init failed: ' + (e && e.message)); }
+  syncPortableExtractDir();
   createTray();
   if (appUpdater) appUpdater.start();
   // SystemView: live local metrics server on 127.0.0.1 (OS-assigned port) + ensure the dashboard page.
@@ -4854,6 +4868,11 @@ app.whenReady().then(async () => {
   // App updates (updater.js): status for Settings > Software > Updates, a manual check, reopen the prompt.
   ipcMain.handle('updates:getStatus', (e) => (isFrom(e, configWin) && appUpdater) ? appUpdater.getStatus() : null);
   ipcMain.handle('updates:checkNow', (e) => (isFrom(e, configWin) && appUpdater) ? appUpdater.checkNow() : { started: false });
+  ipcMain.handle('portableExtract:describe', (e, value) => {
+    if (!isFrom(e, configWin)) return null;
+    const info = require('./portableExtract').describe(value, process.env);
+    return Object.assign(info, { portable: !!process.env.PORTABLE_EXECUTABLE_FILE });
+  });
   ipcMain.handle('updates:openPrompt', (e) => (isFrom(e, configWin) && appUpdater) ? appUpdater.openPrompt() : { opened: false });
   ipcMain.handle('listOAuthProviders', (e) => isFrom(e, configWin) ? oauthProviderPayload() : []);
   ipcMain.handle('connectOAuthProvider', async (e, provider, scopes) => {
