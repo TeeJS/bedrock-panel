@@ -77,7 +77,9 @@ automatic gain control. Your meeting app continues to use its own microphone set
     with the sources under `details\`, in `YYYY\MM\` or recurring-meeting folders. This is the
     folder to open as an Obsidian vault.
   The three folders must be separate (none equal to or inside another); the panel refuses to
-  analyze or delete while they overlap. Changing a folder setting never moves files by itself.
+  analyze or delete while they overlap. Changing a folder setting never moves files by itself:
+  when you save a new folder and the old one still holds meeting files, Settings asks
+  **Move files** or **Leave them**. See [Settings → Meeting](settings.md) for what moves.
 - The top row reads **Batch | Analysis | Unprocessed | Record**; the two screens open as
   their own full page with per-row select boxes, **Select all**, and act-on-selected
   buttons in the header.

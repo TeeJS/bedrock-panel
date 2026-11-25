@@ -175,6 +175,15 @@ Recording and transcription for the Meeting panel (details in [meeting.md](meeti
   `<recording>.md`, by **Note style**, with their sources); the folder to open as an Obsidian vault. Blank =
   `Documents\Bedrock Panel Meetings\processed`. The three folders must be separate — none may be
   equal to or inside another; the panel refuses to analyze or delete while they overlap.
+- **Moving files after a folder change** — when you save a new folder and the old one still
+  holds meeting files, a box lists each changed folder with its meeting count and size and asks
+  **Move files** or **Leave them** (Leave changes nothing on disk). What moves: each recording or
+  transcript with its sidecars, captions and screenshots; for Completed, the date and meeting
+  folders, the notes, and `.obsidian\`. Anything else stays and is named afterwards. A file that
+  already exists in the new folder is never overwritten; one that a running recording,
+  transcription or analysis is using stays put. On another drive each file is copied, both
+  copies are checksummed, and only then is the original deleted. The result lists everything
+  that stayed, with **Try again**. A new folder inside the old one (or the reverse) is refused.
 - **Organize by date** — files each completed meeting into `YYYY\MM\` subfolders under the
   Completed folder, by the meeting's calendar date (or the recording date when there is no
   calendar entry) — never the day it was processed.

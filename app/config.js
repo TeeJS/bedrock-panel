@@ -1695,6 +1695,85 @@
     const checkBtn = document.getElementById('sUpCheck');
     if (checkBtn) checkBtn.disabled = !st || !st.supported || st.state === 'checking' || st.state === 'downloading';
   }
+  // ---- meeting folder move: after a save that changed a meeting folder, offer to bring the old
+  // folder's files along (main: meetingMovePlan / meetingMoveRun). In-page box, never confirm().
+  let meMoveBox = null, meMoveProgress = null;
+  function meMoveSize(b) {
+    if (b >= 1024 ** 3) return (b / 1024 ** 3).toFixed(1) + ' GB';
+    if (b >= 1024 ** 2) return Math.round(b / 1024 ** 2) + ' MB';
+    return Math.max(1, Math.round(b / 1024)) + ' KB';
+  }
+  function meMoveShow(html) {
+    if (!meMoveBox) {
+      meMoveBox = document.createElement('div');
+      meMoveBox.id = 'meMoveBox';
+      meMoveBox.setAttribute('role', 'dialog');
+      meMoveBox.setAttribute('aria-modal', 'true');
+      meMoveBox.style.cssText = 'position:fixed;inset:0;background:rgba(4,8,14,.6);display:flex;align-items:center;justify-content:center;z-index:1000';
+      document.body.appendChild(meMoveBox);
+    }
+    meMoveBox.innerHTML = '<div style="background:#121b26;border:1px solid #2a3a4e;border-radius:10px;padding:18px 20px;width:min(620px,92vw);max-height:86vh;overflow:auto;display:grid;gap:12px;font-size:14px;color:#dbe5f0">' + html + '</div>';
+    meMoveBox.hidden = false;
+  }
+  function meMoveClose() { if (meMoveBox) { meMoveBox.hidden = true; meMoveBox.innerHTML = ''; } }
+  const meMovePath = p => '<div style="font-family:Consolas,monospace;font-size:12px;color:#8ea2b8;overflow-wrap:anywhere">' + esc(p) + '</div>';
+  const meMoveList = (items, more) => '<ul style="margin:4px 0 0;padding-left:18px;display:grid;gap:3px;font-size:13px">' + items.join('') + (more > 0 ? '<li>…and ' + more + ' more</li>' : '') + '</ul>';
+  async function offerMeetingMove(before) {
+    let plan;
+    try { plan = await configApi.meetingMovePlan(before); } catch (e) { return; }   // older host: no offer
+    if (!plan || (!plan.ok && !plan.error)) return;
+    if (!plan.ok || plan.error) {
+      meMoveShow('<b style="font-size:16px">Your meeting files were not moved</b><p style="margin:0">' + esc(plan.error) + '</p><p style="margin:0;color:#8ea2b8">They are still in the old folders.</p><div style="display:flex;justify-content:flex-end"><button id="meMoveOk" class="primary">OK</button></div>');
+      document.getElementById('meMoveOk').onclick = meMoveClose;
+      return;
+    }
+    if (!plan.changes.length) return;   // the old folders hold no meeting files
+    const movable = plan.changes.filter(c => !c.error && c.files > 0);
+    const rows = plan.changes.map(c => {
+      const what = c.kind === 'processed' ? c.meetings + ' meeting' + (c.meetings === 1 ? '' : 's')
+        : c.kind === 'transcribed' ? c.meetings + ' recording' + (c.meetings === 1 ? '' : 's') + ' waiting to be analyzed'
+        : c.meetings + ' recording' + (c.meetings === 1 ? '' : 's') + ' waiting to be transcribed';
+      const line = c.error ? '<span style="color:#ff8a8a">' + esc(c.error) + ' Its files stay where they are.</span>'
+        : (c.files ? esc(what) + ', ' + meMoveSize(c.bytes) : 'Nothing to move right now.')
+          + (c.busyCount ? '<div style="color:#e0b45a">' + c.busyCount + ' file' + (c.busyCount === 1 ? '' : 's') + ' in use will stay for now (' + esc(c.busy[0].reason) + ').</div>' : '');
+      return '<div style="border:1px solid #2a3a4e;border-radius:7px;padding:8px 10px;display:grid;gap:3px"><b>' + esc(c.label) + '</b>' + meMovePath('From: ' + c.from) + meMovePath('To: ' + c.to) + '<div>' + line + '</div></div>';
+    }).join('');
+    meMoveShow('<b style="font-size:16px">' + (movable.length ? 'Move your meeting files to the new folder' + (movable.length > 1 ? 's' : '') + '?' : 'Your meeting files cannot be moved yet') + '</b>' + rows
+      + '<p style="margin:0;color:#8ea2b8;font-size:13px">Nothing is deleted until its copy is checked. A file that already exists in the new folder, or that a recording or analysis is using, stays where it is and is listed afterwards.</p>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">' + (movable.length ? '<button id="meMoveLeave">Leave them</button><button id="meMoveGo" class="primary">Move files</button>' : '<button id="meMoveLeave" class="primary">OK</button>') + '</div>');
+    document.getElementById('meMoveLeave').onclick = meMoveClose;
+    const go = document.getElementById('meMoveGo');
+    if (go) go.onclick = () => runMeetingMove(plan.token, before);
+  }
+  async function runMeetingMove(token, before) {
+    meMoveShow('<b style="font-size:16px">Moving meeting files…</b><div id="meMoveNow" style="font-size:13px;color:#8ea2b8;overflow-wrap:anywhere">Starting…</div>'
+      + '<div style="height:8px;background:#1c2735;border-radius:4px;overflow:hidden"><div id="meMoveBar" style="height:100%;width:0;background:#2b8bff"></div></div>'
+      + '<p style="margin:0;color:#8ea2b8;font-size:13px">You can keep working; large recordings on another drive take a while.</p>');
+    if (!meMoveProgress) {
+      meMoveProgress = true;
+      configApi.onMeetingMoveProgress(p => {
+        const now = document.getElementById('meMoveNow'), bar = document.getElementById('meMoveBar');
+        if (now) now.textContent = 'Moving ' + Math.min(p.done + 1, p.total) + ' of ' + p.total + ' — ' + (p.current || '');
+        if (bar && p.total) bar.style.width = Math.round(100 * p.done / p.total) + '%';
+      });
+    }
+    let r;
+    try { r = await configApi.meetingMoveRun(token); } catch (e) { r = { ok: false, error: e.message }; }
+    if (!r || !r.ok) {
+      meMoveShow('<b style="font-size:16px">The move did not run</b><p style="margin:0">' + esc((r && r.error) || 'Unknown error') + '</p><div style="display:flex;justify-content:flex-end"><button id="meMoveOk" class="primary">OK</button></div>');
+      document.getElementById('meMoveOk').onclick = meMoveClose;
+      return;
+    }
+    const left = r.left.map(l => '<li>' + meMovePath(l.path) + '<span style="color:#e0b45a">' + esc(l.reason) + '</span></li>');
+    const others = r.others.map(p => '<li>' + meMovePath(p) + '</li>');
+    meMoveShow('<b style="font-size:16px">' + (r.leftCount ? 'Moved ' + r.moved + ' file' + (r.moved === 1 ? '' : 's') + '. ' + r.leftCount + ' stayed in the old folder.' : 'Moved ' + r.moved + ' file' + (r.moved === 1 ? '' : 's') + '.') + '</b>'
+      + (r.leftCount ? '<div>Still in the old folder:' + meMoveList(left, r.leftCount - left.length) + '</div>' : '<p style="margin:0">Your meetings are in the new folder' + (r.moved ? 's' : '') + ' now.</p>')
+      + (r.otherCount ? '<div style="color:#8ea2b8;font-size:13px">Not meeting files, so they were left in place:' + meMoveList(others, r.otherCount - others.length) + '</div>' : '')
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">' + (r.leftCount ? '<button id="meMoveRetry">Try again</button>' : '') + '<button id="meMoveOk" class="primary">Close</button></div>');
+    document.getElementById('meMoveOk').onclick = meMoveClose;
+    const retry = document.getElementById('meMoveRetry');
+    if (retry) retry.onclick = () => { meMoveClose(); offerMeetingMove(before); };
+  }
   async function doSave() {
     // Model-level gate: never report "saved" while any number draft is invalid.
     const bad = invalidNumberOptions();
@@ -1707,12 +1786,17 @@
     }
     document.getElementById('saveBtn').disabled = true;
     setState('Saving…');
+    // The meeting folders as last saved, to offer moving their files once the change is on disk.
+    const meFields = c => { const m = ((c || {}).settings || {}).meeting || {}; return { unprocessed: m.folder || '', transcribed: m.transcribedFolder || '', processed: m.processedFolder || '' }; };
+    const meBefore = meFields(baseConfig);
     try {
       const result = await configApi.saveConfig(config);
       if (!(result && result.ok)) throw new Error(result && result.error || 'secure persistence failed');
       baseConfig = snapConfig(config);   // on-disk now matches the editor — new merge base
       dirty = false;
       setState('All changes saved ✓', 'saved');
+      const meAfter = meFields(config);
+      if (['unprocessed', 'transcribed', 'processed'].some(k => String(meBefore[k]).trim() !== String(meAfter[k]).trim())) offerMeetingMove(meBefore);
       return true;
     } catch (e) {
       dirty = true;

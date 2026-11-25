@@ -66,6 +66,10 @@ contextBridge.exposeInMainWorld('bedrockConfig', {
   installRepoPersona(src, id, replace) { return ipcRenderer.invoke('installRepoPersona', src, id, replace); },
   checkPersonaUpdates() { return ipcRenderer.invoke('checkPersonaUpdates'); },
   meetingFoldersCheck(fields) { return ipcRenderer.invoke('meetingFoldersCheck', fields); },
+  // Meeting folder changed → offer to move the old folder's files (plan, then run by its token).
+  meetingMovePlan(before) { return ipcRenderer.invoke('meetingMovePlan', before); },
+  meetingMoveRun(token) { return ipcRenderer.invoke('meetingMoveRun', token); },
+  onMeetingMoveProgress(cb) { ipcRenderer.on('meetingMoveProgress', (_e, p) => cb(p)); },
   listDropInApps() { return ipcRenderer.invoke('listDropInApps'); },
   openExternal(url) { ipcRenderer.send('openExternal', url); },
   exportDropInApp(id) { return ipcRenderer.invoke('exportDropInApp', id); },
