@@ -21,7 +21,6 @@ name: Release
 on:
   push:
     tags: ['v*']
-    branches: [ci-signed-release]   # TEMPORARY: test run before merge
   workflow_dispatch:
     inputs:
       dry_run:
