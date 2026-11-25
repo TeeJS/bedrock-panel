@@ -67,7 +67,7 @@ npm run dist:mac
 ```
 
 That is the whole command. electron-builder signs the app with the hardened runtime and the
-entitlements in `packaging/mac/`, notarizes and staples the `.app`, and then `build-mac.js` submits
+entitlements in `packaging/mac/`, notarizes and staples the `.app`, and then `build-mac.js` signs, submits
 the DMG separately and staples that too, because a downloaded disk image is what Gatekeeper assesses
 first. Apple usually answers within minutes and the build waits for it. Expect roughly ten minutes
 overall; two round trips to Apple is the slow part, not your machine.
@@ -140,6 +140,10 @@ above. As of 0.9.7 the `.p8` is in place (`.signing/AuthKey_XKQT3B9MBX.p8`) but 
 exercised — it still needs the Issuer ID and one unattended build to confirm before anyone relies on it.
 
 ## Regenerating latest-mac.yml + dmg.blockmap after stapling
+
+`build-mac.js` now does this itself after it signs, notarizes and staples the dmg (`refreshDmgManifest`),
+and `node tools/verify-update-manifests.js dist` checks the result. The recipe below is what it runs,
+kept for builds made before that change.
 
 electron-builder writes `latest-mac.yml` and `bedrock-panel-arm64.dmg.blockmap` **before**
 `build-mac.js` staples the DMG, so once the notarization ticket is stapled in (~2290 B) the yml's dmg

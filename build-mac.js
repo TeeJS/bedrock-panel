@@ -20,8 +20,9 @@
  *   .signing/notary-profile       the same profile name as a one-line file (per machine)
  *   APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID, or the App Store Connect API key trio
  * electron-builder then notarizes and staples the .app (mac.notarize=true on the command line), and
- * this script submits the DMG too and staples it, so a downloaded disk image opens without any
- * "could not verify" step. A Developer ID without credentials builds a signed but un-notarized app
+ * this script signs the DMG, submits it and staples it, so a downloaded disk image opens without any
+ * "could not verify" step. It then refreshes latest-mac.yml and the dmg .blockmap, which electron-builder
+ * wrote before the image changed. A Developer ID without credentials builds a signed but un-notarized app
  * and says so.
  *
  * Anything else electron-builder needs (targets, entitlements, hardened runtime) stays in
@@ -90,20 +91,61 @@ if (require.main === module) {
   if (r.status !== 0) process.exit(r.status == null ? 1 : r.status);
   // The .app inside is notarized and stapled by electron-builder; the disk image itself is not, and a
   // downloaded DMG is what Gatekeeper assesses first. Submit it too and staple the ticket into it.
+  // Gatekeeper rejects an UNSIGNED disk image outright ("no usable signature"), even one with a stapled
+  // ticket, so the image gets its own Developer ID signature first. The order matters: signing voids an
+  // earlier staple, so it is sign, then submit, then staple.
   const auth = notarytoolAuth(notary);
   if (isDeveloperId(identity) && auth) {
     const dist = path.join(__dirname, 'dist');
     const dmgs = fs.existsSync(dist) ? fs.readdirSync(dist).filter(f => f.endsWith('.dmg')).map(f => path.join(dist, f)) : [];
-    for (const dmg of dmgs) {
-      console.log('[build:mac] notarizing ' + path.basename(dmg) + ' (Apple usually answers within a few minutes) …');
-      const sub = spawnSync('xcrun', ['notarytool', 'submit', dmg, '--wait', ...auth], { stdio: 'inherit' });
-      if (sub.status !== 0) { console.error('[build:mac] DMG notarization failed — the app inside is still notarized; see the notarytool output above'); process.exit(sub.status || 1); }
-      const st = spawnSync('xcrun', ['stapler', 'staple', dmg], { stdio: 'inherit' });
-      if (st.status !== 0) { console.error('[build:mac] stapling the DMG failed'); process.exit(st.status || 1); }
-      console.log('[build:mac] ' + path.basename(dmg) + ' notarized and stapled');
-    }
+    (async () => {
+      for (const dmg of dmgs) {
+        const sig = spawnSync('codesign', ['--force', '--sign', identity, '--timestamp', dmg], { stdio: 'inherit' });
+        if (sig.status !== 0) { console.error('[build:mac] signing ' + path.basename(dmg) + ' failed'); process.exit(sig.status || 1); }
+        console.log('[build:mac] notarizing ' + path.basename(dmg) + ' (Apple usually answers within a few minutes) …');
+        const sub = spawnSync('xcrun', ['notarytool', 'submit', dmg, '--wait', ...auth], { stdio: 'inherit' });
+        if (sub.status !== 0) { console.error('[build:mac] DMG notarization failed — the app inside is still notarized; see the notarytool output above'); process.exit(sub.status || 1); }
+        const st = spawnSync('xcrun', ['stapler', 'staple', dmg], { stdio: 'inherit' });
+        if (st.status !== 0) { console.error('[build:mac] stapling the DMG failed'); process.exit(st.status || 1); }
+        console.log('[build:mac] disk image signed, notarized and stapled: ' + path.basename(dmg));
+        await refreshDmgManifest(dmg);
+      }
+      process.exit(0);
+    })().catch(e => { console.error('[build:mac] ' + (e && e.message || e)); process.exit(1); });
+  } else {
+    process.exit(0);
   }
-  process.exit(0);
 }
 
-module.exports = { resolveIdentity, resolveNotary, extraBuilderArgs, notarytoolAuth, isDeveloperId, builderIdentity };
+// electron-builder writes latest-mac.yml and the dmg's .blockmap BEFORE the image is signed and stapled
+// above, so both describe bytes that no longer exist. Rebuild the blockmap from the final image with
+// electron-builder's own generator and put its sha512 and size into the yml's dmg entry.
+async function refreshDmgManifest(dmg) {
+  const yml = path.join(path.dirname(dmg), 'latest-mac.yml');
+  if (!fs.existsSync(yml)) return;
+  const { buildBlockMap } = require('app-builder-lib/out/targets/blockmap/blockmap.js');
+  const r = await buildBlockMap(dmg, 'gzip', dmg + '.blockmap');
+  const text = fs.readFileSync(yml, 'utf8');
+  const next = patchManifestEntry(text, path.basename(dmg), r.sha512, r.size);
+  fs.writeFileSync(yml, next);
+  console.log('[build:mac] latest-mac.yml and ' + path.basename(dmg) + '.blockmap updated for the stapled image (' + r.size + ' bytes)');
+}
+
+// Replace sha512 and size in the `- url: <name>` entry of an electron-builder update manifest, leaving
+// every other line as written. Throws when the entry is missing or incomplete.
+function patchManifestEntry(text, name, sha512, size) {
+  const lines = text.split('\n');
+  const start = lines.findIndex(l => l.trim() === '- url: ' + name);
+  if (start < 0) throw new Error('no "- url: ' + name + '" entry in the update manifest');
+  let did = { sha512: false, size: false };
+  for (let i = start + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^\s*- /.test(l) || !/^\s/.test(l)) break;   // next entry, or back at the top level
+    const m = /^(\s+)(sha512|size):/.exec(l);
+    if (m) { lines[i] = m[1] + m[2] + ': ' + (m[2] === 'sha512' ? sha512 : size) + (l.endsWith('\r') ? '\r' : ''); did[m[2]] = true; }
+  }
+  if (!did.sha512 || !did.size) throw new Error('the "' + name + '" entry in the update manifest has no ' + (did.sha512 ? 'size' : 'sha512'));
+  return lines.join('\n');
+}
+
+module.exports = { resolveIdentity, resolveNotary, extraBuilderArgs, notarytoolAuth, isDeveloperId, builderIdentity, patchManifestEntry };

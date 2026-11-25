@@ -1,0 +1,277 @@
+name: Release
+
+# Builds, signs and checks Bedrock Panel for all three platforms on GitHub's machines.
+#
+#   - Actions tab -> Release -> "Run workflow" (a DRY RUN by default): build and sign macOS
+#     (Developer ID, notarized), Windows (Azure Artifact Signing) and Linux, and keep the files as
+#     workflow artifacts. No release is created. Use it to prove signing before a tag.
+#   - Push a tag vX.Y.Z matching package.json "version": the same builds, then the files are put on a
+#     DRAFT release (created if it does not exist; a tag with "-", like v1.0.1-beta.4, makes it a
+#     pre-release). Notes and publishing stay manual: see .claude/skills/bedrock-panel-release.
+#
+# Both signing jobs run in the 'release' environment, which only main and v* tags may use.
+#   Windows: environment variables AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID. GitHub's
+#            OIDC token logs in through a federated credential on the github-actions-code-signing app
+#            registration; no Azure secret is stored anywhere.
+#   macOS:   environment secrets MAC_CERT_P12_BASE64, MAC_CERT_PASSWORD, APPLE_ID,
+#            APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID (docs/building.md, "Releasing from GitHub").
+#
+# The asset set is the one v1.0.0 shipped: 4 Windows + 5 macOS (Apple silicon) + 3 Linux files.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and sign only (no release)
+        type: boolean
+        default: true
+      tag:
+        description: Existing tag to attach the files to when not a dry run (e.g. v1.0.1)
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Require the signing secrets
+        env:
+          P12: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for v in P12 P12_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secrets in the 'release' environment:$missing (P12 = MAC_CERT_P12_BASE64, P12_PASSWORD = MAC_CERT_PASSWORD). See docs/building.md."
+            exit 1
+          fi
+      # Our own keychain, alive for the whole job (GitHub's documented pattern), not electron-builder's
+      # CSC_LINK one: that keychain is gone before build-mac.js signs and notarizes the .dmg.
+      - name: Import the Developer ID certificate
+        env:
+          P12: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          CERT="$RUNNER_TEMP/developer-id.p12"
+          printf '%s' "$P12" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm -f "$CERT"
+          ID="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)"
+          if [ -z "$ID" ]; then
+            echo "::error::The .p12 holds no usable 'Developer ID Application' identity (export it from Keychain Access > My Certificates, WITH its private key)."
+            security find-identity -v -p codesigning
+            exit 1
+          fi
+          echo "signing as: $ID"
+          echo "BEDROCK_MAC_IDENTITY=$ID" >> "$GITHUB_ENV"
+      - run: npm ci --ignore-scripts
+      # build-mac-helpers.js compiles the Swift helpers (fatal on failure in a dist build); build-mac.js
+      # signs and notarizes the app, then signs, notarizes and staples the dmg and refreshes
+      # latest-mac.yml + the dmg .blockmap for the stapled image.
+      - name: Build, sign and notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist:mac -- --publish never
+      # Checked on the files, not the log: a skipped notarization still exits 0.
+      - name: Verify signature, notarization and manifests
+        run: |
+          set -e
+          APP="dist/mac-arm64/Bedrock Panel.app"
+          DMG="dist/bedrock-panel-arm64.dmg"
+          want="$(node -p "require('./package.json').version")"
+          got="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          [ "$got" = "$want" ] || { echo "::error::app version $got, package.json $want"; exit 1; }
+          codesign --verify --deep --strict "$APP"
+          codesign -dvv "$APP" 2>&1 | grep -E '^Authority=Developer ID Application|^TeamIdentifier'
+          codesign --test-requirement="=notarized" --verify --strict "$APP" && echo "app: notarized"
+          xcrun stapler validate "$APP"
+          codesign --verify --strict "$DMG"
+          codesign --test-requirement="=notarized" --verify --strict "$DMG" && echo "dmg: notarized"
+          xcrun stapler validate "$DMG"
+          if spctl --status | grep -q 'assessments enabled'; then
+            spctl -a -t exec -vv "$APP" 2>&1 | tee /dev/stderr | grep -q 'source=Notarized Developer ID'
+            spctl -a -t open --context context:primary-signature -vv "$DMG" 2>&1 | tee /dev/stderr | grep -q 'source=Notarized Developer ID'
+          else
+            echo "Gatekeeper assessments are off on this runner; the codesign and stapler checks above stand in for spctl."
+          fi
+          node tools/verify-update-manifests.js dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mac
+          if-no-files-found: error
+          path: |
+            dist/bedrock-panel-arm64.dmg
+            dist/bedrock-panel-arm64.dmg.blockmap
+            dist/bedrock-panel-arm64.zip
+            dist/bedrock-panel-arm64.zip.blockmap
+            dist/latest-mac.yml
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run dist:linux -- --publish never
+      - name: Verify manifests
+        run: node tools/verify-update-manifests.js dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          if-no-files-found: error
+          path: |
+            dist/bedrock-panel_amd64.deb
+            dist/bedrock-panel-x86_64.AppImage
+            dist/latest-linux.yml
+
+  # Windows, signed with Azure Artifact (Trusted) Signing through the same sign.js / afterpack.js hooks
+  # and the same signing library (Microsoft.Trusted.Signing.Client 1.0.95, hash-pinned) as a local
+  # `npm run dist`. Only the login differs: GitHub's OIDC token instead of Connect-AzAccount.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      SIGNING_ENDPOINT: https://eus.codesigning.azure.net/
+      SIGNING_ACCOUNT: openquakesigning
+      SIGNING_PROFILE: openquake-public
+    steps:
+      - uses: actions/checkout@v7
+      # Node 24, not .nvmrc's 26: Node 26's headers carry clang-only link flags that make node-gyp's
+      # MSVC build of the DPAPI binding fail (LNK1117). The binding is Node-API, so 24 builds the
+      # same binary.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - name: Azure login (OIDC, no stored secret)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Signing library and metadata (pinned, verified)
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\signing-client.zip"
+          Invoke-WebRequest 'https://api.nuget.org/v3-flatcontainer/microsoft.trusted.signing.client/1.0.95/microsoft.trusted.signing.client.1.0.95.nupkg' -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne '3bfcf1e0a3cb42af1692f0a8ed45c15de070c2de86f28a59b2795d904d8a920f') { throw "signing client package hash mismatch: $hash" }
+          Expand-Archive $zip "$env:RUNNER_TEMP\signing-client"
+          New-Item -ItemType Directory -Force .signing\dlib-x64 | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\signing-client\bin\x64\*" .signing\dlib-x64\ -Recurse
+          # Only the Azure CLI login azure/login just made; every other credential type is excluded.
+          $meta = [ordered]@{
+            Endpoint = $env:SIGNING_ENDPOINT
+            CodeSigningAccountName = $env:SIGNING_ACCOUNT
+            CertificateProfileName = $env:SIGNING_PROFILE
+            ExcludeCredentials = @('EnvironmentCredential', 'WorkloadIdentityCredential', 'ManagedIdentityCredential',
+              'SharedTokenCacheCredential', 'VisualStudioCredential', 'VisualStudioCodeCredential',
+              'AzurePowerShellCredential', 'AzureDeveloperCliCredential', 'InteractiveBrowserCredential')
+          }
+          [IO.File]::WriteAllText("$PWD\.signing\metadata.json", ($meta | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+      - run: npm ci --ignore-scripts
+      # build-dpapi + build-smtc (fatal on a missing toolchain in a dist build) + the portable launcher
+      # patch, then electron-builder --win with sign.js signing every exe.
+      - name: Build and sign
+        run: npm run dist -- --publish never
+      # sign.js leaves a file unsigned (with a warning) when its setup is missing, so this is what
+      # proves the build is signed.
+      - name: Verify signatures and manifests
+        shell: pwsh
+        run: |
+          $files = @(Get-Item dist\bedrock-panel-setup.exe, dist\bedrock-panel-portable.exe, 'dist\win-unpacked\Bedrock Panel.exe')
+          $files += Get-ChildItem dist\win-unpacked\resources\app.asar.unpacked\app\native -File | Where-Object { $_.Extension -in '.exe', '.node' }
+          foreach ($f in $files) {
+            $s = Get-AuthenticodeSignature $f.FullName
+            if ($s.Status -ne 'Valid') { throw "$($f.Name) is not validly signed: $($s.Status) $($s.StatusMessage)" }
+            if (-not $s.TimeStamperCertificate) { throw "$($f.Name) has no timestamp" }
+            "signed  $($f.Name)  ($($s.SignerCertificate.Subject))"
+          }
+          $upd = Get-Content dist\win-unpacked\resources\app-update.yml -Raw
+          if ($upd -notmatch 'provider: github' -or $upd -notmatch 'CN=Thomas Schmitz') { throw "app-update.yml lacks the github provider or the publisher name:`n$upd" }
+          node tools/verify-update-manifests.js dist
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          if-no-files-found: error
+          path: |
+            dist/bedrock-panel-setup.exe
+            dist/bedrock-panel-setup.exe.blockmap
+            dist/bedrock-panel-portable.exe
+            dist/latest.yml
+
+  draft:
+    needs: [mac, linux, windows]
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Put the files on a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -e
+          version="v$(node -p "require('./package.json').version")"
+          [ "$TAG" = "$version" ] || { echo "::error::Tag $TAG does not match package.json version $version."; exit 1; }
+          expected="bedrock-panel-setup.exe bedrock-panel-setup.exe.blockmap bedrock-panel-portable.exe latest.yml
+            bedrock-panel-arm64.dmg bedrock-panel-arm64.dmg.blockmap bedrock-panel-arm64.zip bedrock-panel-arm64.zip.blockmap latest-mac.yml
+            bedrock-panel_amd64.deb bedrock-panel-x86_64.AppImage latest-linux.yml"
+          for f in $expected; do [ -f "artifacts/$f" ] || { echo "::error::missing $f"; exit 1; }; done
+          if draft="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            [ "$draft" = "true" ] || { echo "::error::Release $TAG is already published; not replacing its files."; exit 1; }
+            echo "Adding the files to the existing draft $TAG"
+          else
+            pre=""; case "$TAG" in *-*) pre="--prerelease";; esac
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft $pre --verify-tag --title "$TAG" \
+              --notes "Release notes to come. Built and signed by GitHub Actions: macOS notarized (Developer ID), Windows signed (Azure Artifact Signing), Linux unsigned."
+          fi
+          (cd artifacts && gh release upload "$TAG" -R "$GITHUB_REPOSITORY" --clobber $expected)
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | "\(.name)  \(.size)"'
