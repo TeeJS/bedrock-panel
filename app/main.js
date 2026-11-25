@@ -2658,6 +2658,81 @@ function meetingFoldersCheck(fields) {
     processed: String(f.processed || '').trim() || defaultProcessedFolder(),
   });
 }
+// Folder change → move the old folder's meeting files (meetingFolderMove.js). The plan the dialog
+// showed is kept by token; the run re-scans so a job that started meanwhile is respected.
+let meetingMovePending = null, meetingMoveRunning = false;
+// Sets a RUNNING job holds now. Queued jobs are not busy: they resolve the folder when they
+// start, so their files are found in the new folder.
+function meetingMoveBusy() {
+  const busy = { unprocessed: new Set(), transcribed: new Set(), processed: '' };
+  try {
+    const rec = meetingRecorder ? meetingRecorder.getState() : null;
+    if (rec && rec.recording && rec.file) busy.unprocessed.add(String(rec.file).replace(/\.wav$/i, ''));
+    const tx = meetingTranscriber ? meetingTranscriber.getState() : null;
+    if (tx && tx.current && tx.current.name) {
+      const b = String(tx.current.name).replace(/\.wav$/i, '');
+      busy.unprocessed.add(b); busy.transcribed.add(b);   // its transcript lands in transcribed when it finishes
+    }
+    const an = meetingAnalyzer ? meetingAnalyzer.getState() : null;
+    if (an && an.running) {
+      if (an.kind === 'transcribed') busy.transcribed.add(String(an.name || '').replace(/-diarizer-response\.json$/i, ''));
+      busy.processed = 'an analysis is running and may still write here';
+    }
+  } catch (e) { /* state unavailable: nothing marked busy */ }
+  return busy;
+}
+function meetingMoveScans(before) {
+  const mv = require('./meetingFolderMove');
+  const m = meetingSettings();
+  const defaults = { unprocessed: defaultMeetingFolder(), transcribed: defaultTranscribedFolder(), processed: defaultProcessedFolder() };
+  const pairs = mv.changedPairs(before, { unprocessed: m.folder, transcribed: m.transcribedFolder, processed: m.processedFolder }, defaults);
+  if (!pairs.length) return { pairs, scans: [], error: '' };
+  const layout = meetingFoldersError();
+  if (layout) return { pairs, scans: [], error: 'Fix the folder error first (' + layout + '). Nothing was moved.' };
+  const oldFolders = {};
+  for (const k of Object.keys(defaults)) oldFolders[k] = String((before || {})[k] || '').trim() || defaults[k];
+  const cross = mv.crossError(pairs, oldFolders);
+  if (cross) return { pairs, scans: [], error: cross };
+  const busy = meetingMoveBusy();
+  const scans = pairs.map(p => mv.scan(p.kind, p.from, p.to, { busy })).filter(Boolean);
+  return { pairs, scans, error: '' };
+}
+function meetingMoveSummary(s) {
+  return { kind: s.kind, label: s.label, from: s.from, to: s.to, error: s.error, meetings: s.meetings, bytes: s.bytes, files: s.files,
+    busy: s.busy.slice(0, 20), busyCount: s.busy.length, others: s.others.slice(0, 20), otherCount: s.others.length };
+}
+function meetingMovePlan(before) {
+  try {
+    if (meetingMoveRunning) return { ok: false, error: 'A move is already running.' };
+    const { scans, error } = meetingMoveScans(before);
+    // Offer only what matters: a folder with meeting files to move or a reason it cannot move.
+    const shown = scans.filter(s => s.error || s.entries.length || s.busy.length);
+    if (!error && !shown.length) { meetingMovePending = null; return { ok: true, changes: [] }; }
+    meetingMovePending = { token: crypto.randomUUID(), before: Object.assign({}, before) };
+    return { ok: true, token: meetingMovePending.token, error, changes: shown.map(meetingMoveSummary) };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+async function meetingMoveRun(token, onProgress) {
+  if (!meetingMovePending || meetingMovePending.token !== token) return { ok: false, error: 'This move is out of date. Close the box and save again.' };
+  if (meetingMoveRunning) return { ok: false, error: 'A move is already running.' };
+  meetingMoveRunning = true;
+  const before = meetingMovePending.before;
+  meetingMovePending = null;
+  try {
+    const { scans, error } = meetingMoveScans(before);
+    if (error) return { ok: false, error };
+    const r = await require('./meetingFolderMove').run(scans.filter(s => !s.error), { onProgress, log: m => console.log('[meeting] ' + m) });
+    const left = r.left.slice();
+    for (const s of scans) {
+      for (const b of s.busy) left.push({ path: path.join(s.from, b.name), reason: b.reason });
+      if (s.error) left.push({ path: s.from, reason: s.error });
+    }
+    const others = [].concat(...scans.map(s => s.others.map(n => path.join(s.from, n))));
+    console.log('[meeting] folder move: ' + r.moved + ' file(s) moved, ' + left.length + ' left');
+    return { ok: true, moved: r.moved, left: left.slice(0, 50), leftCount: left.length, others: others.slice(0, 20), otherCount: others.length, before };
+  } catch (e) { return { ok: false, error: e.message }; }
+  finally { meetingMoveRunning = false; }
+}
 // Analysis prompt: the user-editable copy lives in userData, seeded from the bundled template on
 // first use. The analyzer prefers it whenever it exists.
 function userMeetingPromptPath() { return path.join(app.getPath('userData'), 'meeting-analysis-prompt.md'); }
@@ -5274,6 +5349,14 @@ app.whenReady().then(async () => {
   });
   // Settings → Meeting: the three stage folders as typed; '' when they are distinct and not nested.
   ipcMain.handle('meetingFoldersCheck', (e, fields) => isFrom(e, configWin) ? meetingFoldersCheck(fields) : '');
+  // Settings → Meeting: after a save that changed a stage folder, offer to move the files that are
+  // still in the old one. `before` = the three fields as last saved (blank = default).
+  ipcMain.handle('meetingMovePlan', (e, before) => isFrom(e, configWin) ? meetingMovePlan(before) : { ok: false, error: 'not allowed' });
+  ipcMain.handle('meetingMoveRun', async (e, token) => {
+    if (!isFrom(e, configWin)) return { ok: false, error: 'not allowed' };
+    const sender = e.sender;
+    return meetingMoveRun(token, p => { try { if (!sender.isDestroyed()) sender.send('meetingMoveProgress', p); } catch (err) {} });
+  });
   // Screensaver "Open photos/videos folder": resolve the effective folder (custom or the app's
   // own default for that kind), create it if needed, and show it in Explorer. Directory-only —
   // never opens (= executes) a file.
