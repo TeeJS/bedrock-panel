@@ -52,6 +52,16 @@ until T.J. approves the notes.
 
 ## 4. Build + sign + verify — per platform
 
+**Preferred: GitHub Actions builds all three** (`.github/workflows/release.yml`, `docs/building.md`
+"Releasing from GitHub"). After the bump is pushed and T.J. says go, push the tag:
+`git tag vX.Y.Z <bump-sha>; git push origin vX.Y.Z`. About 15 minutes later the 12 files sit on a draft
+release (created if none exists; `-` in the tag = pre-release; an existing draft with notes is kept and
+its files are replaced). The jobs fail unless signatures, notarization and every `latest*.yml` check out
+on the files themselves. Check with `gh run list -R TeeJS/bedrock-panel -w Release` and
+`gh release view vX.Y.Z -R TeeJS/bedrock-panel --json assets`. Dry run without a release:
+`gh workflow run release.yml -R TeeJS/bedrock-panel -f dry_run=true`. The local per-platform builds
+below remain the fallback when GitHub or Azure is down.
+
 Each platform builds from the release commit. Windows is built on tjs-dell (here); **macOS and Linux
 are built and smoke-tested on their real-hardware sessions** (`BP-mac`, `BP-linux` — coordinate via an
 agent room; relay by `SendMessage` if a node can't join). A `package-lock.json`-only diff does not
@@ -117,7 +127,7 @@ Create the release as a **draft** early (`gh release create vX.Y.Z -R TeeJS/bedr
   - **Windows:** `bedrock-panel-setup.exe`, `bedrock-panel-portable.exe`, `latest.yml`, `bedrock-panel-setup.exe.blockmap` (portable has NO blockmap).
   - **macOS:** `bedrock-panel-arm64.dmg`, `bedrock-panel-arm64.zip`, `latest-mac.yml`, `bedrock-panel-arm64.dmg.blockmap`, `bedrock-panel-arm64.zip.blockmap`.
   - **Linux:** `bedrock-panel_amd64.deb`, `bedrock-panel-x86_64.AppImage`, `latest-linux.yml` (NO sidecar blockmaps — the AppImage's is embedded in the artifact, the `.deb` has none).
-- **VERIFY each `latest-*.yml` against its real artifacts (sha512 AND size) before upload** — load-bearing now that the manifests ship. **macOS stale-hash gotcha:** `latest-mac.yml`'s DMG entry is written by electron-builder BEFORE `build-mac.js` staples the DMG, so its dmg sha512+size are stale by the notarization ticket (~2290 B); **regenerate the dmg entry AND `bedrock-panel-arm64.dmg.blockmap` from the STAPLED dmg** — exact recipe (electron-builder's own `buildBlockMap`, `gzip` format, cross-checked against `openssl`) in `docs/mac-signing.md` ("Regenerating latest-mac.yml + dmg.blockmap after stapling"). The zip entry (electron-updater's `path:`) is already correct. Windows/Linux ymls finalize after their artifacts so they match as-is — verify anyway.
+- **VERIFY each `latest-*.yml` against its real artifacts (sha512 AND size) before upload** — load-bearing now that the manifests ship. `node tools/verify-update-manifests.js dist` does it (the CI jobs run it). Since `build-mac.js` now signs the dmg and regenerates the dmg entry + blockmap itself after stapling, the manual fix below is only for builds made before that change. **macOS stale-hash gotcha:** `latest-mac.yml`'s DMG entry is written by electron-builder BEFORE `build-mac.js` staples the DMG, so its dmg sha512+size are stale by the notarization ticket (~2290 B); **regenerate the dmg entry AND `bedrock-panel-arm64.dmg.blockmap` from the STAPLED dmg** — exact recipe (electron-builder's own `buildBlockMap`, `gzip` format, cross-checked against `openssl`) in `docs/mac-signing.md` ("Regenerating latest-mac.yml + dmg.blockmap after stapling"). The zip entry (electron-updater's `path:`) is already correct. Windows/Linux ymls finalize after their artifacts so they match as-is — verify anyway.
 - Upload onto the draft: `gh release upload vX.Y.Z <files> -R TeeJS/bedrock-panel --clobber`; large uploads exceed the 2-min foreground timeout → background; confirm with `gh release view vX.Y.Z -R TeeJS/bedrock-panel --json assets`.
 - **Publish (finalize):** with all assets present + notes approved, flip the draft live — `gh release edit vX.Y.Z -R TeeJS/bedrock-panel --draft=false --notes-file notes.md`. This is the T.J.-gated step; he may delegate it explicitly (he did on 0.9.7). `gh` is sometimes classifier-blocked — if so, hand T.J. the exact one-liner.
 

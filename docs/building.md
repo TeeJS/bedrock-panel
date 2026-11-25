@@ -278,7 +278,7 @@ named after it.
    `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` trio, or the App Store Connect API key
    trio (`APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`).
 3. `npm run dist:mac`. electron-builder signs with the Developer ID, notarizes and staples the app;
-   the script then submits the DMG and staples it (Apple answers within minutes; the build waits).
+   the script then signs the DMG, submits it and staples it (Apple answers within minutes; the build waits).
    Check: `spctl -a -t exec -vv "dist/mac-arm64/Bedrock Panel.app"` says *accepted, source=Notarized
    Developer ID*, and `xcrun stapler validate dist/bedrock-panel-arm64.dmg` passes.
 
@@ -429,6 +429,45 @@ Two packaging rules worth keeping:
   adding the udev step; dropping it costs the `/usr/bin` symlink, the chrome-sandbox mode fix, and the
   AppArmor profile. If you upgrade electron-builder, diff those two scripts against
   `node_modules/app-builder-lib/templates/linux/after-{install,remove}.tpl`.
+
+## Releasing from GitHub
+
+`.github/workflows/release.yml` builds and signs all three platforms on GitHub's machines, so a
+release needs no PC, Mac or Linux box. It runs the same `npm run dist`, `dist:mac` and `dist:linux`
+as a local build, then checks the files themselves rather than the log.
+
+- **Dry run:** Actions → Release → Run workflow (from `main`). The files land as workflow artifacts;
+  nothing is published.
+- **Release:** push a tag `vX.Y.Z` equal to `package.json`'s version. The 12 files go onto a **draft**
+  release (created if none exists for that tag; a tag containing `-` makes a pre-release). Notes and
+  publishing stay manual.
+
+What each job proves before it uploads anything:
+
+| Job | Signing | Checked |
+|---|---|---|
+| Windows | Azure Artifact Signing through GitHub's OIDC login (no stored secret) | `Get-AuthenticodeSignature` Valid and timestamped on the setup, portable and app exes and every bundled helper; `app-update.yml` names the publisher |
+| macOS (Apple silicon) | Developer ID from a job-only keychain; app and dmg each notarized and stapled | app version, `codesign --verify`, notarization of app and dmg, `stapler validate`, `spctl` when the runner allows it |
+| Linux | none (no gatekeeper) | — |
+
+Every job also runs `node tools/verify-update-manifests.js dist`, which fails when a `latest*.yml`
+sha512 or size does not match its file. `build-mac.js` regenerates `latest-mac.yml` and the dmg
+`.blockmap` after stapling, so the macOS manifest no longer needs fixing by hand.
+
+The Windows job uses Node 24, not 26: Node 26's headers make node-gyp's MSVC build of the DPAPI
+binding fail at link time.
+
+**One-time setup, already done:**
+
+- The **`release`** environment (Settings → Environments) may only be used by `main` and `v*` tags.
+  It holds the variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`, and the
+  macOS secrets `MAC_CERT_P12_BASE64`, `MAC_CERT_PASSWORD`, `APPLE_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`.
+- Azure: the `github-actions-code-signing` app registration has a federated credential
+  `bedrock-panel-release` for subject `repo:TeeJS@4136437/bedrock-panel@1271869100:environment:release`
+  (GitHub's ID-based subject; a name-only subject fails with AADSTS700213).
+- To redo the macOS secrets (a renewed certificate, a changed Apple password), follow the
+  `mac-signing-secrets` skill on the Mac and add `--env release` to each `gh secret set`.
 
 ## Code layout
 
